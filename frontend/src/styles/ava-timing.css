@@ -595,3 +595,52 @@
 .avaTimingSegmentsRow button.hasBlock em {
   background: rgba(244,248,255,.88);
 }
+
+/* Stage 3.6 polish: keep block title + route/time + role label visible */
+.avaTimingSegmentsRow {
+  height: 72px;
+}
+
+.avaTimingSegmentsRow button {
+  align-content: start;
+  grid-template-rows: minmax(14px, auto) 13px 16px;
+  gap: 2px;
+  padding: 7px 7px 5px;
+}
+
+.avaTimingSegmentsRow b {
+  font-size: 11.5px;
+  line-height: 1.05;
+  letter-spacing: -.015em;
+  max-width: 100%;
+}
+
+.avaTimingSegmentsRow button.hasBlock b {
+  font-size: 11px;
+  line-height: 1.05;
+}
+
+.avaTimingSegmentsRow small {
+  font-size: 9.5px;
+  line-height: 1;
+  opacity: .94;
+}
+
+.avaTimingSegmentsRow em {
+  align-self: end;
+  max-width: 100%;
+  margin-top: 0;
+  padding: 2px 5px;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.avaTimingSegmentsRow button.hasNote::after {
+  right: 4px;
+  top: 3px;
+  font-size: 10px;
+}
+
+.avaTimingSegmentsRow button.hasNote b {
+  padding-right: 12px;
+}
