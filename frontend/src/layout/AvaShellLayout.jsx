@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Brain, FolderKanban, Home, LogOut, PlusCircle, Settings, WalletCards, UserRound } from 'lucide-react'
+import { Brain, ChevronLeft, ChevronRight, FolderKanban, Home, LogOut, PlusCircle, Settings, WalletCards, UserRound } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProjects } from '../context/ProjectContext.jsx'
 
@@ -11,22 +12,47 @@ const navItems = [
   { to: '/app/credits', label: 'Пополнить счёт', icon: WalletCards },
 ]
 
+const SIDEBAR_OPEN_KEY = 'ava_sidebar_open'
+
 export default function AvaShellLayout() {
   const { user, logout } = useAuth()
-  const { activeProject, lastSavedAt } = useProjects()
+  const { activeProject, lastSavedAt, exitProject } = useProjects()
   const navigate = useNavigate()
+  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem(SIDEBAR_OPEN_KEY) === '1')
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_OPEN_KEY, sidebarOpen ? '1' : '0')
+  }, [sidebarOpen])
 
   function handleLogout() {
     logout()
     navigate('/')
   }
 
+  function handleExitProject() {
+    exitProject()
+    navigate('/app/dashboard')
+  }
+
+  const shellModeClass = activeProject ? 'isProjectMode' : 'isWorkspaceMode'
+  const sidebarClass = sidebarOpen ? 'isSidebarOpen' : 'isSidebarClosed'
+
   return (
-    <div className="avaShell">
-      <aside className="avaSidebar">
-        <Link to="/app/dashboard" className="avaBrand">
+    <div className={`avaShell ${shellModeClass} ${sidebarClass}`}>
+      <aside className="avaSidebar" aria-label="Основное меню ava-studio">
+        <button
+          className="avaSidebarToggle"
+          type="button"
+          onClick={() => setSidebarOpen((value) => !value)}
+          title={sidebarOpen ? 'Свернуть меню' : 'Открыть меню'}
+          aria-label={sidebarOpen ? 'Свернуть меню' : 'Открыть меню'}
+        >
+          {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+        </button>
+
+        <Link to="/app/dashboard" className="avaBrand" title="ava-studio">
           <span className="avaBrandIcon"><Brain size={24} /></span>
-          <span>
+          <span className="avaSidebarText">
             <strong>ava-studio</strong>
             <em>AI video workflow</em>
           </span>
@@ -36,7 +62,12 @@ export default function AvaShellLayout() {
           {navItems.map((item) => {
             const Icon = item.icon
             return (
-              <NavLink key={item.to} to={item.to} className={({ isActive }) => `avaNavItem ${isActive ? 'isActive' : ''}`}>
+              <NavLink
+                key={item.to}
+                to={item.to}
+                title={item.label}
+                className={({ isActive }) => `avaNavItem ${isActive ? 'isActive' : ''}`}
+              >
                 <Icon size={18} />
                 <span>{item.label}</span>
               </NavLink>
@@ -44,27 +75,33 @@ export default function AvaShellLayout() {
           })}
         </nav>
 
-        <div className="avaSidebarProject">
-          <span>Активный проект</span>
-          <strong>{activeProject?.name || 'не выбран'}</strong>
-          <small>{activeProject?.format || 'создай или открой проект'}</small>
+        <div className="avaSidebarProject" title={activeProject?.name || 'Рабочая область'}>
+          <span>{activeProject ? 'Проектный режим' : 'Рабочая область'}</span>
+          <strong>{activeProject?.name || 'без проекта'}</strong>
+          <small>{activeProject?.format || 'автосохранение черновиков'}</small>
         </div>
 
-        <button className="avaGhostButton" type="button">
-          <Settings size={16} /> Настройки позже
+        <button className="avaGhostButton" type="button" title="Настройки позже">
+          <Settings size={16} /> <span className="avaSidebarText">Настройки позже</span>
         </button>
       </aside>
 
       <main className="avaMain">
         <header className="avaTopbar">
-          <div>
-            <p>Рабочая область</p>
+          <div className="avaTopbarLeft">
+            <p>{activeProject ? 'Проект открыт' : 'Рабочая область'}</p>
             <h1>{activeProject ? activeProject.name : 'ava-studio'}</h1>
           </div>
           <div className="avaTopbarRight">
+            <span className="avaModePill">{activeProject ? 'project mode' : 'workspace mode'}</span>
             <span className="avaSavePill">{lastSavedAt ? 'Сохранено' : 'autosave ready'}</span>
             <span className="avaCreditPill">{user?.credits_balance ?? 0} credits</span>
-            <button className="avaUserPill" onClick={handleLogout} title="Выйти">
+            {activeProject && (
+              <button className="avaExitProjectButton" type="button" onClick={handleExitProject}>
+                Выйти из проекта
+              </button>
+            )}
+            <button className="avaUserPill" onClick={handleLogout} title="Выйти из аккаунта">
               {user?.name || user?.email || 'User'} <LogOut size={15} />
             </button>
           </div>
