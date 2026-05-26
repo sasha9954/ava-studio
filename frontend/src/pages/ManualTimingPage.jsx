@@ -670,7 +670,6 @@ export default function ManualTimingPage() {
     }
   }
 
-  async function handleLoadedMetadata() {
   function buildExportPayload() {
     return {
       schema: 'ava_manual_timing_handoff_v1',
@@ -761,6 +760,7 @@ export default function ManualTimingPage() {
     }
   }
 
+  async function handleLoadedMetadata() {
     const audio = audioRef.current
     const duration = Number(audio?.duration)
     if (!Number.isFinite(duration) || duration <= 0) return
