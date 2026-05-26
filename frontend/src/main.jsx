@@ -9,6 +9,7 @@ import './styles/ava-shell.css'
 import './styles/ava-pages.css'
 import './styles/ava-modals.css'
 import './styles/ava-credits.css'
+import './styles/ava-auth.css'
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
