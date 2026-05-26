@@ -1,15 +1,22 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { FolderKanban, Plus } from 'lucide-react'
+import { FolderKanban, Plus, Trash2 } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { getProjectCardStyle, getProjectTheme } from '../utils/projectTheme.js'
 
 export default function ProjectsPage() {
-  const { projects, activeProject, openProject, loadingProjects } = useProjects()
+  const { projects, activeProject, openProject, deleteProject, loadingProjects } = useProjects()
   const navigate = useNavigate()
 
   async function handleOpenProject(project) {
     await openProject(project)
     navigate('/app/dashboard')
+  }
+
+  async function handleDeleteProject(event, project) {
+    event.stopPropagation()
+    const ok = window.confirm(`Удалить проект “${project.name}”? Он исчезнет из списка проектов.`)
+    if (!ok) return
+    await deleteProject(project.id)
   }
 
   return (
@@ -49,6 +56,15 @@ export default function ProjectsPage() {
               <p>{project.description || 'Описание пока не добавлено'}</p>
               <small>{project.format} · {project.status} · {new Date(project.updated_at).toLocaleString()}</small>
               <em className="avaProjectOpenHint">Открыть проект</em>
+              <button
+                className="avaProjectDeleteButton"
+                type="button"
+                onClick={(event) => handleDeleteProject(event, project)}
+                title="Удалить проект"
+                aria-label={`Удалить проект ${project.name}`}
+              >
+                <Trash2 size={15} />
+              </button>
             </button>
           )
         })}
