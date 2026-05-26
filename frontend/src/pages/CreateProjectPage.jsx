@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Monitor, Smartphone, Square } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
+
+const formatOptions = [
+  { value: '16:9', title: 'Горизонталь', hint: '16:9', icon: Monitor },
+  { value: '9:16', title: 'Вертикаль', hint: '9:16', icon: Smartphone },
+  { value: '1:1', title: 'Квадрат', hint: '1:1', icon: Square },
+]
 
 export default function CreateProjectPage() {
   const { createProject } = useProjects()
@@ -18,8 +25,8 @@ export default function CreateProjectPage() {
     setLoading(true)
     setError('')
     try {
-      const project = await createProject(form)
-      navigate(`/app/projects/${project.id}/timing`)
+      await createProject(form)
+      navigate('/app/dashboard')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -45,13 +52,29 @@ export default function CreateProjectPage() {
             <option value="empty">Пустой проект</option>
           </select>
         </label>
-        <label>Формат
-          <select value={form.format} onChange={(e) => setField('format', e.target.value)}>
-            <option value="16:9">16:9</option>
-            <option value="9:16">9:16</option>
-            <option value="1:1">1:1</option>
-          </select>
-        </label>
+
+        <div className="avaFieldBlock">
+          <span className="avaFieldLabel">Формат</span>
+          <div className="avaFormatGrid" role="group" aria-label="Формат проекта">
+            {formatOptions.map((option) => {
+              const Icon = option.icon
+              const active = form.format === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`avaFormatOption ${active ? 'isActive' : ''}`}
+                  onClick={() => setField('format', option.value)}
+                >
+                  <Icon size={20} />
+                  <strong>{option.title}</strong>
+                  <small>{option.hint}</small>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         <label>Описание<textarea value={form.description} onChange={(e) => setField('description', e.target.value)} placeholder="Кратко: что это за видео/проект" /></label>
         <button className="avaPrimaryButton" disabled={loading}>{loading ? 'Создаём…' : 'Создать и открыть'}</button>
       </form>
