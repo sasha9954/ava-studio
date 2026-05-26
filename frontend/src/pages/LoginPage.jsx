@@ -76,7 +76,7 @@ export default function LoginPage() {
         </div>
         <span className="avaAuthHint">При смене аккаунта нажми “Очистить”, если Chrome подставил старый email.</span>
         <span className="avaAuthSwitch">Нет аккаунта? <Link to="/register">Создать</Link></span>
-        <Link className="avaAuthHomeLink" to="/"><Home size={15} /> На главную</Link>
+        <Link className="avaAuthHomeLink" to="/app/dashboard"><Home size={15} /> На главную</Link>
       </form>
     </div>
   )
