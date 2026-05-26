@@ -84,6 +84,26 @@ export function ProjectProvider({ children }) {
     return response
   }
 
+  async function loadWorkspaceStage(stage) {
+    const data = await apiRequest(`/workspace/snapshots/${stage}`)
+    return data.snapshot?.data || {}
+  }
+
+  async function saveWorkspaceStage(stage, data) {
+    const response = await apiRequest(`/workspace/snapshots/${stage}`, {
+      method: 'POST',
+      body: JSON.stringify({ data, guard_mode: 'replace', client_version: 'ava-shell-v0.1' }),
+    })
+    if (response.saved) setLastSavedAt(new Date().toISOString())
+    return response
+  }
+
+  async function clearWorkspace() {
+    const response = await apiRequest('/workspace/current', { method: 'DELETE' })
+    setLastSavedAt(new Date().toISOString())
+    return response
+  }
+
   function markWorkspaceSaved() {
     setLastSavedAt(new Date().toISOString())
   }
@@ -100,6 +120,9 @@ export function ProjectProvider({ children }) {
     deleteProject,
     loadStage,
     saveStage,
+    loadWorkspaceStage,
+    saveWorkspaceStage,
+    clearWorkspace,
     markWorkspaceSaved,
   }), [projects, activeProject, loadingProjects, lastSavedAt])
 
