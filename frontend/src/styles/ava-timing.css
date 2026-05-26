@@ -1,0 +1,100 @@
+.avaTimingPage {
+  padding-bottom: 80px;
+}
+
+.avaTimingHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 16px;
+  align-items: stretch;
+  margin: 18px 0;
+}
+
+.avaTimingHero > div {
+  border: 1px solid var(--stroke);
+  border-radius: 26px;
+  background: rgba(12, 18, 38, .74);
+  box-shadow: var(--shadow);
+  padding: 22px;
+}
+
+.avaTimingHero h3 {
+  margin: 8px 0;
+  font-size: 26px;
+}
+
+.avaTimingContract {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+}
+
+.avaTimingContract span,
+.avaTimingContract small {
+  color: var(--muted);
+}
+
+.avaTimingContract strong {
+  color: #8ee9ff;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.avaTimingGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+
+.avaTimingPanel label {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  color: #dbe7ff;
+  font-weight: 800;
+}
+
+.avaTimingPanel input,
+.avaTimingPanel textarea {
+  width: 100%;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 15px;
+  background: rgba(255,255,255,.06);
+  color: var(--text);
+  padding: 12px 14px;
+  outline: none;
+  font: inherit;
+}
+
+.avaTimingPanel textarea {
+  min-height: 138px;
+  resize: vertical;
+}
+
+.avaTimingInfoBox {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(69,216,255,.16);
+  border-radius: 16px;
+  color: #b9c6e3;
+  background: rgba(69,216,255,.06);
+}
+
+.avaTimingPreview {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 16px;
+  background: rgba(0,0,0,.22);
+  color: #dbe7ff;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+@media (max-width: 860px) {
+  .avaTimingHero {
+    grid-template-columns: 1fr;
+  }
+}
