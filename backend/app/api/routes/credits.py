@@ -10,19 +10,19 @@ ADMIN_INVITE_CODE = '99541984'
 ADMIN_INVITE_CREDITS = 1000
 
 PACKAGES = {
-    'pack_50': 50,
-    'pack_100': 100,
-    'pack_300': 300,
-    'pack_1000': 1000,
+    'pack_50': {'credits': 50, 'usd': 10},
+    'pack_100': {'credits': 100, 'usd': 20},
+    'pack_300': {'credits': 300, 'usd': 30},
+    'pack_1000': {'credits': 1000, 'usd': 40},
 }
 
 
 def credit_packages() -> list[dict]:
     return [
-        {'id': 'pack_50', 'credits': 50, 'label': '50 credits'},
-        {'id': 'pack_100', 'credits': 100, 'label': '100 credits'},
-        {'id': 'pack_300', 'credits': 300, 'label': '300 credits'},
-        {'id': 'pack_1000', 'credits': 1000, 'label': '1000 credits'},
+        {'id': 'pack_50', 'credits': 50, 'usd': 10, 'label': '50 credits'},
+        {'id': 'pack_100', 'credits': 100, 'usd': 20, 'label': '100 credits'},
+        {'id': 'pack_300', 'credits': 300, 'usd': 30, 'label': '300 credits'},
+        {'id': 'pack_1000', 'credits': 1000, 'usd': 40, 'label': '1000 credits'},
     ]
 
 
@@ -51,10 +51,9 @@ def credits_summary(user: dict = Depends(get_current_user)):
     db = store.get_db()
     ledger = [item for item in db['credits_ledger'] if item.get('user_id') == user['id']]
     ledger.sort(key=lambda item: item.get('created_at', ''), reverse=True)
-    invite_used = any(item.get('action_type') == 'invite_admin_1000' for item in ledger)
     return {
         'balance': user.get('credits_balance', 0),
-        'invite_used': invite_used,
+        'admin_invite_available': True,
         'ledger': ledger[:50],
         'packages': credit_packages(),
     }
@@ -68,13 +67,6 @@ def apply_invite_code(payload: CreditInviteRequest, user: dict = Depends(get_cur
 
     def op(db):
         current_user = db['users'][user['id']]
-        already_used = any(
-            item.get('user_id') == user['id'] and item.get('action_type') == 'invite_admin_1000'
-            for item in db['credits_ledger']
-        )
-        if already_used:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Инвайт-код уже применён для этого аккаунта')
-
         before = current_user.get('credits_balance', 0)
         after = max(before, ADMIN_INVITE_CREDITS)
         amount = after - before
@@ -88,7 +80,7 @@ def apply_invite_code(payload: CreditInviteRequest, user: dict = Depends(get_cur
             'amount': amount,
             'before_balance': before,
             'after_balance': after,
-            'meta': {'code': 'admin-invite', 'mode': 'demo_unlimited_1000'},
+            'meta': {'code': 'admin-invite', 'mode': 'repeatable_restore_to_1000'},
         })
         return {'ok': True, 'balance': after, 'ledger_item': ledger_item, 'user': public_user(current_user)}
 
@@ -98,9 +90,10 @@ def apply_invite_code(payload: CreditInviteRequest, user: dict = Depends(get_cur
 @router.post('/topup-demo')
 def topup_demo(payload: CreditTopupRequest, user: dict = Depends(get_current_user)):
     package_id = payload.package_id.strip()
-    credits = PACKAGES.get(package_id)
-    if not credits:
+    package = PACKAGES.get(package_id)
+    if not package:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unknown package')
+    credits = package['credits']
 
     def op(db):
         current_user = db['users'][user['id']]
@@ -116,7 +109,7 @@ def topup_demo(payload: CreditTopupRequest, user: dict = Depends(get_current_use
             'amount': credits,
             'before_balance': before,
             'after_balance': after,
-            'meta': {'package_id': package_id},
+            'meta': {'package_id': package_id, 'usd': package['usd']},
         })
         return {'ok': True, 'balance': after, 'ledger_item': ledger_item, 'user': public_user(current_user)}
 
