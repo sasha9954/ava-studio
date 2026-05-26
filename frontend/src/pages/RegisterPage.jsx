@@ -73,7 +73,7 @@ export default function RegisterPage() {
           </button>
         </div>
         <span className="avaAuthSwitch">Уже есть аккаунт? <Link to="/login">Войти</Link></span>
-        <Link className="avaAuthHomeLink" to="/"><Home size={15} /> На главную</Link>
+        <Link className="avaAuthHomeLink" to="/app/dashboard"><Home size={15} /> На главную</Link>
       </form>
     </div>
   )
