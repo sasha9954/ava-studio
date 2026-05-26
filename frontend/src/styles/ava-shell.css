@@ -1,0 +1,99 @@
+.avaShell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+.avaSidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 22px;
+  background: rgba(4, 8, 20, .72);
+  backdrop-filter: blur(22px);
+  border-right: 1px solid var(--stroke);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.avaBrand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+}
+.avaBrandIcon,
+.avaSplashLogo,
+.avaMiniLogo svg,
+.avaHeroBrain,
+.avaModuleIcon {
+  background: linear-gradient(135deg, rgba(143,124,255,.95), rgba(69,216,255,.9));
+}
+.avaBrandIcon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgba(75, 112, 255, .28);
+}
+.avaBrand strong { display: block; font-size: 18px; }
+.avaBrand em { display: block; font-style: normal; color: var(--muted); font-size: 12px; }
+.avaNav { display: grid; gap: 8px; }
+.avaNavItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 15px;
+  color: #b7c3de;
+  border: 1px solid transparent;
+}
+.avaNavItem.isActive,
+.avaNavItem:hover {
+  color: var(--text);
+  background: rgba(255,255,255,.07);
+  border-color: rgba(255,255,255,.12);
+}
+.avaSidebarProject {
+  margin-top: auto;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, rgba(143,124,255,.12), rgba(69,216,255,.08));
+  border: 1px solid var(--stroke);
+}
+.avaSidebarProject span,
+.avaSidebarProject small { display: block; color: var(--muted); }
+.avaSidebarProject strong { display: block; margin: 6px 0; }
+.avaMain { min-width: 0; }
+.avaTopbar {
+  height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 34px;
+  border-bottom: 1px solid var(--stroke);
+  background: rgba(7, 11, 24, .42);
+  backdrop-filter: blur(14px);
+}
+.avaTopbar p { margin: 0; color: var(--muted); font-size: 13px; }
+.avaTopbar h1 { margin: 2px 0 0; font-size: 22px; }
+.avaTopbarRight { display: flex; align-items: center; gap: 10px; }
+.avaSavePill,
+.avaCreditPill {
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 999px;
+  padding: 10px 13px;
+  color: #d7e3ff;
+  background: rgba(255,255,255,.05);
+  font-size: 13px;
+}
+.avaContent { padding: 32px; }
+
+@media (max-width: 900px) {
+  .avaShell { grid-template-columns: 1fr; }
+  .avaSidebar { position: relative; height: auto; }
+  .avaTopbar { flex-direction: column; align-items: flex-start; gap: 12px; height: auto; padding: 18px; }
+  .avaTopbarRight { flex-wrap: wrap; }
+  .avaContent { padding: 18px; }
+}

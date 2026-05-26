@@ -1,0 +1,58 @@
+import { Link } from 'react-router-dom'
+import { AudioLines, Brain, Clapperboard, Film, FolderPlus, GalleryHorizontalEnd, GitBranch, Scissors, Sparkles } from 'lucide-react'
+import { useProjects } from '../context/ProjectContext.jsx'
+
+const cards = [
+  { stage: 'manual_timing', title: 'Тайминг', icon: AudioLines, text: 'Разбей аудио на сцены, фразы и смысловые блоки.', route: 'timing', status: 'soon integration' },
+  { stage: 'podcast', title: 'Подкаст', icon: Scissors, text: 'Собери роли, реплики, паузы и финальное аудио.', route: 'podcast', status: 'soon integration' },
+  { stage: 'board', title: 'Доска', icon: GalleryHorizontalEnd, text: 'Сцены, кадры, промты, изображения и видео по частям.', route: 'board', status: 'soon integration' },
+  { stage: 'board_assembly', title: 'Сборка видео', icon: Clapperboard, text: 'Склей сгенерированные сцены Доски в полный ролик.', route: 'board-assembly', status: 'separate from Video Node' },
+  { stage: 'video_node', title: 'Video Node', icon: GitBranch, text: 'Готовая нарезка видео+аудио и Video Match JSON.', route: 'video-node', status: 'different workflow' },
+  { stage: 'generator', title: 'Генератор', icon: Film, text: 'Быстрые тесты i2v, ia2v, first-last и image+audio.', route: 'generator', status: 'standalone' },
+]
+
+export default function DashboardPage() {
+  const { activeProject } = useProjects()
+
+  return (
+    <div className="avaPage">
+      <section className="avaHeroPanel">
+        <div>
+          <p className="avaEyebrow"><Sparkles size={15} /> Stage 1 shell</p>
+          <h2>Главная рабочая панель</h2>
+          <p>
+            Создай проект, затем подключай этапы: тайминг, подкаст, доску, сборку, Video Node и генератор.
+          </p>
+          <div className="avaHeroActions">
+            <Link className="avaPrimaryButton" to="/app/projects/new"><FolderPlus size={17} /> Создать проект</Link>
+            <Link className="avaSecondaryButton" to="/app/projects">Мои проекты</Link>
+          </div>
+        </div>
+        <div className="avaHeroBrain"><Brain size={92} /></div>
+      </section>
+
+      <div className="avaSectionHeader">
+        <h3>Модули ava-studio</h3>
+        <span>{activeProject ? `Активный проект: ${activeProject.name}` : 'Сначала выбери или создай проект'}</span>
+      </div>
+
+      <div className="avaModuleGrid">
+        {cards.map((card) => {
+          const Icon = card.icon
+          const disabled = !activeProject
+          const to = activeProject ? `/app/projects/${activeProject.id}/${card.route}` : '/app/projects/new'
+          return (
+            <Link key={card.stage} to={to} className={`avaModuleCard ${disabled ? 'isMuted' : ''}`}>
+              <div className="avaModuleIcon"><Icon size={24} /></div>
+              <div>
+                <h4>{card.title}</h4>
+                <p>{card.text}</p>
+              </div>
+              <span className="avaModuleStatus">{card.status}</span>
+            </Link>
+          )
+        })}
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,21 @@
+services:
+  backend:
+    build: ./backend
+    container_name: ava-studio-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/storage:/app/storage
+      - ./backend/static:/app/static
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    container_name: ava-studio-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"

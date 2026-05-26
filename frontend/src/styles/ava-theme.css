@@ -1,0 +1,96 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #060914;
+  color: #edf4ff;
+  --bg: #060914;
+  --panel: rgba(14, 20, 39, 0.78);
+  --panel-strong: rgba(18, 28, 53, 0.96);
+  --stroke: rgba(144, 166, 255, 0.18);
+  --muted: #93a0bd;
+  --text: #edf4ff;
+  --primary: #8f7cff;
+  --primary-2: #45d8ff;
+  --accent: #49f0af;
+  --danger: #ff6b8a;
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+  --radius-xl: 28px;
+  --radius: 18px;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; }
+body {
+  background:
+    radial-gradient(circle at top left, rgba(143, 124, 255, .22), transparent 34rem),
+    radial-gradient(circle at 80% 12%, rgba(69, 216, 255, .16), transparent 30rem),
+    linear-gradient(180deg, #060914, #0a1020 52%, #060914);
+}
+a { color: inherit; text-decoration: none; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+
+.avaPrimaryButton,
+.avaSecondaryButton,
+.avaGhostButton,
+.avaUserPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  min-height: 42px;
+  padding: 0 18px;
+  color: var(--text);
+  transition: transform .18s ease, border-color .18s ease, background .18s ease;
+}
+.avaPrimaryButton {
+  border: 0;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  box-shadow: 0 16px 42px rgba(92, 130, 255, .25);
+  font-weight: 760;
+}
+.avaSecondaryButton,
+.avaGhostButton,
+.avaUserPill {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.11);
+}
+.avaPrimaryButton:hover,
+.avaSecondaryButton:hover,
+.avaGhostButton:hover,
+.avaUserPill:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.24); }
+.avaPrimaryButton:disabled { opacity: .6; cursor: not-allowed; }
+
+.avaEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+  color: #87ddff;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.avaError {
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 107, 138, .35);
+  background: rgba(255, 107, 138, .09);
+  color: #ffc5d0;
+  border-radius: 14px;
+}
+.avaInfoBox {
+  padding: 14px 16px;
+  border: 1px solid rgba(69, 216, 255, .2);
+  background: rgba(69, 216, 255, .08);
+  border-radius: 16px;
+  color: #cdefff;
+}
+.avaBoot {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
