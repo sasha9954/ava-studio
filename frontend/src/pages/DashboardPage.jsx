@@ -3,8 +3,8 @@ import { AudioLines, Brain, Clapperboard, Film, FolderPlus, GalleryHorizontalEnd
 import { useProjects } from '../context/ProjectContext.jsx'
 
 const cards = [
-  { stage: 'manual_timing', title: 'Тайминг', icon: AudioLines, text: 'Разбей аудио на сцены, фразы и смысловые блоки.', route: 'timing', status: 'soon integration' },
-  { stage: 'podcast', title: 'Подкаст', icon: Scissors, text: 'Собери роли, реплики, паузы и финальное аудио.', route: 'podcast', status: 'soon integration' },
+  { stage: 'manual_timing', title: 'Тайминг', icon: AudioLines, text: 'Разбей аудио на сцены, фразы и смысловые блоки.', route: 'timing', status: 'workspace ready' },
+  { stage: 'podcast', title: 'Подкаст', icon: Scissors, text: 'Собери роли, реплики, паузы и финальное аудио.', route: 'podcast', status: 'workspace ready' },
   { stage: 'board', title: 'Доска', icon: GalleryHorizontalEnd, text: 'Сцены, кадры, промты, изображения и видео по частям.', route: 'board', status: 'soon integration' },
   { stage: 'board_assembly', title: 'Сборка видео', icon: Clapperboard, text: 'Склей сгенерированные сцены Доски в полный ролик.', route: 'board-assembly', status: 'separate from Video Node' },
   { stage: 'video_node', title: 'Video Node', icon: GitBranch, text: 'Готовая нарезка видео+аудио и Video Match JSON.', route: 'video-node', status: 'different workflow' },
@@ -18,10 +18,10 @@ export default function DashboardPage() {
     <div className="avaPage">
       <section className="avaHeroPanel">
         <div>
-          <p className="avaEyebrow"><Sparkles size={15} /> Stage 1 shell</p>
+          <p className="avaEyebrow"><Sparkles size={15} /> Stage 2 direction</p>
           <h2>Главная рабочая панель</h2>
           <p>
-            Создай проект, затем подключай этапы: тайминг, подкаст, доску, сборку, Video Node и генератор.
+            Начинай сразу в рабочей области — черновики автосохраняются. Для долгой работы создай или открой проект.
           </p>
           <div className="avaHeroActions">
             <Link className="avaPrimaryButton" to="/app/projects/new"><FolderPlus size={17} /> Создать проект</Link>
@@ -33,16 +33,15 @@ export default function DashboardPage() {
 
       <div className="avaSectionHeader">
         <h3>Модули ava-studio</h3>
-        <span>{activeProject ? `Активный проект: ${activeProject.name}` : 'Сначала выбери или создай проект'}</span>
+        <span>{activeProject ? `Проектный режим: ${activeProject.name}` : 'Рабочая область: можно начать без проекта'}</span>
       </div>
 
       <div className="avaModuleGrid">
         {cards.map((card) => {
           const Icon = card.icon
-          const disabled = !activeProject
-          const to = activeProject ? `/app/projects/${activeProject.id}/${card.route}` : '/app/projects/new'
+          const to = activeProject ? `/app/projects/${activeProject.id}/${card.route}` : `/app/workspace/${card.route}`
           return (
-            <Link key={card.stage} to={to} className={`avaModuleCard ${disabled ? 'isMuted' : ''}`}>
+            <Link key={card.stage} to={to} className="avaModuleCard">
               <div className="avaModuleIcon"><Icon size={24} /></div>
               <div>
                 <h4>{card.title}</h4>
