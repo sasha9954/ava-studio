@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Gift, History, KeyRound, Plus, ShieldCheck } from 'lucide-react'
+import { CreditCard, Gift, History, KeyRound, Plus, ShieldCheck, WalletCards, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { apiRequest } from '../services/apiClient.js'
+
+const emptyPaymentForm = {
+  cardNumber: '',
+  expiry: '',
+  cvc: '',
+}
 
 export default function CreditsPage() {
   const { setCurrentUser } = useAuth()
   const [summary, setSummary] = useState(null)
   const [inviteCode, setInviteCode] = useState('')
+  const [selectedPack, setSelectedPack] = useState(null)
+  const [paymentForm, setPaymentForm] = useState(emptyPaymentForm)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
@@ -34,7 +42,7 @@ export default function CreditsPage() {
       setCurrentUser(result.user)
       await loadSummary()
       setInviteCode('')
-      setStatus('Инвайт-код применён. На аккаунте активирован demo-баланс 1000 credits.')
+      setStatus('Инвайт-код применён. Баланс восстановлен до 1000 credits.')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -42,18 +50,39 @@ export default function CreditsPage() {
     }
   }
 
-  async function topupDemo(packageId) {
+  function openPaymentModal(pack) {
+    setError('')
+    setStatus('')
+    setSelectedPack(pack)
+    setPaymentForm(emptyPaymentForm)
+  }
+
+  function closePaymentModal() {
+    if (loading) return
+    setSelectedPack(null)
+    setPaymentForm(emptyPaymentForm)
+  }
+
+  function updatePaymentField(key, value) {
+    setPaymentForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function confirmTopup(event) {
+    event.preventDefault()
+    if (!selectedPack) return
     setError('')
     setStatus('')
     setLoading(true)
     try {
       const result = await apiRequest('/credits/topup-demo', {
         method: 'POST',
-        body: JSON.stringify({ package_id: packageId }),
+        body: JSON.stringify({ package_id: selectedPack.id }),
       })
       setCurrentUser(result.user)
       await loadSummary()
-      setStatus('Demo-пополнение добавлено в ledger.')
+      setSelectedPack(null)
+      setPaymentForm(emptyPaymentForm)
+      setStatus(`Пакет ${selectedPack.label} добавлен. Позже здесь подключим реальный billing.`)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -66,7 +95,7 @@ export default function CreditsPage() {
       <div className="avaSectionHeader">
         <div>
           <h2>Пополнить счёт</h2>
-          <p>Credits Ledger v1: demo-пополнение, инвайт-код, история операций.</p>
+          <p>Credits Ledger v1: пакеты, инвайт-код, история операций.</p>
         </div>
         <span className="avaCreditPill">{summary?.balance ?? 0} credits</span>
       </div>
@@ -79,8 +108,8 @@ export default function CreditsPage() {
           <p className="avaEyebrow"><KeyRound size={15} /> Invite access</p>
           <h2>Инвайт-код</h2>
           <p>
-            Служебный demo-код вводится один раз на аккаунт и поднимает баланс до 1000 credits.
-            Это нужно для твоих тестовых аккаунтов до подключения реальной оплаты.
+            Служебный код можно вводить повторно: он восстанавливает demo-баланс до 1000 credits.
+            Это нужно для твоих тестовых аккаунтов.
           </p>
           <label>
             Код доступа
@@ -88,11 +117,11 @@ export default function CreditsPage() {
               value={inviteCode}
               onChange={(event) => setInviteCode(event.target.value)}
               placeholder="Введите инвайт-код"
-              disabled={summary?.invite_used || loading}
+              disabled={loading}
             />
           </label>
-          <button className="avaPrimaryButton" disabled={summary?.invite_used || loading || !inviteCode.trim()}>
-            <ShieldCheck size={16} /> {summary?.invite_used ? 'Код уже применён' : 'Активировать 1000 credits'}
+          <button className="avaPrimaryButton" disabled={loading || !inviteCode.trim()}>
+            <ShieldCheck size={16} /> Активировать 1000 credits
           </button>
         </form>
 
@@ -114,8 +143,8 @@ export default function CreditsPage() {
 
       <div className="avaSectionHeader">
         <div>
-          <h3>Demo-пакеты</h3>
-          <p>Пока без оплаты. Позже здесь будет реальный billing.</p>
+          <h3>Пакеты credits</h3>
+          <p>Пока это mock-форма оплаты. Реальный billing подключим позже.</p>
         </div>
       </div>
 
@@ -124,13 +153,68 @@ export default function CreditsPage() {
           <div className="avaModuleCard" key={pack.id}>
             <div className="avaModuleIcon"><Gift size={22} /></div>
             <h4>{pack.label}</h4>
-            <p>Тестовое пополнение для проверки credits ledger.</p>
-            <button className="avaMiniActionButton" type="button" onClick={() => topupDemo(pack.id)} disabled={loading}>
-              <Plus size={14} /> Добавить
+            <p className="avaPriceLine">${pack.usd ?? 0}</p>
+            <button className="avaMiniActionButton" type="button" onClick={() => openPaymentModal(pack)} disabled={loading}>
+              <Plus size={14} /> Купить
             </button>
           </div>
         ))}
       </div>
+
+      {selectedPack && (
+        <div className="avaModalOverlay" role="presentation" onMouseDown={closePaymentModal}>
+          <form className="avaConfirmModal avaPaymentModal" onSubmit={confirmTopup} onMouseDown={(event) => event.stopPropagation()}>
+            <button className="avaModalClose" type="button" onClick={closePaymentModal} aria-label="Закрыть" disabled={loading}>
+              <X size={18} />
+            </button>
+            <div className="avaConfirmIcon"><WalletCards size={26} /></div>
+            <p className="avaEyebrow"><CreditCard size={15} /> Payment mock</p>
+            <h3>{selectedPack.label} · ${selectedPack.usd ?? 0}</h3>
+            <p>Введите данные карты для демо-окна. На этом этапе данные никуда не отправляются, backend получает только выбранный пакет.</p>
+
+            <label>
+              Номер карты
+              <input
+                value={paymentForm.cardNumber}
+                onChange={(event) => updatePaymentField('cardNumber', event.target.value)}
+                placeholder="0000 0000 0000 0000"
+                inputMode="numeric"
+                required
+              />
+            </label>
+            <div className="avaPaymentRow">
+              <label>
+                Дата
+                <input
+                  value={paymentForm.expiry}
+                  onChange={(event) => updatePaymentField('expiry', event.target.value)}
+                  placeholder="MM/YY"
+                  required
+                />
+              </label>
+              <label>
+                CVC
+                <input
+                  value={paymentForm.cvc}
+                  onChange={(event) => updatePaymentField('cvc', event.target.value)}
+                  placeholder="123"
+                  inputMode="numeric"
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="avaModalActions">
+              <button className="avaPrimaryButton" disabled={loading}>
+                <WalletCards size={16} /> {loading ? 'Обработка…' : `Оплатить $${selectedPack.usd ?? 0}`}
+              </button>
+              <button className="avaSecondaryButton" type="button" onClick={closePaymentModal} disabled={loading}>
+                Отмена
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
