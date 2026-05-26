@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Brain } from 'lucide-react'
+import { Brain, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function LoginPage() {
@@ -8,6 +8,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -33,7 +34,15 @@ export default function LoginPage() {
         <p>Вернись к своим проектам, сценам и сборкам.</p>
         {error && <div className="avaError">{error}</div>}
         <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required /></label>
-        <label>Пароль<input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required /></label>
+        <label>
+          Пароль
+          <span className="avaPasswordField">
+            <input value={password} onChange={(e) => setPassword(e.target.value)} type={showPassword ? 'text' : 'password'} required />
+            <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}>
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </span>
+        </label>
         <button className="avaPrimaryButton" disabled={loading}>{loading ? 'Входим…' : 'Войти'}</button>
         <span className="avaAuthSwitch">Нет аккаунта? <Link to="/register">Создать</Link></span>
       </form>
