@@ -5,7 +5,7 @@ import { useProjects } from '../context/ProjectContext.jsx'
 import { fetchProtectedBlobUrl, uploadAudioAsset } from '../services/apiClient.js'
 
 const STAGE = 'manual_timing'
-const DRAFT_VERSION = 'manual_timing_single_timeline_v3_basic_controls'
+const DRAFT_VERSION = 'manual_timing_single_timeline_v4_micro_nudge'
 const MIN_SCENE_SEC = 0.18
 const MAX_UNDO = 30
 
@@ -136,6 +136,10 @@ function findSceneIndexAtTime(scenes, time) {
   const at = Number(time) || 0
   const found = scenes.findIndex((scene) => at >= scene.start && at <= scene.end)
   return found >= 0 ? found : Math.max(0, scenes.length - 1)
+}
+
+function sceneHue(index) {
+  return 185 + ((index * 47) % 150)
 }
 
 export default function ManualTimingPage() {
@@ -302,10 +306,57 @@ export default function ManualTimingPage() {
     setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
   }
 
-  function moveCursor(delta) {
-    const nextCursor = clampCursor(cursorSec + delta, draft.audioDurationSec)
-    stopAudio(nextCursor)
-    setStatus(`курсор: ${formatTime(nextCursor, true)}`)
+  function seekTimeline(event) {
+    if (!hasAudio || draft.audioDurationSec <= 0) return
+    if (event.target.closest('button')) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = event.clientX - rect.left + event.currentTarget.scrollLeft
+    const totalWidth = event.currentTarget.scrollWidth || rect.width
+    const at = clampCursor((x / totalWidth) * draft.audioDurationSec, draft.audioDurationSec)
+    const sceneIndex = findSceneIndexAtTime(scenes, at)
+    stopAudio(at)
+    setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
+    setStatus(`курсор: ${formatTime(at, true)}`)
+  }
+
+  function nudgeSelectedScene(deltaForSelected) {
+    if (!hasAudio || scenes.length <= 1) {
+      setStatus('нужны минимум две сцены')
+      return
+    }
+
+    const index = Math.min(draft.selectedSceneIndex, scenes.length - 1)
+    const selected = scenes[index]
+    const step = Math.abs(Number(draft.stepSec) || 0.5)
+    const direction = deltaForSelected >= 0 ? 1 : -1
+    const nextScenes = scenes.map((scene) => ({ ...scene }))
+    let boundary = selected.end
+    let message = ''
+
+    pushHistorySnapshot()
+
+    if (index < scenes.length - 1) {
+      const next = nextScenes[index + 1]
+      const minBoundary = selected.start + MIN_SCENE_SEC
+      const maxBoundary = next.end - MIN_SCENE_SEC
+      const currentBoundary = nextScenes[index].end
+      boundary = Math.min(maxBoundary, Math.max(minBoundary, currentBoundary + direction * step))
+      nextScenes[index].end = boundary
+      next.start = boundary
+      message = direction > 0 ? `+${step}s к ${selected.title}` : `-${step}s от ${selected.title}`
+    } else {
+      const previous = nextScenes[index - 1]
+      const minBoundary = previous.start + MIN_SCENE_SEC
+      const maxBoundary = selected.end - MIN_SCENE_SEC
+      const currentBoundary = nextScenes[index].start
+      boundary = Math.min(maxBoundary, Math.max(minBoundary, currentBoundary - direction * step))
+      previous.end = boundary
+      nextScenes[index].start = boundary
+      message = direction > 0 ? `+${step}s к ${selected.title}` : `-${step}s от ${selected.title}`
+    }
+
+    const normalizedScenes = renumberScenes(nextScenes)
+    applyDraftChange({ ...draft, scenes: normalizedScenes, scenesCount: normalizedScenes.length, selectedSceneIndex: index }, message, boundary)
   }
 
   function splitAtCursor() {
@@ -520,7 +571,7 @@ export default function ManualTimingPage() {
           <p>Здесь позже будет оригинальная фраза выбранной сцены и русский перевод.</p>
         </div>
 
-        <div className="avaTimingTimelineScale" onDoubleClick={splitAtCursor}>
+        <div className="avaTimingTimelineScale" onClick={seekTimeline} onDoubleClick={splitAtCursor}>
           <div className="avaTimingCursorLabel" style={{ left: `${cursorPct}%` }}>{formatTime(cursorSec, true)}</div>
           <div className="avaTimingWaveLong">
             {Array.from({ length: 180 }).map((_, index) => <i key={index} style={{ '--h': `${14 + ((index * 19) % 74)}%` }} />)}
@@ -530,7 +581,13 @@ export default function ManualTimingPage() {
             {scenes.map((scene) => {
               const sceneWidth = draft.audioDurationSec > 0 ? `${Math.max(0.5, ((scene.end - scene.start) / draft.audioDurationSec) * 100)}%` : `${100 / scenes.length}%`
               return (
-                <button key={`${scene.id}-${scene.start}-${scene.end}`} type="button" style={{ width: sceneWidth }} className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.semanticBlock ? 'isSemantic' : ''}`} onClick={() => selectScene(scene.index)}>
+                <button
+                  key={`${scene.id}-${scene.start}-${scene.end}`}
+                  type="button"
+                  style={{ width: sceneWidth, '--scene-hue': sceneHue(scene.index) }}
+                  className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.semanticBlock ? 'isSemantic' : ''}`}
+                  onClick={() => selectScene(scene.index)}
+                >
                   <b>{scene.title}</b>
                   <small>{formatTime(scene.start)} → {formatTime(scene.end)}</small>
                 </button>
@@ -545,12 +602,12 @@ export default function ManualTimingPage() {
           </button>
           <button className={`avaTimingPlayAll ${playingMode === 'all' ? 'isPlaying' : ''}`} type="button" onClick={toggleAllPlay} disabled={!hasAudio || !audioSrc}>▶ всё</button>
 
-          <button className="avaTimingIconButton" type="button" onClick={() => moveCursor(-Math.abs(Number(draft.stepSec) || 0.5))} disabled={!hasAudio} title="Назад на шаг"><StepBack size={15} /></button>
-          <label className="avaTimingStepControl" title="Шаг перемещения">
+          <button className="avaTimingIconButton" type="button" onClick={() => nudgeSelectedScene(-Math.abs(Number(draft.stepSec) || 0.5))} disabled={!hasAudio || scenes.length <= 1} title="Отнять шаг от текущей сцены и отдать соседней"><StepBack size={15} /></button>
+          <label className="avaTimingStepControl" title="Шаг микро-доводки границы выбранной сцены">
             шаг
             <input type="number" min="0.05" step="0.05" value={draft.stepSec ?? 0.5} onChange={(event) => updateDraft('stepSec', Number(event.target.value) || 0.5)} />
           </label>
-          <button className="avaTimingIconButton" type="button" onClick={() => moveCursor(Math.abs(Number(draft.stepSec) || 0.5))} disabled={!hasAudio} title="Вперёд на шаг"><StepForward size={15} /></button>
+          <button className="avaTimingIconButton" type="button" onClick={() => nudgeSelectedScene(Math.abs(Number(draft.stepSec) || 0.5))} disabled={!hasAudio || scenes.length <= 1} title="Добавить шаг к текущей сцене за счёт соседней"><StepForward size={15} /></button>
 
           <button type="button" onClick={splitAtCursor} disabled={!hasAudio}>✂ Разрезать</button>
           <button type="button" onClick={mergeSelectedWithNext} disabled={scenes.length <= 1}>🔗 Соединить</button>
