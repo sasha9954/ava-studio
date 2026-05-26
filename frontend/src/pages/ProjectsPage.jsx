@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { FolderKanban, Plus } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
+import { getProjectCardStyle, getProjectTheme } from '../utils/projectTheme.js'
 
 export default function ProjectsPage() {
   const { projects, activeProject, openProject, loadingProjects } = useProjects()
@@ -16,7 +17,7 @@ export default function ProjectsPage() {
       <div className="avaSectionHeader">
         <div>
           <h2>Мои проекты</h2>
-          <p>Проекты привязаны только к текущему аккаунту. Открой проект — и UI перейдёт в проектный режим.</p>
+          <p>Проекты привязаны только к текущему аккаунту. Цвет помогает не перепутать активную работу.</p>
         </div>
         <Link className="avaPrimaryButton" to="/app/projects/new"><Plus size={17} /> Создать проект</Link>
       </div>
@@ -33,15 +34,24 @@ export default function ProjectsPage() {
       )}
 
       <div className="avaProjectGrid">
-        {projects.map((project) => (
-          <button key={project.id} className={`avaProjectCard ${activeProject?.id === project.id ? 'isActive' : ''}`} onClick={() => handleOpenProject(project)}>
-            <span>{project.type}</span>
-            <h3>{project.name}</h3>
-            <p>{project.description || 'Описание пока не добавлено'}</p>
-            <small>{project.format} · {project.status} · {new Date(project.updated_at).toLocaleString()}</small>
-            <em className="avaProjectOpenHint">Открыть проект</em>
-          </button>
-        ))}
+        {projects.map((project) => {
+          const theme = getProjectTheme(project, projects)
+          return (
+            <button
+              key={project.id}
+              className={`avaProjectCard ${activeProject?.id === project.id ? 'isActive' : ''}`}
+              style={getProjectCardStyle(project, projects)}
+              onClick={() => handleOpenProject(project)}
+            >
+              <i className="avaProjectColorDot" />
+              <span>{project.type} · {theme.name}</span>
+              <h3>{project.name}</h3>
+              <p>{project.description || 'Описание пока не добавлено'}</p>
+              <small>{project.format} · {project.status} · {new Date(project.updated_at).toLocaleString()}</small>
+              <em className="avaProjectOpenHint">Открыть проект</em>
+            </button>
+          )
+        })}
       </div>
     </div>
   )
