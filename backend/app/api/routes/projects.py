@@ -7,6 +7,7 @@ from app.schemas import ProjectCreateRequest, ProjectUpdateRequest, SnapshotSave
 router = APIRouter(prefix='/projects', tags=['projects'])
 
 STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator'}
+PROJECT_THEME_COUNT = 8
 
 
 def project_public(project: dict) -> dict:
@@ -29,13 +30,13 @@ def count_items(data: dict, keys: list[str]) -> int:
     if not isinstance(data, dict):
         return 0
     for key in keys:
-      value = data.get(key)
-      if isinstance(value, list):
-          return len(value)
-      if isinstance(value, dict):
-          return len(value)
-      if value:
-          return 1
+        value = data.get(key)
+        if isinstance(value, list):
+            return len(value)
+        if isinstance(value, dict):
+            return len(value)
+        if value:
+            return 1
     return 0
 
 
@@ -92,7 +93,11 @@ def build_project_summary(snapshots: dict) -> dict:
 @router.get('')
 def list_projects(user: dict = Depends(get_current_user)):
     db = store.get_db()
-    projects = [project_public(p) for p in db['projects'].values() if p.get('user_id') == user['id']]
+    projects = [
+        project_public(p)
+        for p in db['projects'].values()
+        if p.get('user_id') == user['id'] and p.get('status') != 'deleted'
+    ]
     projects.sort(key=lambda p: p.get('updated_at', ''), reverse=True)
     return {'projects': projects}
 
@@ -100,6 +105,10 @@ def list_projects(user: dict = Depends(get_current_user)):
 @router.post('')
 def create_project(payload: ProjectCreateRequest, user: dict = Depends(get_current_user)):
     def op(db):
+        user_projects = [
+            p for p in db['projects'].values()
+            if p.get('user_id') == user['id'] and p.get('status') != 'deleted'
+        ]
         project_id = make_id('p')
         project = {
             'id': project_id,
@@ -108,6 +117,7 @@ def create_project(payload: ProjectCreateRequest, user: dict = Depends(get_curre
             'type': payload.type,
             'format': payload.format,
             'description': payload.description,
+            'theme_index': len(user_projects) % PROJECT_THEME_COUNT,
             'status': 'draft',
             'created_at': now_iso(),
             'updated_at': now_iso(),
@@ -120,11 +130,15 @@ def create_project(payload: ProjectCreateRequest, user: dict = Depends(get_curre
 
 @router.get('/{project_id}')
 def get_project(project: dict = Depends(ensure_project_access)):
+    if project.get('status') == 'deleted':
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project deleted')
     return {'project': project_public(project)}
 
 
 @router.get('/{project_id}/summary')
 def get_project_summary(project: dict = Depends(ensure_project_access)):
+    if project.get('status') == 'deleted':
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project deleted')
     db = store.get_db()
     snapshots = db['snapshots'].get(project['id'], {})
     return {
@@ -152,8 +166,24 @@ def update_project(payload: ProjectUpdateRequest, project: dict = Depends(ensure
     return store.update(op)
 
 
+@router.delete('/{project_id}')
+def delete_project(project: dict = Depends(ensure_project_access)):
+    project_id = project['id']
+
+    def op(db):
+        p = db['projects'][project_id]
+        p['status'] = 'deleted'
+        p['deleted_at'] = now_iso()
+        p['updated_at'] = now_iso()
+        return {'deleted': True, 'project_id': project_id}
+
+    return store.update(op)
+
+
 @router.get('/{project_id}/snapshots/{stage}')
 def get_snapshot(stage: str, project: dict = Depends(ensure_project_access)):
+    if project.get('status') == 'deleted':
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project deleted')
     if stage not in STAGES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unknown stage')
     db = store.get_db()
@@ -163,6 +193,8 @@ def get_snapshot(stage: str, project: dict = Depends(ensure_project_access)):
 
 @router.post('/{project_id}/snapshots/{stage}')
 def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depends(ensure_project_access)):
+    if project.get('status') == 'deleted':
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project deleted')
     if stage not in STAGES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unknown stage')
     project_id = project['id']
