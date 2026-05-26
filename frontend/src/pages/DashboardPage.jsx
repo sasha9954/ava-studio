@@ -3,12 +3,12 @@ import { AudioLines, Brain, Clapperboard, Film, FolderPlus, GalleryHorizontalEnd
 import { useProjects } from '../context/ProjectContext.jsx'
 
 const cards = [
-  { stage: 'manual_timing', title: 'Тайминг', icon: AudioLines, text: 'Разбей аудио на сцены, фразы и смысловые блоки.', route: 'timing', status: 'workspace ready' },
-  { stage: 'podcast', title: 'Подкаст', icon: Scissors, text: 'Собери роли, реплики, паузы и финальное аудио.', route: 'podcast', status: 'workspace ready' },
-  { stage: 'board', title: 'Доска', icon: GalleryHorizontalEnd, text: 'Сцены, кадры, промты, изображения и видео по частям.', route: 'board', status: 'soon integration' },
-  { stage: 'board_assembly', title: 'Сборка видео', icon: Clapperboard, text: 'Склей сгенерированные сцены Доски в полный ролик.', route: 'board-assembly', status: 'separate from Video Node' },
-  { stage: 'video_node', title: 'Video Node', icon: GitBranch, text: 'Готовая нарезка видео+аудио и Video Match JSON.', route: 'video-node', status: 'different workflow' },
-  { stage: 'generator', title: 'Генератор', icon: Film, text: 'Быстрые тесты i2v, ia2v, first-last и image+audio.', route: 'generator', status: 'standalone' },
+  { stage: 'manual_timing', title: 'Тайминг', icon: AudioLines, text: 'Разбей аудио на сцены, фразы и смысловые блоки.', route: 'timing', status: 'workspace ready', metric: 'Аудио: пока нет' },
+  { stage: 'podcast', title: 'Подкаст', icon: Scissors, text: 'Собери роли, реплики, паузы и финальное аудио.', route: 'podcast', status: 'workspace ready', metric: 'Роли: 0' },
+  { stage: 'board', title: 'Доска', icon: GalleryHorizontalEnd, text: 'Сцены, кадры, промты, изображения и видео по частям.', route: 'board', status: 'soon integration', metric: 'Сцены: 0' },
+  { stage: 'board_assembly', title: 'Сборка видео', icon: Clapperboard, text: 'Склей сгенерированные сцены Доски в полный ролик.', route: 'board-assembly', status: 'separate from Video Node', metric: 'Видео: 0' },
+  { stage: 'video_node', title: 'Video Node', icon: GitBranch, text: 'Готовая нарезка видео+аудио и Video Match JSON.', route: 'video-node', status: 'different workflow', metric: 'Кандидаты: 0' },
+  { stage: 'generator', title: 'Генератор', icon: Film, text: 'Быстрые тесты i2v, ia2v, first-last и image+audio.', route: 'generator', status: 'standalone', metric: 'Тесты: 0' },
 ]
 
 export default function DashboardPage() {
@@ -41,12 +41,13 @@ export default function DashboardPage() {
           const Icon = card.icon
           const to = activeProject ? `/app/projects/${activeProject.id}/${card.route}` : `/app/workspace/${card.route}`
           return (
-            <Link key={card.stage} to={to} className="avaModuleCard">
+            <Link key={card.stage} to={to} className="avaModuleCard avaProjectLinkedModule">
               <div className="avaModuleIcon"><Icon size={24} /></div>
               <div>
                 <h4>{card.title}</h4>
                 <p>{card.text}</p>
               </div>
+              {activeProject && <div className="avaModuleMetric">{card.metric}</div>}
               <span className="avaModuleStatus">{card.status}</span>
             </Link>
           )
