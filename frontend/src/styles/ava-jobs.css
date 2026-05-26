@@ -1,0 +1,72 @@
+.avaJobTestPanel {
+  margin-top: 18px;
+  width: 100%;
+}
+
+.avaJobTestPanel .avaSecondaryButton {
+  margin-left: 10px;
+}
+
+.avaJobList {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.avaJobItem {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 16px;
+  background: rgba(255,255,255,.045);
+}
+
+.avaJobItem strong {
+  font-size: 13px;
+  color: #f4f8ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaJobItem span {
+  color: #8ee9ff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.avaJobItem small {
+  color: var(--muted);
+}
+
+.avaJobActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.avaJobActions button {
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 999px;
+  color: #dbe7ff;
+  background: rgba(255,255,255,.055);
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.avaJobActions button:hover {
+  background: rgba(255,255,255,.1);
+}
+
+@media (max-width: 640px) {
+  .avaJobTestPanel .avaSecondaryButton {
+    margin-left: 0;
+    margin-top: 10px;
+  }
+}
