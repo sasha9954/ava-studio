@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Brain, Eraser, Eye, EyeOff } from 'lucide-react'
+import { Brain, Eraser, Eye, EyeOff, Home } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function RegisterPage() {
@@ -73,6 +73,7 @@ export default function RegisterPage() {
           </button>
         </div>
         <span className="avaAuthSwitch">Уже есть аккаунт? <Link to="/login">Войти</Link></span>
+        <Link className="avaAuthHomeLink" to="/"><Home size={15} /> На главную</Link>
       </form>
     </div>
   )
