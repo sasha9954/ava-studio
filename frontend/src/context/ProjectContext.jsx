@@ -3,7 +3,7 @@ import { apiRequest } from '../services/apiClient.js'
 import { useAuth } from './AuthContext.jsx'
 
 const ProjectContext = createContext(null)
-const ACTIVE_PROJECT_KEY = 'ava_active_project_id'
+const ACTIVE_PROJECT_SESSION_KEY = 'ava_active_project_id'
 
 export function ProjectProvider({ children }) {
   const { token } = useAuth()
@@ -17,11 +17,15 @@ export function ProjectProvider({ children }) {
     setLoadingProjects(true)
     try {
       const data = await apiRequest('/projects')
-      setProjects(data.projects || [])
-      const savedId = localStorage.getItem(ACTIVE_PROJECT_KEY)
-      const selected = data.projects?.find((p) => p.id === savedId) || data.projects?.[0] || null
+      const loadedProjects = data.projects || []
+      setProjects(loadedProjects)
+
+      // После обычного входа пользователь не должен автоматически попадать
+      // в старый проект. Проектный режим восстанавливаем только в рамках
+      // текущей браузерной сессии/F5 через sessionStorage.
+      const sessionProjectId = sessionStorage.getItem(ACTIVE_PROJECT_SESSION_KEY)
+      const selected = loadedProjects.find((p) => p.id === sessionProjectId) || null
       setActiveProject(selected)
-      if (selected) localStorage.setItem(ACTIVE_PROJECT_KEY, selected.id)
     } finally {
       setLoadingProjects(false)
     }
@@ -30,6 +34,7 @@ export function ProjectProvider({ children }) {
   useEffect(() => {
     if (token) refreshProjects()
     else {
+      sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY)
       setProjects([])
       setActiveProject(null)
     }
@@ -41,14 +46,19 @@ export function ProjectProvider({ children }) {
       body: JSON.stringify(payload),
     })
     setActiveProject(data.project)
-    localStorage.setItem(ACTIVE_PROJECT_KEY, data.project.id)
+    sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, data.project.id)
     await refreshProjects()
     return data.project
   }
 
   async function openProject(project) {
     setActiveProject(project)
-    localStorage.setItem(ACTIVE_PROJECT_KEY, project.id)
+    sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, project.id)
+  }
+
+  function exitProject() {
+    sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY)
+    setActiveProject(null)
   }
 
   async function loadStage(projectId, stage) {
@@ -65,6 +75,10 @@ export function ProjectProvider({ children }) {
     return response
   }
 
+  function markWorkspaceSaved() {
+    setLastSavedAt(new Date().toISOString())
+  }
+
   const value = useMemo(() => ({
     projects,
     activeProject,
@@ -73,8 +87,10 @@ export function ProjectProvider({ children }) {
     refreshProjects,
     createProject,
     openProject,
+    exitProject,
     loadStage,
     saveStage,
+    markWorkspaceSaved,
   }), [projects, activeProject, loadingProjects, lastSavedAt])
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>
