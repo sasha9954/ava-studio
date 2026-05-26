@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Brain, Eraser, Eye, EyeOff } from 'lucide-react'
+import { Brain, Eraser, Eye, EyeOff, Home } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function LoginPage() {
@@ -76,6 +76,7 @@ export default function LoginPage() {
         </div>
         <span className="avaAuthHint">При смене аккаунта нажми “Очистить”, если Chrome подставил старый email.</span>
         <span className="avaAuthSwitch">Нет аккаунта? <Link to="/register">Создать</Link></span>
+        <Link className="avaAuthHomeLink" to="/"><Home size={15} /> На главную</Link>
       </form>
     </div>
   )
