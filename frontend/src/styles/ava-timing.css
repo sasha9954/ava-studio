@@ -10,17 +10,25 @@
   margin: 18px 0;
 }
 
-.avaTimingHero > div {
+.avaTimingHero > div,
+.avaTimingPanel {
   border: 1px solid var(--stroke);
   border-radius: 26px;
   background: rgba(12, 18, 38, .74);
   box-shadow: var(--shadow);
+}
+
+.avaTimingHero > div {
   padding: 22px;
 }
 
 .avaTimingHero h3 {
   margin: 8px 0;
   font-size: 26px;
+}
+
+.avaTimingHeroCompact {
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
 }
 
 .avaTimingContract {
@@ -40,11 +48,39 @@
   overflow-wrap: anywhere;
 }
 
+.avaTimingWorkbench {
+  display: grid;
+  grid-template-columns: minmax(320px, 520px) minmax(420px, 1fr);
+  gap: 16px;
+  margin: 18px 0;
+}
+
+.avaTimingBottomGrid {
+  display: grid;
+  grid-template-columns: minmax(260px, .78fr) minmax(320px, 1fr) minmax(320px, .86fr);
+  gap: 16px;
+  margin: 18px 0;
+  align-items: start;
+}
+
 .avaTimingGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
   gap: 16px;
   margin: 18px 0;
+}
+
+.avaTimingPanelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.avaTimingPanel h3,
+.avaTimingPanelHeader h3 {
+  margin: 6px 0 0;
 }
 
 .avaTimingPanel label {
@@ -81,6 +117,134 @@
   background: rgba(69,216,255,.06);
 }
 
+.avaTimingMiniStatusGrid {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+}
+
+.avaTimingMiniStatusGrid span {
+  color: var(--muted);
+}
+
+.avaTimingMiniStatusGrid strong {
+  color: #f4f8ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaTimingFakeWave {
+  height: 172px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(69,216,255,.08), rgba(118,112,255,.04));
+  overflow: hidden;
+}
+
+.avaTimingFakeWave span {
+  width: 100%;
+  max-width: 12px;
+  height: var(--h);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(142,233,255,.95), rgba(124,120,255,.65));
+  opacity: .76;
+}
+
+.avaTimingSceneStrip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.avaTimingSceneStrip button,
+.avaTimingSceneList button {
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 15px;
+  color: #dbe7ff;
+  background: rgba(255,255,255,.045);
+  cursor: pointer;
+  text-align: left;
+}
+
+.avaTimingSceneStrip button {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  font-weight: 900;
+}
+
+.avaTimingSceneStrip button small,
+.avaTimingSceneList button span,
+.avaTimingSceneList button small {
+  color: var(--muted);
+}
+
+.avaTimingSceneStrip button.isActive,
+.avaTimingSceneList button.isActive {
+  border-color: rgba(69,216,255,.35);
+  background: rgba(69,216,255,.09);
+  box-shadow: 0 0 0 1px rgba(69,216,255,.08) inset;
+}
+
+.avaTimingSceneList {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.avaTimingSceneList button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  padding: 12px 13px;
+}
+
+.avaTimingSceneList button small {
+  grid-column: 1 / -1;
+}
+
+.avaTimingInspectorCard {
+  display: grid;
+  gap: 7px;
+  padding: 15px;
+  border: 1px solid rgba(69,216,255,.15);
+  border-radius: 17px;
+  background: rgba(69,216,255,.055);
+  margin: 12px 0 14px;
+}
+
+.avaTimingInspectorCard strong {
+  color: #f4f8ff;
+  font-size: 18px;
+}
+
+.avaTimingInspectorCard span,
+.avaTimingInspectorCard p {
+  color: #b9c6e3;
+  margin: 0;
+}
+
+.avaTimingActionStack {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 14px;
+}
+
+.avaTimingActionStack .avaGhostButton {
+  justify-content: flex-start;
+}
+
 .avaTimingPreview {
   max-height: 360px;
   overflow: auto;
@@ -93,8 +257,25 @@
   line-height: 1.55;
 }
 
+.avaTimingPreview.compact {
+  max-height: 220px;
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .avaTimingWorkbench,
+  .avaTimingBottomGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 860px) {
-  .avaTimingHero {
+  .avaTimingHero,
+  .avaTimingHeroCompact {
+    grid-template-columns: 1fr;
+  }
+
+  .avaTimingSceneStrip {
     grid-template-columns: 1fr;
   }
 }
