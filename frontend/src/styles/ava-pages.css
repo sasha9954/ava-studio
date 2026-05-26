@@ -78,6 +78,24 @@
 .avaPanel textarea { min-height: 120px; padding: 14px; resize: vertical; }
 .avaAuthSwitch { display: block; margin-top: 16px; color: var(--muted); }
 .avaAuthSwitch a { color: #88ddff; }
+.avaPasswordField { position: relative; display: block; }
+.avaPasswordField input { padding-right: 48px; }
+.avaPasswordField button {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255,255,255,.07);
+  color: #dbe7ff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.avaPasswordField button:hover { background: rgba(255,255,255,.12); }
 
 .avaPage { max-width: 1280px; margin: 0 auto; }
 .avaNarrowPage { max-width: 760px; }
@@ -165,6 +183,15 @@
 .avaProjectCard { border: 1px solid var(--stroke); cursor: pointer; }
 .avaProjectCard span { color: #8ee9ff; text-transform: uppercase; font-size: 12px; letter-spacing: .08em; }
 .avaProjectCard small { color: var(--muted); }
+.avaProjectOpenHint {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  color: #9dffd8;
+  font-style: normal;
+  font-size: 12px;
+  opacity: .82;
+}
 .avaEmptyState { text-align: center; border-radius: var(--radius-xl); padding: 46px; }
 .avaStatsGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 22px; }
 .avaStatsGrid div { border-radius: 18px; background: rgba(255,255,255,.06); padding: 18px; }
@@ -172,9 +199,103 @@
 .avaStatsGrid span { color: var(--muted); }
 .avaTinyStatus { color: #8ee9ff !important; }
 
+.avaFieldBlock { display: grid; gap: 10px; margin: 16px 0; }
+.avaFieldLabel { color: #dbe7ff; }
+.avaFormatGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.avaFormatOption {
+  min-height: 96px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 18px;
+  color: #dbe7ff;
+  background: rgba(255,255,255,.045);
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.avaFormatOption svg { color: #8ee9ff; }
+.avaFormatOption strong { font-size: 14px; }
+.avaFormatOption small { color: var(--muted); }
+.avaFormatOption.isActive {
+  border-color: rgba(69,216,255,.5);
+  background: linear-gradient(145deg, rgba(143,124,255,.22), rgba(69,216,255,.13));
+  box-shadow: 0 18px 42px rgba(69,216,255,.12);
+}
+
+.avaIntroSplash {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(124, 113, 255, 0.22), transparent 34%),
+    radial-gradient(circle at 60% 70%, rgba(69, 216, 255, 0.15), transparent 32%),
+    #050914;
+  animation: avaIntroFadeOut 0.7s ease forwards;
+  animation-delay: 2.3s;
+}
+.avaIntroLogo {
+  width: 112px;
+  height: 112px;
+  display: grid;
+  place-items: center;
+  border-radius: 34px;
+  background: linear-gradient(135deg, #8f7cff, #45d8ff);
+  color: white;
+  box-shadow: 0 30px 90px rgba(69, 216, 255, 0.28);
+  animation: avaIntroLogoPulse 1.8s ease-in-out infinite;
+}
+.avaIntroTitle {
+  font-size: clamp(44px, 8vw, 86px);
+  font-weight: 900;
+  letter-spacing: -0.07em;
+  color: #f4f8ff;
+}
+.avaIntroSub {
+  color: #91e9ff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.avaIntroLoader {
+  width: 210px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.avaIntroLoader span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8f7cff, #45d8ff);
+  animation: avaIntroLoad 2.7s ease forwards;
+}
+.avaSplashCard.isHidden {
+  opacity: 0;
+  transform: translateY(18px) scale(0.98);
+  pointer-events: none;
+}
+.avaSplashCard.isVisible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.65s ease, transform 0.65s ease;
+}
+@keyframes avaIntroLoad { from { width: 0%; } to { width: 100%; } }
+@keyframes avaIntroLogoPulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(69, 216, 255, 0)); }
+  50% { transform: scale(1.06); filter: drop-shadow(0 0 22px rgba(69, 216, 255, 0.35)); }
+}
+@keyframes avaIntroFadeOut { to { opacity: 0; visibility: hidden; } }
+
 @media (max-width: 720px) {
   .avaSplashCard { padding: 34px 22px; }
   .avaHeroPanel { flex-direction: column; align-items: flex-start; }
   .avaHeroBrain { width: 120px; height: 120px; min-width: 120px; }
   .avaSectionHeader { flex-direction: column; align-items: flex-start; }
+  .avaFormatGrid { grid-template-columns: 1fr; }
 }
