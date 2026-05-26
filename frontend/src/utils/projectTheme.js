@@ -30,9 +30,11 @@ export function getProjectTheme(project, projects = []) {
     }
   }
 
-  const listIndex = projects.findIndex((item) => item.id === project.id)
-  const index = listIndex >= 0 ? listIndex : hashText(project.id || project.name) % PROJECT_THEMES.length
-  const theme = PROJECT_THEMES[index % PROJECT_THEMES.length]
+  const legacyIndex = projects.findIndex((item) => item.id === project.id)
+  const index = Number.isInteger(project.theme_index)
+    ? project.theme_index
+    : (legacyIndex >= 0 ? legacyIndex : hashText(project.id || project.name))
+  const theme = PROJECT_THEMES[Math.abs(index) % PROJECT_THEMES.length]
 
   return {
     ...theme,
