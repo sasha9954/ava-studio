@@ -1,37 +1,54 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { AudioLines, Clock3, FileAudio, FileJson, ListChecks, MessageSquareText, Play, Save, Scissors, ShieldCheck, UploadCloud, WandSparkles } from 'lucide-react'
+import { Clock3, FileAudio, Plus, Save, Scissors, ShieldCheck } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 
 const STAGE = 'manual_timing'
-const DRAFT_VERSION = 'manual_timing_ui_shell_v1'
+const DRAFT_VERSION = 'manual_timing_timeline_shell_v1'
 
 const emptyDraft = {
   timingDraftVersion: DRAFT_VERSION,
   audioName: '',
-  audioDurationSec: 0,
-  scenesCount: 0,
-  selectedSceneId: 'scene_001',
+  audioDurationSec: 90,
+  scenesCount: 6,
+  selectedSceneIndex: 0,
   notes: '',
   updatedAt: null,
-  uiShellReady: true,
 }
-
-const demoScenes = [
-  { id: 'scene_001', title: 'Сцена 1', time: '00:00–00:08', status: 'draft' },
-  { id: 'scene_002', title: 'Сцена 2', time: '00:08–00:16', status: 'empty' },
-  { id: 'scene_003', title: 'Сцена 3', time: '00:16–00:24', status: 'empty' },
-]
 
 function normalizeDraft(data) {
   return {
     ...emptyDraft,
     ...(data || {}),
     timingDraftVersion: data?.timingDraftVersion || DRAFT_VERSION,
-    audioDurationSec: Number.isFinite(Number(data?.audioDurationSec)) ? Number(data.audioDurationSec) : 0,
-    scenesCount: Number.isFinite(Number(data?.scenesCount)) ? Number(data.scenesCount) : 0,
-    selectedSceneId: data?.selectedSceneId || 'scene_001',
+    audioDurationSec: Number.isFinite(Number(data?.audioDurationSec)) ? Math.max(1, Number(data.audioDurationSec)) : 90,
+    scenesCount: Number.isFinite(Number(data?.scenesCount)) ? Math.max(1, Number(data.scenesCount)) : 6,
+    selectedSceneIndex: Number.isFinite(Number(data?.selectedSceneIndex)) ? Math.max(0, Number(data.selectedSceneIndex)) : 0,
   }
+}
+
+function formatTime(seconds) {
+  const safe = Math.max(0, Math.floor(Number(seconds) || 0))
+  const mins = String(Math.floor(safe / 60)).padStart(2, '0')
+  const secs = String(safe % 60).padStart(2, '0')
+  return `${mins}:${secs}`
+}
+
+function buildSceneSegments(count, duration) {
+  const safeCount = Math.max(1, Number(count) || 1)
+  const safeDuration = Math.max(1, Number(duration) || 1)
+  return Array.from({ length: safeCount }).map((_, index) => {
+    const start = (safeDuration / safeCount) * index
+    const end = (safeDuration / safeCount) * (index + 1)
+    return {
+      id: `scene_${String(index + 1).padStart(3, '0')}`,
+      index,
+      title: `Сцена ${index + 1}`,
+      start,
+      end,
+      width: `${100 / safeCount}%`,
+    }
+  })
 }
 
 export default function ManualTimingPage() {
@@ -43,19 +60,21 @@ export default function ManualTimingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [loadedAt, setLoadedAt] = useState(null)
+  const [showJson, setShowJson] = useState(false)
 
   const scopeLabel = useMemo(() => {
-    if (workspaceMode) return 'Рабочая область без проекта'
+    if (workspaceMode) return 'Рабочая область'
     return activeProject?.name ? `Проект: ${activeProject.name}` : `Проект: ${projectId}`
   }, [workspaceMode, activeProject, projectId])
 
-  const selectedScene = demoScenes.find((scene) => scene.id === draft.selectedSceneId) || demoScenes[0]
+  const scenes = useMemo(() => buildSceneSegments(draft.scenesCount, draft.audioDurationSec), [draft.scenesCount, draft.audioDurationSec])
+  const selectedScene = scenes[Math.min(draft.selectedSceneIndex, scenes.length - 1)] || scenes[0]
 
   useEffect(() => {
     let active = true
     async function loadDraft() {
       setLoading(true)
-      setStatus(workspaceMode ? 'Загружаем workspace timing snapshot…' : 'Загружаем project timing snapshot…')
+      setStatus(workspaceMode ? 'Загружаем workspace timing…' : 'Загружаем project timing…')
       try {
         const data = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
         if (!active) return
@@ -97,129 +116,101 @@ export default function ManualTimingPage() {
 
   useEffect(() => {
     if (loading) return undefined
-    const timer = window.setTimeout(() => saveDraft(draft, 'autosave'), 1200)
+    const timer = window.setTimeout(() => saveDraft(draft, 'autosave'), 1000)
     return () => window.clearTimeout(timer)
-  }, [draft.audioName, draft.audioDurationSec, draft.scenesCount, draft.notes, draft.selectedSceneId])
+  }, [draft.audioName, draft.audioDurationSec, draft.scenesCount, draft.selectedSceneIndex, draft.notes])
 
   function updateDraft(key, value) {
     setDraft((prev) => ({ ...prev, [key]: value }))
   }
 
   return (
-    <div className="avaPage avaTimingPage">
-      <div className="avaSectionHeader">
+    <div className="avaPage avaTimingPage avaTimingTimelineFirst">
+      <div className="avaSectionHeader avaTimingTopHeader">
         <div>
-          <p className="avaEyebrow"><Clock3 size={15} /> stage 3.2 manual timing ui shell</p>
+          <p className="avaEyebrow"><Clock3 size={15} /> stage 3.2 timeline-first shell</p>
           <h2>Manual Timing</h2>
-          <p>Новая чистая оболочка для старого тайминга: без лишнего, с backend snapshot и готовыми зонами для переноса.</p>
+          <p>Главная зона — длинная аудио-дорожка. Сцены размечаются прямо на таймлайне.</p>
         </div>
         <button className="avaPrimaryButton" type="button" onClick={() => saveDraft(draft, 'button_save')} disabled={saving || loading}>
-          <Save size={16} /> {saving ? 'Сохраняем…' : 'Сохранить snapshot'}
+          <Save size={16} /> {saving ? 'Сохраняем…' : 'Сохранить'}
         </button>
       </div>
 
-      <div className="avaTimingHero avaTimingHeroCompact">
-        <div>
-          <p className="avaEyebrow"><ShieldCheck size={15} /> scope</p>
-          <h3>{scopeLabel}</h3>
-          <p>{workspaceMode ? 'Snapshot сохраняется в backend workspace текущего аккаунта.' : 'Snapshot сохраняется внутри выбранного проекта.'}</p>
+      <section className="avaPanel avaTimingMainPanel">
+        <div className="avaTimingMainHead">
+          <div>
+            <p className="avaEyebrow"><ShieldCheck size={15} /> {scopeLabel}</p>
+            <h3>{draft.audioName || 'Аудио ещё не загружено'}</h3>
+            <span>{formatTime(draft.audioDurationSec)} · {scenes.length} сцен · {workspaceMode ? 'workspace save' : 'project save'}</span>
+          </div>
+          <div className="avaTimingStatusPills">
+            <span>{DRAFT_VERSION}</span>
+            <span>{saving ? 'saving…' : 'autosave ready'}</span>
+            <span>{loadedAt ? `loaded ${new Date(loadedAt).toLocaleTimeString()}` : 'not loaded'}</span>
+          </div>
         </div>
-        <div className="avaTimingContract">
-          <span>contract</span>
-          <strong>{DRAFT_VERSION}</strong>
-          <small>{loadedAt ? `loaded ${new Date(loadedAt).toLocaleTimeString()}` : 'not loaded'}</small>
-        </div>
-      </div>
 
-      <div className="avaTimingWorkbench">
-        <section className="avaPanel avaTimingPanel avaTimingAudioPanel">
-          <div className="avaTimingPanelHeader">
-            <div>
-              <p className="avaEyebrow"><FileAudio size={15} /> audio source</p>
-              <h3>Аудио</h3>
-            </div>
-            <button className="avaGhostButton" type="button" disabled><UploadCloud size={15} /> загрузка позже</button>
+        <div className="avaLongTimeline">
+          <div className="avaLongWave">
+            {Array.from({ length: 120 }).map((_, index) => <i key={index} style={{ '--h': `${18 + ((index * 23) % 70)}%` }} />)}
           </div>
-          <label>
-            Имя аудио / пока тестовое поле
-            <input value={draft.audioName} onChange={(event) => updateDraft('audioName', event.target.value)} placeholder="example_song.mp3" />
-          </label>
-          <label>
-            Duration sec / тестовая длительность
-            <input type="number" min="0" value={draft.audioDurationSec} onChange={(event) => updateDraft('audioDurationSec', Number(event.target.value))} />
-          </label>
-          <div className="avaTimingMiniStatusGrid">
-            <span>source</span><strong>{draft.audioName || 'не выбран'}</strong>
-            <span>duration</span><strong>{draft.audioDurationSec || 0}s</strong>
-            <span>save</span><strong>{saving ? 'saving…' : 'autosave ready'}</strong>
-          </div>
-        </section>
-
-        <section className="avaPanel avaTimingPanel avaTimingTimelinePanel">
-          <div className="avaTimingPanelHeader">
-            <div>
-              <p className="avaEyebrow"><AudioLines size={15} /> timeline</p>
-              <h3>Таймлайн</h3>
-            </div>
-            <button className="avaGhostButton" type="button" disabled><Play size={15} /> player later</button>
-          </div>
-          <div className="avaTimingFakeWave">
-            {Array.from({ length: 42 }).map((_, index) => <span key={index} style={{ '--h': `${18 + ((index * 17) % 62)}%` }} />)}
-          </div>
-          <div className="avaTimingSceneStrip">
-            {demoScenes.map((scene) => (
-              <button key={scene.id} type="button" className={scene.id === draft.selectedSceneId ? 'isActive' : ''} onClick={() => updateDraft('selectedSceneId', scene.id)}>
-                {scene.title}<small>{scene.time}</small>
+          <div className="avaTimelineScenes">
+            {scenes.map((scene) => (
+              <button key={scene.id} type="button" style={{ width: scene.width }} className={scene.index === selectedScene.index ? 'isActive' : ''} onClick={() => updateDraft('selectedSceneIndex', scene.index)}>
+                <strong>{scene.title}</strong>
+                <span>{formatTime(scene.start)}–{formatTime(scene.end)}</span>
               </button>
             ))}
           </div>
-        </section>
-      </div>
+        </div>
 
-      <div className="avaTimingBottomGrid">
-        <section className="avaPanel avaTimingPanel">
-          <p className="avaEyebrow"><ListChecks size={15} /> scenes</p>
-          <h3>Сцены</h3>
+        <div className="avaTimingControlsBar">
+          <button className="avaGhostButton" type="button" disabled><FileAudio size={15} /> Загрузить аудио позже</button>
+          <button className="avaGhostButton" type="button" disabled><Scissors size={15} /> Разрезать позже</button>
+          <button className="avaGhostButton" type="button" disabled><Plus size={15} /> Добавить сцену позже</button>
+          <button className="avaGhostButton" type="button" onClick={() => setShowJson((value) => !value)}>{showJson ? 'Скрыть JSON' : 'Показать JSON'}</button>
+        </div>
+      </section>
+
+      <section className="avaPanel avaTimingCompactPanel">
+        <div className="avaTimingSelectedScene">
+          <p className="avaEyebrow">selected scene</p>
+          <h3>{selectedScene.title}</h3>
+          <span>{formatTime(selectedScene.start)}–{formatTime(selectedScene.end)}</span>
+          <p>Позже здесь будут слова выбранной сцены, ASR-фразы, перевод и предупреждения об обрезке.</p>
+        </div>
+
+        <div className="avaTimingDraftFields">
           <label>
-            Количество сцен / тест
-            <input type="number" min="0" value={draft.scenesCount} onChange={(event) => updateDraft('scenesCount', Number(event.target.value))} />
+            Audio name / временно до upload
+            <input value={draft.audioName} onChange={(event) => updateDraft('audioName', event.target.value)} placeholder="example.mp3" />
           </label>
-          <div className="avaTimingSceneList">
-            {demoScenes.map((scene) => (
-              <button key={scene.id} type="button" className={scene.id === draft.selectedSceneId ? 'isActive' : ''} onClick={() => updateDraft('selectedSceneId', scene.id)}>
-                <strong>{scene.title}</strong><span>{scene.time}</span><small>{scene.status}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="avaPanel avaTimingPanel">
-          <p className="avaEyebrow"><MessageSquareText size={15} /> inspector</p>
-          <h3>Инспектор сцены</h3>
-          <div className="avaTimingInspectorCard">
-            <strong>{selectedScene.title}</strong>
-            <span>{selectedScene.time}</span>
-            <p>Здесь позже будут слова сцены, ASR-фразы, перевод, warning об обрезанных фразах и управление выбранной сценой.</p>
-          </div>
           <label>
-            Notes / заметка
-            <textarea value={draft.notes} onChange={(event) => updateDraft('notes', event.target.value)} placeholder="Что важно помнить по таймингу…" />
+            Duration sec
+            <input type="number" min="1" value={draft.audioDurationSec} onChange={(event) => updateDraft('audioDurationSec', Number(event.target.value))} />
           </label>
-        </section>
+          <label>
+            Scenes
+            <input type="number" min="1" value={draft.scenesCount} onChange={(event) => updateDraft('scenesCount', Number(event.target.value))} />
+          </label>
+        </div>
+      </section>
 
+      <section className="avaPanel avaTimingNotesPanel">
+        <label>
+          Notes / заметка по таймингу
+          <textarea value={draft.notes} onChange={(event) => updateDraft('notes', event.target.value)} placeholder="Что важно помнить по разметке…" />
+        </label>
+        {status && <p className="avaTinyStatus">{status}</p>}
+      </section>
+
+      {showJson && (
         <section className="avaPanel avaTimingPanel">
-          <p className="avaEyebrow"><FileJson size={15} /> handoff</p>
-          <h3>Экспорт / связь</h3>
-          <div className="avaTimingActionStack">
-            <button className="avaGhostButton" type="button" disabled><Scissors size={15} /> Split позже</button>
-            <button className="avaGhostButton" type="button" disabled><WandSparkles size={15} /> ASR позже</button>
-            <button className="avaGhostButton" type="button" disabled><FileJson size={15} /> Export to Board позже</button>
-          </div>
+          <p className="avaEyebrow">snapshot JSON</p>
           <pre className="avaTimingPreview compact">{JSON.stringify(draft, null, 2)}</pre>
         </section>
-      </div>
-
-      {status && <p className="avaTinyStatus">{status}</p>}
+      )}
     </div>
   )
 }
