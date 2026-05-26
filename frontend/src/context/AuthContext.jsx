@@ -52,18 +52,28 @@ export function AuthProvider({ children }) {
     setUser(data.user)
   }
 
+  async function refreshUser() {
+    const data = await apiRequest('/auth/me')
+    setUser(data.user)
+    return data.user
+  }
+
+  function setCurrentUser(nextUser) {
+    if (nextUser) setUser(nextUser)
+  }
+
   function logout() {
     localStorage.removeItem('ava_token')
     setToken(null)
     setUser(null)
   }
 
-  const value = useMemo(() => ({ token, user, booting, login, register, logout }), [token, user, booting])
+  const value = useMemo(() => ({ token, user, booting, login, register, logout, refreshUser, setCurrentUser }), [token, user, booting])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
   const value = useContext(AuthContext)
-  if (!value) throw new Error('useAuth must be used inside AuthProvider')
+  if (!value) throw new Error('useAuth must be used inside ProjectProvider')
   return value
 }
