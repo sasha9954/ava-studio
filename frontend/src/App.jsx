@@ -14,7 +14,7 @@ import ModulePlaceholderPage from './pages/ModulePlaceholderPage.jsx'
 function Protected({ children }) {
   const { token, booting } = useAuth()
   if (booting) return <div className="avaBoot">Загрузка ava-studio…</div>
-  if (!token) return <Navigate to="/login" replace />
+  if (!token) return <Navigate to="/register" replace />
   return children
 }
 
