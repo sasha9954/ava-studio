@@ -4,13 +4,14 @@ import { Brain, Eraser, Eye, EyeOff, Home } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, token } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const homeTarget = token ? '/app/dashboard' : '/'
 
   function clearForm() {
     setEmail('')
@@ -76,7 +77,7 @@ export default function LoginPage() {
         </div>
         <span className="avaAuthHint">При смене аккаунта нажми “Очистить”, если Chrome подставил старый email.</span>
         <span className="avaAuthSwitch">Нет аккаунта? <Link to="/register">Создать</Link></span>
-        <Link className="avaAuthHomeLink" to="/app/dashboard"><Home size={15} /> На главную</Link>
+        <Link className="avaAuthHomeLink" to={homeTarget}><Home size={15} /> На главную</Link>
       </form>
     </div>
   )
