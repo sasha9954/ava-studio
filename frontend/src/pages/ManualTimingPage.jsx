@@ -18,6 +18,7 @@ const emptyDraft = {
 }
 
 function normalizeDraft(data) {
+  const parsedStep = Number(data?.stepSec)
   return {
     ...emptyDraft,
     ...(data || {}),
@@ -25,7 +26,7 @@ function normalizeDraft(data) {
     audioDurationSec: Number.isFinite(Number(data?.audioDurationSec)) ? Math.max(1, Number(data.audioDurationSec)) : 90,
     scenesCount: Number.isFinite(Number(data?.scenesCount)) ? Math.max(1, Number(data.scenesCount)) : 6,
     selectedSceneIndex: Number.isFinite(Number(data?.selectedSceneIndex)) ? Math.max(0, Number(data.selectedSceneIndex)) : 0,
-    stepSec: Number.isFinite(Number(data?.stepSec)) ? Math.max(0.05, Number(data.stepSec)) : 0.5,
+    stepSec: Number.isFinite(parsedStep) ? Math.max(0.05, parsedStep) : 0.5,
   }
 }
 
@@ -186,7 +187,7 @@ export default function ManualTimingPage() {
           <button className="avaTimingIconButton" type="button" disabled title="Назад на шаг"><StepBack size={15} /></button>
           <label className="avaTimingStepControl" title="Шаг перемещения">
             шаг
-            <input type="number" min="0.05" step="0.05" value={draft.stepSec} onChange={(event) => updateDraft('stepSec', Number(event.target.value))} />
+            <input type="number" min="0.05" step="0.05" value={draft.stepSec ?? 0.5} onChange={(event) => updateDraft('stepSec', Number(event.target.value) || 0.5)} />
           </label>
           <button className="avaTimingIconButton" type="button" disabled title="Вперёд на шаг"><StepForward size={15} /></button>
 
