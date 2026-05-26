@@ -38,6 +38,13 @@
   font-weight: 700;
 }
 
+.avaTimingHeaderActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .avaTimingPillLine {
   display: flex;
   flex-wrap: wrap;
@@ -60,6 +67,16 @@
 
 .avaTimingPillLine b {
   color: #f4f8ff;
+}
+
+.avaTimingAudioWarning {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(255,93,128,.24);
+  border-radius: 16px;
+  color: #ffd3dc;
+  background: rgba(255,93,128,.08);
+  font-weight: 800;
 }
 
 .avaTimingEditorPanel {
@@ -110,6 +127,12 @@
   line-height: 1;
 }
 
+.avaTimingAsrStrip button:disabled,
+.avaTimingToolRail button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
 .avaTimingSceneTextBox {
   margin: 12px 16px 8px;
   padding: 13px 15px;
@@ -139,18 +162,18 @@
 }
 
 .avaTimingCursorLabel {
-  position: sticky;
-  left: 6px;
+  position: absolute;
   top: 6px;
-  z-index: 3;
+  z-index: 4;
   width: max-content;
-  margin: 6px;
+  transform: translateX(-50%);
   padding: 4px 7px;
   border-radius: 999px;
   color: #f4f8ff;
-  background: rgba(0,0,0,.46);
+  background: rgba(0,0,0,.56);
   font-size: 12px;
   font-weight: 900;
+  pointer-events: none;
 }
 
 .avaTimingWaveLong {
@@ -159,7 +182,7 @@
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 10px 12px 16px;
+  padding: 24px 12px 16px;
 }
 
 .avaTimingWaveLong i {
@@ -169,6 +192,18 @@
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(142,233,255,.92), rgba(124,120,255,.56));
   opacity: .78;
+}
+
+.avaTimingPlayhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 2px;
+  transform: translateX(-1px);
+  background: linear-gradient(180deg, rgba(142,233,255,.1), rgba(142,233,255,1), rgba(142,233,255,.24));
+  box-shadow: 0 0 14px rgba(142,233,255,.55);
+  pointer-events: none;
 }
 
 .avaTimingSegmentsRow {
@@ -196,6 +231,10 @@
 .avaTimingSegmentsRow button.isActive {
   background: rgba(69,216,255,.13);
   box-shadow: inset 0 0 0 1px rgba(69,216,255,.28);
+}
+
+.avaTimingSegmentsRow button.isSemantic {
+  background-image: linear-gradient(90deg, rgba(255,210,80,.14), rgba(69,216,255,.08));
 }
 
 .avaTimingSegmentsRow b,
@@ -344,41 +383,4 @@
   .avaTimingDevLine {
     grid-template-columns: 1fr;
   }
-}
-
-
-.avaTimingHeaderActions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.avaTimingHeaderActions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.avaTimingAudioWarning {
-  margin: 12px 0 0;
-  padding: 13px 16px;
-  border: 1px solid rgba(255,84,112,.24);
-  border-radius: 16px;
-  color: #ffd6dd;
-  background: rgba(255,84,112,.11);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.avaTimingPlayhead {
-  position: absolute;
-  top: 70px;
-  bottom: 0;
-  width: 2px;
-  border-radius: 999px;
-  background: rgba(122,236,255,.92);
-  box-shadow: 0 0 18px rgba(122,236,255,.72);
-  pointer-events: none;
-  z-index: 3;
 }
