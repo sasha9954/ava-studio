@@ -562,3 +562,36 @@
   padding-left: 8px;
   padding-right: 8px;
 }
+
+/* Stage 3.6 handoff/import-export role hints */
+.avaTimingHeaderActions {
+  min-width: 560px;
+}
+
+.avaTimingHeaderActions .avaSoftButton {
+  min-width: 132px;
+}
+
+.avaTimingSegmentsRow em {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 1px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #10192a;
+  background: rgba(255,220,160,.92);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaTimingSegmentsRow button.hasBlock em {
+  background: rgba(244,248,255,.88);
+}

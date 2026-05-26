@@ -5,7 +5,7 @@ import { useProjects } from '../context/ProjectContext.jsx'
 import { fetchProtectedBlobUrl, uploadAudioAsset } from '../services/apiClient.js'
 
 const STAGE = 'manual_timing'
-const DRAFT_VERSION = 'manual_timing_single_timeline_v5_story_blocks'
+const DRAFT_VERSION = 'manual_timing_single_timeline_v6_handoff_manifest'
 const MIN_SCENE_SEC = 0.18
 const MAX_UNDO = 30
 
@@ -20,6 +20,10 @@ const emptyDraft = {
   scenesCount: 1,
   scenes: [],
   storyBlocks: [],
+  roles: [],
+  speechSegments: [],
+  silentSegments: [],
+  handoffSource: '',
   selectedSceneIndex: 0,
   stepSec: 0.5,
   notes: '',
@@ -107,6 +111,10 @@ function normalizeDraft(data) {
     audioDurationSec: duration,
     scenes,
     storyBlocks: Array.isArray(data?.storyBlocks) ? data.storyBlocks : [],
+    roles: Array.isArray(data?.roles) ? data.roles : [],
+    speechSegments: Array.isArray(data?.speechSegments) ? data.speechSegments : [],
+    silentSegments: Array.isArray(data?.silentSegments) ? data.silentSegments : [],
+    handoffSource: data?.handoffSource || data?.source || '',
     scenesCount: scenes.length,
     selectedSceneIndex: Math.min(Math.max(0, selectedIndex), scenes.length - 1),
     stepSec: Number.isFinite(parsedStep) ? Math.max(0.05, parsedStep) : 0.5,
@@ -144,6 +152,85 @@ function sceneHue(index) {
   return 185 + ((index * 47) % 150)
 }
 
+function normalizeRoleLabel(value, fallback = 'РЛЬ') {
+  const raw = String(value || fallback).trim()
+  if (!raw) return fallback
+  return raw.slice(0, 3).toUpperCase()
+}
+
+function normalizeRoleList(inputRoles = [], speechSegments = []) {
+  const roles = Array.isArray(inputRoles) ? inputRoles : []
+  const byId = new Map()
+
+  roles.forEach((role, index) => {
+    const roleId = String(role.role_id || role.roleId || role.id || role.key || role.name || `role_${index + 1}`)
+    const name = role.name || role.title || role.label || roleId
+    byId.set(roleId, {
+      roleId,
+      id: roleId,
+      name,
+      label: normalizeRoleLabel(role.label || role.short || name, roleId),
+      color: Number(role.color ?? role.hue ?? sceneHue(index + 3)),
+    })
+  })
+
+  ;(Array.isArray(speechSegments) ? speechSegments : []).forEach((segment, index) => {
+    const roleId = String(segment.role_id || segment.roleId || segment.role || segment.speaker || segment.speaker_id || 'voice')
+    if (!byId.has(roleId)) {
+      byId.set(roleId, {
+        roleId,
+        id: roleId,
+        name: segment.role_name || segment.speaker_name || roleId,
+        label: normalizeRoleLabel(segment.label || segment.role_label || segment.role_name || segment.speaker || roleId, roleId),
+        color: sceneHue(index + 5),
+      })
+    }
+  })
+
+  return Array.from(byId.values())
+}
+
+function normalizeSpeechSegments(inputSegments = []) {
+  if (!Array.isArray(inputSegments)) return []
+  return inputSegments
+    .map((segment, index) => {
+      const start = Number(segment.start ?? segment.start_sec ?? segment.t0 ?? segment.from ?? 0)
+      const end = Number(segment.end ?? segment.end_sec ?? segment.t1 ?? segment.to ?? start)
+      const roleId = String(segment.role_id || segment.roleId || segment.role || segment.speaker || segment.speaker_id || 'voice')
+      return {
+        id: segment.id || segment.segment_id || `speech_${String(index + 1).padStart(3, '0')}`,
+        start: Math.max(0, start),
+        end: Math.max(start, end),
+        roleId,
+        role_id: roleId,
+        label: segment.label || segment.role_label || '',
+        text: segment.text || segment.originalText || segment.original_text || segment.transcript || '',
+        ruText: segment.ruText || segment.text_ru || segment.translation_ru || '',
+      }
+    })
+    .filter((segment) => segment.end - segment.start > 0.01)
+    .sort((a, b) => a.start - b.start)
+}
+
+function normalizeSilentSegments(inputSegments = []) {
+  if (!Array.isArray(inputSegments)) return []
+  return inputSegments
+    .map((segment, index) => {
+      const start = Number(segment.start ?? segment.start_sec ?? segment.t0 ?? 0)
+      const end = Number(segment.end ?? segment.end_sec ?? segment.t1 ?? start)
+      return {
+        id: segment.id || `silence_${String(index + 1).padStart(3, '0')}`,
+        start: Math.max(0, start),
+        end: Math.max(start, end),
+      }
+    })
+    .filter((segment) => segment.end - segment.start > 0.01)
+}
+
+function segmentsOverlap(aStart, aEnd, bStart, bEnd) {
+  return Math.min(aEnd, bEnd) - Math.max(aStart, bStart) > 0.03
+}
+
 export default function ManualTimingPage() {
   const { projectId } = useParams()
   const { activeProject, loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
@@ -163,12 +250,24 @@ export default function ManualTimingPage() {
   const [audioSrc, setAudioSrc] = useState('')
   const audioRef = useRef(null)
   const fileInputRef = useRef(null)
+  const jsonInputRef = useRef(null)
 
   const hasAudio = Boolean(draft.audioAssetId || draft.audioApiPath || draft.audioUrl)
   const scenes = useMemo(() => normalizeScenes(draft, draft.audioDurationSec), [draft.scenes, draft.scenesCount, draft.audioDurationSec])
   const selectedScene = scenes[Math.min(draft.selectedSceneIndex, scenes.length - 1)] || scenes[0] || makeScene(0, 0, 0)
   const scopeTitle = workspaceMode ? 'Рабочая область' : activeProject?.name || 'Проект'
   const cursorPct = draft.audioDurationSec > 0 ? Math.min(100, Math.max(0, (cursorSec / draft.audioDurationSec) * 100)) : 0
+  const roleMap = useMemo(() => new Map((draft.roles || []).map((role) => [role.roleId || role.id, role])), [draft.roles])
+  const getSceneRoleLabels = (scene) => {
+    const found = []
+    ;(draft.speechSegments || []).forEach((segment) => {
+      if (!segmentsOverlap(scene.start, scene.end, segment.start, segment.end)) return
+      const role = roleMap.get(segment.roleId || segment.role_id)
+      const label = role?.label || segment.label || normalizeRoleLabel(segment.roleId || segment.role_id || 'voice')
+      if (!found.includes(label)) found.push(label)
+    })
+    return found.slice(0, 3)
+  }
 
   useEffect(() => {
     let active = true
@@ -240,7 +339,7 @@ export default function ManualTimingPage() {
     if (loading) return undefined
     const timer = window.setTimeout(() => saveDraft(draft, 'autosave'), 900)
     return () => window.clearTimeout(timer)
-  }, [draft.audioName, draft.audioAssetId, draft.audioApiPath, draft.audioSizeBytes, draft.audioDurationSec, draft.scenes, draft.storyBlocks, draft.selectedSceneIndex, draft.stepSec, draft.notes])
+  }, [draft.audioName, draft.audioAssetId, draft.audioApiPath, draft.audioSizeBytes, draft.audioDurationSec, draft.scenes, draft.storyBlocks, draft.roles, draft.speechSegments, draft.silentSegments, draft.selectedSceneIndex, draft.stepSec, draft.notes])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -572,6 +671,96 @@ export default function ManualTimingPage() {
   }
 
   async function handleLoadedMetadata() {
+  function buildExportPayload() {
+    return {
+      schema: 'ava_manual_timing_handoff_v1',
+      source: 'manual_timing',
+      exportedAt: new Date().toISOString(),
+      audio: {
+        name: draft.audioName,
+        assetId: draft.audioAssetId,
+        assetApiPath: draft.audioApiPath,
+        sizeBytes: draft.audioSizeBytes,
+        durationSec: draft.audioDurationSec,
+      },
+      roles: draft.roles || [],
+      speechSegments: draft.speechSegments || [],
+      silentSegments: draft.silentSegments || [],
+      scenes: scenes.map((scene) => ({
+        id: scene.id,
+        title: scene.title,
+        start: scene.start,
+        end: scene.end,
+        route: scene.route || 'auto',
+        note: scene.note || '',
+        blockId: scene.blockId || '',
+        blockTitle: scene.blockTitle || '',
+        roleLabels: getSceneRoleLabels(scene),
+      })),
+      storyBlocks: draft.storyBlocks || [],
+    }
+  }
+
+  function exportTimingJson() {
+    const payload = buildExportPayload()
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeName = (draft.audioName || 'manual_timing').replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_')
+    link.href = url
+    link.download = `${safeName}_manual_timing.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    setStatus('JSON экспортирован')
+  }
+
+  async function importTimingJson(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const raw = JSON.parse(await file.text())
+      const root = raw.manualTiming || raw.manual_timing || raw
+      const manifest = raw.podcast_edit_manifest || root.podcast_edit_manifest || raw.manifest || root.manifest || {}
+      const rawSpeech = root.speechSegments || root.speech_segments || manifest.speechSegments || manifest.speech_segments || manifest.segments || []
+      const speechSegments = normalizeSpeechSegments(rawSpeech)
+      const roles = normalizeRoleList(root.roles || manifest.roles || [], speechSegments)
+      const silentSegments = normalizeSilentSegments(root.silentSegments || root.silent_segments || manifest.silentSegments || manifest.silent_segments || [])
+      const importedDuration = Number(root.audioDurationSec || root.audio_duration_sec || root.audio?.durationSec || root.audio?.duration_sec || manifest.audioDurationSec || manifest.audio_duration_sec || draft.audioDurationSec || 0)
+      const importedScenes = Array.isArray(root.scenes) ? root.scenes : []
+      const nextScenes = importedScenes.length
+        ? normalizeScenes({ scenes: importedScenes }, importedDuration || draft.audioDurationSec)
+        : scenes.length
+          ? scenes
+          : speechSegments.length
+            ? renumberScenes(speechSegments.map((segment) => ({ start: segment.start, end: segment.end })))
+            : makeSingleScene(importedDuration || draft.audioDurationSec)
+
+      const nextDraft = normalizeDraft({
+        ...draft,
+        audioName: root.audioName || root.audio_name || root.audio?.name || draft.audioName,
+        audioDurationSec: importedDuration || draft.audioDurationSec,
+        roles,
+        speechSegments,
+        silentSegments,
+        scenes: nextScenes,
+        scenesCount: nextScenes.length,
+        storyBlocks: Array.isArray(root.storyBlocks) ? root.storyBlocks : Array.isArray(root.story_blocks) ? root.story_blocks : draft.storyBlocks,
+        handoffSource: raw.source || root.source || manifest.source || 'json_import',
+      })
+
+      pushHistorySnapshot()
+      setDraft(nextDraft)
+      setCursorSec(nextScenes[0]?.start || 0)
+      await saveDraft(nextDraft, 'json_import')
+      setStatus(`JSON импортирован: ролей ${roles.length}, речевых сегментов ${speechSegments.length}`)
+    } catch (err) {
+      setStatus(`ошибка импорта JSON: ${err.message}`)
+    }
+  }
+
     const audio = audioRef.current
     const duration = Number(audio?.duration)
     if (!Number.isFinite(duration) || duration <= 0) return
@@ -634,6 +823,7 @@ export default function ManualTimingPage() {
     <div className="avaPage avaTimingFlatPage">
       <audio ref={audioRef} src={audioSrc} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
       <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm" hidden onChange={handleAudioUpload} />
+      <input ref={jsonInputRef} type="file" accept="application/json,.json" hidden onChange={importTimingJson} />
 
       <div className="avaTimingFlatHeader">
         <div>
@@ -645,6 +835,8 @@ export default function ManualTimingPage() {
           <button className="avaSoftButton" type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || loading}>
             <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Загрузить аудио'}
           </button>
+          <button className="avaSoftButton" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт JSON</button>
+          <button className="avaSoftButton" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>
           <button className="avaPrimaryButton" type="button" onClick={() => saveDraft(draft, 'button_save')} disabled={saving || loading}>
             <Save size={16} /> {saving ? 'Сохраняем…' : 'Сохранить'}
           </button>
@@ -657,6 +849,7 @@ export default function ManualTimingPage() {
         <span>Длительность: <b>{draft.audioDurationSec ? formatTime(draft.audioDurationSec) : '00:00'}</b></span>
         <span>Курсор: <b>{formatTime(cursorSec, true)}</b></span>
         <span>Сцен: <b>{scenes.length}</b></span>
+        <span>Речи: <b>{(draft.speechSegments || []).length}</b></span>
         <span>Статус: <b>{status}</b></span>
         <span>Режим: <b>{scopeTitle}</b></span>
       </div>
@@ -690,6 +883,7 @@ export default function ManualTimingPage() {
           <div className="avaTimingSegmentsRow">
             {scenes.map((scene) => {
               const sceneWidth = draft.audioDurationSec > 0 ? `${Math.max(0.5, ((scene.end - scene.start) / draft.audioDurationSec) * 100)}%` : `${100 / scenes.length}%`
+              const roleLabels = getSceneRoleLabels(scene)
               return (
                 <button
                   key={`${scene.id}-${scene.start}-${scene.end}`}
@@ -704,6 +898,7 @@ export default function ManualTimingPage() {
                 >
                   <b>{scene.blockTitle || scene.title}</b>
                   <small>{scene.route && scene.route !== 'auto' ? `${scene.route} · ` : ''}{formatTime(scene.start)} → {formatTime(scene.end)}</small>
+                  {roleLabels.length > 0 && <em>{roleLabels.join(' / ')}</em>}
                 </button>
               )
             })}
