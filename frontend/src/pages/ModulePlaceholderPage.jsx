@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Save } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
@@ -14,49 +14,45 @@ const labels = {
 
 export default function ModulePlaceholderPage({ stage }) {
   const { projectId } = useParams()
-  const { loadStage, saveStage, markWorkspaceSaved } = useProjects()
+  const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
   const [note, setNote] = useState('')
   const [status, setStatus] = useState('')
   const [title, description] = labels[stage] || ['Модуль', '']
   const workspaceMode = !projectId
 
-  const workspaceKey = useMemo(() => `ava_workspace_${stage}`, [stage])
-
   useEffect(() => {
     let active = true
     async function load() {
-      if (workspaceMode) {
-        const raw = localStorage.getItem(workspaceKey)
-        const data = raw ? JSON.parse(raw) : {}
-        if (active) setNote(data.note || '')
-        return
-      }
-
-      const data = await loadStage(projectId, stage)
-      if (active) setNote(data.note || '')
+      setStatus(workspaceMode ? 'Загружаем backend workspace…' : 'Загружаем project snapshot…')
+      const data = workspaceMode ? await loadWorkspaceStage(stage) : await loadStage(projectId, stage)
+      if (!active) return
+      setNote(data.note || '')
+      setStatus('')
     }
     load().catch((err) => setStatus(err.message))
     return () => { active = false }
-  }, [projectId, stage, workspaceKey, workspaceMode])
+  }, [projectId, stage, workspaceMode])
 
   useEffect(() => {
     if (!workspaceMode) return undefined
-    const timer = window.setTimeout(() => {
-      localStorage.setItem(workspaceKey, JSON.stringify({ note, workspace_saved_at: new Date().toISOString() }))
-      markWorkspaceSaved()
-      if (note.trim()) setStatus('Автосохранено в рабочую область')
-    }, 700)
+    const timer = window.setTimeout(async () => {
+      try {
+        await saveWorkspaceStage(stage, { note, workspace_saved_at: new Date().toISOString() })
+        if (note.trim()) setStatus('Автосохранено в backend workspace')
+      } catch (err) {
+        setStatus(`Workspace autosave error: ${err.message}`)
+      }
+    }, 900)
 
     return () => window.clearTimeout(timer)
-  }, [markWorkspaceSaved, note, workspaceKey, workspaceMode])
+  }, [note, saveWorkspaceStage, stage, workspaceMode])
 
   async function save() {
     setStatus('Сохраняем…')
 
     if (workspaceMode) {
-      localStorage.setItem(workspaceKey, JSON.stringify({ note, workspace_saved_at: new Date().toISOString() }))
-      markWorkspaceSaved()
-      setStatus('Сохранено в рабочую область браузера')
+      const result = await saveWorkspaceStage(stage, { note, workspace_saved_at: new Date().toISOString() })
+      setStatus(result.saved ? 'Сохранено в backend workspace' : 'Workspace не сохранён')
       return
     }
 
@@ -67,12 +63,12 @@ export default function ModulePlaceholderPage({ stage }) {
   return (
     <div className="avaPage avaNarrowPage">
       <div className="avaPanel">
-        <p className="avaEyebrow">{workspaceMode ? 'workspace draft' : stage}</p>
+        <p className="avaEyebrow">{workspaceMode ? 'backend workspace draft' : stage}</p>
         <h2>{title}</h2>
         <p>{description}</p>
         <div className="avaInfoBox">
           {workspaceMode
-            ? 'Сейчас это рабочая область без проекта. На Stage 2 черновики будут сохраняться на backend и чиститься системой через 2–3 дня.'
+            ? 'Рабочая область теперь сохраняется на backend и привязана к аккаунту. Это база для будущих черновиков и восстановления после F5/перезахода.'
             : 'Сейчас это безопасная заглушка проекта. На следующих этапах сюда по одному подключаются реальные модули из старого проекта.'}
         </div>
         <label>
@@ -80,7 +76,7 @@ export default function ModulePlaceholderPage({ stage }) {
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder={workspaceMode ? 'Напиши что угодно — рабочая область сохранит это после F5.' : 'Напиши что угодно и сохрани — это ляжет в project snapshot.'}
+            placeholder={workspaceMode ? 'Напиши что угодно — backend workspace сохранит это после F5 и перезахода.' : 'Напиши что угодно и сохрани — это ляжет в project snapshot.'}
           />
         </label>
         <button className="avaPrimaryButton" onClick={save}><Save size={16} /> Сохранить snapshot</button>
