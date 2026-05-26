@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Clock3, Save } from 'lucide-react'
+import { Clock3, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2 } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 
 const STAGE = 'manual_timing'
@@ -60,6 +60,8 @@ export default function ManualTimingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showDev, setShowDev] = useState(false)
+  const [isPlayingScene, setIsPlayingScene] = useState(false)
+  const [isPlayingAll, setIsPlayingAll] = useState(false)
 
   const scenes = useMemo(() => buildScenes(draft.scenesCount, draft.audioDurationSec), [draft.scenesCount, draft.audioDurationSec])
   const selectedScene = scenes[Math.min(draft.selectedSceneIndex, scenes.length - 1)] || scenes[0]
@@ -110,6 +112,16 @@ export default function ManualTimingPage() {
 
   function updateDraft(key, value) {
     setDraft((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function toggleScenePlay() {
+    setIsPlayingScene((value) => !value)
+    setIsPlayingAll(false)
+  }
+
+  function toggleAllPlay() {
+    setIsPlayingAll((value) => !value)
+    setIsPlayingScene(false)
   }
 
   return (
@@ -164,15 +176,33 @@ export default function ManualTimingPage() {
         </div>
 
         <div className="avaTimingToolRail">
-          <button type="button" disabled>▶ слова сцены</button>
-          <button type="button" disabled>■ стоп</button>
-          <button type="button" disabled>←</button>
-          <button type="button" disabled>шаг 0.5</button>
-          <button type="button" disabled>→</button>
-          <button type="button" disabled>✂ Разрезать</button>
-          <button type="button" disabled>🔗 Соединить</button>
-          <button type="button" disabled>+ Смысловой блок</button>
-          <button type="button" onClick={() => setShowDev((value) => !value)}>{showDev ? 'Скрыть dev' : 'dev'}</button>
+          <div className="avaTimingPlayCluster">
+            <button className={`avaTimingBigPlay ${isPlayingScene ? 'isPlaying' : ''}`} type="button" onClick={toggleScenePlay} title="Прослушать выбранную сцену">
+              {isPlayingScene ? <Pause size={24} /> : <Play size={26} />}
+            </button>
+            <button className={`avaTimingPlayAll ${isPlayingAll ? 'isPlaying' : ''}`} type="button" onClick={toggleAllPlay}>▶ всё</button>
+          </div>
+
+          <div className="avaTimingToolGroup">
+            <button type="button" disabled><StepBack size={15} /> назад</button>
+            <button type="button" disabled>шаг 0.5</button>
+            <button type="button" disabled><StepForward size={15} /></button>
+          </div>
+
+          <div className="avaTimingToolGroup">
+            <button type="button" disabled>✂ Разрезать</button>
+            <button type="button" disabled>🔗 Соединить</button>
+            <button type="button" disabled>+ Смысловой блок</button>
+          </div>
+
+          <div className="avaTimingToolGroup">
+            <button type="button" disabled>тишина после</button>
+            <button type="button" disabled>тишина до</button>
+            <button className="isReset" type="button" disabled><RotateCcw size={15} /> сброс</button>
+            <button type="button" disabled><Undo2 size={15} /> вернуть</button>
+          </div>
+
+          <button className="avaTimingDevButton" type="button" onClick={() => setShowDev((value) => !value)}>{showDev ? 'Скрыть dev' : 'dev'}</button>
         </div>
 
         {showDev && (
