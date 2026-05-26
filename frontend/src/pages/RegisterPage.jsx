@@ -4,7 +4,7 @@ import { Brain, Eraser, Eye, EyeOff, Home } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function RegisterPage() {
-  const { register } = useAuth()
+  const { register, token } = useAuth()
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -12,6 +12,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const homeTarget = token ? '/app/dashboard' : '/'
 
   function clearForm() {
     setName('')
@@ -73,7 +74,7 @@ export default function RegisterPage() {
           </button>
         </div>
         <span className="avaAuthSwitch">Уже есть аккаунт? <Link to="/login">Войти</Link></span>
-        <Link className="avaAuthHomeLink" to="/app/dashboard"><Home size={15} /> На главную</Link>
+        <Link className="avaAuthHomeLink" to={homeTarget}><Home size={15} /> На главную</Link>
       </form>
     </div>
   )
