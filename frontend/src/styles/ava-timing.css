@@ -98,14 +98,16 @@
 
 .avaTimingAsrStrip button,
 .avaTimingToolRail button {
-  min-height: 34px;
+  min-height: 32px;
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 999px;
   color: #dbe7ff;
   background: rgba(255,255,255,.05);
-  padding: 0 10px;
+  padding: 0 8px;
   cursor: pointer;
   white-space: nowrap;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .avaTimingSceneTextBox {
@@ -210,25 +212,25 @@
 
 .avaTimingToolRail {
   display: flex;
-  gap: 8px;
-  flex-wrap: nowrap;
+  gap: 6px;
+  flex-wrap: wrap;
   align-items: center;
   margin: 12px 16px 16px;
-  padding: 12px;
+  padding: 10px;
   border: 1px solid rgba(255,210,80,.16);
   border-radius: 18px;
   background: rgba(255,210,80,.04);
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 .avaTimingBigPlay {
   flex: 0 0 auto;
-  width: 54px;
-  height: 54px;
-  min-height: 54px !important;
+  width: 48px;
+  height: 48px;
+  min-height: 48px !important;
   justify-content: center;
   padding: 0 !important;
-  border-radius: 15px !important;
+  border-radius: 14px !important;
   color: #dfffff !important;
   background: linear-gradient(135deg, rgba(24,201,213,.34), rgba(64,108,255,.22)) !important;
   border-color: rgba(111,235,255,.28) !important;
@@ -241,7 +243,7 @@
 
 .avaTimingPlayAll {
   flex: 0 0 auto;
-  min-width: 58px;
+  min-width: 50px;
   font-weight: 900;
   color: #8ee9ff !important;
   background: rgba(69,216,255,.08) !important;
@@ -254,34 +256,36 @@
 
 .avaTimingIconButton {
   flex: 0 0 auto;
-  min-width: 38px;
-  padding: 0 9px !important;
+  min-width: 34px;
+  padding: 0 7px !important;
 }
 
 .avaTimingStepControl {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 9px;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 7px;
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 999px;
   color: #dbe7ff;
   background: rgba(255,255,255,.05);
   font-weight: 900;
   white-space: nowrap;
+  font-size: 12px;
 }
 
 .avaTimingStepControl input {
-  width: 54px;
+  width: 48px;
   border: 0;
   border-radius: 999px;
   color: #121727;
   background: #ffdca0;
-  padding: 4px 7px;
+  padding: 3px 6px;
   font-weight: 900;
   outline: none;
+  font-size: 12px;
 }
 
 .avaTimingToolRail > button:not(.avaTimingBigPlay):not(.avaTimingPlayAll):not(.avaTimingIconButton):not(.avaTimingDevButton) {
