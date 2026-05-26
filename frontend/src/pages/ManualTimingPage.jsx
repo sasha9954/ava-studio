@@ -12,6 +12,7 @@ const emptyDraft = {
   audioDurationSec: 90,
   scenesCount: 6,
   selectedSceneIndex: 0,
+  stepSec: 0.5,
   notes: '',
   updatedAt: null,
 }
@@ -24,6 +25,7 @@ function normalizeDraft(data) {
     audioDurationSec: Number.isFinite(Number(data?.audioDurationSec)) ? Math.max(1, Number(data.audioDurationSec)) : 90,
     scenesCount: Number.isFinite(Number(data?.scenesCount)) ? Math.max(1, Number(data.scenesCount)) : 6,
     selectedSceneIndex: Number.isFinite(Number(data?.selectedSceneIndex)) ? Math.max(0, Number(data.selectedSceneIndex)) : 0,
+    stepSec: Number.isFinite(Number(data?.stepSec)) ? Math.max(0.05, Number(data.stepSec)) : 0.5,
   }
 }
 
@@ -108,7 +110,7 @@ export default function ManualTimingPage() {
     if (loading) return undefined
     const timer = window.setTimeout(() => saveDraft(draft, 'autosave'), 900)
     return () => window.clearTimeout(timer)
-  }, [draft.audioName, draft.audioDurationSec, draft.scenesCount, draft.selectedSceneIndex, draft.notes])
+  }, [draft.audioName, draft.audioDurationSec, draft.scenesCount, draft.selectedSceneIndex, draft.stepSec, draft.notes])
 
   function updateDraft(key, value) {
     setDraft((prev) => ({ ...prev, [key]: value }))
@@ -176,32 +178,25 @@ export default function ManualTimingPage() {
         </div>
 
         <div className="avaTimingToolRail">
-          <div className="avaTimingPlayCluster">
-            <button className={`avaTimingBigPlay ${isPlayingScene ? 'isPlaying' : ''}`} type="button" onClick={toggleScenePlay} title="Прослушать выбранную сцену">
-              {isPlayingScene ? <Pause size={24} /> : <Play size={26} />}
-            </button>
-            <button className={`avaTimingPlayAll ${isPlayingAll ? 'isPlaying' : ''}`} type="button" onClick={toggleAllPlay}>▶ всё</button>
-          </div>
+          <button className={`avaTimingBigPlay ${isPlayingScene ? 'isPlaying' : ''}`} type="button" onClick={toggleScenePlay} title="Прослушать выбранную сцену">
+            {isPlayingScene ? <Pause size={24} /> : <Play size={26} />}
+          </button>
+          <button className={`avaTimingPlayAll ${isPlayingAll ? 'isPlaying' : ''}`} type="button" onClick={toggleAllPlay}>▶ всё</button>
 
-          <div className="avaTimingToolGroup">
-            <button type="button" disabled><StepBack size={15} /> назад</button>
-            <button type="button" disabled>шаг 0.5</button>
-            <button type="button" disabled><StepForward size={15} /></button>
-          </div>
+          <button className="avaTimingIconButton" type="button" disabled title="Назад на шаг"><StepBack size={15} /></button>
+          <label className="avaTimingStepControl" title="Шаг перемещения">
+            шаг
+            <input type="number" min="0.05" step="0.05" value={draft.stepSec} onChange={(event) => updateDraft('stepSec', Number(event.target.value))} />
+          </label>
+          <button className="avaTimingIconButton" type="button" disabled title="Вперёд на шаг"><StepForward size={15} /></button>
 
-          <div className="avaTimingToolGroup">
-            <button type="button" disabled>✂ Разрезать</button>
-            <button type="button" disabled>🔗 Соединить</button>
-            <button type="button" disabled>+ Смысловой блок</button>
-          </div>
-
-          <div className="avaTimingToolGroup">
-            <button type="button" disabled>тишина после</button>
-            <button type="button" disabled>тишина до</button>
-            <button className="isReset" type="button" disabled><RotateCcw size={15} /> сброс</button>
-            <button type="button" disabled><Undo2 size={15} /> вернуть</button>
-          </div>
-
+          <button type="button" disabled>✂ Разрезать</button>
+          <button type="button" disabled>🔗 Соединить</button>
+          <button type="button" disabled>+ Смысловой блок</button>
+          <button type="button" disabled>тишина после</button>
+          <button type="button" disabled>тишина до</button>
+          <button className="isReset" type="button" disabled><RotateCcw size={15} /> сброс</button>
+          <button type="button" disabled><Undo2 size={15} /> вернуть</button>
           <button className="avaTimingDevButton" type="button" onClick={() => setShowDev((value) => !value)}>{showDev ? 'Скрыть dev' : 'dev'}</button>
         </div>
 
