@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Brain, Eye, EyeOff } from 'lucide-react'
+import { Brain, Eraser, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function RegisterPage() {
@@ -13,12 +13,19 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  function clearForm() {
+    setName('')
+    setEmail('')
+    setPassword('')
+    setError('')
+  }
+
   async function submit(e) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      await register(name, email, password)
+      await register(name.trim(), email.trim(), password)
       navigate('/app/dashboard')
     } catch (err) {
       setError(err.message)
@@ -29,23 +36,42 @@ export default function RegisterPage() {
 
   return (
     <div className="avaAuthPage">
-      <form className="avaAuthCard" onSubmit={submit}>
+      <form className="avaAuthCard" onSubmit={submit} autoComplete="off">
         <div className="avaMiniLogo"><Brain size={26} /> ava-studio</div>
         <h1>Создать аккаунт</h1>
         <p>Первый аккаунт получает демо-баланс для тестов.</p>
         {error && <div className="avaError">{error}</div>}
-        <label>Имя<input value={name} onChange={(e) => setName(e.target.value)} required /></label>
-        <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required /></label>
+        <label>
+          Имя
+          <input value={name} onChange={(e) => setName(e.target.value)} name="ava-register-name" autoComplete="off" required />
+        </label>
+        <label>
+          Email
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" name="ava-register-email" autoComplete="off" required />
+        </label>
         <label>
           Пароль
           <span className="avaPasswordField">
-            <input value={password} onChange={(e) => setPassword(e.target.value)} type={showPassword ? 'text' : 'password'} minLength={6} required />
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type={showPassword ? 'text' : 'password'}
+              name="ava-register-password"
+              autoComplete="new-password"
+              minLength={6}
+              required
+            />
             <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}>
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </span>
         </label>
-        <button className="avaPrimaryButton" disabled={loading}>{loading ? 'Создаём…' : 'Создать аккаунт'}</button>
+        <div className="avaAuthActionsRow">
+          <button className="avaPrimaryButton" disabled={loading}>{loading ? 'Создаём…' : 'Создать аккаунт'}</button>
+          <button className="avaSecondaryButton" type="button" onClick={clearForm} disabled={loading}>
+            <Eraser size={16} /> Очистить
+          </button>
+        </div>
         <span className="avaAuthSwitch">Уже есть аккаунт? <Link to="/login">Войти</Link></span>
       </form>
     </div>
