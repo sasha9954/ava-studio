@@ -36,6 +36,12 @@ export default function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/new" element={<CreateProjectPage />} />
+        <Route path="workspace/timing" element={<ModulePlaceholderPage stage="manual_timing" />} />
+        <Route path="workspace/podcast" element={<ModulePlaceholderPage stage="podcast" />} />
+        <Route path="workspace/board" element={<ModulePlaceholderPage stage="board" />} />
+        <Route path="workspace/board-assembly" element={<ModulePlaceholderPage stage="board_assembly" />} />
+        <Route path="workspace/video-node" element={<ModulePlaceholderPage stage="video_node" />} />
+        <Route path="workspace/generator" element={<ModulePlaceholderPage stage="generator" />} />
         <Route path="projects/:projectId/timing" element={<ModulePlaceholderPage stage="manual_timing" />} />
         <Route path="projects/:projectId/podcast" element={<ModulePlaceholderPage stage="podcast" />} />
         <Route path="projects/:projectId/board" element={<ModulePlaceholderPage stage="board" />} />
