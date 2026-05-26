@@ -35,3 +35,23 @@ class SnapshotSaveRequest(BaseModel):
     data: dict[str, Any]
     client_version: str | None = None
     guard_mode: Literal['safe_merge', 'replace'] = 'safe_merge'
+
+
+class CreditInviteRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=80)
+
+
+class CreditTopupRequest(BaseModel):
+    package_id: str = Field(min_length=1, max_length=80)
+
+
+class CreditChargeRequest(BaseModel):
+    job_id: str = Field(min_length=1, max_length=120)
+    amount: int = Field(gt=0, le=10000)
+    action_type: str = Field(default='manual_charge', min_length=1, max_length=120)
+    project_id: str | None = None
+
+
+class CreditRefundRequest(BaseModel):
+    job_id: str = Field(min_length=1, max_length=120)
+    reason: str = Field(default='manual_refund', max_length=200)
