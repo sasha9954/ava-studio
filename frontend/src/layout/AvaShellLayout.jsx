@@ -83,9 +83,9 @@ export default function AvaShellLayout() {
           <small>{activeProject?.format || 'автосохранение черновиков'}</small>
         </div>
 
-        <button className="avaGhostButton" type="button" title="Настройки позже">
-          <Settings size={16} /> <span className="avaSidebarText">Настройки позже</span>
-        </button>
+        <NavLink className={({ isActive }) => `avaGhostButton ${isActive ? 'isActive' : ''}`} to="/app/settings" title="Настройки / Service Center">
+          <Settings size={16} /> <span className="avaSidebarText">Настройки</span>
+        </NavLink>
       </aside>
 
       <main className="avaMain">
