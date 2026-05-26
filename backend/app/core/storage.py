@@ -1,7 +1,6 @@
 import json
 import threading
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 from app.core.config import get_settings
@@ -26,21 +25,36 @@ class JsonStore:
 
     def _empty_db(self) -> dict[str, Any]:
         return {
-            "users": {},
-            "sessions": {},
-            "projects": {},
-            "snapshots": {},
-            "credits_ledger": [],
-            "created_at": now_iso(),
-            "updated_at": now_iso(),
+            'users': {},
+            'sessions': {},
+            'projects': {},
+            'snapshots': {},
+            'workspaces': {},
+            'workspace_snapshots': {},
+            'jobs': {},
+            'credits_ledger': [],
+            'created_at': now_iso(),
+            'updated_at': now_iso(),
         }
+
+    def _migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+        changed = False
+        defaults = self._empty_db()
+        for key, value in defaults.items():
+            if key not in data:
+                data[key] = value
+                changed = True
+        if changed:
+            self._write(data)
+        return data
 
     def _read(self) -> dict[str, Any]:
         with self.db_path.open('r', encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
+        return self._migrate(data)
 
     def _write(self, data: dict[str, Any]) -> None:
-        data["updated_at"] = now_iso()
+        data['updated_at'] = now_iso()
         tmp = self.db_path.with_suffix('.json.tmp')
         with tmp.open('w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
