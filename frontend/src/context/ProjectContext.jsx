@@ -26,6 +26,7 @@ export function ProjectProvider({ children }) {
       const sessionProjectId = sessionStorage.getItem(ACTIVE_PROJECT_SESSION_KEY)
       const selected = loadedProjects.find((p) => p.id === sessionProjectId) || null
       setActiveProject(selected)
+      if (!selected) sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY)
     } finally {
       setLoadingProjects(false)
     }
@@ -61,6 +62,14 @@ export function ProjectProvider({ children }) {
     setActiveProject(null)
   }
 
+  async function deleteProject(projectId) {
+    await apiRequest(`/projects/${projectId}`, { method: 'DELETE' })
+    if (activeProject?.id === projectId) {
+      exitProject()
+    }
+    await refreshProjects()
+  }
+
   async function loadStage(projectId, stage) {
     const data = await apiRequest(`/projects/${projectId}/snapshots/${stage}`)
     return data.snapshot?.data || {}
@@ -88,6 +97,7 @@ export function ProjectProvider({ children }) {
     createProject,
     openProject,
     exitProject,
+    deleteProject,
     loadStage,
     saveStage,
     markWorkspaceSaved,
