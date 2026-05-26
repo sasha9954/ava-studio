@@ -32,6 +32,7 @@ class JsonStore:
             'workspaces': {},
             'workspace_snapshots': {},
             'jobs': {},
+            'assets': {},
             'credits_ledger': [],
             'created_at': now_iso(),
             'updated_at': now_iso(),

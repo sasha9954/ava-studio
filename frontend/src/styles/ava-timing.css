@@ -345,3 +345,40 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+.avaTimingHeaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.avaTimingHeaderActions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avaTimingAudioWarning {
+  margin: 12px 0 0;
+  padding: 13px 16px;
+  border: 1px solid rgba(255,84,112,.24);
+  border-radius: 16px;
+  color: #ffd6dd;
+  background: rgba(255,84,112,.11);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.avaTimingPlayhead {
+  position: absolute;
+  top: 70px;
+  bottom: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(122,236,255,.92);
+  box-shadow: 0 0 18px rgba(122,236,255,.72);
+  pointer-events: none;
+  z-index: 3;
+}
