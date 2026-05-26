@@ -1,22 +1,39 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { FolderKanban, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, FolderKanban, Plus, Trash2, X } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { getProjectCardStyle, getProjectTheme } from '../utils/projectTheme.js'
 
 export default function ProjectsPage() {
   const { projects, activeProject, openProject, deleteProject, loadingProjects } = useProjects()
   const navigate = useNavigate()
+  const [projectToDelete, setProjectToDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   async function handleOpenProject(project) {
     await openProject(project)
     navigate('/app/dashboard')
   }
 
-  async function handleDeleteProject(event, project) {
+  function requestDeleteProject(event, project) {
     event.stopPropagation()
-    const ok = window.confirm(`Удалить проект “${project.name}”? Он исчезнет из списка проектов.`)
-    if (!ok) return
-    await deleteProject(project.id)
+    setProjectToDelete(project)
+  }
+
+  async function confirmDeleteProject() {
+    if (!projectToDelete) return
+    setDeleting(true)
+    try {
+      await deleteProject(projectToDelete.id)
+      setProjectToDelete(null)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  function cancelDeleteProject() {
+    if (deleting) return
+    setProjectToDelete(null)
   }
 
   return (
@@ -59,7 +76,7 @@ export default function ProjectsPage() {
               <button
                 className="avaProjectDeleteButton"
                 type="button"
-                onClick={(event) => handleDeleteProject(event, project)}
+                onClick={(event) => requestDeleteProject(event, project)}
                 title="Удалить проект"
                 aria-label={`Удалить проект ${project.name}`}
               >
@@ -69,6 +86,38 @@ export default function ProjectsPage() {
           )
         })}
       </div>
+
+      {projectToDelete && (
+        <div className="avaModalOverlay" role="presentation" onMouseDown={cancelDeleteProject}>
+          <div
+            className="avaConfirmModal"
+            style={getProjectCardStyle(projectToDelete, projects)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ava-delete-project-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button className="avaModalClose" type="button" onClick={cancelDeleteProject} aria-label="Закрыть" disabled={deleting}>
+              <X size={18} />
+            </button>
+            <div className="avaConfirmIcon"><AlertTriangle size={26} /></div>
+            <p className="avaEyebrow">Удаление проекта</p>
+            <h3 id="ava-delete-project-title">Удалить “{projectToDelete.name}”?</h3>
+            <p>
+              Проект исчезнет из списка. На этом этапе удаление безопасное: данные помечаются как удалённые,
+              а физическую очистку файлов добавим позже через корзину/хранилище.
+            </p>
+            <div className="avaModalActions">
+              <button className="avaDangerButton" type="button" onClick={confirmDeleteProject} disabled={deleting}>
+                <Trash2 size={16} /> {deleting ? 'Удаляем…' : 'Удалить'}
+              </button>
+              <button className="avaSecondaryButton" type="button" onClick={cancelDeleteProject} disabled={deleting}>
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
