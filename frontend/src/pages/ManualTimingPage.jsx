@@ -212,19 +212,22 @@ export default function ManualTimingPage() {
   }, [draft.audioApiPath])
 
   async function saveDraft(nextDraft = draft, reason = 'manual_save') {
-    setSaving(true)
-    setStatus('сохранение…')
+    const quiet = reason === 'autosave'
+    if (!quiet) {
+      setSaving(true)
+      setStatus('сохранение…')
+    }
     const normalized = normalizeDraft(nextDraft)
     const payload = { ...normalized, timingDraftVersion: DRAFT_VERSION, updatedAt: new Date().toISOString(), saveReason: reason }
     try {
       if (workspaceMode) await saveWorkspaceStage(STAGE, payload)
       else await saveStage(projectId, STAGE, payload, 'replace')
       setDraft(payload)
-      setStatus('сохранено')
+      if (!quiet) setStatus('сохранено')
     } catch (err) {
       setStatus(`ошибка сохранения: ${err.message}`)
     } finally {
-      setSaving(false)
+      if (!quiet) setSaving(false)
     }
   }
 
@@ -488,12 +491,18 @@ export default function ManualTimingPage() {
     const audio = audioRef.current
     if (!audio || !hasAudio) return
     if (playingMode === 'scene') {
-      stopAudio(audio.currentTime || selectedScene.start)
+      const pausedAt = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
+      audio.pause()
+      setCursorSec(pausedAt)
+      setPlayingMode(null)
       return
     }
+    const current = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
+    const canResumeInsideScene = current > selectedScene.start + 0.01 && current < selectedScene.end - 0.01
+    const startAt = canResumeInsideScene ? current : selectedScene.start
     setPlayingMode('scene')
-    audio.currentTime = selectedScene.start
-    setCursorSec(selectedScene.start)
+    audio.currentTime = startAt
+    setCursorSec(startAt)
     try {
       await audio.play()
     } catch (err) {
@@ -506,12 +515,18 @@ export default function ManualTimingPage() {
     const audio = audioRef.current
     if (!audio || !hasAudio) return
     if (playingMode === 'all') {
-      stopAudio(audio.currentTime || 0)
+      const pausedAt = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
+      audio.pause()
+      setCursorSec(pausedAt)
+      setPlayingMode(null)
       return
     }
+    const current = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
+    const canResumeInsideTrack = current > 0.01 && current < draft.audioDurationSec - 0.01
+    const startAt = canResumeInsideTrack ? current : 0
     setPlayingMode('all')
-    audio.currentTime = 0
-    setCursorSec(0)
+    audio.currentTime = startAt
+    setCursorSec(startAt)
     try {
       await audio.play()
     } catch (err) {
