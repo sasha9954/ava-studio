@@ -5,7 +5,7 @@ import { useProjects } from '../context/ProjectContext.jsx'
 import { fetchProtectedBlobUrl, uploadAudioAsset } from '../services/apiClient.js'
 
 const STAGE = 'manual_timing'
-const DRAFT_VERSION = 'manual_timing_single_timeline_v4_micro_nudge'
+const DRAFT_VERSION = 'manual_timing_single_timeline_v5_story_blocks'
 const MIN_SCENE_SEC = 0.18
 const MAX_UNDO = 30
 
@@ -19,6 +19,7 @@ const emptyDraft = {
   audioDurationSec: 0,
   scenesCount: 1,
   scenes: [],
+  storyBlocks: [],
   selectedSceneIndex: 0,
   stepSec: 0.5,
   notes: '',
@@ -105,6 +106,7 @@ function normalizeDraft(data) {
     audioSizeBytes: Number.isFinite(Number(data?.audioSizeBytes)) ? Math.max(0, Number(data.audioSizeBytes)) : Number(data?.audio_size_bytes) || 0,
     audioDurationSec: duration,
     scenes,
+    storyBlocks: Array.isArray(data?.storyBlocks) ? data.storyBlocks : [],
     scenesCount: scenes.length,
     selectedSceneIndex: Math.min(Math.max(0, selectedIndex), scenes.length - 1),
     stepSec: Number.isFinite(parsedStep) ? Math.max(0.05, parsedStep) : 0.5,
@@ -153,6 +155,9 @@ export default function ManualTimingPage() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showDev, setShowDev] = useState(false)
+  const [blockSelection, setBlockSelection] = useState([])
+  const [blockDraft, setBlockDraft] = useState({ title: '' })
+  const [sceneEditor, setSceneEditor] = useState(null)
   const [playingMode, setPlayingMode] = useState(null)
   const [cursorSec, setCursorSec] = useState(0)
   const [audioSrc, setAudioSrc] = useState('')
@@ -235,7 +240,7 @@ export default function ManualTimingPage() {
     if (loading) return undefined
     const timer = window.setTimeout(() => saveDraft(draft, 'autosave'), 900)
     return () => window.clearTimeout(timer)
-  }, [draft.audioName, draft.audioAssetId, draft.audioApiPath, draft.audioSizeBytes, draft.audioDurationSec, draft.scenes, draft.selectedSceneIndex, draft.stepSec, draft.notes])
+  }, [draft.audioName, draft.audioAssetId, draft.audioApiPath, draft.audioSizeBytes, draft.audioDurationSec, draft.scenes, draft.storyBlocks, draft.selectedSceneIndex, draft.stepSec, draft.notes])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -307,6 +312,15 @@ export default function ManualTimingPage() {
     const nextScene = scenes[Math.min(sceneIndex, scenes.length - 1)] || scenes[0]
     stopAudio(nextScene?.start || 0)
     setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
+  }
+
+  function handleSceneClick(event, sceneIndex) {
+    event.stopPropagation()
+    if (event.ctrlKey || event.metaKey) {
+      toggleBlockScene(sceneIndex)
+      return
+    }
+    selectScene(sceneIndex)
   }
 
   function seekTimeline(event) {
@@ -432,13 +446,94 @@ export default function ManualTimingPage() {
     })
   }
 
+  function toggleBlockScene(sceneIndex) {
+    const scene = scenes[Math.min(sceneIndex, scenes.length - 1)]
+    if (!scene) return
+    stopAudio(scene.start)
+    setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
+    setBlockDraft((prev) => ({ title: prev.title || scene.blockTitle || '' }))
+    setBlockSelection((items) => {
+      const exists = items.includes(sceneIndex)
+      const next = exists ? items.filter((item) => item !== sceneIndex) : [...items, sceneIndex].sort((a, b) => a - b)
+      setStatus(next.length ? `выбрано сцен для блока: ${next.length}` : 'выбор блока очищен')
+      return next
+    })
+  }
+
   function markSemanticBlock() {
-    pushHistorySnapshot()
     const index = Math.min(draft.selectedSceneIndex, scenes.length - 1)
-    const nextScenes = scenes.map((scene, sceneIndex) => (
-      sceneIndex === index ? { ...scene, semanticBlock: !scene.semanticBlock } : scene
+    setBlockSelection((items) => {
+      const next = items.length ? items : [index]
+      setStatus(`выбрано сцен для блока: ${next.length}`)
+      return next
+    })
+    setBlockDraft((prev) => ({ title: prev.title || selectedScene.blockTitle || '' }))
+  }
+
+  function applyStoryBlock() {
+    if (!blockSelection.length) {
+      setStatus('выберите сцены через Ctrl+клик')
+      return
+    }
+    const existingBlocks = Array.isArray(draft.storyBlocks) ? draft.storyBlocks : []
+    const title = (blockDraft.title || '').trim() || `Блок ${existingBlocks.length + 1}`
+    const blockId = `block_${Date.now().toString(36)}`
+    const blockColor = sceneHue(existingBlocks.length + 8)
+    const selectedSet = new Set(blockSelection)
+    const nextScenes = scenes.map((scene) => (
+      selectedSet.has(scene.index)
+        ? { ...scene, semanticBlock: true, blockId, blockTitle: title, blockColor }
+        : scene
     ))
-    applyDraftChange({ ...draft, scenes: nextScenes, selectedSceneIndex: index }, nextScenes[index]?.semanticBlock ? 'смысловой блок отмечен' : 'смысловой блок снят', selectedScene.start)
+    const selectedScenes = nextScenes.filter((scene) => selectedSet.has(scene.index))
+    const nextBlocks = [
+      ...existingBlocks,
+      {
+        id: blockId,
+        title,
+        color: blockColor,
+        sceneIds: selectedScenes.map((scene) => scene.id),
+        sceneIndexes: selectedScenes.map((scene) => scene.index),
+        start: selectedScenes[0]?.start ?? 0,
+        end: selectedScenes[selectedScenes.length - 1]?.end ?? 0,
+      },
+    ]
+    pushHistorySnapshot()
+    applyDraftChange({ ...draft, scenes: nextScenes, storyBlocks: nextBlocks, selectedSceneIndex: selectedScenes[0]?.index ?? 0 }, `блок создан: ${title}`, selectedScenes[0]?.start ?? cursorSec)
+    setBlockSelection([])
+    setBlockDraft({ title: '' })
+  }
+
+  function clearBlockSelection() {
+    setBlockSelection([])
+    setBlockDraft({ title: '' })
+    setStatus('выбор блока очищен')
+  }
+
+  function openSceneEditor(sceneIndex) {
+    const scene = scenes[Math.min(sceneIndex, scenes.length - 1)]
+    if (!scene) return
+    stopAudio(scene.start)
+    setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
+    setSceneEditor({
+      sceneIndex,
+      note: scene.note || scene.memo || '',
+      route: scene.route || 'auto',
+    })
+    setStatus(`редактирование ${scene.title}`)
+  }
+
+  function saveSceneEditor() {
+    if (!sceneEditor) return
+    const index = Math.min(sceneEditor.sceneIndex, scenes.length - 1)
+    const nextScenes = scenes.map((scene, sceneIndex) => (
+      sceneIndex === index
+        ? { ...scene, note: sceneEditor.note || '', route: sceneEditor.route || 'auto' }
+        : scene
+    ))
+    pushHistorySnapshot()
+    applyDraftChange({ ...draft, scenes: nextScenes, selectedSceneIndex: index }, 'памятка сцены сохранена', nextScenes[index]?.start ?? cursorSec)
+    setSceneEditor(null)
   }
 
   async function handleAudioUpload(event) {
@@ -599,17 +694,66 @@ export default function ManualTimingPage() {
                 <button
                   key={`${scene.id}-${scene.start}-${scene.end}`}
                   type="button"
-                  style={{ width: sceneWidth, '--scene-hue': sceneHue(scene.index) }}
-                  className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.semanticBlock ? 'isSemantic' : ''}`}
-                  onClick={() => selectScene(scene.index)}
+                  style={{ width: sceneWidth, '--scene-hue': scene.blockColor || sceneHue(scene.index) }}
+                  className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${blockSelection.includes(scene.index) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''}`}
+                  onClick={(event) => handleSceneClick(event, scene.index)}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    openSceneEditor(scene.index)
+                  }}
                 >
-                  <b>{scene.title}</b>
-                  <small>{formatTime(scene.start)} → {formatTime(scene.end)}</small>
+                  <b>{scene.blockTitle || scene.title}</b>
+                  <small>{scene.route && scene.route !== 'auto' ? `${scene.route} · ` : ''}{formatTime(scene.start)} → {formatTime(scene.end)}</small>
                 </button>
               )
             })}
           </div>
         </div>
+
+        {blockSelection.length > 0 && (
+          <div className="avaTimingBlockEditor">
+            <div>
+              <strong>Смысловой блок</strong>
+              <span>{blockSelection.length} сцен · Ctrl+клик добавляет/убирает сцены</span>
+            </div>
+            <input
+              value={blockDraft.title}
+              onChange={(event) => setBlockDraft({ title: event.target.value })}
+              placeholder="Название блока, например: Куплет 1 / Припев / Воспоминание"
+            />
+            <button type="button" onClick={applyStoryBlock}>Сохранить блок</button>
+            <button type="button" onClick={clearBlockSelection}>Отмена</button>
+          </div>
+        )}
+
+        {sceneEditor && (
+          <div className="avaTimingSceneEditor">
+            <div>
+              <strong>Памятка сцены · {scenes[sceneEditor.sceneIndex]?.title}</strong>
+              <span>Двойной клик по сцене открывает это окно</span>
+            </div>
+            <label>
+              route
+              <select value={sceneEditor.route} onChange={(event) => setSceneEditor((prev) => ({ ...prev, route: event.target.value }))}>
+                <option value="auto">auto</option>
+                <option value="i2v">i2v</option>
+                <option value="ia2v">ia2v / lip-sync</option>
+                <option value="i2v_sound">i2v_sound</option>
+                <option value="first_last">first_last</option>
+              </select>
+            </label>
+            <label>
+              памятка
+              <textarea
+                value={sceneEditor.note}
+                onChange={(event) => setSceneEditor((prev) => ({ ...prev, note: event.target.value }))}
+                placeholder="Например: здесь герой поёт; сделать i2v_sound; нужен крупный план..."
+              />
+            </label>
+            <button type="button" onClick={saveSceneEditor}>Сохранить сцену</button>
+            <button type="button" onClick={() => setSceneEditor(null)}>Закрыть</button>
+          </div>
+        )}
 
         <div className="avaTimingToolRail">
           <button className={`avaTimingBigPlay ${playingMode === 'scene' ? 'isPlaying' : ''}`} type="button" onClick={toggleScenePlay} title="Прослушать выбранную сцену" disabled={!hasAudio || !audioSrc}>
