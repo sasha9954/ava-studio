@@ -13,6 +13,7 @@ import './styles/ava-credits.css'
 import './styles/ava-auth.css'
 import './styles/ava-jobs.css'
 import './styles/ava-settings.css'
+import './styles/ava-timing.css'
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
