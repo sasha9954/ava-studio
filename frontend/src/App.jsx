@@ -9,6 +9,7 @@ import ProjectsPage from './pages/ProjectsPage.jsx'
 import CreateProjectPage from './pages/CreateProjectPage.jsx'
 import AccountPage from './pages/AccountPage.jsx'
 import CreditsPage from './pages/CreditsPage.jsx'
+import SettingsPage from './pages/SettingsPage.jsx'
 import ModulePlaceholderPage from './pages/ModulePlaceholderPage.jsx'
 
 function Protected({ children }) {
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="projects/:projectId/generator" element={<ModulePlaceholderPage stage="generator" />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="credits" element={<CreditsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
