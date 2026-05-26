@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { Brain, ChevronLeft, ChevronRight, FolderKanban, Home, LogOut, PlusCircle, Settings, WalletCards, UserRound } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProjects } from '../context/ProjectContext.jsx'
+import { getProjectTheme } from '../utils/projectTheme.js'
 
 const navItems = [
   { to: '/app/dashboard', label: 'Главная', icon: Home },
@@ -16,9 +17,10 @@ const SIDEBAR_OPEN_KEY = 'ava_sidebar_open'
 
 export default function AvaShellLayout() {
   const { user, logout } = useAuth()
-  const { activeProject, lastSavedAt, exitProject } = useProjects()
+  const { projects, activeProject, lastSavedAt, exitProject } = useProjects()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem(SIDEBAR_OPEN_KEY) === '1')
+  const projectTheme = useMemo(() => getProjectTheme(activeProject, projects), [activeProject, projects])
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_OPEN_KEY, sidebarOpen ? '1' : '0')
@@ -38,7 +40,7 @@ export default function AvaShellLayout() {
   const sidebarClass = sidebarOpen ? 'isSidebarOpen' : 'isSidebarClosed'
 
   return (
-    <div className={`avaShell ${shellModeClass} ${sidebarClass}`}>
+    <div className={`avaShell ${shellModeClass} ${sidebarClass}`} style={projectTheme.style}>
       <aside className="avaSidebar" aria-label="Основное меню ava-studio">
         <button
           className="avaSidebarToggle"
@@ -76,7 +78,7 @@ export default function AvaShellLayout() {
         </nav>
 
         <div className="avaSidebarProject" title={activeProject?.name || 'Рабочая область'}>
-          <span>{activeProject ? 'Проектный режим' : 'Рабочая область'}</span>
+          <span>{activeProject ? `Проектный режим · ${projectTheme.name}` : 'Рабочая область'}</span>
           <strong>{activeProject?.name || 'без проекта'}</strong>
           <small>{activeProject?.format || 'автосохранение черновиков'}</small>
         </div>
@@ -89,7 +91,7 @@ export default function AvaShellLayout() {
       <main className="avaMain">
         <header className="avaTopbar">
           <div className="avaTopbarLeft">
-            <p>{activeProject ? 'Проект открыт' : 'Рабочая область'}</p>
+            <p>{activeProject ? `Проект открыт · ${activeProject.format}` : 'Рабочая область'}</p>
             <h1>{activeProject ? activeProject.name : 'ava-studio'}</h1>
           </div>
           <div className="avaTopbarRight">
