@@ -40,9 +40,16 @@
 
 .avaTimingHeaderActions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 360px;
+}
+
+.avaTimingHeaderActions .avaSoftButton,
+.avaTimingHeaderActions .avaPrimaryButton {
+  min-width: 168px;
+  justify-content: center;
 }
 
 .avaTimingPillLine {
@@ -67,6 +74,12 @@
 
 .avaTimingPillLine b {
   color: #f4f8ff;
+}
+
+.avaTimingPillLine .avaTimingStatusPill,
+.avaTimingPillLine span:nth-child(6) {
+  min-width: 166px;
+  justify-content: center;
 }
 
 .avaTimingAudioWarning {
@@ -215,6 +228,7 @@
 }
 
 .avaTimingSegmentsRow button {
+  position: relative;
   display: grid;
   align-content: center;
   gap: 3px;
@@ -223,29 +237,50 @@
   border-right: 1px solid rgba(255,255,255,.1);
   color: #dbe7ff;
   text-align: left;
-  background: rgba(255,255,255,.035);
+  background:
+    linear-gradient(90deg, hsla(var(--scene-hue), 82%, 52%, .22), rgba(255,255,255,.026) 70%),
+    rgba(255,255,255,.035);
   padding: 8px 10px;
   cursor: pointer;
+  overflow: hidden;
+}
+
+.avaTimingSegmentsRow button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-left: 2px solid hsla(var(--scene-hue), 90%, 62%, .72);
+  background: linear-gradient(180deg, rgba(255,255,255,.055), transparent 55%);
+  pointer-events: none;
 }
 
 .avaTimingSegmentsRow button.isActive {
-  background: rgba(69,216,255,.13);
-  box-shadow: inset 0 0 0 1px rgba(69,216,255,.28);
+  color: #f7fbff;
+  background:
+    linear-gradient(90deg, hsla(var(--scene-hue), 86%, 55%, .38), hsla(var(--scene-hue), 82%, 45%, .16)),
+    rgba(69,216,255,.08);
+  box-shadow:
+    inset 0 0 0 1px hsla(var(--scene-hue), 92%, 68%, .8),
+    0 0 24px hsla(var(--scene-hue), 90%, 58%, .2);
 }
 
 .avaTimingSegmentsRow button.isSemantic {
-  background-image: linear-gradient(90deg, rgba(255,210,80,.14), rgba(69,216,255,.08));
+  background-image:
+    linear-gradient(90deg, rgba(255,210,80,.24), hsla(var(--scene-hue), 82%, 50%, .18)),
+    repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 6px, transparent 6px 12px);
 }
 
 .avaTimingSegmentsRow b,
 .avaTimingSegmentsRow small {
+  position: relative;
+  z-index: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .avaTimingSegmentsRow small {
-  color: #aab8d8;
+  color: #d5def2;
   font-size: 11px;
 }
 
@@ -374,6 +409,12 @@
   .avaTimingFlatHeader {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .avaTimingHeaderActions {
+    min-width: 0;
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .avaTimingDevButton {
