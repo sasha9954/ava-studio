@@ -25,6 +25,70 @@ def state_richness(data: dict) -> int:
     return score
 
 
+def count_items(data: dict, keys: list[str]) -> int:
+    if not isinstance(data, dict):
+        return 0
+    for key in keys:
+      value = data.get(key)
+      if isinstance(value, list):
+          return len(value)
+      if isinstance(value, dict):
+          return len(value)
+      if value:
+          return 1
+    return 0
+
+
+def has_any(data: dict, keys: list[str]) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return any(bool(data.get(key)) for key in keys)
+
+
+def build_project_summary(snapshots: dict) -> dict:
+    manual = (snapshots.get('manual_timing') or {}).get('data') or {}
+    podcast = (snapshots.get('podcast') or {}).get('data') or {}
+    board = (snapshots.get('board') or {}).get('data') or {}
+    assembly = (snapshots.get('board_assembly') or {}).get('data') or {}
+    video_node = (snapshots.get('video_node') or {}).get('data') or {}
+    generator = (snapshots.get('generator') or {}).get('data') or {}
+
+    board_scenes_count = count_items(board, ['board_scenes', 'scenes'])
+    board_images_count = count_items(board, ['images', 'image_urls', 'generated_images'])
+    board_videos_count = count_items(board, ['videos', 'video_urls', 'generated_videos'])
+
+    return {
+        'manual_timing': {
+            'audio_loaded': has_any(manual, ['audio', 'audio_file', 'audio_url', 'audio_name']),
+            'scenes_count': count_items(manual, ['scenes', 'segments']),
+            'phrases_count': count_items(manual, ['phrases', 'asr_phrases', 'audio_phrases']),
+        },
+        'podcast': {
+            'audio_loaded': has_any(podcast, ['assembled_audio', 'audio', 'audio_url']),
+            'roles_count': count_items(podcast, ['roles', 'speakers']),
+            'insertions_count': count_items(podcast, ['insertions', 'clips', 'items']),
+        },
+        'board': {
+            'scenes_count': board_scenes_count,
+            'images_count': board_images_count,
+            'videos_count': board_videos_count,
+        },
+        'board_assembly': {
+            'ready_videos_count': count_items(assembly, ['ready_videos', 'scene_videos', 'videos']),
+            'final_video_ready': has_any(assembly, ['final_video_url', 'finalVideoUrl', 'output_url']),
+        },
+        'video_node': {
+            'segments_count': count_items(video_node, ['segments']),
+            'candidates_count': count_items(video_node, ['candidates', 'selected_candidates']),
+            'final_video_ready': has_any(video_node, ['final_video_url', 'finalVideoUrl', 'output_url']),
+        },
+        'generator': {
+            'jobs_count': count_items(generator, ['jobs', 'generations']),
+            'completed_count': count_items(generator, ['completed', 'completed_jobs', 'videos']),
+        },
+    }
+
+
 @router.get('')
 def list_projects(user: dict = Depends(get_current_user)):
     db = store.get_db()
@@ -57,6 +121,17 @@ def create_project(payload: ProjectCreateRequest, user: dict = Depends(get_curre
 @router.get('/{project_id}')
 def get_project(project: dict = Depends(ensure_project_access)):
     return {'project': project_public(project)}
+
+
+@router.get('/{project_id}/summary')
+def get_project_summary(project: dict = Depends(ensure_project_access)):
+    db = store.get_db()
+    snapshots = db['snapshots'].get(project['id'], {})
+    return {
+        'project_id': project['id'],
+        'summary': build_project_summary(snapshots),
+        'updated_at': project.get('updated_at'),
+    }
 
 
 @router.patch('/{project_id}')
