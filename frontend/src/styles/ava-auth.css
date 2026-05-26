@@ -12,3 +12,16 @@
   font-size: 12px;
   line-height: 1.45;
 }
+
+.avaAuthHomeLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 16px;
+  color: #8ee9ff;
+  font-weight: 800;
+}
+
+.avaAuthHomeLink:hover {
+  color: #f4f8ff;
+}
