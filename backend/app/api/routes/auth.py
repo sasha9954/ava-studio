@@ -24,7 +24,7 @@ def register(payload: RegisterRequest):
     def op(db):
         for existing in db['users'].values():
             if existing['email'] == email:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Email already registered')
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Email уже зарегистрирован. Войдите в аккаунт или используйте другой email.')
 
         user_id = make_id('u')
         password = hash_password(payload.password)
@@ -63,7 +63,7 @@ def login(payload: LoginRequest):
     def op(db):
         user = next((u for u in db['users'].values() if u['email'] == email), None)
         if not user or not verify_password(payload.password, user['password_salt'], user['password_hash']):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid email or password')
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Неверный email или пароль')
         token = make_token()
         db['sessions'][token] = {'user_id': user['id'], 'created_at': now_iso()}
         return {'token': token, 'user': public_user(user)}
