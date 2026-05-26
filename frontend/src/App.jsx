@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './context/AuthContext.jsx'
 import AvaShellLayout from './layout/AvaShellLayout.jsx'
 import SplashPage from './pages/SplashPage.jsx'
-import GuestHomePage from './pages/GuestHomePage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
@@ -23,7 +22,6 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<SplashPage />} />
-      <Route path="/guest" element={<GuestHomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route
