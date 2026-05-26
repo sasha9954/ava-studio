@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Brain, LogIn, UserPlus, UserRound, ShieldCheck, Sparkles, Workflow } from 'lucide-react'
+import { Brain, LogIn, ShieldCheck, Sparkles, UserPlus, Workflow } from 'lucide-react'
 
 export default function SplashPage() {
   const [introDone, setIntroDone] = useState(false)
@@ -36,7 +36,6 @@ export default function SplashPage() {
         <div className="avaSplashActions">
           <Link className="avaPrimaryButton" to="/login"><LogIn size={16} /> Войти</Link>
           <Link className="avaSecondaryButton" to="/register"><UserPlus size={16} /> Создать аккаунт</Link>
-          <Link className="avaGhostButton avaGuestButton" to="/guest"><UserRound size={16} /> Войти как гость</Link>
         </div>
         <div className="avaSplashFeatures">
           <span><Workflow size={16} /> project workflow</span>
