@@ -1,0 +1,109 @@
+.avaModalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--ava-project-accent, #45d8ff) 12%, transparent), transparent 34%),
+    rgba(2, 5, 15, .76);
+  backdrop-filter: blur(14px);
+  animation: avaModalFadeIn .16s ease both;
+}
+
+.avaConfirmModal {
+  position: relative;
+  width: min(520px, 100%);
+  border: 1px solid color-mix(in srgb, var(--ava-project-accent, #45d8ff) 26%, rgba(255,255,255,.14));
+  border-radius: 30px;
+  padding: 30px;
+  color: var(--text);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--ava-project-accent, #45d8ff) 10%, transparent), rgba(12, 18, 38, .96)),
+    rgba(12, 18, 38, .96);
+  box-shadow: 0 30px 100px rgba(0,0,0,.42), 0 18px 70px var(--ava-project-glow, rgba(69,216,255,.14));
+  animation: avaModalPop .18s ease both;
+}
+
+.avaConfirmModal h3 {
+  margin: 8px 0 10px;
+  font-size: 28px;
+  letter-spacing: -.03em;
+}
+
+.avaConfirmModal p {
+  color: #b9c6e3;
+  line-height: 1.6;
+}
+
+.avaConfirmIcon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  color: #ffb3bd;
+  background: rgba(255, 80, 112, .12);
+  border: 1px solid rgba(255, 80, 112, .2);
+  box-shadow: 0 16px 48px rgba(255, 80, 112, .14);
+}
+
+.avaModalClose {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 13px;
+  color: #dbe7ff;
+  background: rgba(255,255,255,.055);
+  cursor: pointer;
+}
+
+.avaModalClose:hover {
+  background: rgba(255,255,255,.1);
+}
+
+.avaModalActions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+}
+
+.avaDangerButton {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 80, 112, .32);
+  border-radius: 999px;
+  padding: 0 18px;
+  color: #fff2f4;
+  background: linear-gradient(135deg, rgba(255, 80, 112, .9), rgba(255, 120, 90, .84));
+  box-shadow: 0 16px 44px rgba(255, 80, 112, .18);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.avaDangerButton:disabled,
+.avaSecondaryButton:disabled,
+.avaModalClose:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+@keyframes avaModalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes avaModalPop {
+  from { opacity: 0; transform: translateY(10px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
