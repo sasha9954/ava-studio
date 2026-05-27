@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Clock3, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { fetchProtectedBlobUrl, uploadAudioAsset } from '../services/apiClient.js'
+import { fetchProtectedBlobUrl, transcribeAudioAsset, uploadAudioAsset } from '../services/apiClient.js'
 
 const STAGE = 'manual_timing'
 const DRAFT_VERSION = 'manual_timing_single_timeline_v6_handoff_manifest'
@@ -17,6 +17,12 @@ const emptyDraft = {
   audioUrl: '',
   audioSizeBytes: 0,
   audioDurationSec: 0,
+  vocalAudioName: '',
+  vocalAudioAssetId: '',
+  vocalAudioApiPath: '',
+  vocalAudioSizeBytes: 0,
+  vocalAudioDurationSec: 0,
+  vocalOffsetSec: 0,
   scenesCount: 1,
   scenes: [],
   storyBlocks: [],
@@ -110,6 +116,12 @@ function normalizeDraft(data) {
     audioUrl: data?.audioUrl || data?.asset_url || '',
     audioSizeBytes: Number.isFinite(Number(data?.audioSizeBytes)) ? Math.max(0, Number(data.audioSizeBytes)) : Number(data?.audio_size_bytes) || 0,
     audioDurationSec: duration,
+    vocalAudioName: data?.vocalAudioName || data?.vocal_audio_name || '',
+    vocalAudioAssetId: data?.vocalAudioAssetId || data?.vocal_audio_asset_id || '',
+    vocalAudioApiPath: data?.vocalAudioApiPath || data?.vocal_audio_api_path || '',
+    vocalAudioSizeBytes: Number(data?.vocalAudioSizeBytes || data?.vocal_audio_size_bytes || 0),
+    vocalAudioDurationSec: Number(data?.vocalAudioDurationSec || data?.vocal_audio_duration_sec || 0),
+    vocalOffsetSec: Number(data?.vocalOffsetSec || data?.vocal_offset_sec || 0),
     scenes,
     storyBlocks: Array.isArray(data?.storyBlocks) ? data.storyBlocks : [],
     roles: Array.isArray(data?.roles) ? data.roles : [],
@@ -192,6 +204,25 @@ function normalizeRoleList(inputRoles = [], speechSegments = []) {
   return Array.from(byId.values())
 }
 
+function normalizeMissingSpeechHints(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((item, index) => {
+      const start = Number(item.start ?? item.start_sec ?? 0)
+      const end = Number(item.end ?? item.end_sec ?? start)
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
+      return {
+        id: item.id || `missing_${String(index + 1).padStart(3, '0')}`,
+        start,
+        end,
+        type: item.type || 'audio_activity_without_asr',
+        label: item.label || 'проверь звук',
+        reason: item.reason || '',
+        status: item.status || 'needs_review',
+      }
+    })
+    .filter(Boolean)
+}
+
 function normalizeSpeechSegments(inputSegments = []) {
   if (!Array.isArray(inputSegments)) return []
   return inputSegments
@@ -200,14 +231,18 @@ function normalizeSpeechSegments(inputSegments = []) {
       const end = Number(segment.end ?? segment.end_sec ?? segment.t1 ?? segment.to ?? start)
       const roleId = String(segment.role_id || segment.roleId || segment.role || segment.speaker || segment.speaker_id || 'voice')
       return {
-        id: segment.id || segment.segment_id || `speech_${String(index + 1).padStart(3, '0')}`,
+        id: segment.id || segment.segment_id || segment.phrase_id || `speech_${String(index + 1).padStart(3, '0')}`,
+        phrase_id: segment.phrase_id || segment.id || segment.segment_id || '',
         start: Math.max(0, start),
         end: Math.max(start, end),
         roleId,
         role_id: roleId,
         label: segment.label || segment.role_label || '',
-        text: segment.text || segment.originalText || segment.original_text || segment.transcript || '',
+        text: segment.text || segment.text_original || segment.originalText || segment.original_text || segment.transcript || '',
         ruText: segment.ruText || segment.text_ru || segment.translation_ru || '',
+        source: segment.source || 'import',
+        confidence: segment.confidence,
+        timingSource: segment.timingSource || segment.timing_source || (segment.phrase_id ? 'audio_phrases_gap_aware' : ''),
       }
     })
     .filter((segment) => segment.end - segment.start > 0.01)
@@ -244,6 +279,10 @@ export default function ManualTimingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadingVocal, setUploadingVocal] = useState(false)
+  const [asrRunning, setAsrRunning] = useState(false)
+  const [missingPhraseEditor, setMissingPhraseEditor] = useState(null)
+  const [asrVisualOffsetSec, setAsrVisualOffsetSec] = useState(0)
   const [pendingAudioFile, setPendingAudioFile] = useState(null)
   const [showReplaceAudioConfirm, setShowReplaceAudioConfirm] = useState(false)
   const [showDev, setShowDev] = useState(false)
@@ -263,16 +302,122 @@ export default function ManualTimingPage() {
   const scopeTitle = workspaceMode ? 'Рабочая область' : activeProject?.name || 'Проект'
   const cursorPct = draft.audioDurationSec > 0 ? Math.min(100, Math.max(0, (cursorSec / draft.audioDurationSec) * 100)) : 0
   const roleMap = useMemo(() => new Map((draft.roles || []).map((role) => [role.roleId || role.id, role])), [draft.roles])
+  function speechSegmentBelongsToScene(scene, segment) {
+    const start = Number(segment?.start || 0)
+    const end = Math.max(start, Number(segment?.end || start))
+    const sceneStart = Number(scene?.start || 0)
+    const sceneEnd = Math.max(sceneStart, Number(scene?.end || sceneStart))
+    const mid = start + ((end - start) / 2)
+    const pad = 0.035
+
+    if (mid >= sceneStart + pad && mid < sceneEnd - pad) return true
+
+    const overlap = Math.max(0, Math.min(sceneEnd, end) - Math.max(sceneStart, start))
+    const duration = Math.max(0.001, end - start)
+    return overlap / duration >= 0.62
+  }
+
   const getSceneRoleLabels = (scene) => {
     const found = []
     ;(draft.speechSegments || []).forEach((segment) => {
-      if (!segmentsOverlap(scene.start, scene.end, segment.start, segment.end)) return
+      if (!speechSegmentBelongsToScene(scene, segment)) return
       const role = roleMap.get(segment.roleId || segment.role_id)
       const label = role?.label || segment.label || normalizeRoleLabel(segment.roleId || segment.role_id || 'voice')
       if (!found.includes(label)) found.push(label)
     })
+    if (draft.handoffSource === 'asr_main_audio' && found.length === 1 && found[0] === 'ДИК') return []
     return found.slice(0, 3)
   }
+
+  const selectedSpeechSegments = useMemo(() => (
+    (draft.speechSegments || []).filter((segment) => speechSegmentBelongsToScene(selectedScene, segment))
+  ), [draft.speechSegments, selectedScene.start, selectedScene.end])
+
+
+  function getSceneTooltip(scene) {
+    const phraseLines = (draft.speechSegments || [])
+      .filter((segment) => speechSegmentBelongsToScene(scene, segment))
+      .map((segment) => `${formatTime(segment.start, true)}-${formatTime(segment.end, true)} ${segment.text || ''}`.trim())
+
+    const gapLines = asrGapSegments
+      .filter((gap) => segmentsOverlap(scene.start, scene.end, gap.start, gap.end))
+      .map((gap) => `${formatTime(gap.start, true)}-${formatTime(gap.end, true)} возможно есть нераспознанная фраза`)
+
+    const lines = [
+      `${scene.title || scene.id}: ${formatTime(scene.start, true)} → ${formatTime(scene.end, true)}`,
+      scene.route && scene.route !== 'auto' ? `route: ${scene.route}` : '',
+      scene.blockTitle ? `блок: ${scene.blockTitle}` : '',
+      scene.note ? `памятка: ${scene.note}` : '',
+      phraseLines.length ? `ASR:\n${phraseLines.join('\n')}` : '',
+      gapLines.length ? `Проверить:\n${gapLines.join('\n')}` : '',
+    ].filter(Boolean)
+
+    return lines.join('\n')
+  }
+
+  const asrGapSegments = useMemo(() => {
+    const segments = [...(draft.speechSegments || [])]
+      .filter((segment) => Number.isFinite(Number(segment.start)) && Number.isFinite(Number(segment.end)))
+      .sort((a, b) => Number(a.start) - Number(b.start))
+
+    if (!segments.length || !draft.audioDurationSec) return []
+
+    const gaps = []
+    const minGapSec = 0.65
+    const maxGapSec = 18
+    const introGuardSec = 3
+    const outroGuardSec = 2
+
+    for (let index = 0; index < segments.length - 1; index += 1) {
+      const currentEnd = Number(segments[index].end || 0)
+      const nextStart = Number(segments[index + 1].start || 0)
+      const gap = nextStart - currentEnd
+      if (gap >= minGapSec && gap <= maxGapSec) {
+        gaps.push({
+          id: `asr_gap_${index + 1}`,
+          start: currentEnd,
+          end: nextStart,
+          type: 'possible_phrase_gap',
+          label: 'проверь',
+        })
+      }
+    }
+
+    const firstStart = Number(segments[0]?.start || 0)
+    if (firstStart >= 4 && firstStart <= maxGapSec && firstStart > introGuardSec) {
+      gaps.unshift({
+        id: 'asr_gap_intro',
+        start: 0,
+        end: firstStart,
+        type: 'possible_intro_phrase_gap',
+        label: 'проверь начало',
+      })
+    }
+
+    const lastEnd = Number(segments[segments.length - 1]?.end || 0)
+    const tailGap = Number(draft.audioDurationSec || 0) - lastEnd
+    if (tailGap >= minGapSec && tailGap <= maxGapSec && tailGap > outroGuardSec) {
+      gaps.push({
+        id: 'asr_gap_tail',
+        start: lastEnd,
+        end: Number(draft.audioDurationSec || 0),
+        type: 'possible_tail_phrase_gap',
+        label: 'проверь хвост',
+      })
+    }
+    const draftMissingHints = normalizeMissingSpeechHints(draft.missingSpeechHints || [])
+    draftMissingHints.forEach((hint) => {
+      gaps.push({
+        ...hint,
+        id: hint.id || `missing_${gaps.length + 1}`,
+        label: hint.label || 'проверь звук',
+        type: hint.type || 'audio_activity_without_asr',
+      })
+    })
+
+    return gaps
+
+  }, [draft.speechSegments, draft.audioDurationSec])
 
   useEffect(() => {
     let active = true
@@ -425,8 +570,13 @@ export default function ManualTimingPage() {
   }
 
   function handleSceneClick(event, sceneIndex) {
-    event.stopPropagation()
-    if (event.ctrlKey || event.metaKey) {
+    // handleSceneClick render guard
+    if (!event || typeof event.stopPropagation !== 'function') {
+      return (nextEvent) => handleSceneClick(nextEvent, sceneIndex)
+    }
+
+    event?.stopPropagation?.()
+    if (event?.ctrlKey || event?.metaKey) {
       toggleBlockScene(sceneIndex)
       return
     }
@@ -699,6 +849,12 @@ export default function ManualTimingPage() {
         roles: [],
         speechSegments: [],
         silentSegments: [],
+        vocalAudioName: '',
+        vocalAudioAssetId: '',
+        vocalAudioApiPath: '',
+        vocalAudioSizeBytes: 0,
+        vocalAudioDurationSec: 0,
+        vocalOffsetSec: 0,
         handoffSource: '',
         historySnapshots: [],
         notes: '',
@@ -720,6 +876,266 @@ export default function ManualTimingPage() {
   }
 
 
+  async function clearAsrSegments(message = 'ASR очищен') {
+    const nextDraft = normalizeDraft({
+      ...draft,
+      roles: [],
+      speechSegments: [],
+      missingSpeechHints: [],
+      handoffSource: '',
+      asrMode: '',
+      asrSource: '',
+    })
+    setDraft(nextDraft)
+    await saveDraft(nextDraft, 'asr_clear_manual')
+    setStatus(message)
+  }
+
+  function isAsrIntroHallucination(segment) {
+    const text = String(segment?.text || '').toLowerCase()
+    const start = Number(segment?.start || 0)
+    if (start > 6) return false
+    return (
+      text.includes('добро пожаловать') ||
+      text.includes('наш канал') ||
+      text.includes('подписывай') ||
+      text.includes('ставьте лайк') ||
+      text.includes('thanks for watching') ||
+      text.includes('subscribe')
+    )
+  }
+
+  async function runVocalStemAsrExact() {
+    const sourceDraft = draft
+    const vocalAssetId = sourceDraft.vocalAudioAssetId || sourceDraft.vocal_audio_asset_id || ''
+    console.log('[AVA VOCAL ASR] click', { vocalAssetId, vocalAudioName: sourceDraft.vocalAudioName })
+
+    if (!vocalAssetId) {
+      setStatus('сначала загрузите vocal stem')
+      return
+    }
+
+    setAsrRunning(true)
+    setStatus('ASR vocal stem: speech + VAD…')
+    try {
+      const clearedDraft = normalizeDraft({
+        ...sourceDraft,
+        roles: [],
+        speechSegments: [],
+        missingSpeechHints: [],
+        handoffSource: '',
+        asrMode: '',
+        asrSource: '',
+      })
+      setDraft(clearedDraft)
+      await saveDraft(clearedDraft, 'asr_clear_before_vocal_exact')
+
+      const result = await transcribeAudioAsset({
+        assetId: vocalAssetId,
+        roleId: 'vocal',
+        roleLabel: 'ВОК',
+        mode: 'vocal',
+        vadFilter: true,
+        language: 'ru',
+      })
+
+      const rawSegments = result.speechSegments || result.speech_segments || []
+      const nextSegments = rawSegments
+        .filter((segment) => !isAsrIntroHallucination(segment))
+        .map((segment, index) => ({
+          ...segment,
+          id: `asr_${String(index + 1).padStart(3, '0')}`,
+          roleId: 'vocal',
+          role_id: 'vocal',
+          label: 'ВОК',
+          source: 'asr_vocal_stem',
+          asrMode: 'vocal',
+        }))
+
+      const nextDraft = normalizeDraft({
+        ...sourceDraft,
+        roles: [{
+          roleId: 'vocal',
+          id: 'vocal',
+          name: 'Вокал',
+          label: 'ВОК',
+          color: 42,
+        }],
+        speechSegments: nextSegments,
+        missingSpeechHints: normalizeMissingSpeechHints(result.missingSpeechHints || result.missing_speech_hints || []),
+        handoffSource: 'asr_vocal_stem',
+        asrMode: 'vocal',
+        asrSource: 'vocal_stem',
+      })
+
+      setDraft(nextDraft)
+      await saveDraft(nextDraft, 'asr_vocal_stem_exact')
+      setStatus(`ASR vocal stem готово: ${nextSegments.length} фраз · word timestamps`)
+    } catch (err) {
+      setStatus(`ошибка ASR vocal stem: ${err.message}`)
+    } finally {
+      setAsrRunning(false)
+    }
+  }
+
+  function getDefaultSpeechRole() {
+    const roles = Array.isArray(draft.roles) ? draft.roles : []
+    const vocal = roles.find((role) => (role.roleId || role.id) === 'vocal' || role.label === 'ВОК')
+    const narrator = roles.find((role) => (role.roleId || role.id) === 'narrator' || role.label === 'ДИК')
+    const role = vocal || narrator || roles[0] || { roleId: 'vocal', id: 'vocal', label: 'ВОК', name: 'Вокал', color: 42 }
+    return {
+      roleId: role.roleId || role.id || 'vocal',
+      label: role.label || normalizeRoleLabel(role.roleId || role.id || 'vocal'),
+      name: role.name || role.label || 'Вокал',
+      color: role.color || 42,
+    }
+  }
+
+  function openMissingPhraseEditor(gap) {
+    const role = getDefaultSpeechRole()
+    stopAudio(gap.start || 0)
+    setCursorSec(gap.start || 0)
+    setMissingPhraseEditor({
+      id: gap.id || `missing_${Date.now()}`,
+      start: Number(gap.start || 0),
+      end: Number(gap.end || Math.min((gap.start || 0) + 1.2, draft.audioDurationSec || 0)),
+      text: '',
+      roleId: role.roleId,
+      label: role.label,
+      status: 'draft',
+    })
+    setStatus('проверь оранжевую зону: можно дописать фразу вручную')
+  }
+
+  async function saveManualMissingPhrase() {
+    const editor = missingPhraseEditor
+    if (!editor) return
+
+    const textValue = String(editor.text || '').trim()
+    if (!textValue) {
+      setStatus('напиши текст фразы перед сохранением')
+      return
+    }
+
+    const duration = Number(draft.audioDurationSec || 0)
+    const start = Math.max(0, Number(editor.start || 0))
+    const end = Math.max(start + 0.08, Number(editor.end || start + 1.2))
+    const safeEnd = duration > 0 ? Math.min(duration, end) : end
+    const roleId = editor.roleId || 'vocal'
+    const selectedRole = (draft.roles || []).find((role) => (role.roleId || role.id) === roleId)
+    const label = selectedRole?.label || editor.label || normalizeRoleLabel(roleId)
+
+    const existingRoles = Array.isArray(draft.roles) ? draft.roles : []
+    const hasRole = existingRoles.some((role) => (role.roleId || role.id) === roleId)
+    const roles = hasRole
+      ? existingRoles
+      : [
+          ...existingRoles,
+          {
+            roleId,
+            id: roleId,
+            name: label === 'ВОК' ? 'Вокал' : label === 'ДИК' ? 'Диктор' : label,
+            label,
+            color: roleId === 'vocal' ? 42 : 220,
+          },
+        ]
+
+    const manualSegment = {
+      id: `manual_${Date.now()}`,
+      start: Number(start.toFixed(3)),
+      end: Number(safeEnd.toFixed(3)),
+      roleId,
+      role_id: roleId,
+      label,
+      text: textValue,
+      ruText: '',
+      source: 'manual_missing_phrase',
+      asrMode: draft.asrMode || 'manual',
+      manual: true,
+      needsReview: false,
+    }
+
+    const speechSegments = [
+      ...(draft.speechSegments || []),
+      manualSegment,
+    ].sort((a, b) => Number(a.start || 0) - Number(b.start || 0))
+
+    const nextDraft = normalizeDraft({
+      ...draft,
+      roles,
+      speechSegments,
+    })
+
+    setDraft(nextDraft)
+    setMissingPhraseEditor(null)
+    await saveDraft(nextDraft, 'manual_missing_phrase')
+    setStatus(`ручная фраза добавлена: ${formatTime(manualSegment.start, true)} → ${formatTime(manualSegment.end, true)}`)
+  }
+
+  function cancelManualMissingPhrase() {
+    setMissingPhraseEditor(null)
+    setStatus('ручное добавление фразы отменено')
+  }
+
+  async function runAudioAsr(mode = 'speech') {
+    
+    if (mode === 'vocal') return runVocalStemAsrExact()
+const useVocalStem = mode === 'vocal'
+    const sourceDraft = draft
+    const assetId = useVocalStem ? sourceDraft.vocalAudioAssetId : sourceDraft.audioAssetId
+
+    if (!assetId) {
+      setStatus(useVocalStem ? 'сначала загрузите vocal stem' : 'сначала загрузите аудио')
+      return
+    }
+const clearedDraft = normalizeDraft({
+      ...sourceDraft,
+      roles: [],
+      speechSegments: [],
+      missingSpeechHints: [],
+      handoffSource: '',
+      asrMode: '',
+      asrSource: '',
+    })
+    setDraft(clearedDraft)
+    await saveDraft(clearedDraft, 'asr_clear_before_run')
+
+    setAsrVisualOffsetSec(0)
+    setAsrRunning(true)
+    setStatus(useVocalStem ? 'ASR распознаёт vocal stem…' : mode === 'music' ? 'ASR распознаёт master без VAD…' : 'ASR распознаёт диктора…')
+    try {
+      const result = await transcribeAudioAsset({
+        assetId,
+        roleId: useVocalStem ? 'vocal' : 'narrator',
+        roleLabel: useVocalStem ? 'ВОК' : 'ДИК',
+        mode: useVocalStem ? 'vocal' : mode,
+        vadFilter: mode === 'speech' ? true : false,
+        language: mode === 'speech' ? '' : 'ru',
+      })
+      const sourceName = useVocalStem ? 'asr_vocal_stem' : 'asr_main_audio'
+      const nextSegments = (result.speechSegments || result.speech_segments || []).map((segment) => ({
+        ...segment,
+        source: sourceName,
+      }))
+      const nextDraft = normalizeDraft({
+        ...sourceDraft,
+        roles: result.roles || [],
+        speechSegments: nextSegments,
+        missingSpeechHints: normalizeMissingSpeechHints(result.missingSpeechHints || result.missing_speech_hints || []),
+        handoffSource: sourceName,
+        asrMode: useVocalStem ? 'vocal' : (result.mode || mode),
+        asrSource: useVocalStem ? 'vocal_stem' : 'main_audio',
+      })
+      setDraft(nextDraft)
+      await saveDraft(nextDraft, sourceName)
+      setStatus(`ASR готово: ${nextSegments.length} фраз · ${useVocalStem ? 'vocal stem / speech+VAD' : result.mode || mode} · VAD ${result.vad_filter ? 'on' : 'off'}`)
+    } catch (err) {
+      setStatus(`ошибка ASR: ${err.message}`)
+    } finally {
+      setAsrRunning(false)
+    }
+  }
+
   function buildExportPayload() {
     return {
       schema: 'ava_manual_timing_handoff_v1',
@@ -734,6 +1150,8 @@ export default function ManualTimingPage() {
       },
       roles: draft.roles || [],
       speechSegments: draft.speechSegments || [],
+      missingSpeechHints: draft.missingSpeechHints || [],
+      missingSpeechHints: asrGapSegments || [],
       silentSegments: draft.silentSegments || [],
       scenes: scenes.map((scene) => ({
         id: scene.id,
@@ -773,9 +1191,10 @@ export default function ManualTimingPage() {
       const raw = JSON.parse(await file.text())
       const root = raw.manualTiming || raw.manual_timing || raw
       const manifest = raw.podcast_edit_manifest || root.podcast_edit_manifest || raw.manifest || root.manifest || {}
-      const rawSpeech = root.speechSegments || root.speech_segments || manifest.speechSegments || manifest.speech_segments || manifest.segments || []
+      const rawSpeech = root.speechSegments || root.speech_segments || root.audio_phrases || root.asr_phrases || manifest.speechSegments || manifest.speech_segments || manifest.audio_phrases || manifest.asr_phrases || manifest.segments || []
       const speechSegments = typeof normalizeSpeechSegments === 'function' ? normalizeSpeechSegments(rawSpeech) : []
-      const roles = typeof normalizeRoleList === 'function' ? normalizeRoleList(root.roles || manifest.roles || [], speechSegments) : (root.roles || manifest.roles || [])
+      const defaultClipPassRole = (root.audio_phrases || manifest.audio_phrases) ? [{ roleId: 'narrator', id: 'narrator', name: 'Диктор', label: 'ДИК', color: 220 }] : []
+      const roles = typeof normalizeRoleList === 'function' ? normalizeRoleList(root.roles || manifest.roles || defaultClipPassRole, speechSegments) : (root.roles || manifest.roles || defaultClipPassRole)
       const silentSegments = typeof normalizeSilentSegments === 'function' ? normalizeSilentSegments(root.silentSegments || root.silent_segments || manifest.silentSegments || manifest.silent_segments || []) : []
       const importedDuration = Number(root.audioDurationSec || root.audio_duration_sec || root.audio?.durationSec || root.audio?.duration_sec || manifest.audioDurationSec || manifest.audio_duration_sec || draft.audioDurationSec || 0)
       const importedScenes = Array.isArray(root.scenes) ? root.scenes : []
@@ -804,12 +1223,50 @@ export default function ManualTimingPage() {
       setDraft(nextDraft)
       setCursorSec(nextScenes[0]?.start || 0)
       await saveDraft(nextDraft, 'json_import')
-      setStatus(`JSON импортирован: ролей ${roles.length}, речевых сегментов ${speechSegments.length}`)
+      setStatus(root.audio_phrases || manifest.audio_phrases ? `JSON импортирован: audio_phrases импортированы как ASR-карта · ${speechSegments.length} фраз` : `JSON импортирован: ролей ${roles.length}, речевых сегментов ${speechSegments.length}`)
     } catch (err) {
       setStatus(`ошибка импорта JSON: ${err.message}`)
     }
   }
 
+
+  async function handleVocalUpload(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    if (!draft.audioAssetId) {
+      setStatus('сначала загрузите основное аудио')
+      return
+    }
+
+    setUploadingVocal(true)
+    setStatus('загрузка vocal stem…')
+    try {
+      const result = await uploadAudioAsset({ file, projectId: workspaceMode ? null : projectId, stage: `${STAGE}_vocal` })
+      const duration = Math.max(0, Number(result.audio_duration_sec) || 0)
+      const durationDiff = Math.abs(duration - Number(draft.audioDurationSec || 0))
+      const nextDraft = normalizeDraft({
+        ...draft,
+        vocalAudioName: result.audio_name || file.name,
+        vocalAudioAssetId: result.asset_id || result.assetId || '',
+        vocalAudioApiPath: result.asset_api_path || result.assetApiPath || '',
+        vocalAudioSizeBytes: result.audio_size_bytes || result.audioSizeBytes || file.size || 0,
+        vocalAudioDurationSec: duration,
+        vocalOffsetSec: 0,
+      })
+      setDraft(nextDraft)
+      await saveDraft(nextDraft, 'vocal_upload')
+      setStatus(durationDiff > 0.7
+        ? `vocal загружен, но длительность отличается на ${durationDiff.toFixed(1)} сек`
+        : 'vocal stem загружен поверх основной дорожки'
+      )
+    } catch (err) {
+      setStatus(`ошибка загрузки vocal: ${err.message}`)
+    } finally {
+      setUploadingVocal(false)
+    }
+  }
 
   async function handleLoadedMetadata() {
     const audio = audioRef.current
@@ -943,7 +1400,23 @@ export default function ManualTimingPage() {
 
         <div className="avaTimingSceneTextBox">
           <strong>Слова сцены / оригинал</strong>
-          <p>Здесь позже будет оригинальная фраза выбранной сцены и русский перевод.</p>
+          {selectedSpeechSegments.length > 0 ? (
+            <div className="avaTimingSpeechList">
+              {selectedSpeechSegments.map((segment) => {
+                const role = roleMap.get(segment.roleId || segment.role_id)
+                const label = role?.label || segment.label || normalizeRoleLabel(segment.roleId || segment.role_id || 'voice')
+                return (
+                  <div key={segment.id || `${segment.start}-${segment.end}`} className="avaTimingSpeechItem">
+                    <span>{label} · {formatTime(segment.start, true)} → {formatTime(segment.end, true)}</span>
+                    <p>{segment.text || '...'}</p>
+                    {segment.ruText && <em>{segment.ruText}</em>}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p>ASR-фразы для выбранной сцены пока не найдены. Используйте блок “ASR / разметка речи” под плеером.</p>
+          )}
         </div>
 
         <div className="avaTimingTimelineScale" onClick={seekTimeline} onDoubleClick={splitAtCursor}>
@@ -952,7 +1425,56 @@ export default function ManualTimingPage() {
             {Array.from({ length: 180 }).map((_, index) => <i key={index} style={{ '--h': `${14 + ((index * 19) % 74)}%` }} />)}
           </div>
           <div className="avaTimingPlayhead" style={{ left: `${cursorPct}%` }} />
-          <div className="avaTimingSegmentsRow">
+  
+          {(draft.speechSegments || []).length > 0 && (
+            <div className="avaTimingAsrPhraseMap">
+              {(draft.speechSegments || []).map((segment) => {
+                const visualStart = Math.max(0, Number(segment.start || 0) + asrVisualOffsetSec)
+                const left = draft.audioDurationSec > 0 ? Math.max(0, (visualStart / draft.audioDurationSec) * 100) : 0
+                const width = draft.audioDurationSec > 0 ? Math.max(0.12, ((segment.end - segment.start) / draft.audioDurationSec) * 100) : 0.4
+                const role = roleMap.get(segment.roleId || segment.role_id)
+                const label = role?.label || segment.label || normalizeRoleLabel(segment.roleId || segment.role_id || 'voice')
+                return (
+                  <button
+                    key={segment.id || `${segment.start}-${segment.end}`}
+                    type="button"
+                    className="avaTimingAsrPhrase"
+                    style={{ left: `${left}%`, width: `${width}%`, '--asr-hue': role?.color || 220 }}
+                    title={`${label}: ${segment.text || ''}`}
+                    onClick={() => {
+                      stopAudio(segment.start || 0)
+                      setCursorSec(segment.start || 0)
+                    }}
+                  >
+                    <span>{segment.text || label}</span>
+                  </button>
+                )
+              })}
+
+              {asrGapSegments.map((gap) => {
+                const visualGapStart = Math.max(0, Number(gap.start || 0) + asrVisualOffsetSec)
+                const left = draft.audioDurationSec > 0 ? Math.max(0, (visualGapStart / draft.audioDurationSec) * 100) : 0
+                const width = draft.audioDurationSec > 0 ? Math.max(0.8, ((gap.end - gap.start) / draft.audioDurationSec) * 100) : 2
+                return (
+                  <button
+                    key={gap.id}
+                    type="button"
+                    className="avaTimingAsrGap"
+                    style={{ left: `${left}%`, width: `${width}%` }}
+                    title={`${gap.label}: ${formatTime(gap.start, true)} → ${formatTime(gap.end, true)}`}
+                    onClick={(event) => {
+                      event?.stopPropagation?.()
+                      openMissingPhraseEditor(gap)
+                    }}
+                  >
+                    <span>{gap.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+        <div className="avaTimingSegmentsRow">
             {scenes.map((scene) => {
               const sceneWidth = draft.audioDurationSec > 0 ? `${Math.max(0.5, ((scene.end - scene.start) / draft.audioDurationSec) * 100)}%` : `${100 / scenes.length}%`
               const roleLabels = getSceneRoleLabels(scene)
@@ -964,10 +1486,11 @@ export default function ManualTimingPage() {
                   className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${blockSelection.includes(scene.index) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''}`}
                   onClick={(event) => handleSceneClick(event, scene.index)}
                   onDoubleClick={(event) => {
-                    event.stopPropagation()
+                    event?.stopPropagation?.()
                     openSceneEditor(scene.index)
                   }}
-                >
+                
+                  title={getSceneTooltip(scene)}>
                   <b>{scene.blockTitle || scene.title}</b>
                   <small>{scene.route && scene.route !== 'auto' ? `${scene.route} · ` : ''}{formatTime(scene.start)} → {formatTime(scene.end)}</small>
                   {roleLabels.length > 0 && <em>{roleLabels.join(' / ')}</em>}
@@ -976,6 +1499,85 @@ export default function ManualTimingPage() {
             })}
           </div>
         </div>
+
+        {missingPhraseEditor && (
+          <div className="avaTimingMissingPhraseEditor">
+            <div className="avaTimingMissingPhraseHeader">
+              <div>
+                <strong>Проверить пропущенную фразу</strong>
+                <span>
+                  {formatTime(missingPhraseEditor.start, true)} → {formatTime(missingPhraseEditor.end, true)}
+                </span>
+              </div>
+              <button type="button" onClick={cancelManualMissingPhrase}>Закрыть</button>
+            </div>
+
+            <div className="avaTimingMissingPhraseGrid">
+              <label>
+                роль
+                <select
+                  value={missingPhraseEditor.roleId}
+                  onChange={(event) => {
+                    const role = (draft.roles || []).find((item) => (item.roleId || item.id) === event.target.value)
+                    setMissingPhraseEditor((value) => ({
+                      ...value,
+                      roleId: event.target.value,
+                      label: role?.label || normalizeRoleLabel(event.target.value),
+                    }))
+                  }}
+                >
+                  {(draft.roles || [{ roleId: 'vocal', id: 'vocal', label: 'ВОК', name: 'Вокал' }]).map((role) => (
+                    <option key={role.roleId || role.id} value={role.roleId || role.id}>
+                      {role.label || normalizeRoleLabel(role.roleId || role.id)} · {role.name || role.roleId || role.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                начало
+                <input
+                  type="number"
+                  step="0.01"
+                  value={missingPhraseEditor.start}
+                  onChange={(event) => setMissingPhraseEditor((value) => ({ ...value, start: Number(event.target.value || 0) }))}
+                />
+              </label>
+
+              <label>
+                конец
+                <input
+                  type="number"
+                  step="0.01"
+                  value={missingPhraseEditor.end}
+                  onChange={(event) => setMissingPhraseEditor((value) => ({ ...value, end: Number(event.target.value || 0) }))}
+                />
+              </label>
+            </div>
+
+            <textarea
+              value={missingPhraseEditor.text}
+              onChange={(event) => setMissingPhraseEditor((value) => ({ ...value, text: event.target.value }))}
+              placeholder="Напиши фразу, которую ASR пропустил..."
+            />
+
+            <div className="avaTimingMissingPhraseActions">
+              <button type="button" onClick={() => {
+                stopAudio(missingPhraseEditor.start || 0)
+                setCursorSec(missingPhraseEditor.start || 0)
+                audioRef.current.currentTime = missingPhraseEditor.start || 0
+                audioRef.current.play()
+                setPlayingMode('missing')
+              }}>
+                ▶ прослушать
+              </button>
+              <button type="button" className="isPrimary" onClick={saveManualMissingPhrase}>
+                Добавить фразу
+              </button>
+              <button type="button" onClick={cancelManualMissingPhrase}>Отмена</button>
+            </div>
+          </div>
+        )}
 
         {blockSelection.length > 0 && (
           <div className="avaTimingBlockEditor">
@@ -1042,6 +1644,80 @@ export default function ManualTimingPage() {
           <button type="button" onClick={undoLastChange} disabled={!history.length}><Undo2 size={15} /> вернуть</button>
           <button className="avaTimingDevButton" type="button" onClick={() => setShowDev((value) => !value)}>{showDev ? 'Скрыть dev' : 'dev'}</button>
         </div>
+
+        <div className="avaTimingAsrPanel">
+          <div className="avaTimingAsrPanelHead">
+            <div>
+              <strong>ASR / разметка речи</strong>
+              <span>Выбери режим: обычный диктор распознаётся по основной дорожке; для песни лучше загрузить отдельный чистый vocal stem.</span>
+            </div>
+            <div className="avaTimingAsrPanelStats">
+              <b>{(draft.speechSegments || []).length}</b>
+              <small>фраз</small>
+            </div>
+          </div>
+
+          <div className="avaTimingAsrModeGrid">
+            <div className="avaTimingAsrModeCard isNarrator">
+              <div className="avaTimingAsrModeBadge">1</div>
+              <div className="avaTimingAsrModeText">
+                <strong>Диктор / обычная речь</strong>
+                <p>Для подкаста, озвучки, интервью и рассказчика. Берём слова прямо из основного аудио.</p>
+              </div>
+              <button type="button" onClick={() => runAudioAsr('speech')} disabled={!hasAudio || !draft.audioAssetId || asrRunning}>
+                {asrRunning ? 'ASR…' : 'ASR диктор'}
+              </button>
+            </div>
+
+            <div className="avaTimingAsrModeCard isVocal">
+              <div className="avaTimingAsrModeBadge">2</div>
+              <div className="avaTimingAsrModeText">
+                <strong>Песня / vocal stem</strong>
+                <p>Если музыка мешает словам, загрузи чистый vocal stem той же длины. Кнопка ASR vocal stem точно всегда отправляет vocal как speech+VAD: role=ВОК, mode=speech, vad=true.</p>
+                {draft.vocalAudioName && (
+                  <small className="avaTimingVocalStemInfo">
+                    vocal: {draft.vocalAudioName} · {formatTime(draft.vocalAudioDurationSec, true)}
+                  </small>
+                )}
+              </div>
+              <div className="avaTimingAsrModeActions">
+                <button type="button"
+                  disabled={true}>
+                  {asrRunning ? 'ASR…' : 'ASR master без VAD отключён'}
+                </button>
+                <button type="button" onClick={() => document.getElementById('avaTimingVocalStemInput')?.click()} disabled={!hasAudio || uploadingVocal}>
+                  {uploadingVocal ? 'Загрузка vocal…' : draft.vocalAudioName ? 'Заменить vocal stem' : 'Загрузить vocal stem'}
+                </button>
+                <input
+                  id="avaTimingVocalStemInput"
+                  className="avaHiddenFileInput"
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleVocalUpload}
+                />
+                <button
+                  type="button"
+                  onClick={runVocalStemAsrExact}
+                  disabled={asrRunning}
+                >
+                  {asrRunning ? 'ASR vocal…' : 'ASR vocal stem точно'}
+                </button>
+                <button type="button"
+                  disabled={!draft.vocalAudioAssetId || asrRunning}>
+                  ASR vocal stem точно
+                </button>
+              </div>
+            </div>
+          </div>
+<div className="avaTimingAsrFooterActions">
+            <button type="button" disabled title="Следующий слой: перевод ASR-фраз в русский текст">
+              Перевести ASR
+            </button>
+            <span>Vocal stem нужен только как источник слов. Проверка в Network должна быть: role_id=vocal, role_label=ВОК, mode=speech, vad_filter=true.</span>
+          </div>
+
+</div>
+
 </section>
     </div>
   )
