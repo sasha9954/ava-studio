@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import json
 import logging
 import os
 import re
@@ -12,8 +13,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import get_current_user
+from app.api.deps import ensure_project_access, get_current_user
 from app.core.config import get_settings
+from app.core.security import make_id, now_iso
 from app.core.storage import store
 
 router = APIRouter(prefix="/asr", tags=["asr"])
@@ -27,11 +29,140 @@ _SENTENCE_PUNCT_RE = re.compile(r"[.!?…:;]+[\"')\]]*$")
 
 class AsrTranscribeRequest(BaseModel):
     asset_id: str
+    project_id: str | None = None
+    client_request_id: str | None = None
     language: str | None = None
     role_id: str = "narrator"
     role_label: str = "ДИК"
     mode: str = "speech"  # speech | music | vocal
     vad_filter: bool | None = None
+
+
+class AsrTranslateRequest(BaseModel):
+    speech_segments: list[dict[str, Any]] = []
+    project_id: str | None = None
+    client_request_id: str | None = None
+    audio_phrases: list[dict[str, Any]] = []
+    source_language: str | None = None
+    target_language: str = "ru"
+    include_meaning: bool = True
+
+
+
+MANUAL_TIMING_AI_CREDIT_COST = 1
+
+
+def _credit_public_user(user: dict) -> dict:
+    return {
+        "id": user.get("id"),
+        "name": user.get("name"),
+        "email": user.get("email"),
+        "created_at": user.get("created_at"),
+        "credits_balance": user.get("credits_balance", 0),
+    }
+
+
+def _require_manual_timing_credit(user: dict, amount: int = MANUAL_TIMING_AI_CREDIT_COST) -> None:
+    db = store.get_db()
+    current_user = db.get("users", {}).get(user.get("id"))
+    if not current_user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    balance = int(current_user.get("credits_balance", 0) or 0)
+    if balance < amount:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Недостаточно кредитов: нужно {amount}, доступно {balance}",
+        )
+
+
+def _manual_timing_job_id(action_type: str, client_request_id: Any = None) -> str:
+    raw = str(client_request_id or "").strip()
+    if raw:
+        safe = re.sub(r"[^A-Za-z0-9_.:-]+", "_", raw)[:80]
+        return f"{action_type}:{safe}"
+    return f"{action_type}:{make_id('job')}"
+
+
+def _charge_manual_timing_credit(
+    user: dict,
+    *,
+    action_type: str,
+    project_id: str | None = None,
+    client_request_id: Any = None,
+    meta: dict[str, Any] | None = None,
+    amount: int = MANUAL_TIMING_AI_CREDIT_COST,
+) -> dict[str, Any]:
+    job_id = _manual_timing_job_id(action_type, client_request_id)
+
+    def op(db: dict) -> dict[str, Any]:
+        current_user = db.get("users", {}).get(user.get("id"))
+        if not current_user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+        existing = next((
+            item for item in db.get("credits_ledger", [])
+            if item.get("user_id") == user.get("id")
+            and item.get("job_id") == job_id
+            and item.get("action_type") == action_type
+            and int(item.get("amount", 0) or 0) < 0
+        ), None)
+        if existing:
+            return {
+                "charged": False,
+                "duplicate": True,
+                "cost": amount,
+                "balance": int(current_user.get("credits_balance", 0) or 0),
+                "ledger_item": existing,
+                "user": _credit_public_user(current_user),
+            }
+
+        before_balance = int(current_user.get("credits_balance", 0) or 0)
+        if before_balance < amount:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"Недостаточно кредитов: нужно {amount}, доступно {before_balance}",
+            )
+
+        after_balance = before_balance - amount
+        current_user["credits_balance"] = after_balance
+        current_user["updated_at"] = now_iso()
+        ledger_item = {
+            "id": make_id("cl"),
+            "created_at": now_iso(),
+            "user_id": user.get("id"),
+            "project_id": project_id,
+            "job_id": job_id,
+            "action_type": action_type,
+            "amount": -amount,
+            "before_balance": before_balance,
+            "after_balance": after_balance,
+            "meta": {
+                "stage": "manual_timing",
+                "cost_policy": "1_credit_per_action",
+                **(meta or {}),
+            },
+        }
+        db.setdefault("credits_ledger", []).append(ledger_item)
+        return {
+            "charged": True,
+            "duplicate": False,
+            "cost": amount,
+            "balance": after_balance,
+            "ledger_item": ledger_item,
+            "user": _credit_public_user(current_user),
+        }
+
+    return store.update(op)
+
+
+def _translation_action_type(payload: "AsrTranslateRequest") -> str:
+    audio_items = list(payload.audio_phrases or [])
+    speech_items = list(payload.speech_segments or [])
+    item_ids = [str(item.get("phrase_id") or item.get("id") or "") for item in audio_items]
+    # Stage 4.3/4.7 sends manual scene windows as audio_phrases with seg_XX ids.
+    if audio_items and not speech_items and item_ids and all(value.startswith("seg_") for value in item_ids):
+        return "manual_timing_scenario"
+    return "manual_timing_translation"
 
 
 @dataclass(frozen=True)
@@ -71,6 +202,44 @@ def _round_sec(value: Any) -> float:
 
 def _clean_text(value: Any) -> str:
     return _WORD_CLEAN_RE.sub(" ", str(value or "")).strip()
+
+
+
+
+def _meaning_word_count(value: Any) -> int:
+    return len(re.findall(r"[A-Za-zА-Яа-яЁё0-9]+", str(value or "")))
+
+
+def _is_weak_meaning_hint(value: Any) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return True
+    if _meaning_word_count(text) < 7:
+        return True
+    # Very short title-like hints usually have no comma/verb/action and are not useful for Board.
+    if len(text) < 42 and not re.search(r"[,.!?;:]", text):
+        return True
+    return False
+
+
+def _polish_meaning_hint_ru(source_text: Any, translation_ru: Any, meaning_hint_ru: Any) -> str:
+    meaning = _clean_text(meaning_hint_ru)
+    if meaning and not _is_weak_meaning_hint(meaning):
+        return meaning
+
+    translation = _clean_text(translation_ru)
+    if not translation:
+        return meaning
+
+    core = translation.strip().rstrip(" .,!?:;…")
+    if len(core) > 150:
+        core = core[:147].rstrip() + "..."
+
+    # Deterministic fallback: keeps the real translated content but turns a dry title
+    # like "Лис на тропе" into a usable montage/director hint.
+    return _clean_text(
+        f"Визуально раскрыть момент: {core}, с понятным движением камеры, атмосферой и акцентом для монтажа."
+    )
 
 
 def _normalize_role_label(value: str | None) -> str:
@@ -290,6 +459,7 @@ def _split_long_phrases(
             "text_ru": "",
             "translation_ru": "",
             "meaning_ru": "",
+            "words": phrase_words,
             "status": "asr_raw",
             "confidence": _word_confidence(phrase_words),
         })
@@ -370,6 +540,7 @@ def split_words_to_phrases(words: list[dict[str, Any]], settings: ManualTimingAs
             "text_ru": "",
             "translation_ru": "",
             "meaning_ru": "",
+            "words": phrase_words,
             "status": "asr_raw",
             "confidence": _word_confidence(phrase_words),
         })
@@ -445,7 +616,12 @@ def _phrase_to_speech_segment(phrase: dict[str, Any], index: int, role_id: str, 
         "role_id": role_id,
         "label": role_label,
         "text": text,
-        "ruText": "",
+        "ruText": phrase.get("translation_ru") or phrase.get("text_ru") or "",
+        "text_ru": phrase.get("text_ru") or phrase.get("translation_ru") or "",
+        "translation_ru": phrase.get("translation_ru") or phrase.get("text_ru") or "",
+        "meaningText": phrase.get("meaning_ru") or phrase.get("meaning_hint_ru") or "",
+        "meaning_hint_ru": phrase.get("meaning_hint_ru") or phrase.get("meaning_ru") or "",
+        "words": phrase.get("words") or [],
         "source": source,
         "asrMode": asr_mode,
         "timingSource": "old_manual_timing_asr",
@@ -453,9 +629,278 @@ def _phrase_to_speech_segment(phrase: dict[str, Any], index: int, role_id: str, 
     }
 
 
+def _read_env_value(name: str, default: str = "") -> str:
+    value = (os.getenv(name) or "").strip()
+    if value:
+        return value
+    env_path = Path.cwd() / ".env"
+    try:
+        if env_path.exists():
+            for raw_line in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, raw_value = line.split("=", 1)
+                if key.strip() == name:
+                    return raw_value.strip().strip('"').strip("'")
+    except Exception:
+        return default
+    return default
+
+
+def _item_identity(item: dict[str, Any], index: int) -> str:
+    return str(item.get("id") or item.get("phrase_id") or item.get("phraseId") or item.get("segment_id") or f"item_{index + 1:03d}").strip()
+
+
+def _item_phrase_id(item: dict[str, Any]) -> str:
+    return str(item.get("phrase_id") or item.get("phraseId") or item.get("id") or "").strip()
+
+
+def _item_text(item: dict[str, Any]) -> str:
+    return _clean_text(
+        item.get("text")
+        or item.get("originalText")
+        or item.get("original_text")
+        or item.get("text_original")
+        or item.get("transcript")
+        or ""
+    )
+
+
+def _item_ru_text(item: dict[str, Any]) -> str:
+    return _clean_text(item.get("ruText") or item.get("text_ru") or item.get("translation_ru") or "")
+
+
+def _item_meaning_text(item: dict[str, Any]) -> str:
+    return _clean_text(item.get("meaningText") or item.get("meaning_hint_ru") or item.get("meaning_ru") or "")
+
+
+def _is_probably_ru(text: str, language: str | None = None) -> bool:
+    lang = normalize_asr_language(language)
+    if lang == "ru":
+        return True
+    if lang and lang != "ru":
+        return False
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return False
+    cyr = sum(1 for ch in letters if "а" <= ch.lower() <= "я" or ch.lower() == "ё")
+    return cyr / max(1, len(letters)) >= 0.55
+
+
+def _extract_json_object(text: str) -> dict[str, Any]:
+    cleaned = str(text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start >= 0 and end > start:
+        return json.loads(cleaned[start:end + 1])
+    raise ValueError("translator returned non-json text")
+
+
+def _gemini_translate_batch(items: list[dict[str, Any]], *, source_language: str, target_language: str, include_meaning: bool) -> dict[str, dict[str, str]]:
+    api_key = _read_env_value("GEMINI_API_KEY") or _read_env_value("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY missing. Add GEMINI_API_KEY=... to backend/.env and restart backend.")
+
+    model = _read_env_value("GEMINI_TEXT_MODEL", "gemini-2.5-flash") or "gemini-2.5-flash"
+    payload_items = [
+        {
+            "id": item["id"],
+            "text": item["text"],
+            "source_language": item.get("language") or source_language or "auto",
+        }
+        for item in items
+        if item.get("text")
+    ]
+    if not payload_items:
+        return {}
+
+    prompt = (
+        "You translate ASR phrase fragments for a video timing editor. "
+        "Return ONLY valid JSON. Preserve item ids exactly. "        "Translate each text to natural Russian, without adding facts. "
+        "Also produce meaning_hint_ru as a vivid Russian director/editor hint. "
+        "meaning_hint_ru MUST be one complete Russian sentence, 12-24 words. "
+        "Describe what to show on screen: camera, visual action, mood, or montage accent. "
+        "Never return a dry title like Тропа в лесу or Лис на тропе. "
+        "If the source text is already Russian, copy it to translation_ru and make meaning_hint_ru concise.\n\n"
+        "JSON schema:\n"
+        "{\"items\":[{\"id\":\"same id\",\"translation_ru\":\"...\",\"meaning_hint_ru\":\"...\"}]}\n\n"
+        f"target_language={target_language}\ninclude_meaning={include_meaning}\nitems=\n"
+        + json.dumps(payload_items, ensure_ascii=False)
+    )
+
+    import requests
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    body = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json",
+        },
+    }
+    response = requests.post(url, json=body, timeout=90)
+    if response.status_code >= 400:
+        raise RuntimeError(f"Gemini translation failed: HTTP {response.status_code} {response.text[:400]}")
+    data = response.json()
+    parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
+    raw_text = "\n".join(str(part.get("text") or "") for part in parts if part.get("text"))
+    parsed = _extract_json_object(raw_text)
+    result: dict[str, dict[str, str]] = {}
+    for item in parsed.get("items") or []:
+        item_id = str(item.get("id") or "").strip()
+        if not item_id:
+            continue
+        result[item_id] = {
+            "translation_ru": _clean_text(item.get("translation_ru") or item.get("text_ru") or ""),
+            "meaning_hint_ru": _clean_text(item.get("meaning_hint_ru") or item.get("meaning_ru") or ""),
+        }
+    return result
+
+
+def _apply_translation_fields(item: dict[str, Any], translation_ru: str, meaning_hint_ru: str) -> dict[str, Any]:
+    translation_ru = _clean_text(translation_ru)
+    meaning_hint_ru = _polish_meaning_hint_ru(_item_text(item), translation_ru, meaning_hint_ru)
+    next_item = dict(item)
+    next_item["ruText"] = translation_ru
+    next_item["text_ru"] = translation_ru
+    next_item["translation_ru"] = translation_ru
+    next_item["meaningText"] = meaning_hint_ru
+    next_item["meaning_hint_ru"] = meaning_hint_ru
+    if "meaning_ru" in next_item or meaning_hint_ru:
+        next_item["meaning_ru"] = meaning_hint_ru
+    return next_item
+
+
+def _translate_items(items: list[dict[str, Any]], *, source_language: str, target_language: str, include_meaning: bool) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    prepared: list[dict[str, Any]] = []
+    output = [dict(item) for item in items]
+    direct_count = 0
+    skipped_count = 0
+
+    for index, item in enumerate(output):
+        text = _item_text(item)
+        if not text:
+            skipped_count += 1
+            continue
+        existing_ru = _item_ru_text(item)
+        existing_meaning = _item_meaning_text(item)
+        lang = str(item.get("language") or item.get("source_language") or source_language or "").strip()
+        if existing_ru and existing_meaning:
+            skipped_count += 1
+            continue
+        if _is_probably_ru(text, lang):
+            output[index] = _apply_translation_fields(item, existing_ru or text, existing_meaning or text)
+            direct_count += 1
+            continue
+        prepared.append({
+            "id": _item_identity(item, index),
+            "index": index,
+            "text": text,
+            "language": lang or source_language or "auto",
+        })
+
+    translated_count = 0
+    provider = "copy_ru_only"
+    if prepared:
+        provider = "gemini"
+        for chunk_start in range(0, len(prepared), 24):
+            chunk = prepared[chunk_start:chunk_start + 24]
+            translated = _gemini_translate_batch(
+                chunk,
+                source_language=source_language,
+                target_language=target_language,
+                include_meaning=include_meaning,
+            )
+            for entry in chunk:
+                item_result = translated.get(entry["id"]) or {}
+                translation = item_result.get("translation_ru") or ""
+                meaning = item_result.get("meaning_hint_ru") or translation
+                if translation:
+                    output[entry["index"]] = _apply_translation_fields(output[entry["index"]], translation, meaning)
+                    translated_count += 1
+
+    return output, {
+        "provider": provider,
+        "translated_count": translated_count,
+        "direct_ru_count": direct_count,
+        "skipped_count": skipped_count,
+        "target_language": target_language,
+    }
+
+
+@router.post("/translate")
+def translate_asr_phrases(payload: AsrTranslateRequest, user: dict = Depends(get_current_user)):
+    # user dependency intentionally keeps the endpoint private/account-protected.
+    source_language = normalize_asr_language(payload.source_language) or "auto"
+    target_language = (payload.target_language or "ru").strip().lower() or "ru"
+    if target_language != "ru":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only Russian target translation is supported now")
+    if payload.project_id:
+        ensure_project_access(payload.project_id, user)
+
+    action_type = _translation_action_type(payload)
+    _require_manual_timing_credit(user, MANUAL_TIMING_AI_CREDIT_COST)
+
+    try:
+        speech_segments, speech_meta = _translate_items(
+            payload.speech_segments or [],
+            source_language=source_language,
+            target_language=target_language,
+            include_meaning=payload.include_meaning,
+        )
+        audio_phrases, phrase_meta = _translate_items(
+            payload.audio_phrases or [],
+            source_language=source_language,
+            target_language=target_language,
+            include_meaning=payload.include_meaning,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"ASR translation failed: {exc}") from exc
+
+    credits_meta = _charge_manual_timing_credit(
+        user,
+        action_type=action_type,
+        project_id=payload.project_id,
+        client_request_id=payload.client_request_id,
+        meta={
+            "source_language": source_language,
+            "target_language": target_language,
+            "speech_items": len(payload.speech_segments or []),
+            "audio_phrase_items": len(payload.audio_phrases or []),
+        },
+    )
+
+    return {
+        "ok": True,
+        "speechSegments": speech_segments,
+        "speech_segments": speech_segments,
+        "audio_phrases": audio_phrases,
+        "translation_meta": {
+            "speech": speech_meta,
+            "audio_phrases": phrase_meta,
+            "target_language": target_language,
+            "charged_action_type": action_type,
+        },
+        "credits": credits_meta,
+        "user": credits_meta.get("user"),
+    }
+
+
 @router.post("/transcribe")
 def transcribe_audio_asset(payload: AsrTranscribeRequest, user: dict = Depends(get_current_user)):
     settings_obj = get_settings()
+    if payload.project_id:
+        ensure_project_access(payload.project_id, user)
+    _require_manual_timing_credit(user, MANUAL_TIMING_AI_CREDIT_COST)
 
     db = store.get_db()
     asset = db.get("assets", {}).get(payload.asset_id)
@@ -475,6 +920,7 @@ def transcribe_audio_asset(payload: AsrTranscribeRequest, user: dict = Depends(g
     is_vocal_source = role_id == "vocal" or role_label == "ВОК" or asr_mode_raw == "vocal"
     effective_mode = "vocal" if is_vocal_source else asr_mode_raw
     source = "asr_vocal_stem" if is_vocal_source else "asr_main_audio"
+    action_type = "manual_timing_asr_vocal" if is_vocal_source else "manual_timing_asr_main"
 
     model_size = (
         os.getenv("MANUAL_TIMING_ASR_MODEL")
@@ -550,6 +996,20 @@ def transcribe_audio_asset(payload: AsrTranscribeRequest, user: dict = Depends(g
 
     full_text = " ".join(segment.get("text", "") for segment in speech_segments).strip()
 
+    credits_meta = _charge_manual_timing_credit(
+        user,
+        action_type=action_type,
+        project_id=payload.project_id,
+        client_request_id=payload.client_request_id,
+        meta={
+            "asset_id": payload.asset_id,
+            "role_id": role_id,
+            "role_label": role_label,
+            "mode": effective_mode,
+            "timing_engine": TIMING_ENGINE,
+        },
+    )
+
     return {
         "ok": True,
         "provider": "local",
@@ -585,4 +1045,6 @@ def transcribe_audio_asset(payload: AsrTranscribeRequest, user: dict = Depends(g
         },
         "speechSegments": speech_segments,
         "speech_segments": speech_segments,
+        "credits": credits_meta,
+        "user": credits_meta.get("user"),
     }

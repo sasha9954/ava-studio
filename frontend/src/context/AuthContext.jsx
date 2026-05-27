@@ -9,6 +9,14 @@ export function AuthProvider({ children }) {
   const [booting, setBooting] = useState(Boolean(token))
 
   useEffect(() => {
+    function handleUserUpdated(event) {
+      if (event?.detail) setUser(event.detail)
+    }
+    window.addEventListener('ava:user-updated', handleUserUpdated)
+    return () => window.removeEventListener('ava:user-updated', handleUserUpdated)
+  }, [])
+
+  useEffect(() => {
     let active = true
     async function boot() {
       if (!token) {

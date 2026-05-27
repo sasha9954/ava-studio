@@ -37,7 +37,17 @@ export async function apiRequest(path, options = {}) {
     const message = data?.detail || data?.message || `API error ${response.status}`
     throw new Error(typeof message === 'string' ? message : JSON.stringify(message))
   }
+
+  if (data?.user && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ava:user-updated', { detail: data.user }))
+  }
+
   return data
+}
+
+function makeClientRequestId(prefix = 'req') {
+  const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`
+  return `${prefix}_${randomId}`
 }
 
 export async function uploadAudioAsset({ file, projectId = null, stage = 'manual_timing' }) {
@@ -70,11 +80,13 @@ export async function fetchProtectedBlobUrl(apiPath) {
   return URL.createObjectURL(blob)
 }
 
-export async function transcribeAudioAsset({ assetId, language = '', roleId = 'narrator', roleLabel = 'ДИК', mode = 'speech', vadFilter = null }) {
+export async function transcribeAudioAsset({ assetId, projectId = null, language = '', roleId = 'narrator', roleLabel = 'ДИК', mode = 'speech', vadFilter = null }) {
   return apiRequest('/asr/transcribe', {
     method: 'POST',
     body: JSON.stringify({
       asset_id: assetId,
+      project_id: projectId,
+      client_request_id: makeClientRequestId('asr'),
       language,
       role_id: roleId,
       role_label: roleLabel,
@@ -83,3 +95,19 @@ export async function transcribeAudioAsset({ assetId, language = '', roleId = 'n
     }),
   })
 }
+
+export async function translateAsrSegments({ speechSegments = [], audioPhrases = [], sourceLanguage = '', targetLanguage = 'ru', projectId = null }) {
+  return apiRequest('/asr/translate', {
+    method: 'POST',
+    body: JSON.stringify({
+      speech_segments: speechSegments,
+      audio_phrases: audioPhrases,
+      project_id: projectId,
+      client_request_id: makeClientRequestId('translate'),
+      source_language: sourceLanguage,
+      target_language: targetLanguage,
+      include_meaning: true,
+    }),
+  })
+}
+

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Clock3, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { fetchProtectedBlobUrl, transcribeAudioAsset, uploadAudioAsset } from '../services/apiClient.js'
+import { fetchProtectedBlobUrl, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
 
 const STAGE = 'manual_timing'
 const DRAFT_VERSION = 'manual_timing_single_timeline_v6_handoff_manifest'
@@ -28,6 +28,8 @@ const emptyDraft = {
   storyBlocks: [],
   roles: [],
   speechSegments: [],
+  audioPhrases: [],
+  missingSpeechHints: [],
   silentSegments: [],
   handoffSource: '',
   historySnapshots: [],
@@ -125,7 +127,9 @@ function normalizeDraft(data) {
     scenes,
     storyBlocks: Array.isArray(data?.storyBlocks) ? data.storyBlocks : [],
     roles: Array.isArray(data?.roles) ? data.roles : [],
-    speechSegments: Array.isArray(data?.speechSegments) ? data.speechSegments : [],
+    speechSegments: normalizeSpeechSegments(data?.speechSegments || data?.speech_segments || []),
+    audioPhrases: Array.isArray(data?.audioPhrases) ? data.audioPhrases : Array.isArray(data?.audio_phrases) ? data.audio_phrases : [],
+    missingSpeechHints: normalizeMissingSpeechHints(data?.missingSpeechHints || data?.missing_speech_hints || []),
     silentSegments: Array.isArray(data?.silentSegments) ? data.silentSegments : [],
     handoffSource: data?.handoffSource || data?.source || '',
     historySnapshots: Array.isArray(data?.historySnapshots) ? data.historySnapshots.slice(-MAX_UNDO) : [],
@@ -230,6 +234,9 @@ function normalizeSpeechSegments(inputSegments = []) {
       const start = Number(segment.start ?? segment.start_sec ?? segment.t0 ?? segment.from ?? 0)
       const end = Number(segment.end ?? segment.end_sec ?? segment.t1 ?? segment.to ?? start)
       const roleId = String(segment.role_id || segment.roleId || segment.role || segment.speaker || segment.speaker_id || 'voice')
+      const text = segment.text || segment.text_original || segment.originalText || segment.original_text || segment.transcript || ''
+      const ruText = segment.ruText || segment.text_ru || segment.translation_ru || ''
+      const meaningText = segment.meaningText || segment.meaning_hint_ru || segment.meaning_ru || ''
       return {
         id: segment.id || segment.segment_id || segment.phrase_id || `speech_${String(index + 1).padStart(3, '0')}`,
         phrase_id: segment.phrase_id || segment.id || segment.segment_id || '',
@@ -238,9 +245,19 @@ function normalizeSpeechSegments(inputSegments = []) {
         roleId,
         role_id: roleId,
         label: segment.label || segment.role_label || '',
-        text: segment.text || segment.text_original || segment.originalText || segment.original_text || segment.transcript || '',
-        ruText: segment.ruText || segment.text_ru || segment.translation_ru || '',
+        text,
+        originalText: segment.originalText || segment.original_text || segment.text_original || text,
+        original_text: segment.original_text || segment.text_original || segment.originalText || text,
+        text_original: segment.text_original || segment.original_text || segment.originalText || text,
+        ruText,
+        text_ru: segment.text_ru || ruText,
+        translation_ru: segment.translation_ru || ruText,
+        meaningText,
+        meaning_hint_ru: segment.meaning_hint_ru || segment.meaning_ru || meaningText,
+        words: Array.isArray(segment.words) ? segment.words : [],
         source: segment.source || 'import',
+        language: segment.language || segment.source_language || '',
+        source_language: segment.source_language || segment.language || '',
         confidence: segment.confidence,
         timingSource: segment.timingSource || segment.timing_source || (segment.phrase_id ? 'audio_phrases_gap_aware' : ''),
       }
@@ -268,6 +285,156 @@ function segmentsOverlap(aStart, aEnd, bStart, bEnd) {
   return Math.min(aEnd, bEnd) - Math.max(aStart, bStart) > 0.03
 }
 
+function compactText(value = '') {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function joinUniqueText(parts = []) {
+  const seen = new Set()
+  return parts
+    .map((part) => compactText(part))
+    .filter(Boolean)
+    .filter((part) => {
+      const key = part.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .join(' ')
+}
+
+function getWordText(word = {}) {
+  return compactText(word.word || word.text || word.token || '')
+}
+
+function getWordStart(word = {}) {
+  return Number(word.start ?? word.start_sec ?? word.t0 ?? 0)
+}
+
+function getWordEnd(word = {}) {
+  const start = getWordStart(word)
+  return Number(word.end ?? word.end_sec ?? word.t1 ?? start)
+}
+
+function clipSegmentTextToScene(scene, segment) {
+  const sceneStart = Number(scene?.start || 0)
+  const sceneEnd = Math.max(sceneStart, Number(scene?.end || sceneStart))
+  const segStart = Number(segment?.start || 0)
+  const segEnd = Math.max(segStart, Number(segment?.end || segStart))
+  const overlap = Math.max(0, Math.min(sceneEnd, segEnd) - Math.max(sceneStart, segStart))
+  const isPartial = overlap > 0.03 && (segStart < sceneStart - 0.035 || segEnd > sceneEnd + 0.035)
+  const words = Array.isArray(segment?.words) ? segment.words : []
+  const wordsInside = words.filter((word) => {
+    const start = getWordStart(word)
+    const end = getWordEnd(word)
+    const mid = start + ((end - start) / 2)
+    return mid >= sceneStart - 0.02 && mid <= sceneEnd + 0.02
+  })
+  const wordText = joinUniqueText(wordsInside.map(getWordText))
+  return {
+    text: wordText || compactText(segment?.text || segment?.originalText || segment?.original_text || ''),
+    ruText: compactText(segment?.ruText || segment?.text_ru || segment?.translation_ru || ''),
+    meaningText: compactText(segment?.meaningText || segment?.meaning_hint_ru || segment?.meaning_ru || ''),
+    isPartial,
+    hasWords: words.length > 0,
+    overlap,
+  }
+}
+
+function buildSceneSpeechExport(scene, speechSegments = []) {
+  const sceneItems = (Array.isArray(speechSegments) ? speechSegments : [])
+    .filter((segment) => segmentsOverlap(scene.start, scene.end, segment.start, segment.end))
+    .map((segment) => ({ segment, clipped: clipSegmentTextToScene(scene, segment) }))
+    .filter((item) => item.clipped.overlap > 0.03)
+
+  const sourcePhraseIds = sceneItems
+    .map(({ segment }) => segment.phrase_id || segment.phraseId || segment.id)
+    .filter(Boolean)
+
+  const joinMeaningParts = (parts = []) => {
+    const seen = new Set()
+    return parts
+      .map((part) => compactText(part))
+      .filter(Boolean)
+      .filter((part) => {
+        const key = part.toLowerCase()
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .join(' • ')
+  }
+
+  const sceneWordText = joinUniqueText(sceneItems.map((item) => item.clipped.text))
+  const phraseTranslationRu = joinUniqueText(sceneItems.map((item) => item.clipped.ruText))
+  const phraseMeaningRu = joinMeaningParts(sceneItems.map((item) => item.clipped.meaningText))
+  const storedBasis = compactText(scene?.asr_scene_word_text || '')
+  const storedTranslationRu = compactText(scene?.translated_text_ru || scene?.translation_ru || scene?.text_ru || '')
+  const storedMeaningRu = compactText(scene?.meaning_hint_ru || scene?.meaning_ru || scene?.meaningText || '')
+  const canUseSceneSliceTranslation = Boolean(
+    scene?.asr_scene_translation_source === 'scene_slice'
+    && storedBasis
+    && sceneWordText
+    && storedBasis.toLowerCase() === sceneWordText.toLowerCase()
+  )
+
+  return {
+    source_phrase_ids: [...new Set(sourcePhraseIds)],
+    scene_word_text: sceneWordText,
+    lyrics_text: sceneWordText,
+    translated_text_ru: canUseSceneSliceTranslation && storedTranslationRu ? storedTranslationRu : phraseTranslationRu,
+    meaning_hint_ru: canUseSceneSliceTranslation && storedMeaningRu ? storedMeaningRu : phraseMeaningRu,
+    phrase_cut_warning: sceneItems.some((item) => item.clipped.isPartial),
+  }
+}
+
+function buildSceneTranslationItems(sceneList = [], speechSegments = []) {
+  return (Array.isArray(sceneList) ? sceneList : [])
+    .map((scene) => {
+      const speechExport = buildSceneSpeechExport(scene, speechSegments)
+      const text = compactText(speechExport.scene_word_text)
+      if (!text) return null
+      return {
+        id: scene.id,
+        phrase_id: scene.id,
+        text,
+        text_original: text,
+        original_text: text,
+        text_en: text,
+        source_language: 'auto',
+        language: 'auto',
+      }
+    })
+    .filter(Boolean)
+}
+
+function applySceneSliceTranslations(sceneList = [], translatedItems = [], speechSegments = []) {
+  const translatedById = new Map(
+    (Array.isArray(translatedItems) ? translatedItems : [])
+      .map((item) => [String(item.phrase_id || item.id || ''), item])
+      .filter(([id]) => id)
+  )
+
+  return (Array.isArray(sceneList) ? sceneList : []).map((scene) => {
+    const speechExport = buildSceneSpeechExport(scene, speechSegments)
+    const translated = translatedById.get(String(scene.id))
+    const translationRu = compactText(translated?.translation_ru || translated?.text_ru || translated?.ruText || '')
+    const meaningRu = compactText(translated?.meaning_hint_ru || translated?.meaning_ru || translated?.meaningText || '')
+    if (!translated || (!translationRu && !meaningRu)) return scene
+    return {
+      ...scene,
+      asr_scene_translation_source: 'scene_slice',
+      asr_scene_word_text: speechExport.scene_word_text,
+      source_phrase_ids: speechExport.source_phrase_ids,
+      scene_word_text: speechExport.scene_word_text,
+      lyrics_text: speechExport.lyrics_text,
+      translated_text_ru: translationRu || speechExport.translated_text_ru,
+      meaning_hint_ru: meaningRu || speechExport.meaning_hint_ru,
+      phrase_cut_warning: speechExport.phrase_cut_warning,
+    }
+  })
+}
+
 export default function ManualTimingPage() {
   const { projectId } = useParams()
   const { activeProject, loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
@@ -281,6 +448,10 @@ export default function ManualTimingPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadingVocal, setUploadingVocal] = useState(false)
   const [asrRunning, setAsrRunning] = useState(false)
+  const [translationRunning, setTranslationRunning] = useState(false)
+  const [showSceneTranslator, setShowSceneTranslator] = useState(true)
+  const [translationTtsPlayingId, setTranslationTtsPlayingId] = useState('')
+  const [translatorPlayingId, setTranslatorPlayingId] = useState('')
   const [missingPhraseEditor, setMissingPhraseEditor] = useState(null)
   const [asrVisualOffsetSec, setAsrVisualOffsetSec] = useState(0)
   const [pendingAudioFile, setPendingAudioFile] = useState(null)
@@ -293,6 +464,7 @@ export default function ManualTimingPage() {
   const [cursorSec, setCursorSec] = useState(0)
   const [audioSrc, setAudioSrc] = useState('')
   const audioRef = useRef(null)
+  const translatorPreviewRangeRef = useRef(null)
   const fileInputRef = useRef(null)
   const jsonInputRef = useRef(null)
 
@@ -319,19 +491,32 @@ export default function ManualTimingPage() {
 
   const getSceneRoleLabels = (scene) => {
     const found = []
+    const addLabel = (value) => {
+      const label = normalizeRoleLabel(value || 'ДИК', 'ДИК')
+      if (label && !found.includes(label)) found.push(label)
+    }
+
+    if (Array.isArray(scene?.roleLabels)) {
+      scene.roleLabels.forEach(addLabel)
+    }
+
     ;(draft.speechSegments || []).forEach((segment) => {
-      if (!speechSegmentBelongsToScene(scene, segment)) return
-      const role = roleMap.get(segment.roleId || segment.role_id)
-      const label = role?.label || segment.label || normalizeRoleLabel(segment.roleId || segment.role_id || 'voice')
-      if (!found.includes(label)) found.push(label)
+      if (!speechSegmentBelongsToScene(scene, segment) && !segmentsOverlap(scene.start, scene.end, segment.start, segment.end)) return
+      const roleId = segment.roleId || segment.role_id || segment.role || segment.speaker || 'narrator'
+      const role = roleMap.get(roleId)
+      addLabel(role?.label || segment.label || segment.role_label || segment.role_name || roleId || 'ДИК')
     })
-    if (draft.handoffSource === 'asr_main_audio' && found.length === 1 && found[0] === 'ДИК') return []
+
     return found.slice(0, 3)
   }
 
   const selectedSpeechSegments = useMemo(() => (
-    (draft.speechSegments || []).filter((segment) => speechSegmentBelongsToScene(selectedScene, segment))
+    (draft.speechSegments || []).filter((segment) => speechSegmentBelongsToScene(selectedScene, segment) || segmentsOverlap(selectedScene.start, selectedScene.end, segment.start, segment.end))
   ), [draft.speechSegments, selectedScene.start, selectedScene.end])
+
+  const selectedSceneSpeechExport = useMemo(() => (
+    buildSceneSpeechExport(selectedScene, draft.speechSegments || [])
+  ), [selectedScene.start, selectedScene.end, draft.speechSegments])
 
 
   function getSceneTooltip(scene) {
@@ -467,6 +652,16 @@ export default function ManualTimingPage() {
     }
   }, [draft.audioApiPath])
 
+
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  }, [])
+
   async function saveDraft(nextDraft = draft, reason = 'manual_save') {
     const quiet = reason === 'autosave'
     if (!quiet) {
@@ -498,6 +693,8 @@ export default function ManualTimingPage() {
     if (!audio) return undefined
 
     function handleEnded() {
+      translatorPreviewRangeRef.current = null
+      setTranslatorPlayingId('')
       setPlayingMode(null)
       setCursorSec(audio.duration || draft.audioDurationSec || 0)
     }
@@ -516,6 +713,19 @@ export default function ManualTimingPage() {
       const audio = audioRef.current
       if (!audio) return
       const current = audio.currentTime || 0
+
+      if (playingMode === 'translator' && translatorPreviewRangeRef.current) {
+        const range = translatorPreviewRangeRef.current
+        if (current >= range.end - 0.01) {
+          audio.pause()
+          audio.currentTime = range.end
+          setCursorSec(range.end)
+          translatorPreviewRangeRef.current = null
+          setTranslatorPlayingId('')
+          setPlayingMode(null)
+          return
+        }
+      }
 
       if (playingMode === 'scene' && selectedScene && current >= selectedScene.end - 0.01) {
         audio.pause()
@@ -541,7 +751,75 @@ export default function ManualTimingPage() {
       audio.currentTime = next
     }
     setCursorSec(next)
+    translatorPreviewRangeRef.current = null
+    setTranslatorPlayingId('')
     setPlayingMode(null)
+  }
+
+
+
+  function getTranslationTtsText(value) {
+    return String(value || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  function pickRussianSpeechVoice() {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return null
+    const voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : []
+    if (!Array.isArray(voices) || !voices.length) return null
+    const ruVoices = voices.filter((voice) => String(voice.lang || '').toLowerCase().startsWith('ru'))
+    return (
+      ruVoices.find((voice) => /google/i.test(voice.name || ''))
+      || ruVoices.find((voice) => /microsoft|irina|pavel/i.test(voice.name || ''))
+      || ruVoices[0]
+      || voices.find((voice) => /google/i.test(voice.name || ''))
+      || voices[0]
+      || null
+    )
+  }
+
+  function stopTranslationTts() {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel()
+    }
+    setTranslationTtsPlayingId('')
+  }
+
+  function speakTranslationText(text, ttsId) {
+    const clean = getTranslationTtsText(text)
+    if (!clean) {
+      setStatus('сначала нужен русский текст для выбранной кнопки')
+      return
+    }
+    if (typeof window === 'undefined' || !window.speechSynthesis || typeof window.SpeechSynthesisUtterance === 'undefined') {
+      setStatus('браузерная озвучка недоступна в этом браузере')
+      return
+    }
+
+    const id = String(ttsId || clean.slice(0, 24))
+    if (translationTtsPlayingId === id) {
+      stopTranslationTts()
+      return
+    }
+
+    window.speechSynthesis.cancel()
+    const utterance = new window.SpeechSynthesisUtterance(clean)
+    utterance.lang = 'ru-RU'
+    utterance.rate = 0.92
+    utterance.pitch = 1
+    utterance.volume = 1
+    const voice = pickRussianSpeechVoice()
+    if (voice) utterance.voice = voice
+
+    utterance.onend = () => setTranslationTtsPlayingId('')
+    utterance.onerror = () => {
+      setTranslationTtsPlayingId('')
+      setStatus('браузер не смог озвучить перевод')
+    }
+
+    setTranslationTtsPlayingId(id)
+    window.speechSynthesis.speak(utterance)
   }
 
   function updateDraft(key, value) {
@@ -566,6 +844,7 @@ export default function ManualTimingPage() {
   function selectScene(sceneIndex) {
     const nextScene = scenes[Math.min(sceneIndex, scenes.length - 1)] || scenes[0]
     stopAudio(nextScene?.start || 0)
+    stopTranslationTts()
     setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
   }
 
@@ -848,6 +1127,8 @@ export default function ManualTimingPage() {
         storyBlocks: [],
         roles: [],
         speechSegments: [],
+        audioPhrases: [],
+        missingSpeechHints: [],
         silentSegments: [],
         vocalAudioName: '',
         vocalAudioAssetId: '',
@@ -881,6 +1162,7 @@ export default function ManualTimingPage() {
       ...draft,
       roles: [],
       speechSegments: [],
+      audioPhrases: [],
       missingSpeechHints: [],
       handoffSource: '',
       asrMode: '',
@@ -922,6 +1204,7 @@ export default function ManualTimingPage() {
         ...sourceDraft,
         roles: [],
         speechSegments: [],
+        audioPhrases: [],
         missingSpeechHints: [],
         handoffSource: '',
         asrMode: '',
@@ -932,6 +1215,7 @@ export default function ManualTimingPage() {
 
       const result = await transcribeAudioAsset({
         assetId: vocalAssetId,
+        projectId: projectId || activeProject?.id || null,
         roleId: 'vocal',
         roleLabel: 'ВОК',
         mode: 'vocal',
@@ -962,6 +1246,7 @@ export default function ManualTimingPage() {
           color: 42,
         }],
         speechSegments: nextSegments,
+        audioPhrases: Array.isArray(result.audio_phrases) ? result.audio_phrases : [],
         missingSpeechHints: normalizeMissingSpeechHints(result.missingSpeechHints || result.missing_speech_hints || []),
         handoffSource: 'asr_vocal_stem',
         asrMode: 'vocal',
@@ -1092,6 +1377,7 @@ const clearedDraft = normalizeDraft({
       ...sourceDraft,
       roles: [],
       speechSegments: [],
+      audioPhrases: [],
       missingSpeechHints: [],
       handoffSource: '',
       asrMode: '',
@@ -1106,6 +1392,7 @@ const clearedDraft = normalizeDraft({
     try {
       const result = await transcribeAudioAsset({
         assetId,
+        projectId: projectId || activeProject?.id || null,
         roleId: useVocalStem ? 'vocal' : 'narrator',
         roleLabel: useVocalStem ? 'ВОК' : 'ДИК',
         mode: useVocalStem ? 'vocal' : mode,
@@ -1121,6 +1408,7 @@ const clearedDraft = normalizeDraft({
         ...sourceDraft,
         roles: result.roles || [],
         speechSegments: nextSegments,
+        audioPhrases: Array.isArray(result.audio_phrases) ? result.audio_phrases : [],
         missingSpeechHints: normalizeMissingSpeechHints(result.missingSpeechHints || result.missing_speech_hints || []),
         handoffSource: sourceName,
         asrMode: useVocalStem ? 'vocal' : (result.mode || mode),
@@ -1136,9 +1424,74 @@ const clearedDraft = normalizeDraft({
     }
   }
 
+
+  async function runAsrTranslation() {
+    const speechSegments = draft.speechSegments || []
+    const audioPhrases = draft.audioPhrases || []
+    if (!speechSegments.length && !audioPhrases.length) {
+      setStatus('сначала сделайте ASR, потом перевод')
+      return
+    }
+
+    setTranslationRunning(true)
+    setStatus('перевод ASR → русский…')
+    try {
+      const result = await translateAsrSegments({
+        speechSegments,
+        audioPhrases,
+        sourceLanguage: draft.asrLanguage || draft.language || '',
+        targetLanguage: 'ru',
+        projectId: projectId || activeProject?.id || null,
+      })
+
+      const translatedSpeechSegments = result.speechSegments || result.speech_segments || speechSegments
+      const translatedAudioPhrases = result.audio_phrases || audioPhrases
+      let translatedScenes = scenes
+      let sceneSliceMeta = null
+
+      const sceneTranslationItems = buildSceneTranslationItems(scenes, translatedSpeechSegments)
+      if (sceneTranslationItems.length) {
+        setStatus('перевод ASR → русский… уточняю выбранные сцены')
+        const sceneResult = await translateAsrSegments({
+          speechSegments: [],
+          audioPhrases: sceneTranslationItems,
+          sourceLanguage: draft.asrLanguage || draft.language || '',
+          targetLanguage: 'ru',
+        })
+        sceneSliceMeta = sceneResult.translation_meta || null
+        translatedScenes = applySceneSliceTranslations(
+          scenes,
+          sceneResult.audio_phrases || [],
+          translatedSpeechSegments,
+        )
+      }
+
+      const nextDraft = normalizeDraft({
+        ...draft,
+        scenes: translatedScenes,
+        speechSegments: translatedSpeechSegments,
+        audioPhrases: translatedAudioPhrases,
+        asrTranslationMeta: {
+          ...(result.translation_meta || {}),
+          scene_slices: sceneSliceMeta,
+        },
+      })
+      setDraft(nextDraft)
+      await saveDraft(nextDraft, 'asr_translation_ru')
+      const translatedCount = Number(result.translation_meta?.speech?.translated_count || 0) + Number(result.translation_meta?.audio_phrases?.translated_count || 0)
+      const copiedCount = Number(result.translation_meta?.speech?.direct_ru_count || 0) + Number(result.translation_meta?.audio_phrases?.direct_ru_count || 0)
+      const sceneCount = sceneTranslationItems.length
+      setStatus(`перевод готов: ${translatedCount} фраз · ${sceneCount} сцен уточнено · ${copiedCount} уже русский`)
+    } catch (err) {
+      setStatus(`ошибка перевода: ${err.message}`)
+    } finally {
+      setTranslationRunning(false)
+    }
+  }
+
   function buildExportPayload() {
     return {
-      schema: 'ava_manual_timing_handoff_v1',
+      schema: 'ava_manual_timing_handoff_v2',
       source: 'manual_timing',
       exportedAt: new Date().toISOString(),
       audio: {
@@ -1150,21 +1503,34 @@ const clearedDraft = normalizeDraft({
       },
       roles: draft.roles || [],
       speechSegments: draft.speechSegments || [],
-      missingSpeechHints: draft.missingSpeechHints || [],
+      speech_segments: draft.speechSegments || [],
+      audio_phrases: draft.audioPhrases || [],
       missingSpeechHints: asrGapSegments || [],
+      missing_speech_hints: asrGapSegments || [],
       silentSegments: draft.silentSegments || [],
-      scenes: scenes.map((scene) => ({
-        id: scene.id,
-        title: scene.title,
-        start: scene.start,
-        end: scene.end,
-        route: scene.route || 'auto',
-        note: scene.note || '',
-        blockId: scene.blockId || '',
-        blockTitle: scene.blockTitle || '',
-        roleLabels: typeof getSceneRoleLabels === 'function' ? getSceneRoleLabels(scene) : (scene.roleLabels || []),
-      })),
+      scenes: scenes.map((scene) => {
+        const speechExport = buildSceneSpeechExport(scene, draft.speechSegments || [])
+        return {
+          id: scene.id,
+          scene_id: scene.id,
+          title: scene.title,
+          start: scene.start,
+          end: scene.end,
+          start_sec: scene.start,
+          end_sec: scene.end,
+          duration_sec: Number((scene.end - scene.start).toFixed(3)),
+          route: scene.route || 'auto',
+          note: scene.note || '',
+          blockId: scene.blockId || '',
+          blockTitle: scene.blockTitle || '',
+          block_id: scene.blockId || '',
+          block_title: scene.blockTitle || '',
+          roleLabels: typeof getSceneRoleLabels === 'function' ? getSceneRoleLabels(scene) : (scene.roleLabels || []),
+          ...speechExport,
+        }
+      }),
       storyBlocks: draft.storyBlocks || [],
+      story_blocks: draft.storyBlocks || [],
     }
   }
 
@@ -1212,6 +1578,7 @@ const clearedDraft = normalizeDraft({
         audioDurationSec: importedDuration || draft.audioDurationSec,
         roles,
         speechSegments,
+        audioPhrases: Array.isArray(root.audio_phrases) ? root.audio_phrases : Array.isArray(root.audioPhrases) ? root.audioPhrases : speechSegments,
         silentSegments,
         scenes: nextScenes,
         scenesCount: nextScenes.length,
@@ -1279,9 +1646,47 @@ const clearedDraft = normalizeDraft({
     await saveDraft(nextDraft, 'audio_metadata_duration')
   }
 
+
+  async function toggleTranslatorPreview(startSec, endSec, previewId) {
+    const audio = audioRef.current
+    if (!audio || !hasAudio || !audioSrc) return
+
+    const start = clampCursor(Number(startSec || 0), draft.audioDurationSec)
+    const safeEnd = clampCursor(Number(endSec || start + 0.1), draft.audioDurationSec)
+    const end = Math.max(start + 0.08, safeEnd)
+    const id = String(previewId || `${start.toFixed(3)}-${end.toFixed(3)}`)
+
+    if (playingMode === 'translator' && translatorPlayingId === id) {
+      const pausedAt = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
+      audio.pause()
+      translatorPreviewRangeRef.current = null
+      setTranslatorPlayingId('')
+      setCursorSec(pausedAt)
+      setPlayingMode(null)
+      return
+    }
+
+    translatorPreviewRangeRef.current = { start, end, id }
+    setTranslatorPlayingId(id)
+    setPlayingMode('translator')
+    audio.currentTime = start
+    setCursorSec(start)
+
+    try {
+      await audio.play()
+    } catch (err) {
+      translatorPreviewRangeRef.current = null
+      setTranslatorPlayingId('')
+      setPlayingMode(null)
+      setStatus(`ошибка проигрывания фразы: ${err.message}`)
+    }
+  }
+
   async function toggleScenePlay() {
     const audio = audioRef.current
     if (!audio || !hasAudio) return
+    translatorPreviewRangeRef.current = null
+    setTranslatorPlayingId('')
     if (playingMode === 'scene') {
       const pausedAt = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
       audio.pause()
@@ -1306,6 +1711,8 @@ const clearedDraft = normalizeDraft({
   async function toggleAllPlay() {
     const audio = audioRef.current
     if (!audio || !hasAudio) return
+    translatorPreviewRangeRef.current = null
+    setTranslatorPlayingId('')
     if (playingMode === 'all') {
       const pausedAt = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
       audio.pause()
@@ -1394,30 +1801,99 @@ const clearedDraft = normalizeDraft({
           <div>
             <strong>ASR / перевод · {selectedScene.title}</strong>
             <span>{formatTime(selectedScene.start)} → {formatTime(selectedScene.end)}</span>
+            {selectedSceneSpeechExport.phrase_cut_warning && <em>фраза разрезана — проверь границу</em>}
           </div>
-          <button type="button" disabled>скрыть перевод</button>
+          <div className="avaTimingAsrStripActions">
+            <button type="button" onClick={runAsrTranslation} disabled={translationRunning || asrRunning || !(draft.speechSegments || []).length}>
+              {translationRunning ? 'перевод…' : 'Перевести ASR · 1+1'}
+            </button>
+            <button type="button" onClick={() => setShowSceneTranslator((value) => !value)}>
+              {showSceneTranslator ? 'скрыть перевод' : 'показать перевод'}
+            </button>
+          </div>
         </div>
 
-        <div className="avaTimingSceneTextBox">
-          <strong>Слова сцены / оригинал</strong>
-          {selectedSpeechSegments.length > 0 ? (
-            <div className="avaTimingSpeechList">
-              {selectedSpeechSegments.map((segment) => {
-                const role = roleMap.get(segment.roleId || segment.role_id)
-                const label = role?.label || segment.label || normalizeRoleLabel(segment.roleId || segment.role_id || 'voice')
-                return (
-                  <div key={segment.id || `${segment.start}-${segment.end}`} className="avaTimingSpeechItem">
-                    <span>{label} · {formatTime(segment.start, true)} → {formatTime(segment.end, true)}</span>
-                    <p>{segment.text || '...'}</p>
-                    {segment.ruText && <em>{segment.ruText}</em>}
-                  </div>
-                )
-              })}
+        {showSceneTranslator && (
+          <div className="avaTimingSceneTextBox avaTimingTranslatorBox">
+            <div className="avaTimingTranslatorSummary">
+              <div>
+                <span>слова сцены</span>
+                <strong>{selectedSceneSpeechExport.scene_word_text || '—'}</strong>
+              </div>
+              <div>
+                <span>перевод</span>
+                <strong>{selectedSceneSpeechExport.translated_text_ru || 'перевода пока нет'}</strong>
+              </div>
+              <div>
+                <span>смысл</span>
+                <strong>{selectedSceneSpeechExport.meaning_hint_ru || 'смысл пока не заполнен'}</strong>
+              </div>
             </div>
-          ) : (
-            <p>ASR-фразы для выбранной сцены пока не найдены. Используйте блок “ASR / разметка речи” под плеером.</p>
-          )}
-        </div>
+
+            <div className="avaTimingTranslationTtsBar">
+              <button
+                type="button"
+                className={translationTtsPlayingId === `scene-translation-${selectedScene.id}` ? 'isPlaying' : ''}
+                onClick={() => speakTranslationText(selectedSceneSpeechExport.translated_text_ru, `scene-translation-${selectedScene.id}`)}
+                disabled={!selectedSceneSpeechExport.translated_text_ru}
+                title="Озвучить русский перевод выбранной сцены браузерным голосом"
+              >
+                {translationTtsPlayingId === `scene-translation-${selectedScene.id}` ? '■ стоп' : '🔊 перевод сцены'}
+              </button>
+              <button
+                type="button"
+                className={translationTtsPlayingId === `scene-meaning-${selectedScene.id}` ? 'isPlaying' : ''}
+                onClick={() => speakTranslationText(selectedSceneSpeechExport.meaning_hint_ru, `scene-meaning-${selectedScene.id}`)}
+                disabled={!selectedSceneSpeechExport.meaning_hint_ru}
+                title="Озвучить краткий смысл сцены"
+              >
+                {translationTtsPlayingId === `scene-meaning-${selectedScene.id}` ? '■ стоп' : '🔊 смысл'}
+              </button>
+              <span>перевод и смысл читаются отдельно · голос берётся из браузера/Chrome</span>
+            </div>
+
+            {selectedSpeechSegments.length > 0 ? (
+              <div className="avaTimingSpeechList">
+                {selectedSpeechSegments.map((segment) => {
+                  const role = roleMap.get(segment.roleId || segment.role_id)
+                  const label = role?.label || segment.label || normalizeRoleLabel(segment.roleId || segment.role_id || 'voice')
+                  const clipped = clipSegmentTextToScene(selectedScene, segment)
+                  const segmentKey = String(segment.id || `${segment.start}-${segment.end}`)
+                  const segmentStart = Math.max(0, Number(segment.start || 0))
+                  const segmentEnd = Math.max(segmentStart + 0.08, Number(segment.end || segmentStart))
+                  const clipStart = Math.max(selectedScene.start, segmentStart)
+                  const clipEnd = Math.min(selectedScene.end, segmentEnd)
+                  const fullPreviewId = `phrase-full-${segmentKey}`
+                  const clipPreviewId = `phrase-clip-${segmentKey}`
+                  return (
+                    <div key={segmentKey} className={`avaTimingSpeechItem ${clipped.isPartial ? 'isPartialCut' : ''}`}>
+                      <div className="avaTimingSpeechItemTop">
+                        <span>{label} · {formatTime(clipStart, true)} → {formatTime(clipEnd, true)}{clipped.isPartial ? ' · частично' : ''}</span>
+                      </div>
+                      <p>{clipped.text || segment.text || '...'}</p>
+                      {clipped.ruText && (
+                        <div className="avaTimingSpeechTranslationLine">
+                          <em>{clipped.ruText}</em>
+                          <button
+                            type="button"
+                            className={translationTtsPlayingId === `phrase-translation-${segmentKey}` ? 'isPlaying' : ''}
+                            onClick={() => speakTranslationText(clipped.ruText, `phrase-translation-${segmentKey}`)}
+                            title="Озвучить русский перевод этой ASR-фразы"
+                          >
+                            {translationTtsPlayingId === `phrase-translation-${segmentKey}` ? '■' : '🔊'}
+                          </button>
+                        </div>
+                      )}
+                      {clipped.meaningText && <small>{clipped.meaningText}</small>}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p>ASR-фразы для выбранной сцены пока не найдены. Используйте блок “ASR / разметка речи” под плеером.</p>
+            )}
+          </div>
+        )}
 
         <div className="avaTimingTimelineScale" onClick={seekTimeline} onDoubleClick={splitAtCursor}>
           <div className="avaTimingCursorLabel" style={{ left: `${cursorPct}%` }}>{formatTime(cursorSec, true)}</div>
@@ -1665,7 +2141,7 @@ const clearedDraft = normalizeDraft({
                 <p>Для подкаста, озвучки, интервью и рассказчика. Берём слова прямо из основного аудио.</p>
               </div>
               <button type="button" onClick={() => runAudioAsr('speech')} disabled={!hasAudio || !draft.audioAssetId || asrRunning}>
-                {asrRunning ? 'ASR…' : 'ASR диктор'}
+                {asrRunning ? 'ASR…' : 'ASR диктор · 1 кредит'}
               </button>
             </div>
 
@@ -1700,7 +2176,7 @@ const clearedDraft = normalizeDraft({
                   onClick={runVocalStemAsrExact}
                   disabled={asrRunning}
                 >
-                  {asrRunning ? 'ASR vocal…' : 'ASR vocal stem точно'}
+                  {asrRunning ? 'ASR vocal…' : 'ASR vocal stem точно · 1 кредит'}
                 </button>
                 <button type="button"
                   disabled={!draft.vocalAudioAssetId || asrRunning}>
@@ -1710,8 +2186,13 @@ const clearedDraft = normalizeDraft({
             </div>
           </div>
 <div className="avaTimingAsrFooterActions">
-            <button type="button" disabled title="Следующий слой: перевод ASR-фраз в русский текст">
-              Перевести ASR
+            <button
+              type="button"
+              onClick={runAsrTranslation}
+              disabled={translationRunning || asrRunning || !(draft.speechSegments || []).length}
+              title="Перевести ASR-фразы в русский текст"
+            >
+              {translationRunning ? 'перевод…' : 'Перевести ASR'}
             </button>
             <span>Vocal stem нужен только как источник слов. Проверка в Network должна быть: role_id=vocal, role_label=ВОК, mode=speech, vad_filter=true.</span>
           </div>
