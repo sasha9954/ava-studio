@@ -24,6 +24,7 @@ const emptyDraft = {
   speechSegments: [],
   silentSegments: [],
   handoffSource: '',
+  historySnapshots: [],
   selectedSceneIndex: 0,
   stepSec: 0.5,
   notes: '',
@@ -115,6 +116,7 @@ function normalizeDraft(data) {
     speechSegments: Array.isArray(data?.speechSegments) ? data.speechSegments : [],
     silentSegments: Array.isArray(data?.silentSegments) ? data.silentSegments : [],
     handoffSource: data?.handoffSource || data?.source || '',
+    historySnapshots: Array.isArray(data?.historySnapshots) ? data.historySnapshots.slice(-MAX_UNDO) : [],
     scenesCount: scenes.length,
     selectedSceneIndex: Math.min(Math.max(0, selectedIndex), scenes.length - 1),
     stepSec: Number.isFinite(parsedStep) ? Math.max(0.05, parsedStep) : 0.5,
@@ -237,6 +239,7 @@ export default function ManualTimingPage() {
   const workspaceMode = !projectId
   const [draft, setDraft] = useState(emptyDraft)
   const [history, setHistory] = useState([])
+  const historyRef = useRef([])
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -278,8 +281,10 @@ export default function ManualTimingPage() {
         const data = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
         if (!active) return
         const normalized = normalizeDraft(data)
+        const loadedHistory = Array.isArray(normalized.historySnapshots) ? normalized.historySnapshots : []
+        historyRef.current = loadedHistory
         setDraft(normalized)
-        setHistory([])
+        setHistory(loadedHistory)
         setCursorSec(normalized.scenes?.[normalized.selectedSceneIndex]?.start || 0)
         setStatus('snapshot загружен')
       } catch (err) {
@@ -339,7 +344,7 @@ export default function ManualTimingPage() {
     if (loading) return undefined
     const timer = window.setTimeout(() => saveDraft(draft, 'autosave'), 900)
     return () => window.clearTimeout(timer)
-  }, [draft.audioName, draft.audioAssetId, draft.audioApiPath, draft.audioSizeBytes, draft.audioDurationSec, draft.scenes, draft.storyBlocks, draft.roles, draft.speechSegments, draft.silentSegments, draft.selectedSceneIndex, draft.stepSec, draft.notes])
+  }, [draft.audioName, draft.audioAssetId, draft.audioApiPath, draft.audioSizeBytes, draft.audioDurationSec, draft.scenes, draft.storyBlocks, draft.roles, draft.speechSegments, draft.silentSegments, draft.historySnapshots, draft.selectedSceneIndex, draft.stepSec, draft.notes])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -397,11 +402,15 @@ export default function ManualTimingPage() {
   }
 
   function pushHistorySnapshot() {
-    setHistory((items) => [...items.slice(-MAX_UNDO + 1), normalizeDraft(draft)])
+    const snapshot = normalizeDraft({ ...draft, historySnapshots: [] })
+    const nextHistory = [...historyRef.current.slice(-MAX_UNDO + 1), snapshot]
+    historyRef.current = nextHistory
+    setHistory(nextHistory)
+    return nextHistory
   }
 
   function applyDraftChange(nextDraft, message, nextCursor = cursorSec) {
-    const normalized = normalizeDraft(nextDraft)
+    const normalized = normalizeDraft({ ...nextDraft, historySnapshots: historyRef.current })
     stopAudio(nextCursor)
     setDraft(normalized)
     setStatus(message)
@@ -530,19 +539,19 @@ export default function ManualTimingPage() {
   }
 
   function undoLastChange() {
-    setHistory((items) => {
-      const previous = items[items.length - 1]
-      if (!previous) {
-        setStatus('нет действий для возврата')
-        return items
-      }
-      const restored = normalizeDraft(previous)
-      const nextCursor = restored.scenes?.[restored.selectedSceneIndex]?.start || 0
-      stopAudio(nextCursor)
-      setDraft(restored)
-      setStatus('возвращено')
-      return items.slice(0, -1)
-    })
+    const previous = historyRef.current[historyRef.current.length - 1]
+    if (!previous) {
+      setStatus('нет действий для возврата')
+      return
+    }
+    const nextHistory = historyRef.current.slice(0, -1)
+    historyRef.current = nextHistory
+    setHistory(nextHistory)
+    const restored = normalizeDraft({ ...previous, historySnapshots: nextHistory })
+    const nextCursor = restored.scenes?.[restored.selectedSceneIndex]?.start || 0
+    stopAudio(nextCursor)
+    setDraft(restored)
+    setStatus('возвращено')
   }
 
   function toggleBlockScene(sceneIndex) {
@@ -662,8 +671,10 @@ export default function ManualTimingPage() {
         speechSegments: [],
         silentSegments: [],
         handoffSource: '',
+        historySnapshots: [],
         notes: '',
       })
+      historyRef.current = []
       setHistory([])
       setBlockSelection([])
       setBlockDraft({ title: '' })
@@ -975,26 +986,11 @@ export default function ManualTimingPage() {
           <button type="button" onClick={splitAtCursor} disabled={!hasAudio}>✂ Разрезать</button>
           <button type="button" onClick={mergeSelectedWithNext} disabled={scenes.length <= 1}>🔗 Соединить</button>
           <button type="button" onClick={markSemanticBlock} disabled={!hasAudio}>+ Смысловой блок</button>
-          <button type="button" disabled title="Следующий этап: виртуальная тишина с source map">тишина после</button>
-          <button type="button" disabled title="Следующий этап: виртуальная тишина с source map">тишина до</button>
-          <button className="isReset" type="button" onClick={resetScenes} disabled={!hasAudio}><RotateCcw size={15} /> сброс</button>
+<button className="isReset" type="button" onClick={resetScenes} disabled={!hasAudio}><RotateCcw size={15} /> сброс</button>
           <button type="button" onClick={undoLastChange} disabled={!history.length}><Undo2 size={15} /> вернуть</button>
           <button className="avaTimingDevButton" type="button" onClick={() => setShowDev((value) => !value)}>{showDev ? 'Скрыть dev' : 'dev'}</button>
         </div>
-
-        {showDev && (
-          <div className="avaTimingDevLine">
-            <label>audio <input value={draft.audioName} onChange={(event) => updateDraft('audioName', event.target.value)} placeholder="example.mp3" /></label>
-            <label>duration <input type="number" min="0" value={draft.audioDurationSec} onChange={(event) => updateDraft('audioDurationSec', Number(event.target.value))} /></label>
-            <label>scenes <input type="number" min="1" value={draft.scenesCount} onChange={(event) => {
-              const count = Number(event.target.value) || 1
-              const nextScenes = buildEvenScenes(count, draft.audioDurationSec)
-              pushHistorySnapshot()
-              applyDraftChange({ ...draft, scenes: nextScenes, scenesCount: nextScenes.length, selectedSceneIndex: 0 }, 'сцены пересчитаны', 0)
-            }} /></label>
-          </div>
-        )}
-      </section>
+</section>
     </div>
   )
 }
