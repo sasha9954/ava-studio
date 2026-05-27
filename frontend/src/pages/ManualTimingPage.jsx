@@ -170,6 +170,103 @@ function sceneHue(index) {
   return 185 + ((index * 47) % 150)
 }
 
+function sanitizeAudioDownloadName(value) {
+  const clean = String(value || 'scene')
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return clean || 'scene'
+}
+
+function encodeAudioBufferSliceToWav(audioBuffer, startFrame, frameCount, channelCount = 1) {
+  const safeChannelCount = Math.max(1, Math.min(channelCount || 1, audioBuffer.numberOfChannels || 1, 2))
+  const safeFrameCount = Math.max(1, frameCount || 1)
+  const bytesPerSample = 2
+  const blockAlign = safeChannelCount * bytesPerSample
+  const byteRate = audioBuffer.sampleRate * blockAlign
+  const dataSize = safeFrameCount * blockAlign
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const view = new DataView(buffer)
+
+  function writeString(offset, text) {
+    for (let i = 0; i < text.length; i += 1) {
+      view.setUint8(offset + i, text.charCodeAt(i))
+    }
+  }
+
+  writeString(0, 'RIFF')
+  view.setUint32(4, 36 + dataSize, true)
+  writeString(8, 'WAVE')
+  writeString(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, safeChannelCount, true)
+  view.setUint32(24, audioBuffer.sampleRate, true)
+  view.setUint32(28, byteRate, true)
+  view.setUint16(32, blockAlign, true)
+  view.setUint16(34, 16, true)
+  writeString(36, 'data')
+  view.setUint32(40, dataSize, true)
+
+  let offset = 44
+  for (let frame = 0; frame < safeFrameCount; frame += 1) {
+    const sourceFrame = startFrame + frame
+    for (let channel = 0; channel < safeChannelCount; channel += 1) {
+      const data = audioBuffer.getChannelData(Math.min(channel, audioBuffer.numberOfChannels - 1))
+      const sample = Math.max(-1, Math.min(1, data[sourceFrame] || 0))
+      const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7fff
+      view.setInt16(offset, intSample, true)
+      offset += 2
+    }
+  }
+
+  return buffer
+}
+
+function stableHueFromBlockKey(value, fallbackIndex = 0) {
+  const text = String(value || '').trim()
+  if (!text) return sceneHue(fallbackIndex)
+  let hash = 0
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i)
+    hash |= 0
+  }
+  return 185 + (Math.abs(hash) % 150)
+}
+
+function sceneBlockHue(scene, fallbackIndex = 0) {
+  const blockKey = String(
+    scene?.blockId ??
+    scene?.block_id ??
+    scene?.semanticBlockId ??
+    scene?.semantic_block_id ??
+    scene?.blockTitle ??
+    scene?.block_title ??
+    ''
+  ).trim()
+
+  // Если сцена в блоке, цвет берётся от блока,
+  // чтобы все сцены одного блока визуально совпадали.
+  if (blockKey) {
+    return stableHueFromBlockKey(`block:${blockKey}`, fallbackIndex)
+  }
+
+  const direct = Number(
+    scene?.blockColor ??
+    scene?.block_color ??
+    scene?.blockHue ??
+    scene?.block_hue ??
+    scene?.color ??
+    scene?.sceneColor ??
+    scene?.scene_color ??
+    scene?.hue
+  )
+  if (Number.isFinite(direct)) return direct
+
+  return sceneHue(fallbackIndex)
+}
+
 function normalizeRoleLabel(value, fallback = 'РЛЬ') {
   const raw = String(value || fallback).trim()
   if (!raw) return fallback
@@ -1734,6 +1831,79 @@ const clearedDraft = normalizeDraft({
     }
   }
 
+
+
+  async function downloadSelectedSceneAudio() {
+    if (!hasAudio || !selectedScene) {
+      setStatus('сначала выбери сцену и загрузи аудио')
+      return
+    }
+
+    const start = Math.max(0, Number(selectedScene.start) || 0)
+    const rawEnd = Math.max(start, Number(selectedScene.end) || start)
+    const end = Math.min(Number(draft.audioDurationSec) || rawEnd, rawEnd)
+
+    if (!(end > start) || end - start < 0.05) {
+      setStatus('слишком короткий отрезок сцены для скачивания')
+      return
+    }
+
+    const sourceUrl = audioSrc || audioRef.current?.currentSrc || audioRef.current?.src
+    if (!sourceUrl) {
+      setStatus('аудио ещё не готово для скачивания')
+      return
+    }
+
+    let audioContext = null
+
+    try {
+      setStatus(`готовлю WAV сцены: ${formatTime(start, true)} → ${formatTime(end, true)}`)
+
+      const response = await fetch(sourceUrl)
+      if (!response.ok) throw new Error(`audio_fetch_failed_${response.status}`)
+
+      const arrayBuffer = await response.arrayBuffer()
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext
+      if (!AudioContextClass) throw new Error('web_audio_not_supported')
+
+      audioContext = new AudioContextClass()
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0))
+
+      const sampleRate = audioBuffer.sampleRate
+      const startFrame = Math.max(0, Math.floor(start * sampleRate))
+      const endFrame = Math.min(audioBuffer.length, Math.ceil(end * sampleRate))
+      const frameCount = Math.max(1, endFrame - startFrame)
+      const channelCount = Math.min(2, Math.max(1, audioBuffer.numberOfChannels || 1))
+
+      const wavBuffer = encodeAudioBufferSliceToWav(audioBuffer, startFrame, frameCount, channelCount)
+      const blob = new Blob([wavBuffer], { type: 'audio/wav' })
+      const url = URL.createObjectURL(blob)
+
+      const sceneName = sanitizeAudioDownloadName(selectedScene.title || selectedScene.id || 'scene')
+      const startName = sanitizeAudioDownloadName(formatTime(start, true))
+      const endName = sanitizeAudioDownloadName(formatTime(end, true))
+
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${sceneName}_${startName}-${endName}.wav`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+      setStatus(`скачал WAV сцены: ${selectedScene.title || selectedScene.id}`)
+    } catch (error) {
+      console.error('[ManualTiming] download selected scene audio failed', error)
+      setStatus('не удалось скачать аудио сцены')
+    } finally {
+      try {
+        await audioContext?.close?.()
+      } catch {
+        // ignore close errors
+      }
+    }
+  }
+
   return (
     <div className="avaPage avaTimingFlatPage">
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
@@ -1958,7 +2128,7 @@ const clearedDraft = normalizeDraft({
                 <button
                   key={`${scene.id}-${scene.start}-${scene.end}`}
                   type="button"
-                  style={{ width: sceneWidth, '--scene-hue': scene.blockColor || sceneHue(scene.index) }}
+                  style={{ width: sceneWidth, '--scene-hue': sceneBlockHue(scene, scene.index) }}
                   className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${blockSelection.includes(scene.index) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''}`}
                   onClick={(event) => handleSceneClick(event, scene.index)}
                   onDoubleClick={(event) => {
@@ -2118,6 +2288,25 @@ const clearedDraft = normalizeDraft({
           <button type="button" onClick={markSemanticBlock} disabled={!hasAudio}>+ Смысловой блок</button>
 <button className="isReset" type="button" onClick={resetScenes} disabled={!hasAudio}><RotateCcw size={15} /> сброс</button>
           <button type="button" onClick={undoLastChange} disabled={!history.length}><Undo2 size={15} /> вернуть</button>
+
+          <button
+            className="avaTimingDownloadSceneButton"
+            type="button"
+            style={{
+              '--scene-hue': sceneHue(selectedScene?.index ?? draft.selectedSceneIndex ?? 0),
+            }}
+            onClick={downloadSelectedSceneAudio}
+            disabled={!hasAudio || !selectedScene}
+            title={`Скачать аудио выбранной сцены: ${selectedScene?.title || selectedScene?.id || 'сцена'} · ${formatTime(selectedScene?.start || 0, true)} → ${formatTime(selectedScene?.end || 0, true)}`}
+          >
+            <span className="avaTimingDownloadSceneIcon">♫</span>
+            <span className="avaTimingDownloadSceneText">
+              <strong>Аудио сцены</strong>
+              <small>
+                {selectedScene?.title || selectedScene?.id || `seg_${String((draft.selectedSceneIndex || 0) + 1).padStart(2, '0')}`} · WAV
+              </small>
+            </span>
+          </button>
           <button className="avaTimingDevButton" type="button" onClick={() => setShowDev((value) => !value)}>{showDev ? 'Скрыть dev' : 'dev'}</button>
         </div>
 

@@ -19,6 +19,22 @@ class Settings(BaseSettings):
     asr_device: str = Field(default='cpu')
     asr_compute_type: str = Field(default='int8')
 
+
+    # Remote ComfyUI / LTX video generation
+    COMFY_BASE_URL: str = ""
+    COMFY_OUTPUT_HANDOFF_STRATEGY: str = "backend_proxy"
+    COMFY_UPLOAD_CONNECT_TIMEOUT_SEC: int = 20
+    COMFY_UPLOAD_READ_TIMEOUT_SEC: int = 180
+    COMFY_UPLOAD_MAX_ATTEMPTS: int = 4
+    COMFY_PROMPT_CONNECT_TIMEOUT_SEC: int = 20
+    COMFY_PROMPT_READ_TIMEOUT_SEC: int = 180
+    COMFY_POLL_INTERVAL_SEC: int = 2
+    COMFY_POLL_TIMEOUT_SEC: int = 900
+    COMFY_DISABLE_PBAR_FOR_REMOTE: bool = True
+    COMFY_DISABLE_PBAR_COMPAT_TOP_LEVEL: bool = True
+    COMFY_IMAGE_VIDEO_WORKFLOW: str = "app/workflows/image-video.json"
+    VIDEO_PROVIDER_DEFAULT: str = "comfy_remote"
+
     @property
     def storage_path(self) -> Path:
         return Path(self.storage_dir)

@@ -2407,3 +2407,190 @@
   }
 }
 
+
+
+/* Stage 5.9G — restore semantic block frame in Manual Timing
+   CSS-only: does not touch JSX/React logic. */
+.avaTimingTimelineScale .hasBlock,
+.avaTimingTimelineScene.hasBlock,
+.avaTimingSceneSegment.hasBlock,
+.avaTimingSceneCard.hasBlock,
+.avaTimingSegment.hasBlock,
+.avaTimingSegmentCard.hasBlock,
+.avaTimingSegmentsRow button.hasBlock,
+.avaTimingSceneButton.hasBlock {
+  --ava-block-hue: var(--block-hue, var(--scene-hue, 205));
+  border-color: hsla(var(--ava-block-hue), 88%, 70%, 0.56) !important;
+  box-shadow:
+    inset 0 2px 0 hsla(var(--ava-block-hue), 92%, 62%, 0.72),
+    inset 0 0 0 1px hsla(var(--ava-block-hue), 85%, 65%, 0.16),
+    0 0 0 1px hsla(var(--ava-block-hue), 85%, 62%, 0.08) !important;
+}
+
+.avaTimingTimelineScale .hasBlock::after,
+.avaTimingTimelineScene.hasBlock::after,
+.avaTimingSceneSegment.hasBlock::after,
+.avaTimingSceneCard.hasBlock::after,
+.avaTimingSegment.hasBlock::after,
+.avaTimingSegmentCard.hasBlock::after,
+.avaTimingSegmentsRow button.hasBlock::after,
+.avaTimingSceneButton.hasBlock::after {
+  border-color: hsla(var(--ava-block-hue), 92%, 68%, 0.18) !important;
+}
+
+.avaTimingTimelineScale .hasBlock.isActive,
+.avaTimingTimelineScale .hasBlock.isSelected,
+.avaTimingTimelineScene.hasBlock.isActive,
+.avaTimingTimelineScene.hasBlock.isSelected,
+.avaTimingSceneSegment.hasBlock.isActive,
+.avaTimingSceneSegment.hasBlock.isSelected,
+.avaTimingSceneCard.hasBlock.isActive,
+.avaTimingSceneCard.hasBlock.isSelected,
+.avaTimingSegment.hasBlock.isActive,
+.avaTimingSegment.hasBlock.isSelected,
+.avaTimingSegmentCard.hasBlock.isActive,
+.avaTimingSegmentCard.hasBlock.isSelected,
+.avaTimingSegmentsRow button.hasBlock.isActive,
+.avaTimingSegmentsRow button.hasBlock.isSelected,
+.avaTimingSceneButton.hasBlock.isActive,
+.avaTimingSceneButton.hasBlock.isSelected {
+  border-color: hsla(var(--ava-block-hue), 96%, 78%, 0.90) !important;
+  box-shadow:
+    inset 0 2px 0 hsla(var(--ava-block-hue), 95%, 66%, 0.88),
+    inset 0 0 0 1px hsla(var(--ava-block-hue), 90%, 72%, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.38),
+    0 12px 28px hsla(var(--ava-block-hue), 80%, 45%, 0.18) !important;
+}
+
+/* Some builds use generic selected classes on scene cards. */
+.avaTimingTimelineScale .hasBlock.active,
+.avaTimingTimelineScale .hasBlock.selected,
+.avaTimingTimelineScene.hasBlock.active,
+.avaTimingTimelineScene.hasBlock.selected,
+.avaTimingSceneSegment.hasBlock.active,
+.avaTimingSceneSegment.hasBlock.selected,
+.avaTimingSceneCard.hasBlock.active,
+.avaTimingSceneCard.hasBlock.selected,
+.avaTimingSegment.hasBlock.active,
+.avaTimingSegment.hasBlock.selected,
+.avaTimingSegmentCard.hasBlock.active,
+.avaTimingSegmentCard.hasBlock.selected {
+  border-color: hsla(var(--ava-block-hue), 96%, 78%, 0.86) !important;
+}
+
+
+/* Stage 5.9H — semantic block outline uses shared block hue */
+.avaTimingSegmentsRow button.hasBlock {
+  border-color: hsla(var(--scene-hue), 82%, 70%, 0.50) !important;
+  box-shadow:
+    inset 0 2px 0 hsla(var(--scene-hue), 88%, 62%, 0.62),
+    inset 0 0 0 1px hsla(var(--scene-hue), 78%, 62%, 0.12) !important;
+}
+
+.avaTimingSegmentsRow button.hasBlock.isActive {
+  border-color: hsla(var(--scene-hue), 92%, 78%, 0.88) !important;
+  box-shadow:
+    inset 0 2px 0 hsla(var(--scene-hue), 92%, 64%, 0.78),
+    0 0 0 1px rgba(255, 255, 255, 0.46),
+    0 10px 26px hsla(var(--scene-hue), 76%, 42%, 0.18) !important;
+}
+
+
+/* Stage 5.9K — visible scene WAV download button */
+.avaTimingToolRail .avaTimingDownloadSceneButton,
+.avaTimingDownloadSceneButton {
+  position: relative;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 118px;
+  border-color: hsla(var(--scene-hue, 190), 88%, 66%, 0.68) !important;
+  background:
+    linear-gradient(135deg,
+      hsla(var(--scene-hue, 190), 78%, 44%, 0.34),
+      hsla(var(--scene-hue, 190), 86%, 55%, 0.16)
+    ),
+    rgba(12, 18, 32, 0.78) !important;
+  color: #f2feff !important;
+  white-space: nowrap;
+}
+
+.avaTimingDownloadSceneButton::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: hsla(var(--scene-hue, 190), 95%, 72%, 0.96);
+  box-shadow: 0 0 12px hsla(var(--scene-hue, 190), 95%, 66%, 0.76);
+}
+
+.avaTimingDownloadSceneButton .avaTimingDownloadSceneIcon {
+  margin-left: 8px;
+  font-size: 16px;
+  line-height: 1;
+  color: hsla(var(--scene-hue, 190), 95%, 82%, 1);
+  text-shadow: 0 0 10px hsla(var(--scene-hue, 190), 95%, 68%, 0.62);
+}
+
+.avaTimingToolRail .avaTimingDownloadSceneButton:not(:disabled):hover,
+.avaTimingDownloadSceneButton:not(:disabled):hover {
+  border-color: hsla(var(--scene-hue, 190), 96%, 74%, 0.95) !important;
+  transform: translateY(-1px);
+}
+
+.avaTimingDownloadSceneButton:disabled {
+  opacity: 0.55;
+  filter: grayscale(0.25);
+}
+
+
+/* Stage 5.9M — two-line selected scene label on WAV button */
+.avaTimingToolRail .avaTimingDownloadSceneButton,
+.avaTimingDownloadSceneButton {
+  min-width: 156px !important;
+  min-height: 46px !important;
+  padding: 8px 15px 8px 14px !important;
+  gap: 9px !important;
+  border-color: hsla(var(--scene-hue, 190), 88%, 66%, 0.72) !important;
+  background:
+    linear-gradient(135deg,
+      hsla(var(--scene-hue, 190), 82%, 44%, 0.36),
+      hsla(var(--scene-hue, 190), 90%, 55%, 0.18)
+    ),
+    rgba(12, 18, 32, 0.78) !important;
+}
+
+.avaTimingDownloadSceneButton .avaTimingDownloadSceneText {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  line-height: 1.05 !important;
+}
+
+.avaTimingDownloadSceneButton .avaTimingDownloadSceneText strong {
+  display: block !important;
+  font-size: 13px !important;
+  font-weight: 760 !important;
+  letter-spacing: 0.01em !important;
+  color: #f5feff !important;
+}
+
+.avaTimingDownloadSceneButton .avaTimingDownloadSceneText small {
+  display: block !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+  color: rgba(235, 245, 255, 0.70) !important;
+  letter-spacing: 0.025em !important;
+}
+
+.avaTimingDownloadSceneButton .avaTimingDownloadSceneIcon {
+  font-size: 17px !important;
+  margin-left: 8px !important;
+}

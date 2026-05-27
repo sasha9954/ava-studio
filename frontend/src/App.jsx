@@ -11,6 +11,7 @@ import AccountPage from './pages/AccountPage.jsx'
 import CreditsPage from './pages/CreditsPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
 import ManualTimingPage from './pages/ManualTimingPage.jsx'
+import BoardPage from './pages/BoardPage.jsx'
 import ModulePlaceholderPage from './pages/ModulePlaceholderPage.jsx'
 
 function Protected({ children }) {
@@ -40,13 +41,13 @@ export default function App() {
         <Route path="projects/new" element={<CreateProjectPage />} />
         <Route path="workspace/timing" element={<ManualTimingPage />} />
         <Route path="workspace/podcast" element={<ModulePlaceholderPage stage="podcast" />} />
-        <Route path="workspace/board" element={<ModulePlaceholderPage stage="board" />} />
+        <Route path="workspace/board" element={<BoardPage />} />
         <Route path="workspace/board-assembly" element={<ModulePlaceholderPage stage="board_assembly" />} />
         <Route path="workspace/video-node" element={<ModulePlaceholderPage stage="video_node" />} />
         <Route path="workspace/generator" element={<ModulePlaceholderPage stage="generator" />} />
         <Route path="projects/:projectId/timing" element={<ManualTimingPage />} />
         <Route path="projects/:projectId/podcast" element={<ModulePlaceholderPage stage="podcast" />} />
-        <Route path="projects/:projectId/board" element={<ModulePlaceholderPage stage="board" />} />
+        <Route path="projects/:projectId/board" element={<BoardPage />} />
         <Route path="projects/:projectId/board-assembly" element={<ModulePlaceholderPage stage="board_assembly" />} />
         <Route path="projects/:projectId/video-node" element={<ModulePlaceholderPage stage="video_node" />} />
         <Route path="projects/:projectId/generator" element={<ModulePlaceholderPage stage="generator" />} />
