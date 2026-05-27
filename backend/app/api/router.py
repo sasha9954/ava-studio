@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import assets, auth, credits, health, jobs, projects, storage, workspace
+from app.api.routes import asr, assets, auth, credits, health, jobs, projects, storage, workspace
 
 api_router = APIRouter(prefix='/api')
 api_router.include_router(health.router)
@@ -9,4 +9,5 @@ api_router.include_router(workspace.router)
 api_router.include_router(jobs.router)
 api_router.include_router(storage.router)
 api_router.include_router(assets.router)
+api_router.include_router(asr.router)
 api_router.include_router(credits.router)

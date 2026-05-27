@@ -69,3 +69,17 @@ export async function fetchProtectedBlobUrl(apiPath) {
   const blob = await response.blob()
   return URL.createObjectURL(blob)
 }
+
+export async function transcribeAudioAsset({ assetId, language = '', roleId = 'narrator', roleLabel = 'ДИК', mode = 'speech', vadFilter = null }) {
+  return apiRequest('/asr/transcribe', {
+    method: 'POST',
+    body: JSON.stringify({
+      asset_id: assetId,
+      language,
+      role_id: roleId,
+      role_label: roleLabel,
+      mode,
+      vad_filter: vadFilter,
+    }),
+  })
+}

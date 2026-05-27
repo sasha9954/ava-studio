@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     static_dir: str = Field(default='static')
     cors_origins: str = Field(default='http://localhost:5173')
     public_base_url: str = Field(default='http://localhost:8000')
+    asr_provider: str = Field(default='local')
+    asr_model: str = Field(default='base')
+    asr_device: str = Field(default='cpu')
+    asr_compute_type: str = Field(default='int8')
 
     @property
     def storage_path(self) -> Path:
