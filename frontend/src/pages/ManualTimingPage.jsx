@@ -657,8 +657,17 @@ export default function ManualTimingPage() {
         scenes: nextScenes,
         scenesCount: nextScenes.length,
         selectedSceneIndex: 0,
+        storyBlocks: [],
+        roles: [],
+        speechSegments: [],
+        silentSegments: [],
+        handoffSource: '',
+        notes: '',
       })
       setHistory([])
+      setBlockSelection([])
+      setBlockDraft({ title: '' })
+      setSceneEditor(null)
       setDraft(nextDraft)
       setCursorSec(0)
       await saveDraft(nextDraft, 'audio_upload')
