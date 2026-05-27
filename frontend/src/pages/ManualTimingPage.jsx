@@ -244,6 +244,8 @@ export default function ManualTimingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [pendingAudioFile, setPendingAudioFile] = useState(null)
+  const [showReplaceAudioConfirm, setShowReplaceAudioConfirm] = useState(false)
   const [showDev, setShowDev] = useState(false)
   const [blockSelection, setBlockSelection] = useState([])
   const [blockDraft, setBlockDraft] = useState({ title: '' })
@@ -648,6 +650,33 @@ export default function ManualTimingPage() {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
+
+    if (hasAudio) {
+      stopAudio(0)
+      setPendingAudioFile(file)
+      setShowReplaceAudioConfirm(true)
+      setStatus('ожидает подтверждения замены аудио')
+      return
+    }
+
+    await uploadPickedAudio(file)
+  }
+
+  async function confirmReplaceAudio() {
+    const file = pendingAudioFile
+    setShowReplaceAudioConfirm(false)
+    setPendingAudioFile(null)
+    if (!file) return
+    await uploadPickedAudio(file)
+  }
+
+  function cancelReplaceAudio() {
+    setShowReplaceAudioConfirm(false)
+    setPendingAudioFile(null)
+    setStatus('замена аудио отменена')
+  }
+
+  async function uploadPickedAudio(file) {
     setUploading(true)
     stopAudio(0)
     setStatus('загрузка аудио…')
@@ -690,6 +719,7 @@ export default function ManualTimingPage() {
     }
   }
 
+
   function buildExportPayload() {
     return {
       schema: 'ava_manual_timing_handoff_v1',
@@ -714,7 +744,7 @@ export default function ManualTimingPage() {
         note: scene.note || '',
         blockId: scene.blockId || '',
         blockTitle: scene.blockTitle || '',
-        roleLabels: getSceneRoleLabels(scene),
+        roleLabels: typeof getSceneRoleLabels === 'function' ? getSceneRoleLabels(scene) : (scene.roleLabels || []),
       })),
       storyBlocks: draft.storyBlocks || [],
     }
@@ -744,9 +774,9 @@ export default function ManualTimingPage() {
       const root = raw.manualTiming || raw.manual_timing || raw
       const manifest = raw.podcast_edit_manifest || root.podcast_edit_manifest || raw.manifest || root.manifest || {}
       const rawSpeech = root.speechSegments || root.speech_segments || manifest.speechSegments || manifest.speech_segments || manifest.segments || []
-      const speechSegments = normalizeSpeechSegments(rawSpeech)
-      const roles = normalizeRoleList(root.roles || manifest.roles || [], speechSegments)
-      const silentSegments = normalizeSilentSegments(root.silentSegments || root.silent_segments || manifest.silentSegments || manifest.silent_segments || [])
+      const speechSegments = typeof normalizeSpeechSegments === 'function' ? normalizeSpeechSegments(rawSpeech) : []
+      const roles = typeof normalizeRoleList === 'function' ? normalizeRoleList(root.roles || manifest.roles || [], speechSegments) : (root.roles || manifest.roles || [])
+      const silentSegments = typeof normalizeSilentSegments === 'function' ? normalizeSilentSegments(root.silentSegments || root.silent_segments || manifest.silentSegments || manifest.silent_segments || []) : []
       const importedDuration = Number(root.audioDurationSec || root.audio_duration_sec || root.audio?.durationSec || root.audio?.duration_sec || manifest.audioDurationSec || manifest.audio_duration_sec || draft.audioDurationSec || 0)
       const importedScenes = Array.isArray(root.scenes) ? root.scenes : []
       const nextScenes = importedScenes.length
@@ -779,6 +809,7 @@ export default function ManualTimingPage() {
       setStatus(`ошибка импорта JSON: ${err.message}`)
     }
   }
+
 
   async function handleLoadedMetadata() {
     const audio = audioRef.current
@@ -841,7 +872,7 @@ export default function ManualTimingPage() {
 
   return (
     <div className="avaPage avaTimingFlatPage">
-      <audio ref={audioRef} src={audioSrc} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
+      <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
       <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm" hidden onChange={handleAudioUpload} />
       <input ref={jsonInputRef} type="file" accept="application/json,.json" hidden onChange={importTimingJson} />
 
@@ -877,6 +908,27 @@ export default function ManualTimingPage() {
       {!hasAudio && (
         <div className="avaTimingAudioWarning">
           Аудио не выбрано. Загрузите mp3/wav, чтобы проверить проигрывание выбранной сцены и всего файла.
+        </div>
+      )}
+
+
+      {showReplaceAudioConfirm && (
+        <div className="avaTimingConfirmOverlay" role="dialog" aria-modal="true">
+          <div className="avaTimingConfirmBox">
+            <div className="avaTimingConfirmIcon">!</div>
+            <div className="avaTimingConfirmText">
+              <strong>Заменить аудио?</strong>
+              <p>
+                Сейчас уже открыт файл <b>{draft.audioName || 'аудио'}</b>. Новая загрузка очистит разрезы,
+                смысловые блоки, роли, ASR-фразы, памятки сцен и историю отмены для этой страницы.
+              </p>
+              {pendingAudioFile && <span>Новый файл: <b>{pendingAudioFile.name}</b></span>}
+            </div>
+            <div className="avaTimingConfirmActions">
+              <button type="button" onClick={cancelReplaceAudio}>Отмена</button>
+              <button type="button" className="isDanger" onClick={confirmReplaceAudio}>Да, заменить</button>
+            </div>
+          </div>
         </div>
       )}
 

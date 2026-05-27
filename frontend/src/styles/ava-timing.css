@@ -652,3 +652,100 @@
 .avaTimingToolRail button[title*="виртуальная тишина"] {
   display: none !important;
 }
+
+/* Stage 3.6 safety: replace audio warning modal */
+.avaTimingConfirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(2, 6, 16, .72);
+  backdrop-filter: blur(10px);
+}
+
+.avaTimingConfirmBox {
+  display: grid;
+  grid-template-columns: 54px minmax(260px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  width: min(760px, 100%);
+  padding: 18px;
+  border: 1px solid rgba(255, 210, 80, .28);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 210, 80, .16), transparent 34%),
+    linear-gradient(135deg, rgba(17, 24, 44, .98), rgba(12, 15, 31, .98));
+  box-shadow: 0 24px 80px rgba(0,0,0,.48);
+}
+
+.avaTimingConfirmIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  color: #1a1220;
+  background: linear-gradient(135deg, #ffdca0, #ff8ba7);
+  font-size: 28px;
+  font-weight: 1000;
+  box-shadow: 0 12px 34px rgba(255, 140, 120, .22);
+}
+
+.avaTimingConfirmText {
+  display: grid;
+  gap: 5px;
+}
+
+.avaTimingConfirmText strong {
+  color: #f8fbff;
+  font-size: 19px;
+}
+
+.avaTimingConfirmText p,
+.avaTimingConfirmText span {
+  margin: 0;
+  color: #b9c6e3;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.avaTimingConfirmText b {
+  color: #fff4ca;
+}
+
+.avaTimingConfirmActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.avaTimingConfirmActions button {
+  min-height: 38px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 999px;
+  color: #dbe7ff;
+  background: rgba(255,255,255,.07);
+  padding: 0 14px;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.avaTimingConfirmActions button.isDanger {
+  color: #1a1220;
+  border-color: rgba(255, 210, 80, .48);
+  background: linear-gradient(135deg, #ffdca0, #ff8ba7);
+}
+
+@media (max-width: 780px) {
+  .avaTimingConfirmBox {
+    grid-template-columns: 1fr;
+  }
+
+  .avaTimingConfirmActions {
+    justify-content: flex-start;
+  }
+}
