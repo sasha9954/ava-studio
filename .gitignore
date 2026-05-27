@@ -21,3 +21,4 @@ backend/static/generated/
 Thumbs.db
 .vscode/
 .idea/
+backend/storage/users/
