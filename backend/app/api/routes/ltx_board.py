@@ -2419,3 +2419,339 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
             pass
 
 
+# ---------------------------------------------------------------------
+# Stage 6.10 — persistent watermark overlay.
+# Fixes single-frame PNG overlay behavior by looping the watermark image and
+# using eof_action=repeat so the watermark stays until the end of the video.
+# ---------------------------------------------------------------------
+
+def _ava_stage610_png_pos_expr(position):
+    pos = str(position or "top_right").lower()
+    margin_x = 18
+    margin_y = 18
+    if pos == "bottom_left":
+        return str(margin_x), f"main_h-overlay_h-{margin_y}"
+    if pos == "top_right":
+        return f"main_w-overlay_w-{margin_x}", str(margin_y)
+    if pos == "top_left":
+        return str(margin_x), str(margin_y)
+    if pos == "bottom_center":
+        return "(main_w-overlay_w)/2", f"main_h-overlay_h-{margin_y}"
+    if pos == "top_center":
+        return "(main_w-overlay_w)/2", str(margin_y)
+    if pos == "bottom_right":
+        return f"main_w-overlay_w-{margin_x}", f"main_h-overlay_h-{margin_y}"
+    return f"main_w-overlay_w-{margin_x}", str(margin_y)
+
+
+def _ava_stage610_drawtext_fallback(src_path, out_path, watermark):
+    text = str((watermark or {}).get("text") or "").strip()
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+    escape = globals().get("_ava_stage69n_escape_drawtext") or globals().get("_ava_stage69m2_escape_drawtext")
+    escaped = escape(text) if callable(escape) else text.replace(":", "\\:").replace("'", "\\'")
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = max(0.03, min(1.0, _assembly_float((watermark or {}).get("opacity"), 0.35)))
+    px, py = _ava_stage610_png_pos_expr(str((watermark or {}).get("position") or "top_right"))
+    x = px.replace("main_w-overlay_w", "w-tw")
+    y = py.replace("main_h-overlay_h", "h-th")
+    border_opacity = max(0.02, min(0.45, opacity * 0.65))
+    vf = f"drawtext=text='{escaped}':fontsize={size}:fontcolor=white@{opacity:.3f}:borderw=2:bordercolor=black@{border_opacity:.3f}:x={x}:y={y}"
+    _run_ffmpeg(["-y", "-i", str(src_path), "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "copy", "-movflags", "+faststart", str(out_path)])
+
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+    text = str((watermark or {}).get("text") or "").strip()
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+    png_path = _Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    try:
+        make_png = globals().get("_ava_stage69n_make_png") or globals().get("_ava_stage69m2_make_png")
+        if callable(make_png) and make_png(text, png_path, size=size, opacity=opacity):
+            x, y = _ava_stage610_png_pos_expr(position)
+            _run_ffmpeg([
+                "-y",
+                "-i", str(src_path),
+                "-loop", "1",
+                "-i", str(png_path),
+                "-filter_complex", f"[1:v]format=rgba[wm];[0:v][wm]overlay={x}:{y}:format=auto:eof_action=repeat:shortest=1[v]",
+                "-map", "[v]",
+                "-map", "0:a?",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "18",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            return
+
+        _ava_stage610_drawtext_fallback(src_path, out_path, watermark)
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------
+# Stage 6.10B — safe persistent watermark overlay.
+# Fix: -loop 1 PNG watermark must not make output infinite.
+# We loop the PNG, repeat it over video, and stop at main video duration.
+# ---------------------------------------------------------------------
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = str((watermark or {}).get("text") or "").strip()
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+    png_path = _Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    try:
+        make_png = globals().get("_ava_stage69n_make_png") or globals().get("_ava_stage69m2_make_png")
+        if callable(make_png) and make_png(text, png_path, size=size, opacity=opacity):
+            pos_fn = globals().get("_ava_stage610_png_pos_expr") or globals().get("_ava_stage69n_png_pos_expr") or globals().get("_ava_stage69m2_png_pos_expr")
+            if callable(pos_fn):
+                x, y = pos_fn(position)
+            else:
+                x, y = "main_w-overlay_w-18", "18"
+
+            duration = _ffprobe_duration(src_path) or 0.0
+            duration_args = ["-t", f"{duration:.3f}"] if duration > 0 else []
+
+            _run_ffmpeg([
+                "-y",
+                "-i", str(src_path),
+                "-loop", "1",
+                "-i", str(png_path),
+                *duration_args,
+                "-filter_complex", f"[1:v]format=rgba[wm];[0:v][wm]overlay={x}:{y}:format=auto:eof_action=repeat:shortest=1[v]",
+                "-map", "[v]",
+                "-map", "0:a?",
+                "-shortest",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "18",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            return
+
+        fallback = globals().get("_ava_stage610_drawtext_fallback") or globals().get("_ava_stage69n_drawtext") or globals().get("_ava_stage69m2_drawtext")
+        if callable(fallback):
+            fallback(src_path, out_path, watermark)
+            return
+
+        shutil.copy2(src_path, out_path)
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------
+# Stage 6.10D — dynamic wandering watermark mode.
+# motion="corners" moves the watermark between four corners every 4 seconds.
+# ---------------------------------------------------------------------
+
+def _ava_stage610d_png_pos_expr(position):
+    pos = str(position or "top_right").lower()
+    margin_x = 18
+    margin_y = 18
+    if pos == "bottom_left":
+        return str(margin_x), f"main_h-overlay_h-{margin_y}"
+    if pos == "top_right":
+        return f"main_w-overlay_w-{margin_x}", str(margin_y)
+    if pos == "top_left":
+        return str(margin_x), str(margin_y)
+    if pos == "bottom_center":
+        return "(main_w-overlay_w)/2", f"main_h-overlay_h-{margin_y}"
+    if pos == "top_center":
+        return "(main_w-overlay_w)/2", str(margin_y)
+    if pos == "bottom_right":
+        return f"main_w-overlay_w-{margin_x}", f"main_h-overlay_h-{margin_y}"
+    return f"main_w-overlay_w-{margin_x}", str(margin_y)
+
+
+def _ava_stage610d_dynamic_corner_filter():
+    return (
+        "[1:v]format=rgba,split=4[wm0][wm1][wm2][wm3];"
+        "[0:v][wm0]overlay=main_w-overlay_w-18:18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,0\\,4)'[v1];"
+        "[v1][wm1]overlay=18:18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,4\\,8)'[v2];"
+        "[v2][wm2]overlay=18:main_h-overlay_h-18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,8\\,12)'[v3];"
+        "[v3][wm3]overlay=main_w-overlay_w-18:main_h-overlay_h-18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,12\\,16)'[v]"
+    )
+
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = str((watermark or {}).get("text") or "").strip()
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+    motion = str((watermark or {}).get("motion") or "static").lower()
+    png_path = _Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    try:
+        make_png = globals().get("_ava_stage69n_make_png") or globals().get("_ava_stage69m2_make_png")
+        if callable(make_png) and make_png(text, png_path, size=size, opacity=opacity):
+            duration = _ffprobe_duration(src_path) or 0.0
+            duration_args = ["-t", f"{duration:.3f}"] if duration > 0 else []
+
+            if motion == "corners":
+                filter_complex = _ava_stage610d_dynamic_corner_filter()
+            else:
+                x, y = _ava_stage610d_png_pos_expr(position)
+                filter_complex = f"[1:v]format=rgba[wm];[0:v][wm]overlay={x}:{y}:format=auto:eof_action=repeat:shortest=1[v]"
+
+            _run_ffmpeg([
+                "-y",
+                "-i", str(src_path),
+                "-loop", "1",
+                "-i", str(png_path),
+                *duration_args,
+                "-filter_complex", filter_complex,
+                "-map", "[v]",
+                "-map", "0:a?",
+                "-shortest",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "18",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            return
+
+        fallback = globals().get("_ava_stage610_drawtext_fallback") or globals().get("_ava_stage69n_drawtext") or globals().get("_ava_stage69m2_drawtext")
+        if callable(fallback):
+            fallback(src_path, out_path, watermark)
+            return
+
+        shutil.copy2(src_path, out_path)
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------
+# Stage 6.10E — final dynamic watermark overlay.
+# Reads watermark.motion:
+#   static  -> selected position
+#   corners -> 0-4 top-right, 4-8 top-left, 8-12 bottom-left, 12-16 bottom-right, loop
+# ---------------------------------------------------------------------
+
+def _ava_stage610e_png_pos_expr(position):
+    pos = str(position or "top_right").lower()
+    mx = 18
+    my = 18
+    if pos == "bottom_left":
+        return str(mx), f"main_h-overlay_h-{my}"
+    if pos == "top_right":
+        return f"main_w-overlay_w-{mx}", str(my)
+    if pos == "top_left":
+        return str(mx), str(my)
+    if pos == "bottom_center":
+        return "(main_w-overlay_w)/2", f"main_h-overlay_h-{my}"
+    if pos == "top_center":
+        return "(main_w-overlay_w)/2", str(my)
+    if pos == "bottom_right":
+        return f"main_w-overlay_w-{mx}", f"main_h-overlay_h-{my}"
+    return f"main_w-overlay_w-{mx}", str(my)
+
+
+def _ava_stage610e_corners_filter():
+    return (
+        "[1:v]format=rgba,split=4[wm0][wm1][wm2][wm3];"
+        "[0:v][wm0]overlay=main_w-overlay_w-18:18:format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,0\\,4)'[v1];"
+        "[v1][wm1]overlay=18:18:format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,4\\,8)'[v2];"
+        "[v2][wm2]overlay=18:main_h-overlay_h-18:format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,8\\,12)'[v3];"
+        "[v3][wm3]overlay=main_w-overlay_w-18:main_h-overlay_h-18:format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,12\\,16)'[v]"
+    )
+
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = str((watermark or {}).get("text") or "").strip()
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+    motion = str((watermark or {}).get("motion") or "static").lower()
+    png_path = _Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    try:
+        make_png = globals().get("_ava_stage69n_make_png") or globals().get("_ava_stage69m2_make_png")
+        if callable(make_png) and make_png(text, png_path, size=size, opacity=opacity):
+            duration = _ffprobe_duration(src_path) or 0.0
+            duration_args = ["-t", f"{duration:.3f}"] if duration > 0 else []
+
+            if motion == "corners":
+                filter_complex = _ava_stage610e_corners_filter()
+            else:
+                x, y = _ava_stage610e_png_pos_expr(position)
+                filter_complex = f"[1:v]format=rgba[wm];[0:v][wm]overlay={x}:{y}:format=auto:eof_action=repeat:shortest=1[v]"
+
+            _run_ffmpeg([
+                "-y",
+                "-i", str(src_path),
+                "-loop", "1",
+                "-i", str(png_path),
+                *duration_args,
+                "-filter_complex", filter_complex,
+                "-map", "[v]",
+                "-map", "0:a?",
+                "-shortest",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "18",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            return
+
+        fallback = globals().get("_ava_stage610_drawtext_fallback") or globals().get("_ava_stage69n_drawtext") or globals().get("_ava_stage69m2_drawtext")
+        if callable(fallback):
+            fallback(src_path, out_path, watermark)
+            return
+
+        shutil.copy2(src_path, out_path)
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+

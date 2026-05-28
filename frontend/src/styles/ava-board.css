@@ -2194,3 +2194,59 @@
 .avaAssemblyLiveWatermark.top_left { left: 10px; top: 8px; }
 .avaAssemblyLiveWatermark.bottom_center { left: 50%; bottom: 42px; transform: translateX(-50%); }
 .avaAssemblyLiveWatermark.top_center { left: 50%; top: 8px; transform: translateX(-50%); }
+
+
+/* Stage 6.10: collapsible assembly side panels */
+.avaAssemblyPanelToggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #eaf2ff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.avaAssemblyPanelToggle span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.avaAssemblyPanelToggle strong {
+  color: #eaf2ff;
+  font-size: 13px;
+}
+
+.avaAssemblyPanelToggle em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaAssemblyPanelToggle b {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: #cfe8ff;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.avaAssemblyPanelToggle.isWatermark { flex: 1 1 auto; }
+.avaAssemblyPanelBody { display: grid; gap: 12px; margin-top: 12px; }
+.avaAssemblyMusicBox.isCollapsed, .avaAssemblyWatermarkBox.isCollapsed { padding: 13px 14px; }
+.avaAssemblyWatermarkBox.isCollapsed .avaAssemblyWatermarkHeader { margin: 0; }
+.avaAssemblyWatermarkBox.isCollapsed { min-height: auto; }
