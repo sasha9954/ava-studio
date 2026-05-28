@@ -1988,6 +1988,7 @@ async function importTimingJson(event) {
         </div>
         <div className="avaBoardHeaderActions">
           <button type="button" onClick={refreshFromTiming}><RefreshCcw size={15} /> Обновить из Timing</button>
+          <Link className="avaBoardHeaderLink" to={projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'}><Film size={15} /> Перейти в видео монтаж</Link>
           <button type="button" onClick={() => importRef.current?.click()}><FileJson size={15} /> Импорт JSON</button>
           <button type="button" onClick={exportBoardJson}><FileJson size={15} /> Экспорт Storyboard</button>
           <button className="avaBoardPrimary" type="button" onClick={() => saveBoard(board, false)} disabled={saving}><Save size={15} /> Сохранить</button>

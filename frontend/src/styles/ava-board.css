@@ -1437,3 +1437,418 @@
     grid-column: 1 / -1;
   }
 }
+
+
+/* Stage 6.1: Board → Video Montage link */
+.avaBoardHeaderLink {
+  border: 1px solid rgba(69, 216, 255, 0.24);
+  border-radius: 13px;
+  padding: 9px 12px;
+  color: #dbe7ff;
+  background: rgba(69, 216, 255, 0.08);
+  font-size: 12px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.avaBoardHeaderLink:hover {
+  background: rgba(69, 216, 255, 0.14);
+  color: #ffffff;
+}
+
+
+/* Stage 6.1: Video Montage / Board Assembly foundation */
+.avaAssemblyPage {
+  display: grid;
+  gap: 18px;
+}
+
+.avaAssemblyHeader {
+  border: 1px solid var(--stroke);
+  border-radius: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(143, 124, 255, .12), rgba(69, 216, 255, .08));
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.avaAssemblyHeader h2 {
+  margin: 4px 0 8px;
+}
+
+.avaAssemblyHeader p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 760px;
+}
+
+.avaAssemblyHeaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  justify-content: flex-end;
+}
+
+.avaAssemblyHeaderActions button,
+.avaAssemblyHeaderActions a {
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 13px;
+  padding: 10px 12px;
+  color: #dce8ff;
+  background: rgba(255,255,255,.06);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.avaAssemblyHeaderActions button:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+
+.avaAssemblyStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.avaAssemblyStats span {
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  padding: 9px 12px;
+  background: rgba(255,255,255,.05);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.avaAssemblyStats strong {
+  color: var(--text);
+}
+
+.avaAssemblyWorkspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) minmax(260px, 340px);
+  gap: 16px;
+  align-items: start;
+}
+
+.avaAssemblySceneRail,
+.avaAssemblyPreviewPanel,
+.avaAssemblySettings {
+  border: 1px solid var(--stroke);
+  border-radius: 22px;
+  background: rgba(255,255,255,.045);
+  padding: 16px;
+}
+
+.avaAssemblySceneList {
+  display: grid;
+  gap: 8px;
+  max-height: 680px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.avaAssemblySceneItem {
+  text-align: left;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 15px;
+  background: rgba(255,255,255,.045);
+  color: #dce8ff;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.avaAssemblySceneItem strong {
+  font-size: 13px;
+}
+
+.avaAssemblySceneItem span,
+.avaAssemblySceneItem small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.avaAssemblySceneItem.isActive {
+  border-color: rgba(69,216,255,.48);
+  box-shadow: 0 0 0 1px rgba(69,216,255,.12), 0 14px 34px rgba(69,216,255,.08);
+}
+
+.avaAssemblySceneItem.isReady {
+  background: linear-gradient(135deg, rgba(39, 207, 137, .11), rgba(255,255,255,.045));
+}
+
+.avaAssemblySceneItem.isMissing {
+  background: linear-gradient(135deg, rgba(255, 105, 125, .12), rgba(255,255,255,.045));
+}
+
+.avaAssemblyPreview {
+  min-height: 360px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 18px;
+  background: rgba(3, 7, 18, .42);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.avaAssemblyPreview video {
+  width: 100%;
+  max-height: 560px;
+  display: block;
+  background: #050816;
+}
+
+.avaAssemblyEmptyPreview {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+  color: var(--muted);
+  padding: 28px;
+}
+
+.avaAssemblyEmptyPreview strong {
+  color: var(--text);
+}
+
+.avaAssemblyWarnings {
+  margin-top: 14px;
+  border: 1px solid rgba(255, 214, 100, .18);
+  border-radius: 16px;
+  background: rgba(255, 214, 100, .06);
+  padding: 13px;
+}
+
+.avaAssemblyWarnings h4 {
+  margin: 0 0 8px;
+}
+
+.avaAssemblyWarnings p {
+  margin: 6px 0;
+  color: #ffe1a7;
+  font-size: 12px;
+}
+
+.avaAssemblyAudioModes {
+  display: grid;
+  gap: 8px;
+}
+
+.avaAssemblyAudioModes button {
+  text-align: left;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 15px;
+  background: rgba(255,255,255,.045);
+  color: #dce8ff;
+  padding: 12px;
+  display: grid;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.avaAssemblyAudioModes button.isActive {
+  border-color: rgba(69,216,255,.45);
+  background: rgba(69,216,255,.1);
+}
+
+.avaAssemblyAudioModes span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.avaAssemblyCheck {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: #cfdbf7;
+  font-size: 12px;
+}
+
+.avaAssemblyVolumeBox,
+.avaAssemblyMusicBox {
+  margin-top: 16px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 16px;
+  padding: 13px;
+  background: rgba(255,255,255,.035);
+  display: grid;
+  gap: 12px;
+}
+
+.avaAssemblyVolumeBox label {
+  display: grid;
+  gap: 7px;
+}
+
+.avaAssemblyVolumeBox span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: #cfdbf7;
+  font-size: 12px;
+}
+
+.avaAssemblyVolumeBox input[type="range"] {
+  width: 100%;
+}
+
+.avaAssemblyMusicBox strong {
+  font-size: 13px;
+}
+
+.avaAssemblyMusicBox p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1180px) {
+  .avaAssemblyWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .avaAssemblySceneList {
+    max-height: 260px;
+  }
+}
+
+@media (max-width: 760px) {
+  .avaAssemblyHeader {
+    flex-direction: column;
+  }
+
+  .avaAssemblyHeaderActions {
+    justify-content: flex-start;
+  }
+}
+
+
+/* Stage 6.2: Assembly layout polish */
+.avaAssemblyWorkspace {
+  grid-template-columns: minmax(230px, 300px) minmax(520px, 1fr) minmax(250px, 330px);
+  align-items: stretch;
+}
+
+.avaAssemblySceneRail,
+.avaAssemblyPreviewPanel,
+.avaAssemblySettings {
+  min-height: 0;
+}
+
+.avaAssemblyPreviewPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.avaAssemblySettings {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.avaAssemblyPreview {
+  min-height: 330px;
+}
+
+.avaAssemblyWarnings {
+  margin-top: 0;
+}
+
+.avaAssemblyInlineMixer {
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 18px;
+  padding: 13px;
+  background: rgba(255,255,255,.035);
+}
+
+.avaAssemblyVolumeBox.isInline {
+  margin-top: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+
+.avaAssemblyVolumeBox.isInline label {
+  min-width: 0;
+}
+
+.avaAssemblySelectLabel {
+  display: grid;
+  gap: 8px;
+  color: #cfdbf7;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.avaAssemblySelectLabel select {
+  width: 100%;
+  border: 1px solid rgba(69,216,255,.22);
+  border-radius: 14px;
+  background: rgba(12, 20, 40, .82);
+  color: #eaf2ff;
+  padding: 11px 12px;
+  font-weight: 800;
+  outline: none;
+}
+
+.avaAssemblyModeHint {
+  border: 1px solid rgba(69,216,255,.18);
+  border-radius: 15px;
+  background: rgba(69,216,255,.07);
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.avaAssemblyModeHint strong {
+  color: #eaf2ff;
+  font-size: 13px;
+}
+
+.avaAssemblyModeHint span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.avaAssemblyMusicBox {
+  margin-top: 0;
+}
+
+@media (max-width: 1280px) {
+  .avaAssemblyWorkspace {
+    grid-template-columns: minmax(210px, 280px) minmax(0, 1fr);
+  }
+
+  .avaAssemblySettings {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
+  .avaAssemblyWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .avaAssemblyVolumeBox.isInline {
+    grid-template-columns: 1fr;
+  }
+}
