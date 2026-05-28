@@ -15,6 +15,12 @@ export default function ProjectsPage() {
     navigate('/app/dashboard')
   }
 
+  function handleProjectCardKeyDown(event, project) {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    handleOpenProject(project)
+  }
+
   function requestDeleteProject(event, project) {
     event.stopPropagation()
     setProjectToDelete(project)
@@ -61,11 +67,14 @@ export default function ProjectsPage() {
         {projects.map((project) => {
           const theme = getProjectTheme(project, projects)
           return (
-            <button
+            <div
               key={project.id}
               className={`avaProjectCard ${activeProject?.id === project.id ? 'isActive' : ''}`}
               style={getProjectCardStyle(project, projects)}
+              role="button"
+              tabIndex={0}
               onClick={() => handleOpenProject(project)}
+              onKeyDown={(event) => handleProjectCardKeyDown(event, project)}
             >
               <i className="avaProjectColorDot" />
               <span>{project.type} · {theme.name}</span>
@@ -82,7 +91,7 @@ export default function ProjectsPage() {
               >
                 <Trash2 size={15} />
               </button>
-            </button>
+            </div>
           )
         })}
       </div>

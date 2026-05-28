@@ -25,6 +25,27 @@ import '../styles/ava-board.css'
 
 const STAGE = 'board'
 const BOARD_VERSION = 'ava_board_foundation_v1'
+const AVA_GLOBAL_JOBS_KEY = 'ava:active-jobs:v1'
+const AVA_COMPLETED_JOBS_KEY = 'ava:completed-jobs:v1'
+const AVA_OPEN_BOARD_SCENE_KEY = 'ava:open-board-scene:v1'
+
+function readAvaGlobalJobs() {
+  try {
+    return JSON.parse(localStorage.getItem(AVA_GLOBAL_JOBS_KEY) || '[]')
+  } catch (error) {
+    return []
+  }
+}
+
+function writeAvaGlobalJobs(jobs) {
+  try {
+    localStorage.setItem(AVA_GLOBAL_JOBS_KEY, JSON.stringify(Array.isArray(jobs) ? jobs : []))
+    window.dispatchEvent(new CustomEvent('ava:jobs-changed'))
+  } catch (error) {
+    // ignore storage errors
+  }
+}
+
 
 const ROUTE_OPTIONS = [
   { value: 'ia2v', label: 'ia2v lip-sync', hint: 'Фото + audio slice сцены' },
@@ -57,6 +78,118 @@ const emptyBoard = {
   scenes: [],
   selectedSceneId: '',
   notes: '',
+}
+
+
+function readAvaCompletedJobs() {
+  try {
+    return JSON.parse(localStorage.getItem(AVA_COMPLETED_JOBS_KEY) || '[]')
+  } catch (error) {
+    return []
+  }
+}
+
+function writeAvaCompletedJobs(jobs) {
+  try {
+    localStorage.setItem(AVA_COMPLETED_JOBS_KEY, JSON.stringify(Array.isArray(jobs) ? jobs : []))
+    window.dispatchEvent(new CustomEvent('ava:completed-jobs-changed'))
+  } catch (error) {
+    // ignore storage errors
+  }
+}
+
+function completedJobMatchesBoard(job = {}, { projectId = '', workspaceMode = true } = {}) {
+  const jobProjectId = String(job.projectId || '')
+  if (workspaceMode) return !jobProjectId
+  return Boolean(jobProjectId) && jobProjectId === String(projectId || '')
+}
+
+function completedJobVideoUrl(kind, data = {}) {
+  if (kind === 'mmaudio') {
+    return data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
+  }
+  return data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
+}
+
+function completedJobPatch(job = {}) {
+  const data = job.data || {}
+  const kind = job.kind || 'video'
+
+  if (kind === 'mmaudio') {
+    const videoUrl = completedJobVideoUrl(kind, data)
+    if (!videoUrl) return null
+
+    return {
+      mmaudio_status: 'ready',
+      mmaudio_video_url: videoUrl,
+      mmaudio_video_name: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
+      mmaudio_job_id: data?.jobId || data?.job_id || job.jobId || '',
+      mmaudio_status_endpoint: job.statusEndpoint || '',
+      mmaudio_error: '',
+      mmaudio_result: data,
+      mmaudio_ready_at: data?.completedAt || job.completedAt || new Date().toISOString(),
+    }
+  }
+
+  const videoUrl = completedJobVideoUrl(kind, data)
+  if (!videoUrl) return null
+
+  return {
+    video_url: videoUrl,
+    video_api_path: data?.videoApiPath || data?.video_api_path || '',
+    video_name: data?.videoName || data?.video_name || 'video.mp4',
+    original_video_url: data?.originalVideoUrl || data?.original_video_url || '',
+    video_status: 'ready',
+    video_job_id: data?.jobId || data?.job_id || job.jobId || '',
+    video_status_endpoint: job.statusEndpoint || '',
+    video_error: '',
+    video_result: data,
+    video_ready_at: data?.completedAt || job.completedAt || new Date().toISOString(),
+  }
+}
+
+function applyCompletedJobsToBoard(boardData = {}, context = {}) {
+  const jobs = readAvaCompletedJobs()
+  if (!jobs.length || !Array.isArray(boardData.scenes)) {
+    return { board: boardData, usedKeys: [] }
+  }
+
+  const usedKeys = []
+  const matchingJobs = jobs.filter((job) => completedJobMatchesBoard(job, context))
+  if (!matchingJobs.length) return { board: boardData, usedKeys }
+
+  let changed = false
+  const scenes = boardData.scenes.map((scene) => {
+    const sceneId = scene?.id || scene?.scene_id
+    const sceneJobs = matchingJobs.filter((job) => job.sceneId === sceneId)
+    if (!sceneJobs.length) return scene
+
+    let nextScene = scene
+    for (const job of sceneJobs) {
+      const patch = completedJobPatch(job)
+      if (!patch) continue
+
+      nextScene = {
+        ...nextScene,
+        ...patch,
+      }
+      usedKeys.push(job.key)
+      changed = true
+    }
+
+    return nextScene
+  })
+
+  if (!changed) return { board: boardData, usedKeys: [] }
+
+  return {
+    board: {
+      ...boardData,
+      scenes,
+      updatedAt: new Date().toISOString(),
+    },
+    usedKeys,
+  }
 }
 
 function asArray(value) {
@@ -389,7 +522,10 @@ function buildBoardFromTiming(timingData = {}, boardData = {}) {
     durationSec: timing.audioDurationSec || timing.audio_duration_sec || 0,
   }
 
-  const selectedId = asText(existing.selectedSceneId) || finalScenes[0]?.id || ''
+  const pendingOpenSceneIdForBuild = typeof sessionStorage !== 'undefined'
+    ? asText(sessionStorage.getItem(AVA_OPEN_BOARD_SCENE_KEY))
+    : ''
+  const selectedId = pendingOpenSceneIdForBuild || asText(existing.selectedSceneId) || finalScenes[0]?.id || ''
   return {
     ...emptyBoard,
     ...existing,
@@ -661,6 +797,7 @@ export default function BoardPage() {
         video_queue_position: localVideoQueueRef.current.indexOf(sceneId) + 1,
       })
       setStatus(`Сцена ${sceneId} поставлена в очередь`)
+      pushBoardToast({ type: 'info', title: 'Сцена в очереди', message: `Сцена ${sceneId} ждёт генерацию`, sceneId })
       return
     }
 
@@ -713,6 +850,7 @@ export default function BoardPage() {
           finishPoll()
           updateScene(sceneId, boardVideoPatchFromStatus(data, endpoint, jobId))
           setStatus(`Видео готово: ${sceneId}`)
+          pushBoardToast({ type: 'success', title: 'Видео готово', message: `Сцена ${sceneId}`, sceneId })
           window.setTimeout(processNextQueuedBoardVideo, 80)
           return
         }
@@ -727,6 +865,7 @@ export default function BoardPage() {
             video_result: data || null,
           })
           setStatus('Comfy завершил job, но backend не вернул video_url')
+          pushBoardToast({ type: 'error', title: 'Видео без результата', message: `Сцена ${sceneId}: backend не вернул video_url`, sceneId })
           window.setTimeout(processNextQueuedBoardVideo, 80)
           return
         }
@@ -741,6 +880,7 @@ export default function BoardPage() {
             video_queue_position: 0,
           })
           setStatus(`Видео не собрано: ${data?.error || data?.detail || status}`)
+          pushBoardToast({ type: 'error', title: 'Видео не собрано', message: `Сцена ${sceneId}: ${data?.error || data?.detail || status}`, sceneId })
           window.setTimeout(processNextQueuedBoardVideo, 80)
           return
         }
@@ -760,6 +900,7 @@ export default function BoardPage() {
             video_error: 'poll_timeout',
           })
           setStatus('Видео слишком долго не отвечает: poll_timeout')
+          pushBoardToast({ type: 'error', title: 'Видео зависло', message: `Сцена ${sceneId}: poll_timeout`, sceneId })
           window.setTimeout(processNextQueuedBoardVideo, 80)
         }
       } catch (error) {
@@ -773,6 +914,7 @@ export default function BoardPage() {
             video_error: error?.message || 'poll_failed',
           })
           setStatus(`Ошибка проверки видео: ${error?.message || 'poll_failed'}`)
+          pushBoardToast({ type: 'error', title: 'Ошибка проверки видео', message: `Сцена ${sceneId}: ${error?.message || 'poll_failed'}`, sceneId })
           window.setTimeout(processNextQueuedBoardVideo, 80)
         }
       }
@@ -783,6 +925,7 @@ export default function BoardPage() {
 
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('')
+  const [boardToasts, setBoardToasts] = useState([])
   const [saving, setSaving] = useState(false)
   const [playback, setPlayback] = useState(null)
   const [collapsedPanels, setCollapsedPanels] = useState({ translation: false })
@@ -859,7 +1002,19 @@ export default function BoardPage() {
         const boardData = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
         const timingData = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
         if (!active) return
-        const nextBoard = buildBoardFromTiming(timingData, boardData)
+        let nextBoard = buildBoardFromTiming(timingData, boardData)
+        const hydratedCompleted = applyCompletedJobsToBoard(nextBoard, { projectId: projectId || '', workspaceMode })
+        nextBoard = hydratedCompleted.board
+        if (hydratedCompleted.usedKeys.length) {
+          const used = new Set(hydratedCompleted.usedKeys)
+          writeAvaCompletedJobs(readAvaCompletedJobs().filter((job) => !used.has(job.key)))
+          setStatus(`Подтянуты готовые job: ${hydratedCompleted.usedKeys.length}`)
+        }
+        const pendingOpenSceneId = sessionStorage.getItem(AVA_OPEN_BOARD_SCENE_KEY) || ''
+        if (pendingOpenSceneId && nextBoard.scenes.some((scene) => scene.id === pendingOpenSceneId || scene.scene_id === pendingOpenSceneId)) {
+          nextBoard = { ...nextBoard, selectedSceneId: pendingOpenSceneId }
+          sessionStorage.removeItem(AVA_OPEN_BOARD_SCENE_KEY)
+        }
         setBoard(nextBoard)
         setStatus(nextBoard.scenes.length ? 'Storyboard собран из Manual Timing' : 'Сцен пока нет — импортируй JSON или вернись в Тайминг')
       } catch (err) {
@@ -974,6 +1129,46 @@ export default function BoardPage() {
         updatedAt: new Date().toISOString(),
       }
     })
+  }
+
+
+  function pushBoardToast({ type = 'info', title = '', message = '', sceneId = '', dedupeKey = '' } = {}) {
+    window.dispatchEvent(new CustomEvent('ava:notify', {
+      detail: {
+        type,
+        title,
+        message,
+        sceneId,
+        to: window.location.pathname,
+        dedupeKey,
+        source: 'board-page',
+      },
+    }))
+  }
+
+  function dismissBoardToast(toastId) {
+    setBoardToasts((current) => current.filter((toast) => toast.id !== toastId))
+  }
+
+
+  function registerAvaGlobalJob({ kind = 'video', sceneId = '', jobId = '', statusEndpoint = '' } = {}) {
+    if (!jobId || !statusEndpoint) return
+
+    const key = `${kind}:${jobId}`
+    const nextJob = {
+      key,
+      kind,
+      sceneId,
+      jobId,
+      statusEndpoint,
+      projectId: projectId || '',
+      workspaceMode,
+      to: window.location.pathname,
+      createdAt: new Date().toISOString(),
+    }
+
+    const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
+    writeAvaGlobalJobs([...jobs, nextJob].slice(-12))
   }
 
   async function refreshFromTiming() {
@@ -1541,8 +1736,10 @@ async function markVideoPlanned(sceneOverride = null) {
         video_error: '',
       })
 
+      const videoStatusEndpoint = data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : '')
       setStatus(`Video job: ${status} · ${jobId || 'no job id'}`)
-      pollBoardVideoJob(sceneToStart.id, data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : ''), jobId)
+      registerAvaGlobalJob({ kind: 'video', sceneId: sceneToStart.id, jobId, statusEndpoint: videoStatusEndpoint })
+      pollBoardVideoJob(sceneToStart.id, videoStatusEndpoint, jobId)
     } catch (error) {
       console.error('[Board] /clip/video/start failed', error)
       updateScene(sceneToStart.id, {
@@ -1550,6 +1747,7 @@ async function markVideoPlanned(sceneOverride = null) {
         video_error: error?.message || 'video_start_failed',
       })
       setStatus(error?.message || 'Не удалось отправить видео')
+      pushBoardToast({ type: 'error', title: 'Видео не отправлено', message: `Сцена ${sceneToStart.id}: ${error?.message || 'video_start_failed'}`, sceneId: sceneToStart.id })
     }
   }
 
@@ -1614,6 +1812,7 @@ async function markVideoPlanned(sceneOverride = null) {
             mmaudio_ready_at: new Date().toISOString(),
           })
           setStatus(`MMAudio готово: ${sceneId}`)
+          pushBoardToast({ type: 'success', title: 'MMAudio готово', message: `Сцена ${sceneId}: звук добавлен`, sceneId })
           return
         }
 
@@ -1625,6 +1824,7 @@ async function markVideoPlanned(sceneOverride = null) {
             mmaudio_status_endpoint: endpoint,
           })
           setStatus(`MMAudio не собрано: ${data?.error || data?.detail || status}`)
+          pushBoardToast({ type: 'error', title: 'MMAudio не собрано', message: `Сцена ${sceneId}: ${data?.error || data?.detail || status}`, sceneId })
           return
         }
 
@@ -1638,6 +1838,7 @@ async function markVideoPlanned(sceneOverride = null) {
         else {
           updateScene(sceneId, { mmaudio_status: 'error', mmaudio_error: 'poll_timeout' })
           setStatus('MMAudio слишком долго не отвечает: poll_timeout')
+          pushBoardToast({ type: 'error', title: 'MMAudio зависло', message: `Сцена ${sceneId}: poll_timeout`, sceneId })
         }
       } catch (error) {
         console.error('[Board] MMAudio status polling failed', error)
@@ -1645,6 +1846,7 @@ async function markVideoPlanned(sceneOverride = null) {
         else {
           updateScene(sceneId, { mmaudio_status: 'error', mmaudio_error: error?.message || 'mmaudio_poll_failed' })
           setStatus(`Ошибка проверки MMAudio: ${error?.message || 'mmaudio_poll_failed'}`)
+          pushBoardToast({ type: 'error', title: 'Ошибка проверки MMAudio', message: `Сцена ${sceneId}: ${error?.message || 'mmaudio_poll_failed'}`, sceneId })
         }
       }
     }
@@ -1659,6 +1861,7 @@ async function markVideoPlanned(sceneOverride = null) {
     if (!sourceVideo && !sourceVideoApiPath) {
       updateScene(selectedScene.id, { mmaudio_status: 'error', mmaudio_error: 'Сначала нужно готовое видео' })
       setStatus('MMAudio: сначала нужно готовое видео')
+      pushBoardToast({ type: 'warning', title: 'MMAudio недоступно', message: 'Сначала нужно готовое видео', sceneId: selectedScene.id })
       return
     }
 
@@ -1698,12 +1901,15 @@ async function markVideoPlanned(sceneOverride = null) {
         mmaudio_workflow_key: data.workflowKey || 'mmaudio-sound-design.json',
         mmaudio_error: '',
       })
+      const mmaudioStatusEndpoint = data.statusEndpoint || (jobId ? `/api/clip/mmaudio/status/${jobId}` : '')
       setStatus(`MMAudio job: ${nextStatus} · ${jobId || 'no job id'}`)
-      pollMmaudioJob(selectedScene.id, data.statusEndpoint || (jobId ? `/api/clip/mmaudio/status/${jobId}` : ''), jobId)
+      registerAvaGlobalJob({ kind: 'mmaudio', sceneId: selectedScene.id, jobId, statusEndpoint: mmaudioStatusEndpoint })
+      pollMmaudioJob(selectedScene.id, mmaudioStatusEndpoint, jobId)
     } catch (error) {
       console.error('[Board] /clip/mmaudio/start failed', error)
       updateScene(selectedScene.id, { mmaudio_status: 'error', mmaudio_error: error?.message || 'mmaudio_start_failed' })
       setStatus(error?.message || 'Не удалось отправить MMAudio')
+      pushBoardToast({ type: 'error', title: 'MMAudio не отправлен', message: `Сцена ${selectedScene.id}: ${error?.message || 'mmaudio_start_failed'}`, sceneId: selectedScene.id })
     }
   }
 
@@ -1752,6 +1958,27 @@ async function importTimingJson(event) {
   return (
     <div className="avaPage avaBoardPage">
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" />
+
+      {boardToasts.length > 0 && (
+        <div className="avaBoardToastStack" role="status" aria-live="polite">
+          {boardToasts.map((toast) => (
+            <div key={toast.id} className={`avaBoardToast is-${toast.type || 'info'}`}>
+              <div className="avaBoardToastBody">
+                <strong>{toast.title}</strong>
+                {toast.message && <span>{toast.message}</span>}
+              </div>
+              {toast.sceneId && (
+                <button type="button" onClick={() => selectScene(toast.sceneId)}>
+                  Открыть
+                </button>
+              )}
+              <button type="button" className="avaBoardToastClose" onClick={() => dismissBoardToast(toast.id)}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <section className="avaBoardHeader">
         <div>

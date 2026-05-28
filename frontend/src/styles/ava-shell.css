@@ -242,3 +242,134 @@
   .avaTopbarRight { justify-content: flex-start; }
   .avaContent { padding: 18px; }
 }
+
+
+/* Stage 5.38: global app notifications */
+.avaGlobalToastStack {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  z-index: 200;
+  display: grid;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.avaGlobalToast {
+  pointer-events: auto;
+  border: 1px solid rgba(139, 165, 255, 0.24);
+  background: linear-gradient(135deg, rgba(12, 20, 40, 0.97), rgba(18, 25, 48, 0.95));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.42);
+  border-radius: 16px;
+  padding: 11px 11px 11px 13px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  color: #eaf2ff;
+  backdrop-filter: blur(16px);
+}
+
+.avaGlobalToastBody {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.avaGlobalToastBody strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.avaGlobalToastBody span {
+  color: #aebbe0;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.avaGlobalToast button {
+  border: 1px solid rgba(139, 165, 255, 0.24);
+  background: rgba(30, 41, 75, 0.86);
+  color: #dbe7ff;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.avaGlobalToastClose {
+  width: 28px;
+  height: 28px;
+  padding: 0 !important;
+  font-size: 18px !important;
+  line-height: 1;
+}
+
+.avaGlobalToast.is-success {
+  border-color: rgba(74, 255, 174, 0.35);
+  background: linear-gradient(135deg, rgba(10, 54, 43, 0.97), rgba(18, 25, 48, 0.95));
+}
+
+.avaGlobalToast.is-error {
+  border-color: rgba(255, 105, 125, 0.42);
+  background: linear-gradient(135deg, rgba(73, 24, 35, 0.97), rgba(18, 25, 48, 0.95));
+}
+
+.avaGlobalToast.is-warning {
+  border-color: rgba(255, 214, 100, 0.42);
+  background: linear-gradient(135deg, rgba(79, 57, 18, 0.97), rgba(18, 25, 48, 0.95));
+}
+
+.avaGlobalToast.is-info {
+  border-color: rgba(84, 203, 255, 0.32);
+}
+
+@media (max-width: 720px) {
+  .avaGlobalToastStack {
+    top: 10px;
+    right: 10px;
+    width: calc(100vw - 20px);
+  }
+
+  .avaGlobalToast {
+    grid-template-columns: 1fr auto;
+  }
+
+  .avaGlobalToast button:not(.avaGlobalToastClose) {
+    grid-column: 1 / -1;
+  }
+}
+
+
+/* Stage 5.42: toast Open is a real link for reliable navigation */
+.avaGlobalToastOpen {
+  border: 1px solid rgba(139, 165, 255, 0.24);
+  background: rgba(30, 41, 75, 0.86);
+  color: #dbe7ff;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.avaGlobalToastOpen:hover {
+  background: rgba(52, 68, 116, 0.92);
+  color: #ffffff;
+}
+
+
+/* Stage 5.42: project card is a div role=button to avoid nested button HTML */
+.avaProjectCard {
+  cursor: pointer;
+}
+
+.avaProjectCard:focus-visible {
+  outline: 2px solid rgba(105, 216, 255, 0.85);
+  outline-offset: 4px;
+}
