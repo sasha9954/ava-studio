@@ -583,19 +583,31 @@ export default function BoardPage() {
 
   function syncQueuedSceneBadges() {
     const queuedIds = [...localVideoQueueRef.current]
-    setBoard((current) => ({
-      ...current,
-      scenes: current.scenes.map((scene) => {
+    setBoard((current) => {
+      let changed = false
+      const scenes = current.scenes.map((scene) => {
         if (!queuedIds.includes(scene.id)) return scene
         if (scene.video_job_id) return scene
+
+        const nextPosition = queuedIds.indexOf(scene.id) + 1
+        if (scene.video_status === 'queued' && scene.video_queue_position === nextPosition) return scene
+
+        changed = true
         return {
           ...scene,
           video_status: 'queued',
-          video_queue_position: queuedIds.indexOf(scene.id) + 1,
+          video_queue_position: nextPosition,
         }
-      }),
-      updatedAt: new Date().toISOString(),
-    }))
+      })
+
+      if (!changed) return current
+
+      return {
+        ...current,
+        scenes,
+        updatedAt: new Date().toISOString(),
+      }
+    })
   }
 
   function processNextQueuedBoardVideo() {
@@ -679,6 +691,14 @@ export default function BoardPage() {
       ? endpoint.slice(4)
       : endpoint
 
+    const pollKey = `${sceneId}:${normalizedEndpoint}:${jobId || ''}`
+    if (activeVideoPollsRef.current.has(pollKey)) return
+    activeVideoPollsRef.current.add(pollKey)
+
+    const finishPoll = () => {
+      activeVideoPollsRef.current.delete(pollKey)
+    }
+
     let attempt = 0
     const maxAttempts = 240
 
@@ -690,6 +710,7 @@ export default function BoardPage() {
         const videoUrl = boardVideoUrlFromStatus(data)
 
         if (videoUrl) {
+          finishPoll()
           updateScene(sceneId, boardVideoPatchFromStatus(data, endpoint, jobId))
           setStatus(`Видео готово: ${sceneId}`)
           window.setTimeout(processNextQueuedBoardVideo, 80)
@@ -697,6 +718,7 @@ export default function BoardPage() {
         }
 
         if (isBoardVideoDoneStatus(status)) {
+          finishPoll()
           updateScene(sceneId, {
             video_status: 'error',
             video_error: 'completed_without_video_url',
@@ -705,10 +727,12 @@ export default function BoardPage() {
             video_result: data || null,
           })
           setStatus('Comfy завершил job, но backend не вернул video_url')
+          window.setTimeout(processNextQueuedBoardVideo, 80)
           return
         }
 
         if (isBoardVideoErrorStatus(status)) {
+          finishPoll()
           updateScene(sceneId, {
             video_status: 'error',
             video_error: data?.error || data?.detail || status,
@@ -730,6 +754,7 @@ export default function BoardPage() {
         if (attempt < maxAttempts) {
           window.setTimeout(tick, 2500)
         } else {
+          finishPoll()
           updateScene(sceneId, {
             video_status: 'error',
             video_error: 'poll_timeout',
@@ -742,6 +767,7 @@ export default function BoardPage() {
         if (attempt < maxAttempts) {
           window.setTimeout(tick, 4000)
         } else {
+          finishPoll()
           updateScene(sceneId, {
             video_status: 'error',
             video_error: error?.message || 'poll_failed',
@@ -766,6 +792,7 @@ export default function BoardPage() {
   const importRef = useRef(null)
   const boardRef = useRef(board)
   const localVideoQueueRef = useRef([])
+  const activeVideoPollsRef = useRef(new Set())
 
   const selectedScene = useMemo(() => {
     return board.scenes.find((scene) => scene.id === board.selectedSceneId) || board.scenes[0] || null
@@ -925,11 +952,28 @@ export default function BoardPage() {
   }
 
   function updateScene(sceneId, patch) {
-    setBoard((current) => ({
-      ...current,
-      scenes: current.scenes.map((scene) => scene.id === sceneId ? { ...scene, ...patch } : scene),
-      updatedAt: new Date().toISOString(),
-    }))
+    setBoard((current) => {
+      let changed = false
+      const entries = Object.entries(patch || {})
+
+      const scenes = current.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene
+
+        const hasFieldChange = entries.some(([key, value]) => !Object.is(scene?.[key], value))
+        if (!hasFieldChange) return scene
+
+        changed = true
+        return { ...scene, ...patch }
+      })
+
+      if (!changed) return current
+
+      return {
+        ...current,
+        scenes,
+        updatedAt: new Date().toISOString(),
+      }
+    })
   }
 
   async function refreshFromTiming() {
