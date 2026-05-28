@@ -577,7 +577,9 @@ def _inject_workflow(
     # Replacing those links with strings corrupts the graph and causes errors like:
     #   AttributeError: 'str' object has no attribute 'shape'
     #
-    # For now we only patch known exact nodes for the LTX ia2v workflow.
+    # For now we only patch known exact nodes for specific LTX workflows.
+    # ia2v exact nodes: image/audio/prompt/size/duration.
+    # first_last exact nodes: start image/end image/prompt/size/duration.
     # Other workflows will get their own exact maps later.
     patched = copy.deepcopy(workflow)
 
@@ -646,6 +648,29 @@ def _apply_known_ltx_node_patches(
     patch("340:330", "value", int(width), "exact_width_340_330")
     patch("340:324", "value", int(height), "exact_height_340_324")
     patch("340:331", "value", float(generation_duration), "exact_duration_plus1_340_331")
+
+    # Exact first_last LTX 2.3 workflow nodes.
+    #
+    # last-first cadr-NO sound.json:
+    #   138.image     = start frame
+    #   137.image     = end frame
+    #   139:128.text  = positive prompt
+    #   139:112.text  = negative prompt
+    #   139:113.value = width
+    #   139:98.value  = height
+    #   139:143.value = duration in seconds
+    #
+    # This is intentionally exact-only. Do not generic-patch graph links.
+    end_ref = (uploaded_end or {}).get("comfyInputRef") or (uploaded_end or {}).get("filename")
+    if start_ref:
+        patch("138", "image", start_ref, "exact_first_last_start_image_138")
+    if end_ref:
+        patch("137", "image", end_ref, "exact_first_last_end_image_137")
+    patch("139:128", "text", positive_prompt, "exact_first_last_positive_prompt_139_128")
+    patch("139:112", "text", negative_prompt, "exact_first_last_negative_prompt_139_112")
+    patch("139:113", "value", int(width), "exact_first_last_width_139_113")
+    patch("139:98", "value", int(height), "exact_first_last_height_139_98")
+    patch("139:143", "value", float(generation_duration), "exact_first_last_duration_139_143")
 
     return exact_patches
 
@@ -816,6 +841,47 @@ def start_video(payload: VideoStartIn) -> dict[str, Any]:
     start_data_url = payload.start_image_data_url or payload.startImageDataUrl or image_data_url
     end_data_url = payload.end_image_data_url or payload.endImageDataUrl
     audio_data_url = payload.audio_data_url or payload.audioDataUrl
+
+    if route.startswith("first_last"):
+        missing_media = []
+        if not (start_url or image_url or start_data_url or image_data_url):
+            missing_media.append("start_image")
+        if not (end_url or end_data_url):
+            missing_media.append("end_image")
+        if missing_media:
+            status = "blocked_missing_first_last_media"
+            job = {
+                "jobId": job_id,
+                "status": status,
+                "createdAt": now,
+                "updatedAt": now,
+                "sceneId": payload.scene_id or payload.sceneId,
+                "projectId": payload.project_id or payload.projectId,
+                "route": route,
+                "workflowKey": workflow_key,
+                "workflowExists": workflow_path.exists(),
+                "targetComfy": "main_ltx",
+                "targetComfyBaseUrl": main_url,
+                "targetDurationSec": target_duration,
+                "generationDurationSec": generation_duration,
+                "trimToDurationSec": target_duration,
+                "plusOneSecondApplied": generation_duration > target_duration,
+                "creditCost": credit_cost,
+                "creditCharged": False,
+                "error": {"code": status, "missing": missing_media},
+                "payload": payload.model_dump(),
+            }
+            BOARD_VIDEO_JOBS[job_id] = job
+            return {
+                "ok": False,
+                "jobId": job_id,
+                "job_id": job_id,
+                "status": status,
+                "statusEndpoint": f"/api/clip/video/status/{job_id}",
+                "missing": missing_media,
+                **job,
+            }
+
     uploaded_image = _comfy_upload_file(main_url, _local_file_or_data_url(image_url, data_url=image_data_url, fallback_ext='.png'), subfolder=f"ava_{job_id}") if (image_url or image_data_url) else None
     uploaded_start = _comfy_upload_file(main_url, _local_file_or_data_url(start_url, data_url=start_data_url, fallback_ext='.png'), subfolder=f"ava_{job_id}") if ((start_url and start_url != image_url) or (start_data_url and start_data_url != image_data_url)) else uploaded_image
     uploaded_end = _comfy_upload_file(main_url, _local_file_or_data_url(end_url, data_url=end_data_url, fallback_ext='.png'), subfolder=f"ava_{job_id}") if (end_url or end_data_url) else None

@@ -416,9 +416,25 @@ function sceneStatus(scene) {
     scene.image_name || scene.first_frame_name || scene.last_frame_name
   )
   const hasVideo = Boolean(scene.video_url || scene.video_name)
-  if (hasVideo || scene.video_status === 'ready') return { label: 'видео готово', className: 'isReady' }
-  if (['starting', 'queued', 'running', 'queued_no_prompt_id'].includes(scene.video_status)) return { label: scene.video_status === 'queued' ? 'в очереди' : 'видео делается', className: 'isRunning' }
-  if (scene.video_status === 'error') return { label: 'ошибка видео', className: 'isError' }
+  const videoStatus = String(scene.video_status || '').toLowerCase()
+
+  // Local queue must be visible even if the scene had an old video before regeneration.
+  if (videoStatus === 'queued' && !scene.video_job_id) return { label: 'в очереди', className: 'isRunning' }
+
+  if (['error', 'failed', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(videoStatus)) {
+    return { label: 'ошибка видео', className: 'isError' }
+  }
+
+  // Once backend/frontend has a video result, the strip should show ready.
+  // This also fixes stale "видео делается" after the result already arrived.
+  if (hasVideo || videoStatus === 'ready' || videoStatus === 'completed') {
+    return { label: 'видео готово', className: 'isReady' }
+  }
+
+  if (['starting', 'running', 'queued_no_prompt_id', 'queued'].includes(videoStatus)) {
+    return { label: videoStatus === 'queued' ? 'в очереди' : 'видео делается', className: 'isRunning' }
+  }
+
   if (hasImage) return { label: 'кадр готов', className: 'isImage' }
   if (hasPrompt) return { label: 'промт готов', className: 'isPrompt' }
   return { label: 'черновик', className: 'isDraft' }
@@ -467,6 +483,178 @@ export default function BoardPage() {
     return data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
   }
 
+  function sceneVideoInputProblems(scene) {
+    const route = String(scene?.route || 'i2v')
+    const isFirstLast = isFirstLastRoute(route)
+    const isLipSync = ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(route)
+
+    const startImage = isFirstLast
+      ? (scene?.first_frame_url || scene?.start_image_url || scene?.image_url || scene?.start_image_data_url || scene?.startImageDataUrl || scene?.image_data_url || scene?.imageDataUrl || '')
+      : (scene?.image_url || scene?.first_frame_url || scene?.start_image_url || scene?.image_data_url || scene?.imageDataUrl || scene?.start_image_data_url || scene?.startImageDataUrl || '')
+
+    const endImage = isFirstLast
+      ? (scene?.last_frame_url || scene?.end_image_url || scene?.end_image_data_url || scene?.endImageDataUrl || '')
+      : ''
+
+    const audioSlice = scene?.audio_slice_url || scene?.audioSliceUrl || ''
+
+    const problems = []
+    if (!startImage) problems.push('нет первого/основного кадра')
+    if (isFirstLast && !endImage) problems.push('нет последнего кадра')
+    if (isLipSync && !audioSlice) problems.push('нет audio slice для lip-sync')
+    return problems
+  }
+
+  function showSceneVideoInputError(scene, problems) {
+    const message = problems.length ? problems.join(', ') : 'недостаточно данных для генерации'
+    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== scene.id)
+    updateScene(scene.id, {
+      video_status: 'error',
+      video_error: message,
+      video_queue_position: 0,
+    })
+    setStatus(`Сцена ${scene.id} не отправлена: ${message}`)
+  }
+
+  function removeInvalidScenesFromLocalQueue() {
+    const invalidIds = []
+    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => {
+      const scene = asArray(boardRef.current?.scenes).find((item) => item.id === sceneId)
+      if (!scene) return false
+      const problems = sceneVideoInputProblems(scene)
+      if (problems.length) {
+        invalidIds.push({ scene, problems })
+        return false
+      }
+      return true
+    })
+    invalidIds.forEach(({ scene, problems }) => showSceneVideoInputError(scene, problems))
+    return invalidIds.length
+  }
+
+  function sceneVideoActionState(scene) {
+    const videoStatus = String(scene?.video_status || '').toLowerCase()
+    const hasVideo = Boolean(scene?.video_url || scene?.video_name)
+    const hasServerJob = Boolean(scene?.video_job_id)
+    const problems = sceneVideoInputProblems(scene)
+    const hasInputProblems = problems.length > 0
+    const isLocalQueued = videoStatus === 'queued' && !hasServerJob && !hasInputProblems
+    const isBusy = !hasVideo && (
+      ['starting', 'running', 'queued_no_prompt_id'].includes(videoStatus) ||
+      (videoStatus === 'queued' && hasServerJob)
+    )
+
+    return {
+      className: `avaBoardWorkflowButton isVideo ${isBusy ? 'isBusy' : isLocalQueued ? 'isQueued' : videoStatus === 'blocked_missing_comfy_base_url' ? 'isBlocked' : videoStatus === 'error' ? 'isError' : ''}`.trim(),
+      label: isLocalQueued ? 'В очереди' : isBusy ? 'Видео делается' : 'Сделать видео',
+      hint: isLocalQueued
+        ? `ждёт очередь${scene?.video_queue_position ? ` · #${scene.video_queue_position}` : ''}`
+        : isBusy
+          ? 'job выполняется…'
+          : videoStatus === 'blocked_missing_comfy_base_url'
+            ? 'нужен COMFY_BASE_URL'
+            : videoStatus === 'error'
+              ? (scene?.video_error || 'ошибка')
+              : hasInputProblems
+                ? `нужно: ${problems.join(', ')}`
+                : hasVideo
+                  ? 'готово · можно заново'
+                  : (scene?.workflow_key || 'workflow будет выбран автоматически'),
+    }
+  }
+
+  function isBoardVideoActiveWorkerStatus(scene) {
+    const status = String(scene?.video_status || '').toLowerCase()
+    return status === 'starting' || status === 'running' || (status === 'queued' && Boolean(scene?.video_job_id))
+  }
+
+  function activeBoardVideoScene(currentBoard) {
+    return asArray(currentBoard?.scenes).find((scene) => {
+      const status = String(scene?.video_status || '').toLowerCase()
+      const hasVideoResult = Boolean(scene?.video_url || scene?.video_name)
+      const hasServerJob = Boolean(scene?.video_job_id)
+
+      if (hasVideoResult) return false
+      if (['starting', 'running', 'queued_no_prompt_id'].includes(status)) return true
+      if (status === 'queued' && hasServerJob) return true
+      return false
+    }) || null
+  }
+
+  function syncQueuedSceneBadges() {
+    const queuedIds = [...localVideoQueueRef.current]
+    setBoard((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (!queuedIds.includes(scene.id)) return scene
+        if (scene.video_job_id) return scene
+        return {
+          ...scene,
+          video_status: 'queued',
+          video_queue_position: queuedIds.indexOf(scene.id) + 1,
+        }
+      }),
+      updatedAt: new Date().toISOString(),
+    }))
+  }
+
+  function processNextQueuedBoardVideo() {
+    const currentBoard = boardRef.current
+    if (activeBoardVideoScene(currentBoard)) return
+
+    while (localVideoQueueRef.current.length) {
+      const nextId = localVideoQueueRef.current.shift()
+      const scene = asArray(boardRef.current?.scenes || currentBoard?.scenes).find((item) => item.id === nextId)
+      if (!scene) continue
+
+      const inputProblems = sceneVideoInputProblems(scene)
+      if (inputProblems.length) {
+        showSceneVideoInputError(scene, inputProblems)
+        continue
+      }
+
+      syncQueuedSceneBadges()
+      setBoard((current) => ({ ...current, selectedSceneId: nextId }))
+      setStatus(`Запускаем из очереди: ${nextId}`)
+      window.setTimeout(() => {
+        markVideoPlanned(scene)
+      }, 120)
+      return
+    }
+  }
+
+  function requestSceneVideoQueue() {
+    if (!selectedScene) return
+
+    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== selectedScene.id)
+
+    const inputProblems = sceneVideoInputProblems(selectedScene)
+    if (inputProblems.length) {
+      showSceneVideoInputError(selectedScene, inputProblems)
+      return
+    }
+
+    const currentBoard = boardRef.current
+    const activeScene = activeBoardVideoScene(currentBoard)
+    const sceneId = selectedScene.id
+
+    if (activeScene && activeScene.id !== sceneId) {
+      if (!localVideoQueueRef.current.includes(sceneId)) {
+        localVideoQueueRef.current.push(sceneId)
+        syncQueuedSceneBadges()
+      }
+      updateScene(sceneId, {
+        video_status: 'queued',
+        video_error: '',
+        video_queue_position: localVideoQueueRef.current.indexOf(sceneId) + 1,
+      })
+      setStatus(`Сцена ${sceneId} поставлена в очередь`)
+      return
+    }
+
+    markVideoPlanned(selectedScene)
+  }
+
   function boardVideoPatchFromStatus(data, endpoint, jobId) {
     const videoUrl = boardVideoUrlFromStatus(data)
     return {
@@ -504,6 +692,7 @@ export default function BoardPage() {
         if (videoUrl) {
           updateScene(sceneId, boardVideoPatchFromStatus(data, endpoint, jobId))
           setStatus(`Видео готово: ${sceneId}`)
+          window.setTimeout(processNextQueuedBoardVideo, 80)
           return
         }
 
@@ -525,8 +714,10 @@ export default function BoardPage() {
             video_error: data?.error || data?.detail || status,
             video_job_id: data?.jobId || data?.job_id || jobId || '',
             video_status_endpoint: endpoint,
+            video_queue_position: 0,
           })
           setStatus(`Видео не собрано: ${data?.error || data?.detail || status}`)
+          window.setTimeout(processNextQueuedBoardVideo, 80)
           return
         }
 
@@ -544,6 +735,7 @@ export default function BoardPage() {
             video_error: 'poll_timeout',
           })
           setStatus('Видео слишком долго не отвечает: poll_timeout')
+          window.setTimeout(processNextQueuedBoardVideo, 80)
         }
       } catch (error) {
         console.error('[Board] video status polling failed', error)
@@ -555,6 +747,7 @@ export default function BoardPage() {
             video_error: error?.message || 'poll_failed',
           })
           setStatus(`Ошибка проверки видео: ${error?.message || 'poll_failed'}`)
+          window.setTimeout(processNextQueuedBoardVideo, 80)
         }
       }
     }
@@ -570,6 +763,8 @@ export default function BoardPage() {
   const [audioSrc, setAudioSrc] = useState('')
   const audioRef = useRef(null)
   const importRef = useRef(null)
+  const boardRef = useRef(board)
+  const localVideoQueueRef = useRef([])
 
   const selectedScene = useMemo(() => {
     return board.scenes.find((scene) => scene.id === board.selectedSceneId) || board.scenes[0] || null
@@ -589,6 +784,43 @@ export default function BoardPage() {
     if (!selectedScene?.blockId) return selectedScene ? [selectedScene] : []
     return board.scenes.filter((scene) => scene.blockId && scene.blockId === selectedScene.blockId)
   }, [board.scenes, selectedScene])
+
+  useEffect(() => {
+    boardRef.current = board
+  }, [board])
+
+  // cleanup stale queued scenes without local queue
+  useEffect(() => {
+    if (loading) return
+    const queuedIds = new Set(localVideoQueueRef.current)
+    const staleQueued = asArray(board.scenes).filter((scene) => (
+      scene.video_status === 'queued' &&
+      !scene.video_job_id &&
+      !queuedIds.has(scene.id)
+    ))
+    if (!staleQueued.length) return
+    setBoard((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (!staleQueued.some((item) => item.id === scene.id)) return scene
+        const problems = sceneVideoInputProblems(scene)
+        if (problems.length) {
+          return {
+            ...scene,
+            video_status: 'error',
+            video_error: problems.join(', '),
+            video_queue_position: 0,
+          }
+        }
+        return {
+          ...scene,
+          video_status: '',
+          video_queue_position: 0,
+        }
+      }),
+      updatedAt: new Date().toISOString(),
+    }))
+  }, [loading, board.scenes])
 
   useEffect(() => {
     let active = true
@@ -1116,19 +1348,29 @@ async function takePreviousLastFrame() {
     return { url: value, dataUrl: '' }
   }
 
-async function markVideoPlanned() {
-    if (!selectedScene) return
+async function markVideoPlanned(sceneOverride = null) {
+    const sceneToStart = sceneOverride || selectedScene
+    if (!sceneToStart) return
+    const inputProblems = sceneVideoInputProblems(sceneToStart)
+    if (inputProblems.length) {
+      showSceneVideoInputError(sceneToStart, inputProblems)
+      window.setTimeout(processNextQueuedBoardVideo, 80)
+      return
+    }
 
-    const route = String(selectedScene.route || 'i2v')
+    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== sceneToStart.id)
+    window.setTimeout(() => syncQueuedSceneBadges(), 0)
+
+    const route = String(sceneToStart.route || 'i2v')
     const isFirstLast = isFirstLastRoute(route)
     const isLipSync = ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(route)
 
     const targetDuration = Math.max(
       0.1,
-      Number(durationOf(selectedScene) || selectedScene.duration_sec || selectedScene.duration || 0)
+      Number(durationOf(sceneToStart) || sceneToStart.duration_sec || sceneToStart.duration || 0)
     )
 
-    const formatValue = String(selectedScene.format || selectedScene.aspect_ratio || board.format || '16:9')
+    const formatValue = String(sceneToStart.format || sceneToStart.aspect_ratio || board.format || '16:9')
     const size = formatValue === '9:16'
       ? { width: 720, height: 1280 }
       : formatValue === '1:1'
@@ -1149,39 +1391,46 @@ async function markVideoPlanned() {
     }
 
     const imageUrl = isFirstLast
-      ? (selectedScene.first_frame_url || selectedScene.start_image_url || selectedScene.image_url || '')
-      : (selectedScene.image_url || selectedScene.first_frame_url || selectedScene.start_image_url || '')
+      ? (sceneToStart.first_frame_url || sceneToStart.start_image_url || sceneToStart.image_url || '')
+      : (sceneToStart.image_url || sceneToStart.first_frame_url || sceneToStart.start_image_url || '')
 
     const endImageUrl = isFirstLast
-      ? (selectedScene.last_frame_url || selectedScene.end_image_url || '')
+      ? (sceneToStart.last_frame_url || sceneToStart.end_image_url || '')
       : ''
 
-    const audioSliceUrl = selectedScene.audio_slice_url || selectedScene.audioSliceUrl || ''
+    const audioSliceUrl = sceneToStart.audio_slice_url || sceneToStart.audioSliceUrl || ''
 
     const warnings = []
     if (!imageUrl) warnings.push('missing_start_image')
     if (isFirstLast && !endImageUrl) warnings.push('missing_last_frame')
     if (isLipSync && !audioSliceUrl) warnings.push('missing_audio_slice')
 
-    updateScene(selectedScene.id, {
+    updateScene(sceneToStart.id, {
       ...staleVideoPatch('video_restarting'),
       video_status: 'starting',
       video_error: '',
       video_start_warnings: warnings,
+      video_url: '',
+      video_api_path: '',
+      video_name: '',
+      original_video_url: '',
+      video_result: null,
+      video_ready_at: '',
+      video_queue_position: 0,
     })
 
     try {
-      setStatus(`POST /api/clip/video/start · ${selectedScene.id}`)
+      setStatus(`POST /api/clip/video/start · ${sceneToStart.id}`)
 
       // AVA_STAGE515_IMAGE_START_SYNC
       // Important: ia2v exact node 269 uses start_image_* when it exists.
       // After replacing the visible image, old start_image_data_url could remain in state,
       // so Comfy received the previous photo while the UI showed the new one.
-      const imageDataUrlForBackend = selectedScene.image_data_url || selectedScene.imageDataUrl || ''
-      const startDataUrlForBackend = selectedScene.start_image_data_url || selectedScene.startImageDataUrl || ''
+      const imageDataUrlForBackend = sceneToStart.image_data_url || sceneToStart.imageDataUrl || ''
+      const startDataUrlForBackend = sceneToStart.start_image_data_url || sceneToStart.startImageDataUrl || ''
       const selectedImageIsFirstFrame = Boolean(
         imageUrl
-        && (imageUrl === selectedScene.first_frame_url || imageUrl === selectedScene.start_image_url || imageUrl === selectedScene.startImageUrl)
+        && (imageUrl === sceneToStart.first_frame_url || imageUrl === sceneToStart.start_image_url || imageUrl === sceneToStart.startImageUrl)
       )
       const chosenImageDataUrlForBackend = selectedImageIsFirstFrame
         ? (startDataUrlForBackend || imageDataUrlForBackend)
@@ -1191,14 +1440,14 @@ async function markVideoPlanned() {
       const startMediaForBackend = isFirstLast
         ? await boardMediaRefForBackend(imageUrl, startDataUrlForBackend || chosenImageDataUrlForBackend)
         : imageMediaForBackend
-      const endMediaForBackend = await boardMediaRefForBackend(endImageUrl, selectedScene.end_image_data_url || selectedScene.endImageDataUrl || '')
+      const endMediaForBackend = await boardMediaRefForBackend(endImageUrl, sceneToStart.end_image_data_url || sceneToStart.endImageDataUrl || '')
 
       const data = await apiRequest('/clip/video/start', {
         method: 'POST',
         body: JSON.stringify({
-          scene_id: selectedScene.id,
+          scene_id: sceneToStart.id,
           route,
-          workflow_key: selectedScene.workflow_key || workflowMap[route] || workflowMap.i2v,
+          workflow_key: sceneToStart.workflow_key || workflowMap[route] || workflowMap.i2v,
           image_url: imageMediaForBackend.url,
           image_data_url: imageMediaForBackend.dataUrl,
           start_image_url: startMediaForBackend.url || imageMediaForBackend.url,
@@ -1206,16 +1455,16 @@ async function markVideoPlanned() {
           end_image_url: endMediaForBackend.url,
           end_image_data_url: endMediaForBackend.dataUrl,
           audio_slice_url: audioSliceUrl,
-          video_prompt: selectedScene.video_prompt || selectedScene.positive_prompt || selectedScene.meaning_hint_ru || '',
-          positive_prompt: selectedScene.positive_prompt || selectedScene.video_prompt || selectedScene.meaning_hint_ru || '',
-          negative_prompt: selectedScene.negative_prompt || 'text, watermark, logo, distorted face, extra limbs, low quality',
+          video_prompt: sceneToStart.video_prompt || sceneToStart.positive_prompt || sceneToStart.meaning_hint_ru || '',
+          positive_prompt: sceneToStart.positive_prompt || sceneToStart.video_prompt || sceneToStart.meaning_hint_ru || '',
+          negative_prompt: sceneToStart.negative_prompt || 'text, watermark, logo, distorted face, extra limbs, low quality',
           width: size.width,
           height: size.height,
           format: formatValue,
           duration_sec: targetDuration,
           target_duration_sec: targetDuration,
-          scene_start_sec: selectedScene.start,
-          scene_end_sec: selectedScene.end,
+          scene_start_sec: sceneToStart.start,
+          scene_end_sec: sceneToStart.end,
           warnings,
           source: 'ava_board_stage_510g2',
         }),
@@ -1224,7 +1473,7 @@ async function markVideoPlanned() {
       const jobId = data.jobId || data.job_id || ''
       const status = data.status || 'queued'
 
-      updateScene(selectedScene.id, {
+      updateScene(sceneToStart.id, {
         video_status: status,
         video_job_id: jobId,
         video_status_endpoint: data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : ''),
@@ -1239,10 +1488,10 @@ async function markVideoPlanned() {
       })
 
       setStatus(`Video job: ${status} · ${jobId || 'no job id'}`)
-      pollBoardVideoJob(selectedScene.id, data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : ''), jobId)
+      pollBoardVideoJob(sceneToStart.id, data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : ''), jobId)
     } catch (error) {
       console.error('[Board] /clip/video/start failed', error)
-      updateScene(selectedScene.id, {
+      updateScene(sceneToStart.id, {
         video_status: 'error',
         video_error: error?.message || 'video_start_failed',
       })
@@ -1596,12 +1845,12 @@ async function importTimingJson(event) {
 
                 <button
                   type="button"
-                  className={`avaBoardWorkflowButton isVideo ${['starting', 'queued', 'running', 'queued_no_prompt_id'].includes(selectedScene.video_status) ? 'isBusy' : selectedScene.video_status === 'blocked_missing_comfy_base_url' ? 'isBlocked' : selectedScene.video_status === 'error' ? 'isError' : selectedScene.video_url ? 'isReady' : selectedScene.video_job_id ? 'isReady' : ''}`}
-                  onClick={markVideoPlanned}
+                  className={sceneVideoActionState(selectedScene).className}
+                  onClick={requestSceneVideoQueue}
                 >
                   <Film size={16} />
-                  <span>{['starting', 'queued', 'running', 'queued_no_prompt_id'].includes(selectedScene.video_status) ? 'Видео делается' : selectedScene.video_url ? 'Видео готово' : selectedScene.video_job_id ? 'Job создан' : 'Сделать видео'}</span>
-                  <small>{selectedScene.video_url ? 'готово' : ['starting', 'queued', 'running', 'queued_no_prompt_id'].includes(selectedScene.video_status) ? (selectedScene.video_status === 'starting' ? 'отправляем job…' : selectedScene.video_status) : selectedScene.video_status === 'blocked_missing_comfy_base_url' ? 'нужен COMFY_BASE_URL' : selectedScene.video_status === 'error' ? (selectedScene.video_error || 'ошибка') : selectedScene.video_job_id ? (selectedScene.workflow_key || selectedScene.video_job_id) : 'POST video/start'}</small>
+                  <span>{sceneVideoActionState(selectedScene).label}</span>
+                  <small>{sceneVideoActionState(selectedScene).hint}</small>
                 </button>
               </div>
             </div>
