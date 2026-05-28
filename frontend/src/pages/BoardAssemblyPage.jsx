@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Clapperboard, Download, Music, RefreshCcw, SlidersHorizontal, UploadCloud, Volume2, Wand2 } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
+import { apiRequest, fetchProtectedBlobUrl, uploadAudioAsset } from '../services/apiClient.js'
 import '../styles/ava-board.css'
 
 const AUDIO_MODES = [
@@ -31,6 +32,34 @@ const AUDIO_MODES = [
     text: 'Для документалок и историй: master audio + фоновая музыка + scene ambience.',
   },
 ]
+
+function assemblySettingsKey(projectId = '') {
+  return projectId
+    ? `ava:board-assembly:${projectId}:settings:v1`
+    : 'ava:board-assembly:workspace:settings:v1'
+}
+
+function clampNumber(value, min, max, fallback) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, parsed))
+}
+
+function readAssemblySettings(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || '{}') || {}
+  } catch (error) {
+    return {}
+  }
+}
+
+function writeAssemblySettings(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch (error) {
+    // ignore localStorage quota/privacy errors
+  }
+}
 
 function asArray(value) {
   return Array.isArray(value) ? value : []
@@ -75,6 +104,15 @@ function sceneHasSound(scene) {
 
 function sceneTitle(scene, index) {
   return scene?.title || scene?.id || scene?.scene_id || `seg_${String(index + 1).padStart(2, '0')}`
+}
+
+function boardOriginalAudio(board = {}) {
+  const audio = board?.audio || board?.sourceAudio || board?.timingAudio || board?.originalAudio || {}
+  return {
+    url: audio.assetApiPath || audio.audioAssetApiPath || audio.apiPath || audio.url || audio.src || audio.audioUrl || audio.audio_url || '',
+    assetId: audio.assetId || audio.asset_id || audio.audioAssetId || audio.audio_asset_id || '',
+    name: audio.name || audio.fileName || audio.filename || audio.audioName || '',
+  }
 }
 
 function normalizeBoard(raw = {}) {
@@ -128,12 +166,77 @@ export default function BoardAssemblyPage() {
   const [sceneVolume, setSceneVolume] = useState(25)
   const [musicVolume, setMusicVolume] = useState(15)
   const [musicFile, setMusicFile] = useState(null)
+  const [musicAsset, setMusicAsset] = useState(null)
+  const [musicPreviewUrl, setMusicPreviewUrl] = useState('')
+  const [musicUploading, setMusicUploading] = useState(false)
   const [musicLoop, setMusicLoop] = useState(true)
   const [musicFadeOut, setMusicFadeOut] = useState(true)
+  const [watermarkEnabled, setWatermarkEnabled] = useState(false)
+  const [watermarkText, setWatermarkText] = useState('Ava Studio')
+  const [watermarkPosition, setWatermarkPosition] = useState('bottom_right')
+  const [watermarkOpacity, setWatermarkOpacity] = useState(35)
+  const [watermarkSize, setWatermarkSize] = useState(28)
+  const [assemblyJob, setAssemblyJob] = useState(null)
+  const [assemblyRunning, setAssemblyRunning] = useState(false)
+  const [finalVideoUrl, setFinalVideoUrl] = useState('')
+  const [finalDirty, setFinalDirty] = useState(false)
+  const [settingsHydrated, setSettingsHydrated] = useState(false)
+
+  const settingsStorageKey = assemblySettingsKey(projectId || '')
+
+  useEffect(() => {
+    let cancelled = false
+    const savedSettings = readAssemblySettings(settingsStorageKey)
+
+    setAudioMode(savedSettings.audioMode || 'original_plus_scene')
+    setPreferMmaudio(savedSettings.preferMmaudio ?? true)
+    setSkipMissing(savedSettings.skipMissing ?? false)
+    setOriginalVolume(clampNumber(savedSettings.originalVolume, 0, 150, 100))
+    setSceneVolume(clampNumber(savedSettings.sceneVolume, 0, 150, 25))
+    setMusicVolume(clampNumber(savedSettings.musicVolume, 0, 150, 15))
+    setMusicAsset(savedSettings.musicAsset || null)
+    setMusicFile(null)
+    setMusicPreviewUrl('')
+    setMusicLoop(savedSettings.musicLoop ?? true)
+    setMusicFadeOut(savedSettings.musicFadeOut ?? true)
+
+    const watermark = savedSettings.watermark || {}
+    setWatermarkEnabled(Boolean(watermark.enabled))
+    setWatermarkText(watermark.text || 'Ava Studio')
+    setWatermarkPosition(watermark.position || 'bottom_right')
+    setWatermarkOpacity(clampNumber(watermark.opacityPercent, 5, 100, 35))
+    setWatermarkSize(clampNumber(watermark.size, 14, 72, 28))
+
+    setFinalVideoUrl(savedSettings.finalVideoUrl || '')
+    setFinalDirty(Boolean(savedSettings.finalDirty))
+    setSelectedSceneId(savedSettings.selectedSceneId || '')
+    setAssemblyJob(savedSettings.assemblyJob || null)
+
+    const assetPath = savedSettings.musicAsset?.asset_api_path || ''
+    if (assetPath) {
+      fetchProtectedBlobUrl(assetPath)
+        .then((url) => {
+          if (!cancelled) setMusicPreviewUrl(url)
+        })
+        .catch(() => {
+          if (!cancelled) setMusicPreviewUrl('')
+        })
+    }
+
+    setSettingsHydrated(true)
+
+    return () => {
+      cancelled = true
+    }
+  }, [settingsStorageKey])
 
   const boardRoute = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
   const sceneItems = useMemo(() => buildSceneItems(board || {}, preferMmaudio), [board, preferMmaudio])
   const selectedItem = sceneItems.find((item) => item.id === selectedSceneId) || sceneItems[0] || null
+  const watermarkPreviewStyle = {
+    opacity: Math.max(0.05, Math.min(1, watermarkOpacity / 100)),
+    fontSize: `${Math.max(10, Math.round(watermarkSize * 0.42))}px`,
+  }
 
   const stats = useMemo(() => {
     const total = sceneItems.length
@@ -141,7 +244,8 @@ export default function BoardAssemblyPage() {
     const withSound = sceneItems.filter((item) => item.hasSound || item.hasMmaudio).length
     const missing = total - ready
     const duration = sceneItems.reduce((sum, item) => sum + item.duration, 0)
-    const hasOriginalAudio = Boolean(board?.audio?.assetId || board?.audio?.assetApiPath || board?.audio?.url || board?.audio?.src)
+    const originalAudio = boardOriginalAudio(board || {})
+    const hasOriginalAudio = Boolean(originalAudio.url || originalAudio.assetId)
     return { total, ready, withSound, missing, duration, hasOriginalAudio }
   }, [sceneItems, board])
 
@@ -186,10 +290,262 @@ export default function BoardAssemblyPage() {
     loadBoardSnapshot()
   }, [projectId])
 
-  function handleMusicSelect(event) {
+  useEffect(() => {
+    if (!settingsHydrated) return
+    if (!finalVideoUrl) return
+    setFinalDirty(true)
+  }, [
+    audioMode,
+    preferMmaudio,
+    skipMissing,
+    originalVolume,
+    sceneVolume,
+    musicVolume,
+    musicAsset,
+    musicLoop,
+    musicFadeOut,
+    watermarkEnabled,
+    watermarkText,
+    watermarkPosition,
+    watermarkOpacity,
+    watermarkSize,
+  ])
+
+
+  useEffect(() => {
+    if (!settingsHydrated) return
+
+    writeAssemblySettings(settingsStorageKey, {
+      audioMode,
+      preferMmaudio,
+      skipMissing,
+      originalVolume,
+      sceneVolume,
+      musicVolume,
+      musicAsset,
+      musicLoop,
+      musicFadeOut,
+      watermark: {
+        enabled: Boolean(watermarkEnabled && String(watermarkText || '').trim()),
+        text: watermarkText,
+        position: watermarkPosition,
+        opacityPercent: watermarkOpacity,
+        size: watermarkSize,
+      },
+      selectedSceneId,
+      finalVideoUrl,
+      finalDirty,
+      assemblyJob: assemblyJob
+        ? {
+            jobId: assemblyJob.jobId || assemblyJob.job_id || '',
+            job_id: assemblyJob.job_id || assemblyJob.jobId || '',
+            status: assemblyJob.status || '',
+            statusEndpoint: assemblyJob.statusEndpoint || '',
+            videoUrl: assemblyJob.videoUrl || assemblyJob.video_url || '',
+            video_url: assemblyJob.video_url || assemblyJob.videoUrl || '',
+            videoName: assemblyJob.videoName || assemblyJob.video_name || '',
+            video_name: assemblyJob.video_name || assemblyJob.videoName || '',
+            audioMode: assemblyJob.audioMode || '',
+            watermarkApplied: assemblyJob.watermarkApplied || false,
+          }
+        : null,
+    })
+  }, [
+    settingsHydrated,
+    settingsStorageKey,
+    audioMode,
+    preferMmaudio,
+    skipMissing,
+    originalVolume,
+    sceneVolume,
+    musicVolume,
+    musicAsset,
+    musicLoop,
+    musicFadeOut,
+    watermarkEnabled,
+    watermarkText,
+    watermarkPosition,
+    watermarkOpacity,
+    watermarkSize,
+    selectedSceneId,
+    finalVideoUrl,
+    finalDirty,
+    assemblyJob,
+  ])
+
+
+  function boardAssemblyVideoUrl(data) {
+    return data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
+  }
+
+  function buildAssemblyPayload() {
+    const items = sceneItems
+      .filter((item) => item.hasVideo || !skipMissing)
+      .map((item) => {
+        const raw = item.raw || {}
+        const usesMmaudioVideo = preferMmaudio && Boolean(raw.mmaudio_video_url || raw.mmaudioVideoUrl)
+        return {
+          scene_id: item.id,
+          title: item.title,
+          route: item.route,
+          duration_sec: item.duration,
+          start_sec: item.start,
+          end_sec: item.end,
+          video_url: item.videoUrl,
+          video_api_path: usesMmaudioVideo
+            ? (raw.mmaudio_video_api_path || raw.mmaudioVideoApiPath || '')
+            : (raw.video_api_path || raw.videoApiPath || ''),
+          source_is_mmaudio: usesMmaudioVideo,
+          has_sound: item.hasSound || item.hasMmaudio,
+        }
+      })
+
+    const originalAudio = boardOriginalAudio(board || {})
+
+    return {
+      project_id: projectId || '',
+      audio_mode: audioMode,
+      original_audio_url: originalAudio.url,
+      original_audio_asset_id: originalAudio.assetId,
+      original_audio_name: originalAudio.name,
+      skip_missing: skipMissing,
+      prefer_mmaudio: preferMmaudio,
+      width: 1280,
+      height: 720,
+      fps: 30,
+      volumes: {
+        original: originalVolume / 100,
+        scene: sceneVolume / 100,
+        music: musicVolume / 100,
+      },
+      music: {
+        name: musicAsset?.audio_name || musicFile?.name || '',
+        loop: musicLoop,
+        fade_out: musicFadeOut,
+        asset_id: musicAsset?.asset_id || '',
+        asset_api_path: musicAsset?.asset_api_path || '',
+        audio_url: musicAsset?.asset_api_path || '',
+        duration_sec: musicAsset?.audio_duration_sec || 0,
+      },
+      watermark: {
+        enabled: Boolean(watermarkEnabled && String(watermarkText || '').trim()),
+        text: watermarkText,
+        position: watermarkPosition,
+        opacity: watermarkOpacity / 100,
+        size: watermarkSize,
+      },
+      items,
+    }
+  }
+
+  function pollAssemblyJob(statusEndpoint, jobId) {
+    const endpoint = statusEndpoint?.startsWith('/api/')
+      ? statusEndpoint.slice(4)
+      : statusEndpoint
+
+    if (!endpoint) return
+
+    let attempt = 0
+    const tick = async () => {
+      attempt += 1
+      try {
+        const data = await apiRequest(endpoint)
+        const nextStatus = data?.status || 'running'
+        const videoUrl = boardAssemblyVideoUrl(data)
+
+        setAssemblyJob(data || null)
+
+        if (videoUrl) {
+          setFinalVideoUrl(videoUrl)
+          setFinalDirty(false)
+          setAssemblyRunning(false)
+          setStatus(`Финальный MP4 готов: ${data?.videoName || data?.video_name || jobId || ''}`)
+          return
+        }
+
+        if (['error', 'failed'].includes(String(nextStatus).toLowerCase())) {
+          setAssemblyRunning(false)
+          setStatus(`Ошибка сборки: ${data?.error || data?.detail || nextStatus}`)
+          return
+        }
+
+        if (attempt < 240) {
+          window.setTimeout(tick, 2500)
+        } else {
+          setAssemblyRunning(false)
+          setStatus('Сборка слишком долго не отвечает: poll_timeout')
+        }
+      } catch (error) {
+        if (attempt < 240) {
+          window.setTimeout(tick, 4000)
+        } else {
+          setAssemblyRunning(false)
+          setStatus(`Ошибка проверки сборки: ${error?.message || 'assembly_poll_failed'}`)
+        }
+      }
+    }
+
+    window.setTimeout(tick, 900)
+  }
+
+  async function startAssembly() {
+    if (!sceneItems.some((item) => item.hasVideo)) {
+      setStatus('Нет готовых видео для сборки')
+      return
+    }
+
+    setAssemblyRunning(true)
+    setFinalVideoUrl('')
+    setFinalDirty(false)
+    setStatus(`Отправляем сборку в FFmpeg… watermark: ${watermarkEnabled && String(watermarkText || '').trim() ? 'ON' : 'OFF'}`)
+
+    try {
+      const payload = buildAssemblyPayload()
+      console.log('[AVA ASSEMBLY PAYLOAD watermark]', payload.watermark)
+      setStatus(`Отправляем сборку в FFmpeg… watermark: ${payload.watermark?.enabled ? 'ON' : 'OFF'}`)
+      const data = await apiRequest('/board-assembly/start', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+
+      setAssemblyJob(data)
+      setStatus(`Assembly job: ${data?.status || 'queued'} · ${data?.jobId || data?.job_id || ''}`)
+      pollAssemblyJob(data?.statusEndpoint || (data?.jobId ? `/api/board-assembly/status/${data.jobId}` : ''), data?.jobId || data?.job_id)
+    } catch (error) {
+      setAssemblyRunning(false)
+      setStatus(error?.message || 'Не удалось отправить сборку')
+    }
+  }
+
+  async function handleMusicSelect(event) {
     const file = event.target.files?.[0]
     event.target.value = ''
-    setMusicFile(file || null)
+    if (!file) return
+
+    setMusicFile(file)
+    setMusicAsset(null)
+    setMusicPreviewUrl('')
+    setMusicUploading(true)
+    setStatus(`Загружаем музыку: ${file.name}`)
+
+    try {
+      const uploaded = await uploadAudioAsset({ file, projectId: projectId || null, stage: 'board_assembly_music' })
+      setMusicAsset(uploaded || null)
+
+      const apiPath = uploaded?.asset_api_path || ''
+      if (apiPath) {
+        const previewUrl = await fetchProtectedBlobUrl(apiPath)
+        setMusicPreviewUrl(previewUrl)
+      }
+
+      setStatus(`Музыка загружена: ${uploaded?.audio_name || file.name}`)
+    } catch (error) {
+      setMusicAsset(null)
+      setMusicPreviewUrl('')
+      setStatus(`Музыка не загружена: ${error?.message || 'upload_failed'}`)
+    } finally {
+      setMusicUploading(false)
+    }
   }
 
   if (loading) {
@@ -208,7 +564,9 @@ export default function BoardAssemblyPage() {
           <Link className="avaSecondaryButton" to={boardRoute}><ArrowLeft size={16} /> Вернуться в доску</Link>
           <button type="button" onClick={loadBoardSnapshot}><RefreshCcw size={15} /> Обновить из Board</button>
           <button type="button" disabled><Wand2 size={15} /> Собрать preview</button>
-          <button type="button" className="avaBoardPrimary" disabled><Download size={15} /> Собрать MP4</button>
+          <button type="button" className="avaBoardPrimary" onClick={startAssembly} disabled={assemblyRunning || !stats.ready}>
+            <Download size={15} /> {assemblyRunning ? 'Собирается…' : finalDirty ? 'Пересобрать MP4' : 'Собрать MP4'}
+          </button>
         </div>
       </section>
 
@@ -219,6 +577,8 @@ export default function BoardAssemblyPage() {
         <span>Длина: <strong>{formatTime(stats.duration)}</strong></span>
         <span>Оригинал audio: <strong>{stats.hasOriginalAudio ? 'есть' : 'нет'}</strong></span>
         {status && <span className="avaBoardStatusText">{status}</span>}
+        <span className="avaBoardStatusText">Водный знак: {watermarkEnabled && String(watermarkText || '').trim() ? 'будет в MP4' : 'выключен'}</span>
+        <span className="avaBoardStatusText">Настройки сохраняются автоматически</span>
       </section>
 
       <section className="avaAssemblyWorkspace">
@@ -259,7 +619,14 @@ export default function BoardAssemblyPage() {
 
           <div className="avaAssemblyPreview">
             {selectedItem?.videoUrl ? (
-              <video src={selectedItem.videoUrl} controls />
+              <div className="avaAssemblyVideoWithWatermark">
+                <video src={selectedItem.videoUrl} controls />
+                {watermarkEnabled && String(watermarkText || '').trim() && (
+                  <span className={`avaAssemblyLiveWatermark ${watermarkPosition}`} style={watermarkPreviewStyle}>
+                    {watermarkText}
+                  </span>
+                )}
+              </div>
             ) : (
               <div className="avaAssemblyEmptyPreview">
                 <Clapperboard size={42} />
@@ -269,6 +636,29 @@ export default function BoardAssemblyPage() {
               </div>
             )}
           </div>
+
+          {finalVideoUrl && finalDirty && (
+            <div className="avaAssemblyWarnings">
+              <h4>Финальный MP4 устарел</h4>
+              <p>Настройки монтажа изменились. Нажми “Пересобрать MP4”, чтобы водный знак/звук попали в скачанный файл.</p>
+            </div>
+          )}
+
+          {finalVideoUrl && !finalDirty && (
+            <div className="avaAssemblyFinalPreview">
+              <div className="avaBoardSectionHead">
+                <div>
+                  <p className="avaEyebrow">final output</p>
+                  <h3>Финальный MP4</h3>
+                </div>
+                <a href={finalVideoUrl} target="_blank" rel="noreferrer">Открыть файл</a>
+              </div>
+              <video src={finalVideoUrl} controls />
+              {assemblyJob?.watermarkApplied ? <p>Водный знак запечён в MP4.</p> : null}
+              {watermarkEnabled && !assemblyJob?.watermarkApplied ? <p>Водный знак включён, но этот MP4 собран без него. Пересобери MP4.</p> : null}
+              {assemblyJob?.draftNote && <p>{assemblyJob.draftNote}</p>}
+            </div>
+          )}
 
           <div className="avaAssemblyWarnings">
             <h4>Проверка перед сборкой</h4>
@@ -335,10 +725,19 @@ export default function BoardAssemblyPage() {
 
           <div className="avaAssemblyMusicBox">
             <strong>Фоновая музыка</strong>
-            <p>{musicFile ? musicFile.name : 'MP3/WAV пока не выбран'}</p>
-            <label className="avaBoardSmallButton">
-              <UploadCloud size={14} /> Загрузить музыку
-              <input type="file" accept="audio/*" onChange={handleMusicSelect} />
+            <div className={`avaAssemblyMusicStatus ${musicAsset ? 'isReady' : musicUploading ? 'isLoading' : ''}`}>
+              <span>{musicUploading ? 'Загрузка…' : musicAsset ? 'Музыка загружена' : 'Музыка не загружена'}</span>
+              <b>{musicAsset?.audio_name || musicFile?.name || 'MP3/WAV пока не выбран'}</b>
+              {musicAsset?.audio_duration_sec ? <em>{formatTime(musicAsset.audio_duration_sec)}</em> : null}
+            </div>
+
+            {musicPreviewUrl && (
+              <audio className="avaAssemblyMusicPlayer" src={musicPreviewUrl} controls preload="metadata" />
+            )}
+
+            <label className={`avaBoardSmallButton ${musicUploading ? 'isDisabled' : ''}`}>
+              <UploadCloud size={14} /> {musicUploading ? 'Загружается…' : musicAsset ? 'Заменить музыку' : 'Загрузить музыку'}
+              <input type="file" accept="audio/*" onChange={handleMusicSelect} disabled={musicUploading} />
             </label>
             <label className="avaAssemblyCheck">
               <input type="checkbox" checked={musicLoop} onChange={(event) => setMusicLoop(event.target.checked)} />
@@ -349,6 +748,66 @@ export default function BoardAssemblyPage() {
               Плавное затухание в конце
             </label>
           </div>
+          <div className={`avaAssemblyWatermarkBox ${watermarkEnabled ? 'isEnabled' : ''}`}>
+            <div className="avaAssemblyWatermarkHeader">
+              <div>
+                <strong>Водный знак</strong>
+                <span>{watermarkEnabled ? 'Будет запечён в финальный MP4' : 'Настройки можно подготовить заранее'}</span>
+              </div>
+              <button
+                type="button"
+                className={`avaAssemblyToggleButton ${watermarkEnabled ? 'isOn' : ''}`}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setWatermarkEnabled((value) => !value)
+                }}
+              >
+                {watermarkEnabled ? 'Включён' : 'Выключен'}
+              </button>
+            </div>
+
+            <label className="avaAssemblyField">
+              <span>Текст водного знака</span>
+              <input
+                type="text"
+                value={watermarkText}
+                onChange={(event) => { setWatermarkEnabled(true); setWatermarkText(event.target.value) }}
+                placeholder="Ava Studio"
+               
+              />
+            </label>
+
+            <div className="avaAssemblyWatermarkGrid">
+              <label className="avaAssemblyField">
+                <span>Позиция</span>
+                <select value={watermarkPosition} onChange={(event) => { setWatermarkEnabled(true); setWatermarkPosition(event.target.value) }}>
+                  <option value="bottom_right">Снизу справа</option>
+                  <option value="bottom_left">Снизу слева</option>
+                  <option value="top_right">Сверху справа</option>
+                  <option value="top_left">Сверху слева</option>
+                  <option value="bottom_center">Снизу по центру</option>
+                  <option value="top_center">Сверху по центру</option>
+                </select>
+              </label>
+
+              <div className="avaAssemblyWatermarkPreview">
+                <span className={`wm ${watermarkPosition}`}>{watermarkText || 'Ava Studio'}</span>
+              </div>
+            </div>
+
+            <div className="avaAssemblyWatermarkSliders">
+              <label>
+                <span>Прозрачность: {watermarkOpacity}%</span>
+                <input type="range" min="5" max="100" value={watermarkOpacity} onChange={(event) => { setWatermarkEnabled(true); setWatermarkOpacity(Number(event.target.value)) }} />
+              </label>
+              <label>
+                <span>Размер: {watermarkSize}px</span>
+                <input type="range" min="14" max="72" value={watermarkSize} onChange={(event) => { setWatermarkEnabled(true); setWatermarkSize(Number(event.target.value)) }} />
+              </label>
+            </div>
+          </div>
+
         </aside>
       </section>
     </div>

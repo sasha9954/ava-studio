@@ -33,6 +33,7 @@ BACKEND_ENV_FILE = BACKEND_DIR / ".env"
 
 BOARD_VIDEO_JOBS: dict[str, dict[str, Any]] = {}
 BOARD_MMAUDIO_JOBS: dict[str, dict[str, Any]] = {}
+BOARD_ASSEMBLY_JOBS: dict[str, dict[str, Any]] = {}
 
 WORKFLOW_ROUTE_MAP: dict[str, str] = {
     "i2v": "image-video.json",
@@ -1350,3 +1351,1071 @@ def mmaudio_status(job_id: str) -> dict[str, Any]:
         job["historyPreview"] = history
 
     return {"ok": True, **job}
+
+
+# ---------------------------------------------------------------------
+# Board Assembly / Video Montage — FFmpeg draft.
+# Stage 6.5 supports the safest first mode: scene video concat with scene audio.
+# More advanced master-audio/music mixing will be layered in later stages.
+# ---------------------------------------------------------------------
+
+def _ffprobe_json(args: list[str]) -> dict[str, Any]:
+    exe = shutil.which("ffprobe")
+    if not exe:
+        return {}
+    result = subprocess.run([exe, *args], text=True, capture_output=True)
+    if result.returncode != 0:
+        return {}
+    try:
+        return json.loads(result.stdout or "{}")
+    except Exception:
+        return {}
+
+
+def _ffprobe_duration(path: Path) -> float:
+    data = _ffprobe_json([
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "json",
+        str(path),
+    ])
+    try:
+        return max(0.0, float((data.get("format") or {}).get("duration") or 0))
+    except Exception:
+        return 0.0
+
+
+def _ffprobe_has_audio(path: Path) -> bool:
+    data = _ffprobe_json([
+        "-v", "error",
+        "-select_streams", "a",
+        "-show_entries", "stream=index",
+        "-of", "json",
+        str(path),
+    ])
+    return bool(data.get("streams"))
+
+
+def _assembly_item_video_value(item: dict[str, Any]) -> str:
+    return str(
+        item.get("video_api_path")
+        or item.get("videoApiPath")
+        or item.get("video_url")
+        or item.get("videoUrl")
+        or item.get("url")
+        or ""
+    ).strip()
+
+
+def _assembly_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else default
+    except Exception:
+        return default
+
+
+def _assembly_float(value: Any, default: float) -> float:
+    try:
+        parsed = float(value)
+        return parsed if parsed >= 0 else default
+    except Exception:
+        return default
+
+
+def _assembly_music_audio_path(payload: dict[str, Any]) -> Path | None:
+    music = payload.get("music") if isinstance(payload.get("music"), dict) else {}
+    value = str(
+        music.get("asset_api_path")
+        or music.get("audio_url")
+        or music.get("url")
+        or payload.get("music_audio_url")
+        or payload.get("musicAudioUrl")
+        or ""
+    ).strip()
+    asset_id = str(
+        music.get("asset_id")
+        or payload.get("music_audio_asset_id")
+        or payload.get("musicAudioAssetId")
+        or ""
+    ).strip()
+
+    if not value and not asset_id:
+        return None
+
+    try:
+        return _resolve_local_file(value, asset_id=asset_id or None)
+    except HTTPException:
+        return None
+
+
+def _assembly_original_audio_path(payload: dict[str, Any]) -> Path | None:
+    value = str(
+        payload.get("original_audio_url")
+        or payload.get("originalAudioUrl")
+        or payload.get("master_audio_url")
+        or payload.get("masterAudioUrl")
+        or ""
+    ).strip()
+    asset_id = str(
+        payload.get("original_audio_asset_id")
+        or payload.get("originalAudioAssetId")
+        or payload.get("master_audio_asset_id")
+        or payload.get("masterAudioAssetId")
+        or ""
+    ).strip()
+
+    if not value and not asset_id:
+        return None
+
+    try:
+        return _resolve_local_file(value, asset_id=asset_id or None)
+    except HTTPException:
+        return None
+
+
+def _write_concat_file(paths: list[Path], target: Path) -> None:
+    def quote_path(path: Path) -> str:
+        return str(path).replace("'", "'\\''")
+
+    target.write_text("".join(f"file '{quote_path(path)}'\n" for path in paths), encoding="utf-8")
+
+
+def _normalize_assembly_clip(
+    source_path: Path,
+    out_path: Path,
+    *,
+    width: int,
+    height: int,
+    fps: int,
+    fallback_duration: float,
+    audio_volume: float = 1.0,
+) -> dict[str, Any]:
+    source_duration = _ffprobe_duration(source_path)
+    duration = source_duration or fallback_duration or 0.1
+    has_audio = _ffprobe_has_audio(source_path)
+
+    vf = (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+        f"setsar=1,fps={fps},format=yuv420p"
+    )
+
+    if has_audio:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(source_path),
+            "-vf", vf,
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "18",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-ar", "48000",
+            "-ac", "2",
+            "-af", f"volume={max(0.0, float(audio_volume)):.4f}",
+            "-shortest",
+            str(out_path),
+        ])
+    else:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(source_path),
+            "-f", "lavfi",
+            "-t", f"{max(duration, 0.1):.3f}",
+            "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-vf", vf,
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "18",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            str(out_path),
+        ])
+
+    return {
+        "sourcePath": str(source_path),
+        "normalizedPath": str(out_path),
+        "sourceDurationSec": source_duration,
+        "durationSec": _ffprobe_duration(out_path) or duration,
+        "hadAudio": has_audio,
+    }
+
+
+def _run_board_assembly_job(job_id: str) -> None:
+    job = BOARD_ASSEMBLY_JOBS.get(job_id)
+    if not job:
+        return
+
+    payload = job.get("payload") or {}
+    try:
+        job["status"] = "running"
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+        raw_items = payload.get("items") or payload.get("sceneItems") or []
+        if not isinstance(raw_items, list):
+            raise HTTPException(status_code=400, detail="items_must_be_list")
+
+        skip_missing = bool(payload.get("skip_missing") or payload.get("skipMissing"))
+        audio_mode = str(payload.get("audio_mode") or payload.get("audioMode") or "scene_only")
+        volumes = payload.get("volumes") if isinstance(payload.get("volumes"), dict) else {}
+        scene_volume = _assembly_float(volumes.get("scene"), 1.0)
+        original_volume = _assembly_float(volumes.get("original"), 1.0)
+        music_volume = _assembly_float(volumes.get("music"), 1.0)
+        original_audio_path = _assembly_original_audio_path(payload)
+        music_audio_path = _assembly_music_audio_path(payload)
+        music_payload = payload.get("music") if isinstance(payload.get("music"), dict) else {}
+        music_loop = bool(music_payload.get("loop", True))
+        music_fade_out = bool(music_payload.get("fade_out", True))
+        wants_original_audio = audio_mode in {"original_only", "original_plus_scene", "original_plus_music_scene"}
+        wants_music_audio = audio_mode in {"music_plus_scene", "original_plus_music_scene"}
+        width = _assembly_int(payload.get("width"), 1280)
+        height = _assembly_int(payload.get("height"), 720)
+        fps = _assembly_int(payload.get("fps"), 30)
+
+        work_dir = Path(tempfile.gettempdir()) / f"ava_board_assembly_{job_id}"
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+        normalized_paths: list[Path] = []
+        prepared_items: list[dict[str, Any]] = []
+        missing_items: list[dict[str, Any]] = []
+
+        for index, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                continue
+
+            scene_id = str(item.get("scene_id") or item.get("sceneId") or item.get("id") or f"scene_{index + 1}")
+            video_value = _assembly_item_video_value(item)
+            if not video_value:
+                missing_items.append({"sceneId": scene_id, "reason": "missing_video_url"})
+                if skip_missing:
+                    continue
+                raise HTTPException(status_code=400, detail={"code": "scene_missing_video", "sceneId": scene_id})
+
+            try:
+                source_path = _resolve_local_file(video_value)
+            except HTTPException:
+                if skip_missing:
+                    missing_items.append({"sceneId": scene_id, "reason": "file_not_found", "video": video_value})
+                    continue
+                raise
+
+            duration = _assembly_float(item.get("duration_sec") or item.get("durationSec"), 0.0)
+            normalized_path = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}.mp4"
+            prepared = _normalize_assembly_clip(
+                source_path,
+                normalized_path,
+                width=width,
+                height=height,
+                fps=fps,
+                fallback_duration=duration,
+                audio_volume=0.0 if audio_mode == "original_only" else scene_volume,
+            )
+            prepared.update({
+                "sceneId": scene_id,
+                "index": index,
+                "title": item.get("title") or scene_id,
+                "route": item.get("route") or "",
+            })
+            normalized_paths.append(normalized_path)
+            prepared_items.append(prepared)
+
+        if not normalized_paths:
+            raise HTTPException(status_code=400, detail={"code": "no_ready_videos_for_assembly", "missing": missing_items})
+
+        concat_file = work_dir / "concat.txt"
+        _write_concat_file(normalized_paths, concat_file)
+
+        target_dir = _settings_static_path() / "assets" / "board_assembly"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        scene_concat_path = work_dir / f"{job_id}_scene_concat.mp4"
+        if wants_original_audio and original_audio_path and wants_music_audio and music_audio_path:
+            suffix = "original_music_scene"
+        elif wants_music_audio and music_audio_path:
+            suffix = "music_scene"
+        elif wants_original_audio and original_audio_path:
+            suffix = "original_audio"
+        else:
+            suffix = "scene_audio_draft"
+        out_path = target_dir / f"{job_id}_{suffix}.mp4"
+
+        _run_ffmpeg([
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_file),
+            "-c", "copy",
+            str(scene_concat_path),
+        ])
+
+        scene_concat_duration = _ffprobe_duration(scene_concat_path) or 0.0
+
+        use_original_audio = wants_original_audio and bool(original_audio_path)
+        use_music_audio = wants_music_audio and bool(music_audio_path)
+
+        if audio_mode == "original_only" and use_original_audio:
+            _run_ffmpeg([
+                "-y",
+                "-i", str(scene_concat_path),
+                "-i", str(original_audio_path),
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-af", f"volume={max(0.0, float(original_volume)):.4f}",
+                "-shortest",
+                str(out_path),
+            ])
+        elif use_original_audio or use_music_audio:
+            mix_args = ["-y", "-i", str(scene_concat_path)]
+            input_index = 1
+            original_index = None
+            music_index = None
+
+            if use_original_audio:
+                original_index = input_index
+                mix_args.extend(["-i", str(original_audio_path)])
+                input_index += 1
+
+            if use_music_audio:
+                music_index = input_index
+                if music_loop:
+                    mix_args.extend(["-stream_loop", "-1"])
+                mix_args.extend(["-i", str(music_audio_path)])
+                input_index += 1
+
+            filters = ["[0:a]anull[scenea]"]
+            labels = ["[scenea]"]
+
+            if original_index is not None:
+                filters.append(f"[{original_index}:a]volume={max(0.0, float(original_volume)):.4f}[origina]")
+                labels.append("[origina]")
+
+            if music_index is not None:
+                music_filter = f"[{music_index}:a]volume={max(0.0, float(music_volume)):.4f}"
+                if music_fade_out and scene_concat_duration > 1.0:
+                    fade_start = max(0.0, scene_concat_duration - 2.0)
+                    music_filter += f",afade=t=out:st={fade_start:.3f}:d=2.000"
+                filters.append(music_filter + "[musica]")
+                labels.append("[musica]")
+
+            filter_complex = ";".join(filters) + ";" + "".join(labels) + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0[aout]"
+
+            _run_ffmpeg([
+                *mix_args,
+                "-filter_complex", filter_complex,
+                "-map", "0:v:0",
+                "-map", "[aout]",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+                str(out_path),
+            ])
+        else:
+            shutil.copy2(scene_concat_path, out_path)
+
+        # Stage 6.9J force watermark burn-in before public URL
+        watermark_payload = payload.get("watermark") if isinstance(payload.get("watermark"), dict) else {}
+        watermark_text = str(watermark_payload.get("text") or "").strip()
+        watermark_requested = bool(watermark_payload.get("enabled")) and bool(watermark_text)
+        watermark_applied = False
+        watermark_error = ""
+
+        if watermark_requested:
+            watermarked_path = work_dir / f"{job_id}_watermarked_final.mp4"
+            try:
+                _apply_assembly_watermark(out_path, watermarked_path, watermark_payload)
+                if watermarked_path.exists() and watermarked_path.stat().st_size > 0:
+                    shutil.copy2(watermarked_path, out_path)
+                    watermark_applied = True
+                else:
+                    watermark_error = "watermarked_output_missing"
+                    raise RuntimeError(watermark_error)
+            except Exception as exc:
+                watermark_error = str(exc)
+                raise HTTPException(status_code=500, detail={
+                    "code": "watermark_failed",
+                    "message": watermark_error,
+                    "text": watermark_text,
+                    "position": watermark_payload.get("position"),
+                    "size": watermark_payload.get("size"),
+                    "opacity": watermark_payload.get("opacity"),
+                })
+
+        urls = _public_static_url(f"assets/board_assembly/{out_path.name}")
+        final_duration = _ffprobe_duration(out_path)
+
+        job.update({
+            "status": "completed",
+            "assembly_status": "ready",
+            "audioMode": audio_mode,
+            "supportedAudioMode": "music_original_scene_mix" if ((wants_original_audio and original_audio_path) or (wants_music_audio and music_audio_path)) else "scene_audio_concat_draft",
+            "draftNote": "Music/original/scene audio mixed in." if ((wants_original_audio and original_audio_path) or (wants_music_audio and music_audio_path)) else "No original/music audio found; using scene audio from generated videos.",
+            "originalAudioFound": bool(original_audio_path),
+            "musicAudioFound": bool(music_audio_path),
+            "sceneVolume": scene_volume,
+            "originalVolume": original_volume,
+            "musicVolume": music_volume,
+            "watermarkRequested": watermark_requested,
+            "watermarkApplied": watermark_applied,
+            "watermarkError": watermark_error,
+            "watermarkText": watermark_text if watermark_requested else "",
+            "watermark": watermark_payload if watermark_requested else {},
+            "videoUrl": urls["url"],
+            "video_url": urls["url"],
+            "videoApiPath": urls["apiPath"],
+            "video_api_path": urls["apiPath"],
+            "videoName": out_path.name,
+            "video_name": out_path.name,
+            "localPath": str(out_path),
+            "durationSec": final_duration,
+            "preparedItems": prepared_items,
+            "missingItems": missing_items,
+            "updatedAt": datetime.utcnow().isoformat() + "Z",
+        })
+    except HTTPException as exc:
+        job["status"] = "error"
+        job["error"] = exc.detail
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+    except Exception as exc:
+        job["status"] = "error"
+        job["error"] = str(exc)
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+
+@router.post("/board-assembly/start")
+def start_board_assembly(payload: dict[str, Any]) -> dict[str, Any]:
+    payload_data = dict(payload or {})
+    job_id = f"assembly_{uuid4().hex[:14]}"
+    now = datetime.utcnow().isoformat() + "Z"
+
+    raw_items = payload_data.get("items") or payload_data.get("sceneItems") or []
+    ready_count = 0
+    if isinstance(raw_items, list):
+        ready_count = sum(1 for item in raw_items if isinstance(item, dict) and _assembly_item_video_value(item))
+
+    job = {
+        "ok": True,
+        "jobId": job_id,
+        "job_id": job_id,
+        "status": "queued",
+        "statusEndpoint": f"/api/board-assembly/status/{job_id}",
+        "createdAt": now,
+        "updatedAt": now,
+        "projectId": payload_data.get("project_id") or payload_data.get("projectId") or "",
+        "audioMode": payload_data.get("audio_mode") or payload_data.get("audioMode") or "scene_only",
+        "readyItemsCount": ready_count,
+        "payload": payload_data,
+    }
+    BOARD_ASSEMBLY_JOBS[job_id] = job
+
+    try:
+        import threading
+        threading.Thread(target=_run_board_assembly_job, args=(job_id,), daemon=True).start()
+    except Exception as exc:
+        job["status"] = "error"
+        job["error"] = f"thread_start_failed: {exc}"
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "job_id": job_id,
+        "status": job["status"],
+        "statusEndpoint": job["statusEndpoint"],
+        "audioMode": job["audioMode"],
+        "readyItemsCount": ready_count,
+        "jobStored": True,
+    }
+
+
+@router.get("/board-assembly/status/{job_id}")
+def board_assembly_status(job_id: str) -> dict[str, Any]:
+    job = BOARD_ASSEMBLY_JOBS.get(job_id)
+    if not job:
+        return {"ok": False, "status": "not_found", "code": "BOARD_ASSEMBLY_JOB_NOT_FOUND", "jobId": job_id}
+    return {"ok": True, **job}
+
+
+# ---------------------------------------------------------------------
+# Stage 6.9I — robust watermark burn-in.
+# This overrides the older drawtext-only implementation with a PNG overlay.
+# Reason: ffmpeg drawtext can silently fail/behave differently on Windows fonts.
+# ---------------------------------------------------------------------
+
+def _ava_stage69i_watermark_pos(position: str) -> tuple[str, str]:
+    pos = str(position or "top_right").lower()
+    if pos == "bottom_left":
+        return "10", "main_h-overlay_h-18"
+    if pos == "top_right":
+        return "main_w-overlay_w-10", "8"
+    if pos == "top_left":
+        return "10", "8"
+    if pos == "bottom_center":
+        return "(main_w-overlay_w)/2", "main_h-overlay_h-18"
+    if pos == "top_center":
+        return "(main_w-overlay_w)/2", "8"
+    if pos == "bottom_right":
+        return "main_w-overlay_w-10", "main_h-overlay_h-18"
+    return "main_w-overlay_w-10", "8"
+
+
+def _ava_stage69i_font(size: int):
+    from PIL import ImageFont
+
+    candidates = [
+        Path("C:/Windows/Fonts/arialbd.ttf"),
+        Path("C:/Windows/Fonts/arial.ttf"),
+        Path("C:/Windows/Fonts/segoeuib.ttf"),
+        Path("C:/Windows/Fonts/segoeui.ttf"),
+    ]
+
+    for path in candidates:
+        try:
+            if path.exists():
+                return ImageFont.truetype(str(path), size=size)
+        except Exception:
+            pass
+
+    try:
+        return ImageFont.truetype("arial.ttf", size=size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def _ava_stage69i_make_watermark_png(text: str, target_path: Path, *, size: int, opacity: float) -> None:
+    from PIL import Image, ImageDraw
+
+    safe_text = str(text or "").strip()
+    if not safe_text:
+        raise ValueError("empty_watermark_text")
+
+    size = max(10, min(120, int(size or 28)))
+    alpha = max(12, min(255, int(max(0.05, min(1.0, float(opacity or 0.35))) * 255)))
+
+    font = _ava_stage69i_font(size)
+    stroke_width = max(1, int(size / 14))
+    pad_x = max(2, int(size * 0.08))
+    pad_y = max(2, int(size * 0.04))
+
+    probe = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(probe)
+    bbox = draw.textbbox((0, 0), safe_text, font=font, stroke_width=stroke_width)
+
+    width = max(1, bbox[2] - bbox[0] + pad_x * 2)
+    height = max(1, bbox[3] - bbox[1] + pad_y * 2)
+
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text(
+        (pad_x - bbox[0], pad_y - bbox[1]),
+        safe_text,
+        font=font,
+        fill=(255, 255, 255, alpha),
+        stroke_width=stroke_width,
+        stroke_fill=(0, 0, 0, min(210, max(90, alpha))),
+    )
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(target_path)
+
+
+def _ava_stage69i_drawtext_fallback(src_path: Path, out_path: Path, watermark: dict) -> None:
+    text = _assembly_escape_drawtext(str(watermark.get("text") or "").strip())
+    size = _assembly_int(watermark.get("size"), 28)
+    opacity = max(0.0, min(1.0, _assembly_float(watermark.get("opacity"), 0.35)))
+    x, y = _assembly_watermark_position(str(watermark.get("position") or "top_right"), 10)
+    vf = (
+        "drawtext="
+        f"text='{text}':fontsize={size}:fontcolor=white@{opacity:.3f}:"
+        "borderw=2:bordercolor=black@0.520:"
+        f"x={x}:y={y}"
+    )
+    _run_ffmpeg([
+        "-y",
+        "-i", str(src_path),
+        "-vf", vf,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        str(out_path),
+    ])
+
+
+def _apply_assembly_watermark(src_path: Path, out_path: Path, watermark: dict) -> None:
+    text = str((watermark or {}).get("text") or "").strip()
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+
+    png_path = Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    try:
+        _ava_stage69i_make_watermark_png(text, png_path, size=size, opacity=opacity)
+        x, y = _ava_stage69i_watermark_pos(position)
+        _run_ffmpeg([
+            "-y",
+            "-i", str(src_path),
+            "-i", str(png_path),
+            "-filter_complex", f"[0:v][1:v]overlay={x}:{y}:format=auto[v]",
+            "-map", "[v]",
+            "-map", "0:a?",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "18",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            str(out_path),
+        ])
+    except Exception:
+        _ava_stage69i_drawtext_fallback(src_path, out_path, watermark)
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------
+# Stage 6.9M2 — self-contained watermark fallback.
+# Appended last on purpose: this _apply_assembly_watermark overrides older
+# drawtext/PNG attempts and does not depend on _assembly_escape_drawtext.
+# ---------------------------------------------------------------------
+
+def _ava_stage69m2_escape_drawtext(value):
+    text = str(value or "").replace("\\", "\\\\")
+    text = text.replace("\n", " ").replace("\r", " ")
+    text = text.replace(":", "\\:")
+    text = text.replace("'", "\\'")
+    text = text.replace("%", "\\%")
+    text = text.replace("[", "\\[").replace("]", "\\]")
+    return text
+
+
+def _ava_stage69m2_pos_expr(position):
+    pos = str(position or "top_right").lower()
+    if pos == "bottom_left":
+        return "10", "h-th-18"
+    if pos == "top_right":
+        return "w-tw-10", "8"
+    if pos == "top_left":
+        return "10", "8"
+    if pos == "bottom_center":
+        return "(w-tw)/2", "h-th-18"
+    if pos == "top_center":
+        return "(w-tw)/2", "8"
+    if pos == "bottom_right":
+        return "w-tw-10", "h-th-18"
+    return "w-tw-10", "8"
+
+
+def _ava_stage69m2_png_pos_expr(position):
+    pos = str(position or "top_right").lower()
+    if pos == "bottom_left":
+        return "10", "main_h-overlay_h-18"
+    if pos == "top_right":
+        return "main_w-overlay_w-10", "8"
+    if pos == "top_left":
+        return "10", "8"
+    if pos == "bottom_center":
+        return "(main_w-overlay_w)/2", "main_h-overlay_h-18"
+    if pos == "top_center":
+        return "(main_w-overlay_w)/2", "8"
+    if pos == "bottom_right":
+        return "main_w-overlay_w-10", "main_h-overlay_h-18"
+    return "main_w-overlay_w-10", "8"
+
+
+def _ava_stage69m2_drawtext(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = _ava_stage69m2_escape_drawtext(str((watermark or {}).get("text") or "").strip())
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = max(0.05, min(1.0, _assembly_float((watermark or {}).get("opacity"), 0.35)))
+    position = str((watermark or {}).get("position") or "top_right")
+    x, y = _ava_stage69m2_pos_expr(position)
+
+    font_arg = ""
+    for candidate in [
+        _Path("C:/Windows/Fonts/arialbd.ttf"),
+        _Path("C:/Windows/Fonts/arial.ttf"),
+        _Path("C:/Windows/Fonts/segoeuib.ttf"),
+        _Path("C:/Windows/Fonts/segoeui.ttf"),
+    ]:
+        if candidate.exists():
+            font_value = str(candidate).replace("\\", "/").replace(":", "\\:")
+            font_arg = f"fontfile='{font_value}':"
+            break
+
+    vf = (
+        "drawtext="
+        f"{font_arg}"
+        f"text='{text}':"
+        f"fontsize={size}:"
+        f"fontcolor=white@{opacity:.3f}:"
+        "borderw=2:"
+        "bordercolor=black@0.520:"
+        f"x={x}:y={y}"
+    )
+
+    _run_ffmpeg([
+        "-y",
+        "-i", str(src_path),
+        "-vf", vf,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        str(out_path),
+    ])
+
+
+def _ava_stage69m2_make_png(text, target_path, size=28, opacity=0.35):
+    try:
+        from pathlib import Path as _Path
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:
+        return False
+
+    safe_text = str(text or "").strip()
+    if not safe_text:
+        return False
+
+    size = max(10, min(120, int(size or 28)))
+    alpha = max(12, min(255, int(max(0.05, min(1.0, float(opacity or 0.35))) * 255)))
+
+    font = None
+    for candidate in [
+        _Path("C:/Windows/Fonts/arialbd.ttf"),
+        _Path("C:/Windows/Fonts/arial.ttf"),
+        _Path("C:/Windows/Fonts/segoeuib.ttf"),
+        _Path("C:/Windows/Fonts/segoeui.ttf"),
+    ]:
+        try:
+            if candidate.exists():
+                font = ImageFont.truetype(str(candidate), size=size)
+                break
+        except Exception:
+            pass
+
+    if font is None:
+        try:
+            font = ImageFont.truetype("arial.ttf", size=size)
+        except Exception:
+            font = ImageFont.load_default()
+
+    stroke_width = max(1, int(size / 14))
+    pad_x = max(2, int(size * 0.08))
+    pad_y = max(2, int(size * 0.04))
+
+    probe = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(probe)
+    bbox = draw.textbbox((0, 0), safe_text, font=font, stroke_width=stroke_width)
+
+    width = max(1, bbox[2] - bbox[0] + pad_x * 2)
+    height = max(1, bbox[3] - bbox[1] + pad_y * 2)
+
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text(
+        (pad_x - bbox[0], pad_y - bbox[1]),
+        safe_text,
+        font=font,
+        fill=(255, 255, 255, alpha),
+        stroke_width=stroke_width,
+        stroke_fill=(0, 0, 0, min(220, max(110, alpha))),
+    )
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(target_path)
+    return True
+
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = str((watermark or {}).get("text") or "").strip()
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+    png_path = _Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    last_error = ""
+    try:
+        if _ava_stage69m2_make_png(text, png_path, size=size, opacity=opacity):
+            x, y = _ava_stage69m2_png_pos_expr(position)
+            try:
+                _run_ffmpeg([
+                    "-y",
+                    "-i", str(src_path),
+                    "-i", str(png_path),
+                    "-filter_complex", f"[0:v][1:v]overlay={x}:{y}:format=auto[v]",
+                    "-map", "[v]",
+                    "-map", "0:a?",
+                    "-c:v", "libx264",
+                    "-preset", "veryfast",
+                    "-crf", "18",
+                    "-c:a", "copy",
+                    "-movflags", "+faststart",
+                    str(out_path),
+                ])
+                return
+            except Exception as exc:
+                last_error = f"png_overlay_failed: {exc}"
+
+        try:
+            _ava_stage69m2_drawtext(src_path, out_path, watermark)
+            return
+        except Exception as exc:
+            if last_error:
+                raise RuntimeError(f"{last_error}; drawtext_failed: {exc}")
+            raise
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------
+# Stage 6.9N — watermark opacity + safe margin polish.
+# Goal:
+# 1) respect low-opacity settings visually;
+# 2) move watermark a bit away from the top edge / corner;
+# 3) keep result stable for both PNG overlay and drawtext fallback.
+# ---------------------------------------------------------------------
+
+def _ava_stage69n_pos_expr(position):
+    pos = str(position or "top_right").lower()
+    margin_x = 18
+    margin_y = 18
+    if pos == "bottom_left":
+        return str(margin_x), f"h-th-{margin_y}"
+    if pos == "top_right":
+        return f"w-tw-{margin_x}", str(margin_y)
+    if pos == "top_left":
+        return str(margin_x), str(margin_y)
+    if pos == "bottom_center":
+        return "(w-tw)/2", f"h-th-{margin_y}"
+    if pos == "top_center":
+        return "(w-tw)/2", str(margin_y)
+    if pos == "bottom_right":
+        return f"w-tw-{margin_x}", f"h-th-{margin_y}"
+    return f"w-tw-{margin_x}", str(margin_y)
+
+
+def _ava_stage69n_png_pos_expr(position):
+    pos = str(position or "top_right").lower()
+    margin_x = 18
+    margin_y = 18
+    if pos == "bottom_left":
+        return str(margin_x), f"main_h-overlay_h-{margin_y}"
+    if pos == "top_right":
+        return f"main_w-overlay_w-{margin_x}", str(margin_y)
+    if pos == "top_left":
+        return str(margin_x), str(margin_y)
+    if pos == "bottom_center":
+        return "(main_w-overlay_w)/2", f"main_h-overlay_h-{margin_y}"
+    if pos == "top_center":
+        return "(main_w-overlay_w)/2", str(margin_y)
+    if pos == "bottom_right":
+        return f"main_w-overlay_w-{margin_x}", f"main_h-overlay_h-{margin_y}"
+    return f"main_w-overlay_w-{margin_x}", str(margin_y)
+
+
+def _ava_stage69n_escape_drawtext(value):
+    text = str(value or "").replace("\\", "\\\\")
+    text = text.replace("\n", " ").replace("\r", " ")
+    text = text.replace(":", "\\:")
+    text = text.replace("'", "\\'")
+    text = text.replace("%", "\\%")
+    text = text.replace("[", "\\[").replace("]", "\\]")
+    return text
+
+
+def _ava_stage69n_drawtext(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = _ava_stage69n_escape_drawtext(str((watermark or {}).get("text") or "").strip())
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = max(0.03, min(1.0, _assembly_float((watermark or {}).get("opacity"), 0.35)))
+    position = str((watermark or {}).get("position") or "top_right")
+    x, y = _ava_stage69n_pos_expr(position)
+
+    font_arg = ""
+    for candidate in [
+        _Path("C:/Windows/Fonts/arialbd.ttf"),
+        _Path("C:/Windows/Fonts/arial.ttf"),
+        _Path("C:/Windows/Fonts/segoeuib.ttf"),
+        _Path("C:/Windows/Fonts/segoeui.ttf"),
+    ]:
+        if candidate.exists():
+            font_value = str(candidate).replace("\\", "/").replace(":", "\\:")
+            font_arg = f"fontfile='{font_value}':"
+            break
+
+    border_opacity = max(0.02, min(0.45, opacity * 0.65))
+
+    vf = (
+        "drawtext="
+        f"{font_arg}"
+        f"text='{text}':"
+        f"fontsize={size}:"
+        f"fontcolor=white@{opacity:.3f}:"
+        "borderw=2:"
+        f"bordercolor=black@{border_opacity:.3f}:"
+        f"x={x}:y={y}"
+    )
+
+    _run_ffmpeg([
+        "-y",
+        "-i", str(src_path),
+        "-vf", vf,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        str(out_path),
+    ])
+
+
+def _ava_stage69n_make_png(text, target_path, size=28, opacity=0.35):
+    try:
+        from pathlib import Path as _Path
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:
+        return False
+
+    safe_text = str(text or "").strip()
+    if not safe_text:
+        return False
+
+    size = max(10, min(120, int(size or 28)))
+    opacity = max(0.03, min(1.0, float(opacity or 0.35)))
+    alpha = max(8, min(255, int(opacity * 255)))
+
+    font = None
+    for candidate in [
+        _Path("C:/Windows/Fonts/arialbd.ttf"),
+        _Path("C:/Windows/Fonts/arial.ttf"),
+        _Path("C:/Windows/Fonts/segoeuib.ttf"),
+        _Path("C:/Windows/Fonts/segoeui.ttf"),
+    ]:
+        try:
+            if candidate.exists():
+                font = ImageFont.truetype(str(candidate), size=size)
+                break
+        except Exception:
+            pass
+
+    if font is None:
+        try:
+            font = ImageFont.truetype("arial.ttf", size=size)
+        except Exception:
+            font = ImageFont.load_default()
+
+    stroke_width = max(1, int(size / 16))
+    pad_x = max(2, int(size * 0.06))
+    pad_y = max(2, int(size * 0.04))
+
+    probe = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(probe)
+    bbox = draw.textbbox((0, 0), safe_text, font=font, stroke_width=stroke_width)
+
+    width = max(1, bbox[2] - bbox[0] + pad_x * 2)
+    height = max(1, bbox[3] - bbox[1] + pad_y * 2)
+
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
+    stroke_alpha = max(6, min(180, int(alpha * 0.55)))
+
+    draw.text(
+        (pad_x - bbox[0], pad_y - bbox[1]),
+        safe_text,
+        font=font,
+        fill=(255, 255, 255, alpha),
+        stroke_width=stroke_width,
+        stroke_fill=(0, 0, 0, stroke_alpha),
+    )
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(target_path)
+    return True
+
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = str((watermark or {}).get("text") or "").strip()
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+    png_path = _Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    last_error = ""
+    try:
+        if _ava_stage69n_make_png(text, png_path, size=size, opacity=opacity):
+            x, y = _ava_stage69n_png_pos_expr(position)
+            try:
+                _run_ffmpeg([
+                    "-y",
+                    "-i", str(src_path),
+                    "-i", str(png_path),
+                    "-filter_complex", f"[0:v][1:v]overlay={x}:{y}:format=auto[v]",
+                    "-map", "[v]",
+                    "-map", "0:a?",
+                    "-c:v", "libx264",
+                    "-preset", "veryfast",
+                    "-crf", "18",
+                    "-c:a", "copy",
+                    "-movflags", "+faststart",
+                    str(out_path),
+                ])
+                return
+            except Exception as exc:
+                last_error = f"png_overlay_failed: {exc}"
+
+        try:
+            _ava_stage69n_drawtext(src_path, out_path, watermark)
+            return
+        except Exception as exc:
+            if last_error:
+                raise RuntimeError(f"{last_error}; drawtext_failed: {exc}")
+            raise
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+

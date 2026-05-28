@@ -1852,3 +1852,345 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Stage 6.5: Assembly final video preview */
+.avaAssemblyFinalPreview {
+  border: 1px solid rgba(74, 255, 174, .22);
+  border-radius: 18px;
+  background: rgba(74, 255, 174, .06);
+  padding: 13px;
+  display: grid;
+  gap: 10px;
+}
+
+.avaAssemblyFinalPreview video {
+  width: 100%;
+  max-height: 420px;
+  border-radius: 14px;
+  background: #050816;
+}
+
+.avaAssemblyFinalPreview a {
+  color: #b8ffe1;
+  text-decoration: none;
+  border: 1px solid rgba(74, 255, 174, .24);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.avaAssemblyFinalPreview p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+
+/* Stage 6.5B: scene strip fills the whole rail and scrolls inside */
+.avaAssemblySceneRail {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+}
+
+.avaAssemblySceneRail .avaBoardSectionHead {
+  flex: 0 0 auto;
+}
+
+.avaAssemblySceneList {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  align-content: start;
+  padding-right: 6px;
+}
+
+.avaAssemblySceneList::-webkit-scrollbar {
+  width: 7px;
+}
+
+.avaAssemblySceneList::-webkit-scrollbar-thumb {
+  background: rgba(180, 200, 255, .28);
+  border-radius: 999px;
+}
+
+.avaAssemblySceneList::-webkit-scrollbar-track {
+  background: rgba(255,255,255,.04);
+  border-radius: 999px;
+}
+
+
+/* Stage 6.7: music upload status + mini player */
+.avaAssemblyMusicStatus {
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px;
+  padding: 10px 11px;
+  background: rgba(255,255,255,.035);
+  display: grid;
+  gap: 4px;
+}
+
+.avaAssemblyMusicStatus span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.avaAssemblyMusicStatus b {
+  color: #eaf2ff;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.avaAssemblyMusicStatus em {
+  color: #9fb0d8;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.avaAssemblyMusicStatus.isReady {
+  border-color: rgba(74,255,174,.28);
+  background: rgba(74,255,174,.06);
+}
+
+.avaAssemblyMusicStatus.isLoading {
+  border-color: rgba(69,216,255,.28);
+  background: rgba(69,216,255,.06);
+}
+
+.avaAssemblyMusicPlayer {
+  width: 100%;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(6, 12, 26, .72);
+}
+
+.avaBoardSmallButton.isDisabled {
+  opacity: .55;
+  pointer-events: none;
+}
+
+
+/* Stage 6.9: assembly settings autosave polish */
+.avaAssemblyMusicStatus.isReady b::after {
+  content: '  ✓';
+  color: #74ffae;
+}
+
+.avaAssemblyWatermarkBox input[type='text']::placeholder {
+  color: rgba(207, 219, 247, .42);
+}
+
+
+/* Stage 6.9D: polished watermark controls */
+.avaAssemblyWatermarkBox {
+  border: 1px solid rgba(69, 216, 255, .16);
+  border-radius: 18px;
+  padding: 14px;
+  background: linear-gradient(135deg, rgba(69,216,255,.055), rgba(143,124,255,.045));
+  display: grid;
+  gap: 13px;
+}
+
+.avaAssemblyWatermarkBox.isEnabled {
+  border-color: rgba(74,255,174,.24);
+  background: linear-gradient(135deg, rgba(74,255,174,.065), rgba(69,216,255,.045));
+}
+
+.avaAssemblyWatermarkHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.avaAssemblyWatermarkHeader > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.avaAssemblyWatermarkHeader strong {
+  font-size: 13px;
+  color: #eaf2ff;
+}
+
+.avaAssemblyWatermarkHeader span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.avaAssemblyToggleButton {
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(255,255,255,.06);
+  color: #cbd6ef;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.avaAssemblyToggleButton.isOn {
+  border-color: rgba(74,255,174,.32);
+  background: rgba(74,255,174,.12);
+  color: #caffdf;
+}
+
+.avaAssemblyField {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.avaAssemblyField span,
+.avaAssemblyWatermarkSliders span {
+  color: #cfdbf7;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .01em;
+}
+
+.avaAssemblyField input,
+.avaAssemblyField select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(69,216,255,.18);
+  border-radius: 13px;
+  background: rgba(8, 14, 30, .74);
+  color: #eaf2ff;
+  padding: 10px 11px;
+  outline: none;
+  font-size: 12px;
+}
+
+.avaAssemblyField input:disabled,
+.avaAssemblyField select:disabled,
+.avaAssemblyWatermarkSliders input:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.avaAssemblyWatermarkGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  gap: 10px;
+  align-items: end;
+}
+
+.avaAssemblyWatermarkPreview {
+  height: 58px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255,255,255,.14), transparent 30%),
+    linear-gradient(135deg, rgba(10, 16, 35, .92), rgba(29, 42, 72, .68));
+  position: relative;
+  overflow: hidden;
+}
+
+.avaAssemblyWatermarkPreview .wm {
+  position: absolute;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255,255,255,.72);
+  text-shadow: 0 1px 4px rgba(0,0,0,.55);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.avaAssemblyWatermarkPreview .bottom_right { right: 8px; bottom: 7px; }
+.avaAssemblyWatermarkPreview .bottom_left { left: 8px; bottom: 7px; }
+.avaAssemblyWatermarkPreview .top_right { right: 8px; top: 7px; }
+.avaAssemblyWatermarkPreview .top_left { left: 8px; top: 7px; }
+.avaAssemblyWatermarkPreview .bottom_center { left: 50%; bottom: 7px; transform: translateX(-50%); }
+.avaAssemblyWatermarkPreview .top_center { left: 50%; top: 7px; transform: translateX(-50%); }
+
+.avaAssemblyWatermarkSliders {
+  display: grid;
+  gap: 11px;
+}
+
+.avaAssemblyWatermarkSliders label {
+  display: grid;
+  gap: 7px;
+}
+
+.avaAssemblyWatermarkSliders input[type="range"] {
+  width: 100%;
+}
+
+
+/* Stage 6.9E: watermark controls remain editable even when watermark is off */
+.avaAssemblyToggleButton {
+  pointer-events: auto;
+  cursor: pointer;
+  position: relative;
+  z-index: 3;
+  user-select: none;
+}
+
+.avaAssemblyWatermarkBox .avaAssemblyField input,
+.avaAssemblyWatermarkBox .avaAssemblyField select,
+.avaAssemblyWatermarkBox .avaAssemblyWatermarkSliders input {
+  cursor: pointer;
+}
+
+.avaAssemblyWatermarkBox:not(.isEnabled) .avaAssemblyField input,
+.avaAssemblyWatermarkBox:not(.isEnabled) .avaAssemblyField select,
+.avaAssemblyWatermarkBox:not(.isEnabled) .avaAssemblyWatermarkSliders input {
+  opacity: .86;
+}
+
+.avaAssemblyWatermarkBox:not(.isEnabled) .avaAssemblyWatermarkPreview {
+  opacity: .72;
+}
+
+
+/* Stage 6.9F: live watermark overlay on previews */
+.avaAssemblyVideoWithWatermark {
+  width: 100%;
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: #050816;
+  overflow: hidden;
+}
+
+.avaAssemblyVideoWithWatermark video {
+  width: 100%;
+  display: block;
+}
+
+.avaAssemblyLiveWatermark {
+  position: absolute;
+  z-index: 5;
+  color: rgba(255,255,255,.94);
+  font-weight: 900;
+  letter-spacing: .01em;
+  text-shadow: 0 1px 6px rgba(0,0,0,.96), 0 0 2px rgba(0,0,0,.92);
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  pointer-events: none;
+  max-width: min(60%, 520px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaAssemblyLiveWatermark.bottom_right { right: 10px; bottom: 42px; }
+.avaAssemblyLiveWatermark.bottom_left { left: 10px; bottom: 42px; }
+.avaAssemblyLiveWatermark.top_right { right: 10px; top: 8px; }
+.avaAssemblyLiveWatermark.top_left { left: 10px; top: 8px; }
+.avaAssemblyLiveWatermark.bottom_center { left: 50%; bottom: 42px; transform: translateX(-50%); }
+.avaAssemblyLiveWatermark.top_center { left: 50%; top: 8px; transform: translateX(-50%); }
