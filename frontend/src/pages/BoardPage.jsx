@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   AudioLines,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   FileJson,
   Film,
@@ -301,6 +303,14 @@ function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
   const imageUrl = rawImageUrl.startsWith('blob:') && imageDataUrl ? imageDataUrl : rawImageUrl
   const firstFrameUrl = rawFirstFrameUrl.startsWith('blob:') && startImageDataUrl ? startImageDataUrl : rawFirstFrameUrl
   const lastFrameUrl = rawLastFrameUrl.startsWith('blob:') && endImageDataUrl ? endImageDataUrl : rawLastFrameUrl
+  const sceneFormat = asText(
+    savedScene?.format ||
+    savedScene?.aspect_ratio ||
+    savedScene?.aspectRatio ||
+    rawScene?.format ||
+    rawScene?.aspect_ratio ||
+    rawScene?.aspectRatio
+  ) || '16:9'
 
   return {
     ...savedScene,
@@ -315,7 +325,8 @@ function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
     end_sec: end,
     duration_sec: toNumber(rawScene?.duration_sec, Math.max(0, end - start)),
     route,
-    format: asText(savedScene?.format || rawScene?.format || rawScene?.aspect_ratio || rawScene?.aspectRatio) || '16:9',
+    format: sceneFormat,
+    aspect_ratio: sceneFormat,
     blockId,
     block_id: blockId,
     blockTitle,
@@ -555,6 +566,7 @@ export default function BoardPage() {
   const [status, setStatus] = useState('')
   const [saving, setSaving] = useState(false)
   const [playback, setPlayback] = useState(null)
+  const [collapsedPanels, setCollapsedPanels] = useState({ translation: false })
   const [audioSrc, setAudioSrc] = useState('')
   const audioRef = useRef(null)
   const importRef = useRef(null)
@@ -700,6 +712,13 @@ export default function BoardPage() {
 
   function selectScene(sceneId) {
     setBoard((current) => ({ ...current, selectedSceneId: sceneId }))
+  }
+
+  function togglePanel(panelKey) {
+    setCollapsedPanels((current) => ({
+      ...current,
+      [panelKey]: !current?.[panelKey],
+    }))
   }
 
   function playRange(start, end, label) {
@@ -1259,6 +1278,7 @@ async function importTimingJson(event) {
   }
 
   const firstLastMode = isFirstLastRoute(selectedScene?.route)
+  const selectedEffectiveFormat = selectedScene?.format || selectedScene?.aspect_ratio || board.format || '16:9'
   const readiness = useMemo(() => {
     const total = board.scenes.length
     const prompts = board.scenes.filter((scene) => asText(scene.video_prompt)).length
@@ -1347,59 +1367,74 @@ async function importTimingJson(event) {
               </div>
             </div>
 
-            <section className="avaBoardTranslationPanel">
+            <section className={`avaBoardTranslationPanel ${collapsedPanels.translation ? 'isCollapsed' : ''}`}>
               <div className="avaBoardSectionHead">
                 <div>
                   <p className="avaEyebrow">translation / sense</p>
                   <h3>Текст сцены</h3>
                 </div>
-                <span>к этому блоку вернёмся позже</span>
-              </div>
-
-              <div className="avaBoardTextGrid">
-                <div className="avaBoardTextCard">
-                  <strong>Оригинал</strong>
-                  <p>{selectedScene.scene_word_text || 'Оригинального текста пока нет'}</p>
-                </div>
-                <div className="avaBoardTextCard">
-                  <strong>Перевод</strong>
-                  <p>{selectedScene.translated_text_ru || 'Перевода пока нет'}</p>
-                </div>
-                <div className="avaBoardTextCard isMeaning">
-                  <strong>Смысл для кадра</strong>
-                  <p>{selectedScene.meaning_hint_ru || 'Смысловой подсказки пока нет'}</p>
-                </div>
-              </div>
-
-              <div className="avaBoardListenPanel">
-                <div className="avaBoardListenGroup isOriginalAudio">
-                  <span>Оригинальное аудио</span>
-                  <button type="button" onClick={playSelectedScene}><Play size={15} /> сцена</button>
-                  <button type="button" onClick={playSelectedBlock}><AudioLines size={15} /> блок</button>
-                  <button type="button" onClick={playAllAudio}><Play size={15} /> всё аудио</button>
-                  {playback && <em>plays: {playback.label}</em>}
-                </div>
-
-                <div className="avaBoardListenGroup isRussianTts">
-                  <span>Русская озвучка браузером</span>
+                <div className="avaBoardSectionHeadActions">
+                  <span>к этому блоку вернёмся позже</span>
                   <button
                     type="button"
-                    className="isTranslation"
-                    onClick={() => speak(selectedScene.translated_text_ru)}
-                    disabled={!selectedScene.translated_text_ru}
+                    className="avaBoardSectionToggle"
+                    onClick={() => togglePanel('translation')}
+                    aria-expanded={!collapsedPanels.translation}
                   >
-                    <Volume2 size={15} /> перевод
-                  </button>
-                  <button
-                    type="button"
-                    className="isSense"
-                    onClick={() => speak(selectedScene.meaning_hint_ru)}
-                    disabled={!selectedScene.meaning_hint_ru}
-                  >
-                    <Volume2 size={15} /> смысл кадра
+                    {collapsedPanels.translation ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+                    {collapsedPanels.translation ? 'Развернуть' : 'Свернуть'}
                   </button>
                 </div>
               </div>
+
+              {!collapsedPanels.translation && (
+                <>
+                  <div className="avaBoardTextGrid">
+                    <div className="avaBoardTextCard">
+                      <strong>Оригинал</strong>
+                      <p>{selectedScene.scene_word_text || 'Оригинального текста пока нет'}</p>
+                    </div>
+                    <div className="avaBoardTextCard">
+                      <strong>Перевод</strong>
+                      <p>{selectedScene.translated_text_ru || 'Перевода пока нет'}</p>
+                    </div>
+                    <div className="avaBoardTextCard isMeaning">
+                      <strong>Смысл для кадра</strong>
+                      <p>{selectedScene.meaning_hint_ru || 'Смысловой подсказки пока нет'}</p>
+                    </div>
+                  </div>
+
+                  <div className="avaBoardListenPanel">
+                    <div className="avaBoardListenGroup isOriginalAudio">
+                      <span>Оригинальное аудио</span>
+                      <button type="button" onClick={playSelectedScene}><Play size={15} /> сцена</button>
+                      <button type="button" onClick={playSelectedBlock}><AudioLines size={15} /> блок</button>
+                      <button type="button" onClick={playAllAudio}><Play size={15} /> всё аудио</button>
+                      {playback && <em>plays: {playback.label}</em>}
+                    </div>
+
+                    <div className="avaBoardListenGroup isRussianTts">
+                      <span>Русская озвучка браузером</span>
+                      <button
+                        type="button"
+                        className="isTranslation"
+                        onClick={() => speak(selectedScene.translated_text_ru)}
+                        disabled={!selectedScene.translated_text_ru}
+                      >
+                        <Volume2 size={15} /> перевод
+                      </button>
+                      <button
+                        type="button"
+                        className="isSense"
+                        onClick={() => speak(selectedScene.meaning_hint_ru)}
+                        disabled={!selectedScene.meaning_hint_ru}
+                      >
+                        <Volume2 size={15} /> смысл кадра
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </section>
 
             <section className="avaBoardGenerationPanel">
@@ -1408,7 +1443,7 @@ async function importTimingJson(event) {
                   <p className="avaEyebrow">video setup</p>
                   <h3>Настройки видео</h3>
                 </div>
-                <span>{selectedScene.route || 'i2v'} · {selectedScene.aspect_ratio || '16:9'}</span>
+                <span>{selectedScene.route || 'i2v'} · {selectedEffectiveFormat}</span>
               </div>
 
               <div className="avaBoardSetupGrid">
@@ -1428,14 +1463,17 @@ async function importTimingJson(event) {
                 <label className="avaBoardSelectField">
                   <span>Разрешение / формат</span>
                   <select
-                    value={selectedScene.aspect_ratio || '16:9'}
-                    onChange={(event) => updateScene(selectedScene.id, { aspect_ratio: event.target.value })}
+                    value={selectedEffectiveFormat}
+                    onChange={(event) => updateScene(selectedScene.id, {
+                      format: event.target.value,
+                      aspect_ratio: event.target.value,
+                    })}
                   >
                     {FORMAT_OPTIONS.map((format) => (
                       <option key={format.value} value={format.value}>{format.label}</option>
                     ))}
                   </select>
-                  <small>Пока это поле готовит данные для будущей генерации.</small>
+                  <small>Формат применяется к выбранной сцене. Формат проекта не меняется автоматически.</small>
                 </label>
               </div>
 
@@ -1476,7 +1514,7 @@ async function importTimingJson(event) {
                 <p className="avaEyebrow">media studio</p>
                 <h3>{firstLastMode ? 'First / Last кадры' : 'Фото и видео'}</h3>
               </div>
-              <span>{selectedScene.route} · {selectedScene.aspect_ratio || '16:9'}</span>
+              <span>{selectedScene.route} · {selectedEffectiveFormat}</span>
             </div>
 
             {firstLastMode ? (
@@ -1527,7 +1565,7 @@ async function importTimingJson(event) {
             <div className="avaBoardSceneWorkflowPanel">
               <div className="avaBoardWorkflowHead">
                 <strong>Действия сцены</strong>
-                <span>{selectedScene.route} · {selectedScene.aspect_ratio || '16:9'}</span>
+                <span>{selectedScene.route} · {selectedEffectiveFormat}</span>
               </div>
 
               <div className="avaBoardWorkflowButtons">

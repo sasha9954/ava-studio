@@ -366,21 +366,35 @@
 
 .avaBoardFirstLastGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 10px;
+  align-items: start;
 }
 
 .avaBoardImageSlot {
+  min-width: 0;
   border: 1px solid rgba(128, 156, 255, 0.16);
   border-radius: 20px;
   background: rgba(6, 11, 25, 0.78);
   padding: 12px;
 }
 
+.avaBoardImageSlotHeader {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.avaBoardImageSlotHeader strong,
+.avaBoardImageSlotHeader span,
+.avaBoardImageSlotHeader small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .avaBoardImagePreview,
 .avaBoardVideoEmpty {
   margin-top: 10px;
-  min-height: 230px;
+  min-height: 180px;
   border: 1px dashed rgba(143, 169, 255, 0.24);
   border-radius: 18px;
   background: radial-gradient(circle at 50% 0%, rgba(75, 100, 205, 0.14), rgba(4, 8, 18, 0.92));
@@ -391,8 +405,12 @@
   text-align: center;
 }
 
+.avaBoardImagePreview {
+  aspect-ratio: 16 / 9;
+}
+
 .avaBoardFirstLastGrid .avaBoardImagePreview {
-  min-height: 170px;
+  min-height: 0;
 }
 
 .avaBoardImagePreview img {
@@ -422,9 +440,11 @@
 
 .avaBoardVideoPreview video {
   width: 100%;
+  max-height: 420px;
   margin-top: 10px;
   border-radius: 16px;
   background: #020611;
+  object-fit: contain;
 }
 
 .avaBoardActionGroups {
@@ -1147,4 +1167,89 @@
 .avaBoardStatusPill.isError {
   border-color: rgba(255, 90, 120, 0.7) !important;
   background: rgba(120, 20, 55, 0.35) !important;
+}
+
+
+/* Stage 5.16: keep first/last media cards readable inside the right media column. */
+.avaBoardMediaPanel .avaBoardFirstLastGrid {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1500px) {
+  .avaBoardMediaPanel .avaBoardFirstLastGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* AVA_STAGE517_COMPACT_FIRSTLAST_BUTTONS_START */
+/* Compact upload/delete buttons inside First / Last frame cards. */
+.avaBoardFirstLastGrid .avaBoardImageSlot .avaBoardSlotActions {
+  margin-top: 8px;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.avaBoardFirstLastGrid .avaBoardImageSlot .avaBoardSlotActions button,
+.avaBoardFirstLastGrid .avaBoardImageSlot .avaBoardSlotActions .avaBoardSmallButton {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.avaBoardFirstLastGrid .avaBoardImageSlot .avaBoardSlotActions svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
+.avaBoardFirstLastGrid .avaBoardImageSlot .avaBoardSlotActions input {
+  display: none;
+}
+
+@media (min-width: 1280px) {
+  .avaBoardFirstLastGrid .avaBoardImageSlot .avaBoardSlotActions {
+    flex-wrap: nowrap;
+  }
+}
+/* AVA_STAGE517_COMPACT_FIRSTLAST_BUTTONS_END */
+
+
+.avaBoardSectionHeadActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.avaBoardSectionToggle {
+  border: 1px solid rgba(132, 163, 255, 0.22);
+  background: rgba(18, 28, 50, 0.82);
+  color: #e8eeff;
+  border-radius: 999px;
+  padding: 7px 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 12px;
+  transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.avaBoardSectionToggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(132, 241, 255, 0.45);
+  background: rgba(25, 42, 75, 0.92);
+}
+
+.avaBoardTranslationPanel.isCollapsed {
+  padding-bottom: 14px;
 }
