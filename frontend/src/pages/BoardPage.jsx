@@ -761,6 +761,7 @@ export default function BoardPage() {
   const [playback, setPlayback] = useState(null)
   const [collapsedPanels, setCollapsedPanels] = useState({ translation: false })
   const [audioSrc, setAudioSrc] = useState('')
+  const [mmaudioOpen, setMmaudioOpen] = useState(false)
   const audioRef = useRef(null)
   const importRef = useRef(null)
   const boardRef = useRef(board)
@@ -1417,6 +1418,15 @@ async function markVideoPlanned(sceneOverride = null) {
       video_result: null,
       video_ready_at: '',
       video_queue_position: 0,
+      mmaudio_status: '',
+      mmaudio_error: '',
+      mmaudio_video_url: '',
+      mmaudio_video_name: '',
+      mmaudio_result: null,
+      mmaudio_ready_at: '',
+      mmaudio_source_video_url: '',
+      mmaudio_source_video_api_path: '',
+      mmaudio_reset_reason: 'base_video_restarting',
     })
 
     try {
@@ -1498,6 +1508,161 @@ async function markVideoPlanned(sceneOverride = null) {
       setStatus(error?.message || 'Не удалось отправить видео')
     }
   }
+
+
+  function mmaudioVideoUrlFromStatus(data) {
+    return data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
+  }
+
+  function sceneMainPreviewVideoUrl(scene) {
+    const baseVideo = scene?.video_url || scene?.videoUrl || ''
+    const mmaudioVideo = scene?.mmaudio_video_url || scene?.mmaudioVideoUrl || ''
+
+    if (!mmaudioVideo) return baseVideo
+    if (!baseVideo) return mmaudioVideo
+
+    const baseReadyAt = Date.parse(scene?.video_ready_at || scene?.videoReadyAt || '')
+    const mmaudioReadyAt = Date.parse(scene?.mmaudio_ready_at || scene?.mmaudioReadyAt || '')
+
+    if (Number.isFinite(baseReadyAt) && Number.isFinite(mmaudioReadyAt)) {
+      return mmaudioReadyAt >= baseReadyAt ? mmaudioVideo : baseVideo
+    }
+
+    return scene?.mmaudio_status === 'ready' ? mmaudioVideo : baseVideo
+  }
+
+  function sceneMainPreviewStatus(scene) {
+    const shownUrl = sceneMainPreviewVideoUrl(scene)
+    const baseVideo = scene?.video_url || scene?.videoUrl || ''
+    const mmaudioVideo = scene?.mmaudio_video_url || scene?.mmaudioVideoUrl || ''
+
+    if (shownUrl && mmaudioVideo && shownUrl === mmaudioVideo) return 'mmaudio ready'
+    return scene?.video_status || (baseVideo ? 'ready' : 'empty')
+  }
+
+  function pollMmaudioJob(sceneId, statusEndpoint, jobId) {
+    const endpoint = statusEndpoint || (jobId ? `/clip/mmaudio/status/${jobId}` : '')
+    if (!sceneId || !endpoint) return
+
+    const normalizedEndpoint = endpoint.startsWith('/api/')
+      ? endpoint.slice(4)
+      : endpoint
+
+    let attempt = 0
+    const maxAttempts = 240
+
+    const tick = async () => {
+      attempt += 1
+      try {
+        const data = await apiRequest(normalizedEndpoint)
+        const status = data?.status || data?.mmaudio_status || 'running'
+        const videoUrl = mmaudioVideoUrlFromStatus(data)
+
+        if (videoUrl) {
+          updateScene(sceneId, {
+            mmaudio_status: 'ready',
+            mmaudio_video_url: videoUrl,
+            mmaudio_video_name: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
+            mmaudio_job_id: data?.jobId || data?.job_id || jobId || '',
+            mmaudio_status_endpoint: endpoint,
+            mmaudio_error: '',
+            mmaudio_result: data,
+            mmaudio_ready_at: new Date().toISOString(),
+          })
+          setStatus(`MMAudio готово: ${sceneId}`)
+          return
+        }
+
+        if (['error', 'failed', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(String(status).toLowerCase())) {
+          updateScene(sceneId, {
+            mmaudio_status: 'error',
+            mmaudio_error: data?.error || data?.detail || status,
+            mmaudio_job_id: data?.jobId || data?.job_id || jobId || '',
+            mmaudio_status_endpoint: endpoint,
+          })
+          setStatus(`MMAudio не собрано: ${data?.error || data?.detail || status}`)
+          return
+        }
+
+        updateScene(sceneId, {
+          mmaudio_status: status === 'queued' ? 'queued' : 'running',
+          mmaudio_job_id: data?.jobId || data?.job_id || jobId || '',
+          mmaudio_status_endpoint: endpoint,
+        })
+
+        if (attempt < maxAttempts) window.setTimeout(tick, 2500)
+        else {
+          updateScene(sceneId, { mmaudio_status: 'error', mmaudio_error: 'poll_timeout' })
+          setStatus('MMAudio слишком долго не отвечает: poll_timeout')
+        }
+      } catch (error) {
+        console.error('[Board] MMAudio status polling failed', error)
+        if (attempt < maxAttempts) window.setTimeout(tick, 4000)
+        else {
+          updateScene(sceneId, { mmaudio_status: 'error', mmaudio_error: error?.message || 'mmaudio_poll_failed' })
+          setStatus(`Ошибка проверки MMAudio: ${error?.message || 'mmaudio_poll_failed'}`)
+        }
+      }
+    }
+
+    window.setTimeout(tick, 1200)
+  }
+
+  async function startMmaudioForSelectedScene() {
+    if (!selectedScene) return
+    const sourceVideoApiPath = selectedScene.video_api_path || selectedScene.videoApiPath || ''
+    const sourceVideo = sourceVideoApiPath ? '' : (selectedScene.video_url || selectedScene.videoUrl || '')
+    if (!sourceVideo && !sourceVideoApiPath) {
+      updateScene(selectedScene.id, { mmaudio_status: 'error', mmaudio_error: 'Сначала нужно готовое видео' })
+      setStatus('MMAudio: сначала нужно готовое видео')
+      return
+    }
+
+    updateScene(selectedScene.id, {
+      mmaudio_status: 'starting',
+      mmaudio_error: '',
+      mmaudio_video_url: '',
+      mmaudio_video_name: '',
+      mmaudio_source_video_url: sourceVideo,
+      mmaudio_source_video_api_path: sourceVideoApiPath,
+      mmaudio_source_preferred: sourceVideoApiPath ? 'video_api_path' : 'video_url',
+      mmaudio_result: null,
+    })
+
+    try {
+      setStatus(`POST /api/clip/mmaudio/start · ${selectedScene.id}`)
+      const data = await apiRequest('/clip/mmaudio/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          scene_id: selectedScene.id,
+          project_id: projectId || '',
+          video_url: sourceVideo,
+          video_api_path: sourceVideoApiPath,
+          prompt: selectedScene.mmaudio_prompt || selectedScene.sound_prompt || selectedScene.video_prompt || '',
+          negative_prompt: selectedScene.mmaudio_negative_prompt || 'music, soundtrack, narration, speech, human voice, distorted audio, clipping, harsh noise, unrelated sounds, repeated loop',
+          duration_sec: durationOf(selectedScene),
+          workflow_key: selectedScene.mmaudio_workflow_key || 'mmaudio-sound-design.json',
+        }),
+      })
+
+      const jobId = data.jobId || data.job_id || ''
+      const nextStatus = data.status || 'queued'
+      updateScene(selectedScene.id, {
+        mmaudio_status: nextStatus,
+        mmaudio_job_id: jobId,
+        mmaudio_status_endpoint: data.statusEndpoint || (jobId ? `/api/clip/mmaudio/status/${jobId}` : ''),
+        mmaudio_workflow_key: data.workflowKey || 'mmaudio-sound-design.json',
+        mmaudio_error: '',
+      })
+      setStatus(`MMAudio job: ${nextStatus} · ${jobId || 'no job id'}`)
+      pollMmaudioJob(selectedScene.id, data.statusEndpoint || (jobId ? `/api/clip/mmaudio/status/${jobId}` : ''), jobId)
+    } catch (error) {
+      console.error('[Board] /clip/mmaudio/start failed', error)
+      updateScene(selectedScene.id, { mmaudio_status: 'error', mmaudio_error: error?.message || 'mmaudio_start_failed' })
+      setStatus(error?.message || 'Не удалось отправить MMAudio')
+    }
+  }
+
 
 async function importTimingJson(event) {
     const file = event.target.files?.[0]
@@ -1799,10 +1964,10 @@ async function importTimingJson(event) {
             <div className="avaBoardVideoPreview">
               <div className="avaBoardVideoHeader">
                 <strong><Film size={16} /> Видео preview</strong>
-                <span>{selectedScene.video_status || 'empty'}</span>
+                <span>{sceneMainPreviewStatus(selectedScene)}</span>
               </div>
-              {selectedScene.video_url ? (
-                <video src={selectedScene.video_url} controls />
+              {sceneMainPreviewVideoUrl(selectedScene) ? (
+                <video src={sceneMainPreviewVideoUrl(selectedScene)} controls />
               ) : (
                 <div className="avaBoardVideoEmpty">
                   <Film size={34} />
@@ -1810,6 +1975,62 @@ async function importTimingJson(event) {
                 </div>
               )}
             </div>
+
+            {selectedScene.video_url && (
+              <div className="avaBoardMmaudioPanel">
+                <button
+                  type="button"
+                  className="avaBoardMmaudioToggle"
+                  onClick={() => setMmaudioOpen((value) => !value)}
+                >
+                  <AudioLines size={15} />
+                  <span>MMAudio / озвучить видео</span>
+                  <small>{selectedScene.mmaudio_status === 'ready' ? 'звук готов' : selectedScene.mmaudio_status === 'running' || selectedScene.mmaudio_status === 'starting' || selectedScene.mmaudio_status === 'queued' ? 'в работе' : 'открыть мини-окно'}</small>
+                </button>
+
+                {mmaudioOpen && (
+                  <div className="avaBoardMmaudioBox">
+                    <label className="avaBoardWideField">
+                      Sound positive prompt
+                      <textarea
+                        value={selectedScene.mmaudio_prompt || ''}
+                        onChange={(event) => updateScene(selectedScene.id, { mmaudio_prompt: event.target.value })}
+                        placeholder="Что озвучить: ветер, шаги, вода, животные, помещение, механика..."
+                      />
+                    </label>
+
+                    <label className="avaBoardWideField">
+                      Sound negative prompt
+                      <textarea
+                        value={selectedScene.mmaudio_negative_prompt || ''}
+                        onChange={(event) => updateScene(selectedScene.id, { mmaudio_negative_prompt: event.target.value })}
+                        placeholder="Что запретить: музыка, речь, шум, клиппинг, лишние звуки..."
+                      />
+                    </label>
+
+                    <div className="avaBoardMmaudioActions">
+                      <button type="button" onClick={startMmaudioForSelectedScene}>
+                        <AudioLines size={15} />
+                        {selectedScene.mmaudio_status === 'starting' || selectedScene.mmaudio_status === 'running' || selectedScene.mmaudio_status === 'queued'
+                          ? 'MMAudio делается'
+                          : 'Сделать звук'}
+                      </button>
+                      <span>{selectedScene.mmaudio_status || 'не запускали'}</span>
+                    </div>
+
+                    {selectedScene.mmaudio_error && (
+                      <p className="avaBoardMmaudioError">{String(selectedScene.mmaudio_error)}</p>
+                    )}
+
+                    {selectedScene.mmaudio_video_url && (
+                      <p className="avaBoardMmaudioReadyNote">
+                        Звук готов — результат показан в основном Видео preview.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="avaBoardSceneWorkflowPanel">
               <div className="avaBoardWorkflowHead">

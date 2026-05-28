@@ -1253,3 +1253,88 @@
 .avaBoardTranslationPanel.isCollapsed {
   padding-bottom: 14px;
 }
+
+
+/* Stage 5.28: MMAudio mini panel */
+.avaBoardMmaudioPanel {
+  margin-top: 12px;
+  border: 1px solid rgba(132, 163, 255, 0.18);
+  background: rgba(9, 16, 32, 0.54);
+  border-radius: 18px;
+  padding: 10px;
+}
+
+.avaBoardMmaudioToggle {
+  width: 100%;
+  border: 1px solid rgba(115, 220, 255, 0.22);
+  background: linear-gradient(135deg, rgba(20, 34, 62, 0.86), rgba(21, 23, 42, 0.92));
+  color: #eaf2ff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.avaBoardMmaudioToggle span { font-weight: 850; }
+.avaBoardMmaudioToggle small { color: #9fb0d6; font-size: 11px; }
+
+.avaBoardMmaudioBox {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.avaBoardMmaudioBox textarea { min-height: 86px; }
+
+.avaBoardMmaudioActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.avaBoardMmaudioActions button {
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #50e0ff, #8b7bff);
+  color: #07111f;
+  padding: 9px 13px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.avaBoardMmaudioActions span { color: #9fb0d6; font-size: 12px; }
+.avaBoardMmaudioError { margin: 0; color: #ff9e9e; font-size: 12px; }
+
+.avaBoardMmaudioResult {
+  display: grid;
+  gap: 8px;
+}
+
+.avaBoardMmaudioResult strong { color: #dbe7ff; font-size: 12px; }
+
+.avaBoardMmaudioResult video {
+  width: 100%;
+  border-radius: 14px;
+  background: #050913;
+}
+
+
+/* Stage 5.30: MMAudio result is shown in the main video preview */
+.avaBoardMmaudioReadyNote {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(88, 255, 178, 0.22);
+  background: rgba(23, 94, 68, 0.22);
+  color: #bfffe6;
+  font-size: 12px;
+  font-weight: 700;
+}

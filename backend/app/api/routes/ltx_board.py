@@ -579,6 +579,7 @@ def _inject_workflow(
     #
     # For now we only patch known exact nodes for specific LTX workflows.
     # ia2v exact nodes: image/audio/prompt/size/duration.
+    # i2v exact nodes: image/prompt/size/frame-length.
     # first_last exact nodes: start image/end image/prompt/size/duration.
     # Other workflows will get their own exact maps later.
     patched = copy.deepcopy(workflow)
@@ -618,6 +619,11 @@ def _apply_known_ltx_node_patches(
     start_ref = (uploaded_start or uploaded_image or {}).get("comfyInputRef") or (uploaded_start or uploaded_image or {}).get("filename")
     audio_ref = (uploaded_audio or {}).get("comfyInputRef") or (uploaded_audio or {}).get("filename")
 
+    try:
+        i2v_length_frames = max(1, int(round(float(generation_duration) * 24)) + 1)
+    except Exception:
+        i2v_length_frames = 121
+
     def patch(node_id: str, key: str, value: Any, reason: str) -> None:
         node = patched.get(node_id)
         if not isinstance(node, dict):
@@ -648,6 +654,24 @@ def _apply_known_ltx_node_patches(
     patch("340:330", "value", int(width), "exact_width_340_330")
     patch("340:324", "value", int(height), "exact_height_340_324")
     patch("340:331", "value", float(generation_duration), "exact_duration_plus1_340_331")
+
+    # Exact i2v / i2v_sound LTX 2.3 workflow nodes.
+    #
+    # image-video.json and image-video-golos-zvuk.json:
+    #   269.image       = uploaded image
+    #   267:266.value   = positive prompt string
+    #   267:247.text    = negative prompt
+    #   267:257.value   = width
+    #   267:258.value   = height
+    #   267:225.value   = length in frames
+    #
+    # The workflow default is 720x1280, so without these exact patches
+    # a horizontal 16:9 upload can still render as vertical.
+    patch("267:266", "value", positive_prompt, "exact_i2v_positive_prompt_267_266")
+    patch("267:247", "text", negative_prompt, "exact_i2v_negative_prompt_267_247")
+    patch("267:257", "value", int(width), "exact_i2v_width_267_257")
+    patch("267:258", "value", int(height), "exact_i2v_height_267_258")
+    patch("267:225", "value", int(i2v_length_frames), "exact_i2v_length_frames_267_225")
 
     # Exact first_last LTX 2.3 workflow nodes.
     #
@@ -800,7 +824,7 @@ def slice_audio(payload: SliceAudioIn) -> dict[str, Any]:
 
 @router.post("/clip/video/extract-last-frame")
 def extract_last_frame(payload: ExtractLastFrameIn) -> dict[str, Any]:
-    source_value = payload.video_url or payload.videoUrl or payload.video_api_path or payload.videoApiPath or payload.video_path or payload.videoPath
+    source_value = payload.video_url or payload.videoUrl or getattr(payload, "video_api_path", None) or getattr(payload, "videoApiPath", None) or payload.video_path or payload.videoPath
     source_path = _resolve_local_file(source_value)
     static_root = _settings_static_path()
     target_dir = static_root / "assets" / "board_frames"
@@ -994,7 +1018,22 @@ def _finalize_video_job_from_outputs(job: dict[str, Any], outputs: list[dict[str
         return None
 
     video_outputs = [item for item in outputs if _is_video_output(item)] or outputs
-    chosen = video_outputs[0]
+
+    preferred_node_ids = [str(item) for item in (
+        job.get("preferredOutputNodeIds")
+        or job.get("preferred_output_node_ids")
+        or []
+    )]
+
+    chosen = None
+    if preferred_node_ids:
+        for item in video_outputs:
+            if str(item.get("nodeId")) in preferred_node_ids:
+                chosen = item
+                break
+
+    if chosen is None:
+        chosen = video_outputs[0]
 
     downloaded = _download_comfy_output_to_static(base_url, chosen, job_id=job.get("jobId", "job"))
     final = downloaded
@@ -1009,6 +1048,8 @@ def _finalize_video_job_from_outputs(job: dict[str, Any], outputs: list[dict[str
         if trimmed:
             final = {**downloaded, **trimmed, "originalVideoUrl": downloaded["videoUrl"]}
 
+    final["selectedOutput"] = chosen
+    final["preferredOutputNodeIds"] = preferred_node_ids
     return final
 
 
@@ -1058,18 +1099,207 @@ def video_status(job_id: str) -> dict[str, Any]:
     return {"ok": True, **job}
 
 
+
+
+def _inject_mmaudio_workflow(
+    workflow: dict[str, Any],
+    *,
+    uploaded_video: dict[str, Any] | None,
+    prompt: str,
+    negative_prompt: str,
+    job_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    # Exact-only MMAudio workflow patch.
+    # mmaudio-sound-design.json:
+    #   91.video           = uploaded video
+    #   92.prompt          = positive sound prompt
+    #   92.negative_prompt = negative sound prompt
+    #   97.filename_prefix = output prefix
+    patched = copy.deepcopy(workflow)
+    patches: list[dict[str, Any]] = []
+
+    def patch(node_id: str, key: str, value: Any, reason: str) -> None:
+        node = patched.get(node_id)
+        if not isinstance(node, dict):
+            return
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            return
+        if key not in inputs:
+            return
+        inputs[key] = value
+        patches.append({
+            "nodeId": node_id,
+            "input": key,
+            "reason": reason,
+            "valuePreview": str(value)[:180],
+        })
+
+    video_ref = (uploaded_video or {}).get("comfyInputRef") or (uploaded_video or {}).get("filename")
+    if video_ref:
+        patch("91", "video", video_ref, "exact_mmaudio_video_91")
+
+    patch("92", "prompt", prompt, "exact_mmaudio_positive_prompt_92")
+    patch("92", "negative_prompt", negative_prompt, "exact_mmaudio_negative_prompt_92")
+    patch("97", "filename_prefix", f"MMAudio_sound_design/{job_id}", "exact_mmaudio_output_prefix_97")
+
+    return patched, patches
+def _payload_get(payload_data: dict[str, Any], *keys: str, default: Any = None) -> Any:
+    for key in keys:
+        value = payload_data.get(key)
+        if value not in (None, ""):
+            return value
+    return default
+
+
+def _payload_float(payload_data: dict[str, Any], *keys: str, default: float = 0.0) -> float:
+    value = _payload_get(payload_data, *keys, default=default)
+    try:
+        return float(value or default)
+    except Exception:
+        return float(default)
+
+
+def _run_mmaudio_submit_job(job_id: str) -> None:
+    job = BOARD_MMAUDIO_JOBS.get(job_id)
+    if not job:
+        return
+
+    payload_data = job.get("payload") or {}
+    lab_url = job.get("targetComfyBaseUrl") or _mmaudio_comfy_url()
+    workflow_key = job.get("workflowKey") or "mmaudio-sound-design.json"
+
+    try:
+        job["status"] = "preparing"
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+        if not lab_url:
+            job["status"] = "blocked_missing_comfy_mmaudio_url"
+            job["error"] = "missing COMFY_MMAUDIO_BASE_URL / COMFY_LAB_URL"
+            job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+            return
+
+        # Prefer local backend static path. It is safer than making the backend HTTP-fetch itself.
+        source_value = _payload_get(payload_data, "video_api_path", "videoApiPath", "video_url", "videoUrl", default="")
+        if not source_value:
+            job["status"] = "error"
+            job["error"] = "missing_mmaudio_video"
+            job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+            return
+
+        workflow = _load_workflow(workflow_key)
+        video_path = _resolve_local_file(str(source_value))
+        uploaded_video = _comfy_upload_file(lab_url, video_path, subfolder=f"ava_{job_id}")
+
+        prompt = str(_payload_get(payload_data, "prompt", default="") or "")
+        negative_prompt = str(_payload_get(payload_data, "negative_prompt", "negativePrompt", default="") or "")
+
+        if not prompt.strip():
+            prompt = "Realistic natural sound design matching the visible action. Clean synchronized environmental audio, no music, no narration, no human voice unless explicitly visible and requested."
+
+        if not negative_prompt.strip():
+            negative_prompt = "music, soundtrack, score, narration, speech, human voice, singing, distorted audio, clipping, harsh noise, unrelated sounds, repeated loop, robotic audio"
+
+        prompt_graph, patches = _inject_mmaudio_workflow(
+            workflow,
+            uploaded_video=uploaded_video,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            job_id=job_id,
+        )
+
+        job["status"] = "submitting"
+        job["uploadedMedia"] = {"video": uploaded_video}
+        job["workflowPatches"] = patches
+        job["workflowPatchCount"] = len(patches)
+        job["sourceVideoResolvedPath"] = str(video_path)
+        job["sourceVideoValue"] = str(source_value)
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+        submit_data = _submit_prompt(lab_url, prompt_graph)
+        prompt_id = submit_data.get("prompt_id") or submit_data.get("promptId")
+
+        job["promptId"] = prompt_id
+        job["promptSubmit"] = submit_data
+        job["status"] = "queued" if prompt_id else "queued_no_prompt_id"
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+    except HTTPException as exc:
+        job["status"] = "error"
+        job["error"] = exc.detail
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+    except Exception as exc:
+        job["status"] = "error"
+        job["error"] = str(exc)
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+
 @router.post("/clip/mmaudio/start")
-def start_mmaudio(payload: MmaudioStartIn) -> dict[str, Any]:
+def start_mmaudio(payload: dict[str, Any]) -> dict[str, Any]:
+    # Raw dict is intentional here. Pydantic was dropping video_api_path in some local states,
+    # so the job got sourceVideoApiPath="" even when the browser sent it correctly.
+    payload_data = dict(payload or {})
+
     lab_url = _mmaudio_comfy_url()
-    workflow_key = payload.workflow_key or payload.workflowKey or "mmaudio-sound-design.json"
+    workflow_key = str(_payload_get(payload_data, "workflow_key", "workflowKey", default="mmaudio-sound-design.json"))
     workflow_path = WORKFLOWS_DIR / workflow_key
-    target_duration = _target_duration(payload)
+
+    target_duration = max(0.1, _payload_float(payload_data, "target_duration_sec", "targetDurationSec", "duration_sec", "durationSec", default=0.0))
     job_id = f"mmaudio_{uuid4().hex[:14]}"
     now = datetime.utcnow().isoformat() + "Z"
-    status = "blocked_missing_comfy_mmaudio_url" if not lab_url else "queued_not_implemented"
-    job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "workflowPath": str(workflow_path), "targetComfy": "mmaudio_lab", "targetComfyBaseUrl": lab_url, "targetDurationSec": target_duration, "creditCost": MMAUDIO_CREDIT_COST, "creditCharged": False, "payload": payload.model_dump()}
+
+    source_video_api_path = str(_payload_get(payload_data, "video_api_path", "videoApiPath", default="") or "")
+    source_video_url = str(_payload_get(payload_data, "video_url", "videoUrl", default="") or "")
+
+    job = {
+        "jobId": job_id,
+        "status": "preparing",
+        "createdAt": now,
+        "updatedAt": now,
+        "sceneId": _payload_get(payload_data, "scene_id", "sceneId", default=""),
+        "projectId": _payload_get(payload_data, "project_id", "projectId", default=""),
+        "workflowKey": workflow_key,
+        "workflowExists": workflow_path.exists(),
+        "targetComfy": "mmaudio_lab",
+        "targetComfyBaseUrl": lab_url,
+        "preferredOutputNodeIds": ["97"],
+        "sourceVideoUrl": source_video_url,
+        "sourceVideoApiPath": source_video_api_path,
+        "targetDurationSec": target_duration,
+        "creditCost": MMAUDIO_CREDIT_COST,
+        "creditCharged": False,
+        "creditChargeMode": "not_charged_until_result_success",
+        "payload": payload_data,
+    }
     BOARD_MMAUDIO_JOBS[job_id] = job
-    return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/mmaudio/status/{job_id}", "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "mmaudio_lab", "targetComfyBaseUrl": lab_url, "targetDurationSec": target_duration, "creditCost": MMAUDIO_CREDIT_COST, "creditCharged": False, "jobStored": True}
+
+    try:
+        import threading
+        threading.Thread(target=_run_mmaudio_submit_job, args=(job_id,), daemon=True).start()
+    except Exception as exc:
+        job["status"] = "error"
+        job["error"] = f"thread_start_failed: {exc}"
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "job_id": job_id,
+        "status": job["status"],
+        "statusEndpoint": f"/api/clip/mmaudio/status/{job_id}",
+        "workflowKey": workflow_key,
+        "workflowExists": workflow_path.exists(),
+        "targetComfy": "mmaudio_lab",
+        "targetComfyBaseUrl": lab_url,
+        "targetDurationSec": target_duration,
+        "creditCost": MMAUDIO_CREDIT_COST,
+        "creditCharged": False,
+        "workflowPatchCount": 0,
+        "uploadedMedia": {},
+        "jobStored": True,
+        "sourceVideoApiPath": source_video_api_path,
+        "sourceVideoUrl": source_video_url,
+    }
 
 
 @router.get("/clip/mmaudio/status/{job_id}")
@@ -1077,4 +1307,46 @@ def mmaudio_status(job_id: str) -> dict[str, Any]:
     job = BOARD_MMAUDIO_JOBS.get(job_id)
     if not job:
         return {"ok": False, "status": "not_found", "code": "MMAUDIO_JOB_NOT_FOUND", "jobId": job_id}
+
+    if job.get("mmaudioVideoUrl") or job.get("mmaudio_video_url") or job.get("videoUrl") or job.get("video_url"):
+        return {"ok": True, **job}
+
+    prompt_id = job.get("promptId")
+    base_url = job.get("targetComfyBaseUrl")
+    if prompt_id and base_url:
+        history = _history(base_url, prompt_id)
+        outputs = _extract_comfy_outputs(base_url, history) if isinstance(history, dict) else []
+
+        if outputs:
+            job["outputs"] = outputs
+            try:
+                final_video = _finalize_video_job_from_outputs(job, outputs)
+                if final_video:
+                    job.update(final_video)
+                    job["mmaudioVideoUrl"] = final_video.get("videoUrl") or final_video.get("video_url")
+                    job["mmaudio_video_url"] = final_video.get("video_url") or final_video.get("videoUrl")
+                    job["mmaudioVideoName"] = final_video.get("videoName") or final_video.get("video_name")
+                    job["mmaudio_video_name"] = final_video.get("video_name") or final_video.get("videoName")
+                    job["status"] = "completed"
+                    job["mmaudio_status"] = "ready"
+                    job["creditCharged"] = False
+                    job["creditChargeMode"] = "TODO_charge_after_completed_confirmed"
+                else:
+                    job["status"] = "completed_without_video_output"
+            except HTTPException as exc:
+                job["status"] = "output_download_failed"
+                job["error"] = exc.detail
+            except Exception as exc:
+                job["status"] = "output_finalize_failed"
+                job["error"] = str(exc)
+
+        elif isinstance(history, dict) and "_history_error" in history:
+            job["historyError"] = history["_history_error"]
+            job["status"] = "running"
+        else:
+            job["status"] = "running"
+
+        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+        job["historyPreview"] = history
+
     return {"ok": True, **job}
