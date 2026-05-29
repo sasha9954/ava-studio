@@ -43,6 +43,12 @@ export function getProjectTheme(project, projects = []) {
       '--ava-project-accent': theme.accent,
       '--ava-project-accent-2': theme.accent2,
       '--ava-project-glow': theme.glow,
+      '--ava-active-accent': theme.accent,
+      '--ava-active-accent-2': theme.accent2,
+      '--ava-active-glow': theme.glow,
+      '--primary': theme.accent,
+      '--primary-2': theme.accent2,
+      '--accent': theme.accent,
     },
   }
 }

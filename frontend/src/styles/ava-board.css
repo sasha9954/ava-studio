@@ -2250,3 +2250,771 @@
 .avaAssemblyMusicBox.isCollapsed, .avaAssemblyWatermarkBox.isCollapsed { padding: 13px 14px; }
 .avaAssemblyWatermarkBox.isCollapsed .avaAssemblyWatermarkHeader { margin: 0; }
 .avaAssemblyWatermarkBox.isCollapsed { min-height: auto; }
+
+
+/* Stage 6.13: assembly build dock + project accent skin */
+.avaAssemblyBuildDock {
+  border: 1px solid color-mix(in srgb, var(--ava-project-accent, #45d8ff) 28%, transparent);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ava-project-accent, #45d8ff) 11%, transparent), rgba(255,255,255,.04));
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--ava-project-glow, rgba(69,216,255,.15)) 68%, transparent);
+}
+
+.avaAssemblyBuildText {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.avaAssemblyBuildText .avaEyebrow {
+  margin: 0;
+  color: var(--ava-project-accent-2, #87ddff);
+}
+
+.avaAssemblyBuildText strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.avaAssemblyBuildText span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.avaAssemblyBuildButton {
+  min-height: 50px;
+  padding: 0 22px !important;
+  border-radius: 18px !important;
+  font-size: 14px !important;
+  flex: 0 0 auto;
+}
+
+.avaAssemblyBuildButton:disabled {
+  opacity: .52;
+  cursor: not-allowed;
+}
+
+.avaShell.isProjectMode .avaAssemblyHeader {
+  background:
+    radial-gradient(circle at 16% 0%, color-mix(in srgb, var(--ava-project-accent, #2affc4) 22%, transparent), transparent 34rem),
+    linear-gradient(135deg, color-mix(in srgb, var(--ava-project-accent, #2affc4) 10%, transparent), rgba(69,216,255,.055));
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 24%, transparent);
+}
+
+.avaShell.isProjectMode .avaBoardPrimary,
+.avaShell.isProjectMode .avaAssemblyBuildButton {
+  background: linear-gradient(135deg, var(--ava-project-accent, #2affc4), var(--ava-project-accent-2, #45d8ff)) !important;
+  border-color: color-mix(in srgb, var(--ava-project-accent-2, #45d8ff) 58%, white 12%) !important;
+  box-shadow: 0 14px 42px var(--ava-project-glow, rgba(42,255,196,.24));
+}
+
+.avaShell.isProjectMode .avaAssemblySceneItem.isActive {
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 54%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ava-project-accent, #2affc4) 18%, transparent), 0 14px 34px var(--ava-project-glow, rgba(42,255,196,.12));
+}
+
+.avaShell.isProjectMode .avaAssemblySceneItem.isReady {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ava-project-accent, #2affc4) 12%, transparent), rgba(255,255,255,.045));
+}
+
+.avaShell.isProjectMode .avaAssemblyPreviewPanel,
+.avaShell.isProjectMode .avaAssemblySettings,
+.avaShell.isProjectMode .avaAssemblySceneRail {
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 16%, var(--stroke));
+}
+
+.avaShell.isProjectMode .avaAssemblyFinalPreview {
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 34%, transparent);
+  background: color-mix(in srgb, var(--ava-project-accent, #2affc4) 7%, transparent);
+}
+
+.avaShell.isProjectMode .avaAssemblyFinalPreview a {
+  color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 72%, white);
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 28%, transparent);
+}
+
+.avaShell.isProjectMode .avaAssemblyWatermarkBox.isEnabled,
+.avaShell.isProjectMode .avaAssemblyMusicBox.isOpen {
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 28%, transparent);
+}
+
+@media (max-width: 760px) {
+  .avaAssemblyBuildDock {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .avaAssemblyBuildButton {
+    width: 100%;
+  }
+}
+
+
+/* Stage 7.3: hide stale preview during active video jobs */
+.avaBoardVideoEmpty.isBusy {
+  border-color: rgba(255, 210, 106, .28);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 210, 106, .14), transparent 54%),
+    rgba(255, 255, 255, .035);
+  color: #ffe6a5;
+}
+
+.avaBoardVideoEmpty.isBusy small {
+  color: rgba(255, 230, 165, .72);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* Stage 76: MMAudio prompt drawer magic UI */
+.avaBoardMmaudioPanel {
+  margin-top: 12px;
+  border: 1px solid rgba(173, 119, 255, 0.26);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(116, 82, 255, 0.20), transparent 34%),
+    radial-gradient(circle at 100% 15%, rgba(67, 225, 255, 0.14), transparent 38%),
+    rgba(9, 14, 31, 0.62);
+  border-radius: 20px;
+  padding: 10px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 18px 42px rgba(0,0,0,0.18);
+}
+
+.avaBoardMmaudioToggle.isMagic {
+  width: 100%;
+  border: 1px solid rgba(194, 139, 255, 0.42);
+  background: linear-gradient(135deg, rgba(92, 45, 164, 0.78), rgba(20, 30, 68, 0.88) 48%, rgba(10, 94, 116, 0.70));
+  color: #f4efff;
+  border-radius: 16px;
+  padding: 11px 12px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "icon title chevron"
+    "icon sub chevron";
+  align-items: center;
+  gap: 4px 9px;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 0 22px rgba(123, 92, 255, 0.13);
+}
+
+.avaBoardMmaudioToggle.isMagic:hover {
+  border-color: rgba(105, 238, 255, 0.58);
+  transform: translateY(-1px);
+}
+
+.avaBoardMmaudioToggle.isMagic svg:first-child { grid-area: icon; color: #ffe9a8; }
+.avaBoardMmaudioToggle.isMagic svg:last-child { grid-area: chevron; color: #cfe9ff; }
+.avaBoardMmaudioToggle.isMagic span { grid-area: title; font-weight: 900; font-size: 14px; }
+.avaBoardMmaudioToggle.isMagic small { grid-area: sub; color: rgba(221, 230, 255, 0.72); font-size: 11px; }
+
+.avaBoardMmaudioPanel.isBusy .avaBoardMmaudioToggle.isMagic {
+  border-color: rgba(255, 210, 91, 0.62);
+  background: linear-gradient(135deg, rgba(128, 83, 20, 0.82), rgba(55, 33, 108, 0.86));
+}
+
+.avaBoardMmaudioPanel.isReady .avaBoardMmaudioToggle.isMagic {
+  border-color: rgba(75, 255, 184, 0.48);
+  background: linear-gradient(135deg, rgba(17, 91, 71, 0.78), rgba(28, 37, 84, 0.88));
+}
+
+.avaBoardMmaudioPanel.isError .avaBoardMmaudioToggle.isMagic {
+  border-color: rgba(255, 92, 116, 0.58);
+  background: linear-gradient(135deg, rgba(106, 28, 46, 0.78), rgba(45, 28, 80, 0.90));
+}
+
+.avaBoardMmaudioBox {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.avaBoardMmaudioBox textarea {
+  min-height: 82px;
+}
+
+.avaBoardMmaudioActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.avaBoardMmaudioActions button {
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #5ff0ff, #a47cff 58%, #ffd36c);
+  color: #07111f;
+  padding: 10px 14px;
+  font-weight: 950;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(98, 133, 255, 0.18);
+}
+
+.avaBoardMmaudioActions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.35);
+}
+
+.avaBoardMmaudioActions span {
+  color: rgba(202, 215, 255, 0.66);
+  font-size: 12px;
+}
+
+.avaBoardMmaudioError {
+  margin: 0;
+  color: #ff9e9e;
+  font-size: 12px;
+}
+
+/* Stage 6.2 — montage scene colors + cinematic loading screens */
+.avaStoryboardLoadingPage {
+  min-height: calc(100vh - 120px);
+  display: grid;
+  align-items: start;
+  padding-top: 48px;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(143, 124, 255, 0.2), transparent 28%),
+    radial-gradient(circle at 80% 12%, rgba(69, 216, 255, 0.16), transparent 32%),
+    linear-gradient(135deg, rgba(13, 18, 35, 0.92), rgba(4, 10, 24, 0.96));
+}
+
+.avaLoadingHero {
+  width: min(1120px, calc(100vw - 48px));
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(280px, 660px) minmax(220px, 360px);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.avaLoadingCard,
+.avaLoadingSkeletonList {
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.035)),
+    rgba(6, 12, 28, 0.82);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+.avaLoadingCard {
+  padding: 28px;
+  overflow: hidden;
+  position: relative;
+}
+
+.avaLoadingCard::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -35% 20%;
+  height: 160px;
+  background: linear-gradient(90deg, transparent, rgba(69,216,255,.18), rgba(143,124,255,.16), transparent);
+  filter: blur(24px);
+  animation: avaLoadingGlow 2.8s ease-in-out infinite;
+}
+
+.avaLoadingOrb {
+  width: 62px;
+  height: 62px;
+  border-radius: 21px;
+  display: grid;
+  place-items: center;
+  color: #fff3c7;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 240, 173, .3), rgba(143, 124, 255, .12)), rgba(255,255,255,.08);
+  border: 1px solid rgba(255, 229, 152, .35);
+  box-shadow: 0 0 34px rgba(255, 210, 104, .12);
+  margin-bottom: 18px;
+  animation: avaLoadingPulse 1.9s ease-in-out infinite;
+}
+
+.avaLoadingCard h2 {
+  margin: 6px 0 10px;
+  font-size: clamp(25px, 4vw, 42px);
+  letter-spacing: -0.04em;
+}
+
+.avaLoadingCard p:not(.avaEyebrow) {
+  max-width: 620px;
+  margin: 0 0 22px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.avaLoadingPipeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  position: relative;
+  z-index: 2;
+}
+
+.avaLoadingPipeline span {
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  padding: 9px 12px;
+  color: #b9c5de;
+  background: rgba(255,255,255,.05);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.avaLoadingPipeline span.isDone {
+  color: #8ff1c5;
+  border-color: rgba(39, 207, 137, .32);
+  background: rgba(39, 207, 137, .1);
+}
+
+.avaLoadingPipeline span.isActive {
+  color: #e9f7ff;
+  border-color: rgba(69, 216, 255, .42);
+  background: rgba(69, 216, 255, .14);
+  box-shadow: 0 0 24px rgba(69,216,255,.11);
+}
+
+.avaLoadingPipeline i {
+  width: 28px;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, rgba(143,124,255,.45), rgba(69,216,255,.45));
+}
+
+.avaLoadingSkeletonList {
+  padding: 24px;
+  display: grid;
+  gap: 12px;
+}
+
+.avaLoadingSkeletonList b {
+  display: block;
+  height: 76px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.08);
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.04), rgba(69,216,255,.14), rgba(255,255,255,.04)) 0 0 / 240% 100%,
+    rgba(255,255,255,.045);
+  animation: avaSkeletonMove 1.4s linear infinite;
+}
+
+.avaAssemblySceneItem {
+  position: relative;
+  overflow: hidden;
+  border-color: hsla(var(--scene-hue, 210), 78%, 66%, .34) !important;
+  box-shadow:
+    inset 4px 0 0 hsla(var(--scene-hue, 210), 82%, 60%, .62),
+    inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.avaAssemblySceneItem::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, hsla(var(--scene-hue, 210), 78%, 52%, .16), transparent 42%),
+    radial-gradient(circle at 0% 50%, hsla(var(--scene-hue, 210), 84%, 62%, .18), transparent 35%);
+  pointer-events: none;
+}
+
+.avaAssemblySceneItem > * {
+  position: relative;
+  z-index: 1;
+}
+
+.avaAssemblySceneItem.isActive {
+  border-color: hsla(var(--scene-hue, 210), 92%, 72%, .78) !important;
+  box-shadow:
+    inset 4px 0 0 hsla(var(--scene-hue, 210), 92%, 62%, .88),
+    0 0 0 1px hsla(var(--scene-hue, 210), 86%, 70%, .32),
+    0 14px 34px hsla(var(--scene-hue, 210), 80%, 42%, .12) !important;
+}
+
+.avaAssemblySceneItem.hasBlock {
+  background:
+    linear-gradient(135deg, hsla(var(--scene-hue, 210), 76%, 46%, .12), rgba(255,255,255,.045));
+}
+
+.avaAssemblyBlockBadge {
+  justify-self: start;
+  max-width: 100%;
+  border: 1px solid hsla(var(--scene-hue, 210), 76%, 64%, .34);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: hsla(var(--scene-hue, 210), 72%, 44%, .16);
+  color: #eaf0ff;
+  font-size: 10px;
+  line-height: 1.1;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes avaLoadingGlow {
+  0%, 100% { transform: translateX(-8%) scaleX(.96); opacity: .55; }
+  50% { transform: translateX(10%) scaleX(1.08); opacity: .95; }
+}
+
+@keyframes avaLoadingPulse {
+  0%, 100% { transform: translateY(0); box-shadow: 0 0 34px rgba(255, 210, 104, .12); }
+  50% { transform: translateY(-2px); box-shadow: 0 0 46px rgba(255, 210, 104, .22); }
+}
+
+@keyframes avaSkeletonMove {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: -240% 0, 0 0; }
+}
+
+@media (max-width: 860px) {
+  .avaLoadingHero {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Stage 6.2.1 - clear labeled loading status panel */
+.avaLoadingStatusPanel {
+  padding: 24px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.035)),
+    rgba(6, 12, 28, 0.82);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+.avaLoadingStatusCard {
+  min-height: 74px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.09);
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.055), rgba(69,216,255,.085)),
+    rgba(255,255,255,.035);
+  padding: 13px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.avaLoadingStatusCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+  transform: translateX(-100%);
+  animation: avaLoadingStatusSweep 1.8s ease-in-out infinite;
+}
+
+.avaLoadingStatusCard span {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #9fb1d2;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.1);
+  font-size: 11px;
+  font-weight: 900;
+  grid-row: span 2;
+}
+
+.avaLoadingStatusCard strong {
+  color: #eaf2ff;
+  font-size: 14px;
+  letter-spacing: .02em;
+  position: relative;
+  z-index: 1;
+}
+
+.avaLoadingStatusCard small {
+  color: #95a4bf;
+  font-size: 12px;
+  line-height: 1.25;
+  position: relative;
+  z-index: 1;
+}
+
+.avaLoadingStatusCard.isDone {
+  border-color: rgba(39, 207, 137, .28);
+  background:
+    linear-gradient(90deg, rgba(39, 207, 137, .12), rgba(255,255,255,.035)),
+    rgba(255,255,255,.035);
+}
+
+.avaLoadingStatusCard.isDone span {
+  color: #8ff1c5;
+  border-color: rgba(39, 207, 137, .34);
+  background: rgba(39, 207, 137, .12);
+}
+
+.avaLoadingStatusCard.isActive {
+  border-color: rgba(69, 216, 255, .42);
+  box-shadow: 0 0 28px rgba(69,216,255,.10);
+}
+
+.avaLoadingStatusCard.isActive span {
+  color: #dff8ff;
+  border-color: rgba(69, 216, 255, .42);
+  background: rgba(69, 216, 255, .14);
+}
+
+@keyframes avaLoadingStatusSweep {
+  0% { transform: translateX(-120%); opacity: 0; }
+  25% { opacity: 1; }
+  70% { opacity: .75; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+/* Stage 6.2.2 - navigation links and contextual route loading */
+.avaTimingStageLink,
+.avaBoardBackTimingLink {
+  text-decoration: none;
+}
+
+.avaTimingHeaderActions .avaTimingStageLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.avaLoadingPage {
+  min-height: calc(100vh - 88px);
+  display: grid;
+  place-items: center;
+  padding: clamp(28px, 5vw, 74px);
+}
+
+.avaLoadingShell {
+  width: min(1280px, 100%);
+  display: grid;
+  grid-template-columns: minmax(420px, 1.35fr) minmax(320px, .75fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.avaLoadingHeroCard {
+  min-height: 420px;
+  padding: clamp(28px, 4vw, 58px);
+  border-radius: 30px;
+  border: 1px solid rgba(255,255,255,.12);
+  background:
+    radial-gradient(circle at 20% 10%, rgba(126, 90, 255, .18), transparent 34%),
+    linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.025)),
+    rgba(7, 13, 29, .86);
+  box-shadow: 0 32px 90px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.07);
+}
+
+.avaLoadingIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  color: #ffe7a7;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.22), transparent 42%),
+    linear-gradient(135deg, rgba(255, 211, 128, .24), rgba(126, 90, 255, .18));
+  border: 1px solid rgba(255,255,255,.16);
+  box-shadow: 0 0 36px rgba(255, 211, 128, .12);
+  margin-bottom: 28px;
+}
+
+.avaLoadingHeroCard h1 {
+  margin: 14px 0 10px;
+  font-size: clamp(36px, 5vw, 58px);
+  line-height: .98;
+  letter-spacing: -.055em;
+}
+
+.avaLoadingHeroCard > p:not(.avaEyebrow) {
+  color: #aeb7ce;
+  font-size: 18px;
+  max-width: 760px;
+}
+
+.avaLoadingSteps {
+  margin-top: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.avaLoadingSteps span {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,.055);
+  border: 1px solid rgba(255,255,255,.11);
+  color: #b9c2d7;
+  font-weight: 900;
+}
+
+.avaLoadingSteps span.isDone {
+  color: #9df1c9;
+  border-color: rgba(39,207,137,.28);
+  background: rgba(39,207,137,.12);
+}
+
+.avaLoadingSteps span.isActive {
+  color: #ecfbff;
+  border-color: rgba(69,216,255,.38);
+  background: rgba(69,216,255,.14);
+  box-shadow: 0 0 28px rgba(69,216,255,.12);
+}
+
+.avaLoadingSteps i {
+  width: 34px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(69,216,255,.3), rgba(126,90,255,.38));
+}
+
+@media (max-width: 980px) {
+  .avaLoadingShell {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Stage 6.2.4 - compact one-card loading with animated route steps */
+.avaLoadingPage {
+  min-height: calc(100vh - 88px);
+  display: grid;
+  place-items: center;
+  padding: clamp(22px, 4vw, 52px);
+}
+
+.avaLoadingShell,
+.avaLoadingShell.isBoardRoute,
+.avaLoadingShell.isAssemblyRoute {
+  width: min(780px, calc(100vw - 56px));
+  display: block !important;
+  grid-template-columns: 1fr !important;
+  gap: 0 !important;
+}
+
+.avaLoadingStatusPanel {
+  display: none !important;
+}
+
+.avaLoadingHeroCard {
+  width: 100%;
+  min-height: 330px !important;
+  padding: clamp(26px, 4vw, 44px) !important;
+  border-radius: 30px;
+  text-align: left;
+}
+
+.avaLoadingHeroCard h1 {
+  font-size: clamp(34px, 4.2vw, 48px) !important;
+  line-height: 1.02 !important;
+}
+
+.avaLoadingHeroCard > p:not(.avaEyebrow) {
+  max-width: 620px;
+  font-size: 16px !important;
+}
+
+.avaLoadingIcon {
+  width: 64px !important;
+  height: 64px !important;
+  border-radius: 22px !important;
+  margin-bottom: 22px !important;
+}
+
+.avaLoadingSteps {
+  margin-top: 26px !important;
+  gap: 10px !important;
+}
+
+.avaLoadingSteps span {
+  position: relative;
+  min-height: 42px !important;
+  padding: 0 17px !important;
+  overflow: hidden;
+  isolation: isolate;
+  animation: avaRouteStepPulse 4s ease-in-out infinite;
+}
+
+.avaLoadingSteps span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
+  transform: translateX(-120%);
+  animation: avaRouteStepSweep 4s ease-in-out infinite;
+  z-index: -1;
+}
+
+.avaLoadingSteps span:nth-of-type(1),
+.avaLoadingSteps span:nth-of-type(1)::after {
+  animation-delay: 0s;
+}
+
+.avaLoadingSteps span:nth-of-type(2),
+.avaLoadingSteps span:nth-of-type(2)::after {
+  animation-delay: 1s;
+}
+
+.avaLoadingSteps span:nth-of-type(3),
+.avaLoadingSteps span:nth-of-type(3)::after {
+  animation-delay: 2s;
+}
+
+.avaLoadingSteps span:nth-of-type(4),
+.avaLoadingSteps span:nth-of-type(4)::after {
+  animation-delay: 3s;
+}
+
+.avaLoadingSteps i {
+  width: 26px !important;
+  opacity: .72;
+}
+
+@keyframes avaRouteStepPulse {
+  0%, 19%, 100% {
+    color: #b9c2d7;
+    border-color: rgba(255,255,255,.12);
+    background: rgba(255,255,255,.055);
+    box-shadow: none;
+    transform: translateY(0);
+  }
+  5%, 14% {
+    color: #ecfbff;
+    border-color: rgba(69,216,255,.55);
+    background:
+      linear-gradient(135deg, rgba(69,216,255,.22), rgba(126,90,255,.18)),
+      rgba(255,255,255,.07);
+    box-shadow: 0 0 30px rgba(69,216,255,.16);
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes avaRouteStepSweep {
+  0%, 3% { transform: translateX(-120%); opacity: 0; }
+  6%, 13% { opacity: 1; }
+  17%, 100% { transform: translateX(120%); opacity: 0; }
+}
+

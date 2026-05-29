@@ -85,7 +85,14 @@ function avaJobVideoUrl(kind, data) {
 }
 
 function avaJobIsError(status) {
-  return ['error', 'failed', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(String(status || '').toLowerCase())
+  const normalized = String(status || '').toLowerCase()
+  return normalized.startsWith('blocked_') || ['error', 'failed', 'queued_no_prompt_id', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(normalized)
+}
+
+function avaJobIsStale(status, data = {}) {
+  const normalized = String(status || '').toLowerCase()
+  const code = String(data?.code || data?.error?.code || '').toUpperCase()
+  return normalized === 'not_found' || code === 'BOARD_VIDEO_JOB_NOT_FOUND' || code === 'BOARD_MMAUDIO_JOB_NOT_FOUND'
 }
 
 
@@ -343,6 +350,10 @@ export default function AvaShellLayout() {
               to: job.to || '',
               dedupeKey: `${job.kind}:${key}:done`,
             })
+          } else if (avaJobIsStale(status, data)) {
+            // Backend stores Board jobs in memory. After backend restart old job ids are gone;
+            // remove them from the global watcher instead of polling forever.
+            changed = true
           } else if (avaJobIsError(status)) {
             changed = true
             pushGlobalToast({

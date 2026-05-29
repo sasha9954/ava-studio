@@ -373,3 +373,34 @@
   outline: 2px solid rgba(105, 216, 255, 0.85);
   outline-offset: 4px;
 }
+
+
+/* Stage 6.13: project accent skin */
+.avaShell.isProjectMode .avaBrandIcon,
+.avaShell.isProjectMode .avaSplashLogo,
+.avaShell.isProjectMode .avaMiniLogo svg,
+.avaShell.isProjectMode .avaHeroBrain,
+.avaShell.isProjectMode .avaModuleIcon {
+  background: linear-gradient(135deg, var(--ava-project-accent, #2affc4), var(--ava-project-accent-2, #45d8ff));
+  box-shadow: 0 16px 46px var(--ava-project-glow, rgba(42,255,196,.22));
+}
+
+.avaShell.isProjectMode .avaNavItem.isActive,
+.avaShell.isProjectMode .avaNavItem:hover {
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 34%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ava-project-accent, #2affc4) 11%, transparent), rgba(255,255,255,.045));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 12px 34px var(--ava-project-glow, rgba(42,255,196,.12));
+}
+
+.avaShell.isProjectMode .avaPrimaryButton,
+.avaShell.isProjectMode .avaBoardPrimary {
+  background: linear-gradient(135deg, var(--ava-project-accent, #2affc4), var(--ava-project-accent-2, #45d8ff)) !important;
+  border-color: color-mix(in srgb, var(--ava-project-accent-2, #45d8ff) 54%, white 10%) !important;
+  box-shadow: 0 16px 44px var(--ava-project-glow, rgba(42,255,196,.24));
+}
+
+.avaShell.isProjectMode .avaCreditPill,
+.avaShell.isProjectMode .avaSavePill {
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 24%, transparent);
+  background: color-mix(in srgb, var(--ava-project-accent, #2affc4) 8%, transparent);
+}

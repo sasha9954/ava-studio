@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { Clock3, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
+import { Clock3, Film, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { fetchProtectedBlobUrl, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
 
@@ -562,6 +562,8 @@ export default function ManualTimingPage() {
   const [audioSrc, setAudioSrc] = useState('')
   const audioRef = useRef(null)
   const translatorPreviewRangeRef = useRef(null)
+  const scenePreviewRangeRef = useRef(null)
+  const sceneStopTimerRef = useRef(null)
   const fileInputRef = useRef(null)
   const jsonInputRef = useRef(null)
 
@@ -753,6 +755,7 @@ export default function ManualTimingPage() {
 
   useEffect(() => {
     return () => {
+      clearSceneStopTimer()
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel()
       }
@@ -770,8 +773,10 @@ export default function ManualTimingPage() {
     try {
       if (workspaceMode) await saveWorkspaceStage(STAGE, payload)
       else await saveStage(projectId, STAGE, payload, 'replace')
-      setDraft(payload)
-      if (!quiet) setStatus('сохранено')
+      if (!quiet) {
+        setDraft(payload)
+        setStatus('сохранено')
+      }
     } catch (err) {
       setStatus(`ошибка сохранения: ${err.message}`)
     } finally {
@@ -824,10 +829,14 @@ export default function ManualTimingPage() {
         }
       }
 
-      if (playingMode === 'scene' && selectedScene && current >= selectedScene.end - 0.01) {
+      const sceneRange = scenePreviewRangeRef.current || selectedScene
+      if (playingMode === 'scene' && sceneRange && current >= Number(sceneRange.end || 0) - 0.015) {
+        clearSceneStopTimer()
+        const stopAt = clampCursor(Number(sceneRange.end || current), draft.audioDurationSec)
         audio.pause()
-        audio.currentTime = selectedScene.end
-        setCursorSec(selectedScene.end)
+        audio.currentTime = stopAt
+        scenePreviewRangeRef.current = null
+        setCursorSec(stopAt)
         setPlayingMode(null)
         return
       }
@@ -840,7 +849,16 @@ export default function ManualTimingPage() {
     return () => window.cancelAnimationFrame(frameId)
   }, [playingMode, selectedScene?.start, selectedScene?.end])
 
+  function clearSceneStopTimer() {
+    if (sceneStopTimerRef.current) {
+      window.clearTimeout(sceneStopTimerRef.current)
+      sceneStopTimerRef.current = null
+    }
+  }
+
   function stopAudio(nextCursor = cursorSec) {
+    clearSceneStopTimer()
+    scenePreviewRangeRef.current = null
     const next = clampCursor(nextCursor, draft.audioDurationSec)
     const audio = audioRef.current
     if (audio) {
@@ -1747,6 +1765,8 @@ const clearedDraft = normalizeDraft({
   async function toggleTranslatorPreview(startSec, endSec, previewId) {
     const audio = audioRef.current
     if (!audio || !hasAudio || !audioSrc) return
+    clearSceneStopTimer()
+    scenePreviewRangeRef.current = null
 
     const start = clampCursor(Number(startSec || 0), draft.audioDurationSec)
     const safeEnd = clampCursor(Number(endSec || start + 0.1), draft.audioDurationSec)
@@ -1782,24 +1802,50 @@ const clearedDraft = normalizeDraft({
   async function toggleScenePlay() {
     const audio = audioRef.current
     if (!audio || !hasAudio) return
+    clearSceneStopTimer()
     translatorPreviewRangeRef.current = null
     setTranslatorPlayingId('')
+
     if (playingMode === 'scene') {
       const pausedAt = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
       audio.pause()
+      scenePreviewRangeRef.current = null
       setCursorSec(pausedAt)
       setPlayingMode(null)
       return
     }
-    const current = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
-    const canResumeInsideScene = current > selectedScene.start + 0.01 && current < selectedScene.end - 0.01
-    const startAt = canResumeInsideScene ? current : selectedScene.start
+
+    const startAt = clampCursor(Number(selectedScene?.start || 0), draft.audioDurationSec)
+    const endAt = clampCursor(Math.max(startAt + 0.05, Number(selectedScene?.end || startAt)), draft.audioDurationSec)
+    const fixedRange = {
+      id: selectedScene?.id || selectedScene?.title || 'scene',
+      start: startAt,
+      end: endAt,
+    }
+
+    scenePreviewRangeRef.current = fixedRange
     setPlayingMode('scene')
     audio.currentTime = startAt
     setCursorSec(startAt)
+
     try {
       await audio.play()
+      clearSceneStopTimer()
+      sceneStopTimerRef.current = window.setTimeout(() => {
+        const nextAudio = audioRef.current
+        const range = scenePreviewRangeRef.current
+        if (!nextAudio || !range) return
+        const stopAt = clampCursor(Number(range.end || endAt), draft.audioDurationSec)
+        nextAudio.pause()
+        nextAudio.currentTime = stopAt
+        scenePreviewRangeRef.current = null
+        sceneStopTimerRef.current = null
+        setCursorSec(stopAt)
+        setPlayingMode(null)
+      }, Math.max(80, Math.round((endAt - startAt) * 1000 + 25)))
     } catch (err) {
+      scenePreviewRangeRef.current = null
+      clearSceneStopTimer()
       setPlayingMode(null)
       setStatus(`ошибка проигрывания: ${err.message}`)
     }
@@ -1808,6 +1854,8 @@ const clearedDraft = normalizeDraft({
   async function toggleAllPlay() {
     const audio = audioRef.current
     if (!audio || !hasAudio) return
+    clearSceneStopTimer()
+    scenePreviewRangeRef.current = null
     translatorPreviewRangeRef.current = null
     setTranslatorPlayingId('')
     if (playingMode === 'all') {
@@ -1904,6 +1952,35 @@ const clearedDraft = normalizeDraft({
     }
   }
 
+  if (loading) return (
+    <div className="avaPage avaTimingFlatPage avaTimingLoadingPage">
+      <div className="avaTimingLoadingShell">
+        <div className="avaTimingLoadingMain">
+          <div className="avaTimingLoadingIcon"><Clock3 size={32} /></div>
+          <p className="avaEyebrow">Storyboard → Timing</p>
+          <h1>Загрузка Manual Timing...</h1>
+          <p>Возвращаем таймкоды, блоки, аудио и разрезы. Дождись восстановления проекта перед правками.</p>
+          <div className="avaTimingLoadingSteps">
+            <span className="isActive">Timing</span>
+            <i />
+            <span>Audio</span>
+            <i />
+            <span>Blocks</span>
+            <i />
+            <span>Ready</span>
+          </div>
+          <small>{status || 'загрузка snapshot…'}</small>
+        </div>
+        <div className="avaTimingLoadingSide" aria-hidden="true">
+          <b />
+          <b />
+          <b />
+          <b />
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div className="avaPage avaTimingFlatPage">
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
@@ -1917,12 +1994,15 @@ const clearedDraft = normalizeDraft({
           <span>ASR → song structure → Clip Pass</span>
         </div>
         <div className="avaTimingHeaderActions">
-          <button className="avaSoftButton" type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || loading}>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionAudio" type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || loading}>
             <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Загрузить аудио'}
           </button>
-          <button className="avaSoftButton" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт JSON</button>
-          <button className="avaSoftButton" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>
-          <button className="avaPrimaryButton" type="button" onClick={() => saveDraft(draft, 'button_save')} disabled={saving || loading}>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт JSON</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>
+          <Link className="avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink" to={projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'}>
+            <Film size={16} /> Перейти в доску
+          </Link>
+          <button className="avaPrimaryButton avaTimingActionButton avaTimingActionSave" type="button" onClick={() => saveDraft(draft, 'button_save')} disabled={saving || loading}>
             <Save size={16} /> {saving ? 'Сохраняем…' : 'Сохранить'}
           </button>
         </div>

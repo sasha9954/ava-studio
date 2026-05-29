@@ -17,9 +17,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.api.deps import ensure_project_access, get_current_user
+from app.core.security import make_id, now_iso
 from app.core.config import get_settings
 from app.core.storage import store
 
@@ -37,7 +39,7 @@ BOARD_ASSEMBLY_JOBS: dict[str, dict[str, Any]] = {}
 
 WORKFLOW_ROUTE_MAP: dict[str, str] = {
     "i2v": "image-video.json",
-    "i2v_text": "image-video.json",
+    "i2v_text": "image-video-golos-zvuk.json",
     "i2v_sound": "image-video-golos-zvuk.json",
     "ia2v": "image-lipsink-video-music.json",
     "ia2v_lipsync": "image-lipsink-video-music.json",
@@ -58,6 +60,10 @@ VIDEO_ROUTE_CREDIT_COSTS: dict[str, int] = {
 }
 
 MMAUDIO_CREDIT_COST = 1
+
+BOARD_ASSEMBLY_EXPORT_CREDIT_COST = 1
+BOARD_ASSEMBLY_MUSIC_CREDIT_COST = 1
+BOARD_ASSEMBLY_WATERMARK_CREDIT_COST = 1
 
 
 class SliceAudioIn(BaseModel):
@@ -186,6 +192,267 @@ def _env(name: str, default: str = "") -> str:
         pass
 
     return default
+
+
+
+# ---------------------------------------------------------------------
+# Stage 7.0B — credit charging helpers.
+# Rules:
+# - Board video: i2v/i2v_sound/i2v_text = 1, ia2v/lip_sync/first_last = 2.
+# - MMAudio = 1.
+# - Board Assembly = 1 base + 1 if background music is used + 1 if watermark is used.
+# - Preflight checks balance before job starts.
+# - Real debit happens only after successful result.
+# - Idempotent by user_id + job_id + action_type.
+# ---------------------------------------------------------------------
+
+def _ava_credit_public_user(user: dict) -> dict:
+    return {
+        "id": user.get("id"),
+        "name": user.get("name"),
+        "email": user.get("email"),
+        "created_at": user.get("created_at"),
+        "credits_balance": user.get("credits_balance", 0),
+    }
+
+
+def _ava_credit_append_ledger(db: dict, item: dict) -> dict:
+    entry = {
+        "id": make_id("cl"),
+        "created_at": now_iso(),
+        **item,
+    }
+    db["credits_ledger"].append(entry)
+    return entry
+
+
+def _ava_credit_require_balance(user: dict, amount: int) -> None:
+    amount = int(amount or 0)
+    if amount <= 0:
+        return
+    if int(user.get("credits_balance", 0) or 0) < amount:
+        raise HTTPException(status_code=402, detail="Недостаточно кредитов")
+
+
+def _ava_credit_attach_job_user(job: dict, user: dict | None) -> None:
+    if not isinstance(job, dict) or not isinstance(user, dict):
+        return
+    user_id = user.get("id")
+    if not user_id:
+        return
+    job.setdefault("userId", user_id)
+    job.setdefault("user_id", user_id)
+    job.setdefault("creditUserId", user_id)
+    job.setdefault("creditCharged", False)
+
+
+def _ava_credit_ensure_job_owner(job: dict, user: dict) -> None:
+    if not isinstance(job, dict):
+        return
+    job_user_id = job.get("userId") or job.get("user_id") or job.get("creditUserId")
+    if not job_user_id:
+        _ava_credit_attach_job_user(job, user)
+        return
+    if job_user_id != user.get("id"):
+        raise HTTPException(status_code=404, detail="Job not found")
+
+
+def _ava_credit_project_from_job(job: dict) -> str | None:
+    value = job.get("projectId") or job.get("project_id")
+    return str(value).strip() or None
+
+
+def _ava_credit_existing_debit(db: dict, *, user_id: str, job_id: str, action_type: str) -> dict | None:
+    return next((
+        item for item in db["credits_ledger"]
+        if item.get("user_id") == user_id
+        and item.get("job_id") == job_id
+        and item.get("action_type") == action_type
+        and item.get("amount", 0) < 0
+    ), None)
+
+
+def _ava_credit_charge_job_actions(job: dict, actions: list[dict[str, Any]]) -> dict | None:
+    if not actions:
+        job["creditCharged"] = False
+        job["creditChargeMode"] = "no_charge_actions"
+        job["creditCost"] = 0
+        return None
+
+    user_id = job.get("userId") or job.get("user_id") or job.get("creditUserId")
+    if not user_id:
+        job["creditCharged"] = False
+        job["creditChargeMode"] = "charge_skipped_missing_user"
+        job["creditError"] = "missing_job_user_id"
+        return None
+
+    job_id = job.get("jobId") or job.get("job_id") or ""
+    project_id = _ava_credit_project_from_job(job)
+    total_configured = sum(max(0, int(action.get("amount") or 0)) for action in actions)
+    job["creditCost"] = total_configured
+    job["creditBreakdown"] = actions
+
+    def op(db):
+        current_user = db["users"].get(user_id)
+        if not current_user:
+            raise HTTPException(status_code=404, detail="Credit user not found")
+
+        pending = []
+        existing = []
+        for action in actions:
+            amount = max(0, int(action.get("amount") or 0))
+            action_type = str(action.get("action_type") or "").strip()
+            if amount <= 0 or not action_type:
+                continue
+            found = _ava_credit_existing_debit(db, user_id=user_id, job_id=job_id, action_type=action_type)
+            if found:
+                existing.append(found)
+            else:
+                pending.append({**action, "amount": amount, "action_type": action_type})
+
+        amount_to_charge = sum(item["amount"] for item in pending)
+        before = int(current_user.get("credits_balance", 0) or 0)
+        if before < amount_to_charge:
+            raise HTTPException(status_code=402, detail="Недостаточно кредитов")
+
+        balance = before
+        charged_items = []
+        for action in pending:
+            amount = action["amount"]
+            after = balance - amount
+            current_user["credits_balance"] = after
+            current_user["updated_at"] = now_iso()
+            ledger_item = _ava_credit_append_ledger(db, {
+                "user_id": user_id,
+                "project_id": project_id,
+                "job_id": job_id,
+                "action_type": action["action_type"],
+                "amount": -amount,
+                "before_balance": balance,
+                "after_balance": after,
+                "meta": {
+                    "source": "board",
+                    "label": action.get("label") or "",
+                    "route": job.get("route") or job.get("workflowKey") or job.get("audioMode") or "",
+                    "scene_id": job.get("sceneId") or job.get("scene_id") or "",
+                    "idempotency": "one_job_one_charge_per_action",
+                    "charge_timing": "after_success",
+                    **(action.get("meta") if isinstance(action.get("meta"), dict) else {}),
+                },
+            })
+            charged_items.append(ledger_item)
+            balance = after
+
+        return {
+            "ok": True,
+            "duplicate": not bool(charged_items),
+            "charged": charged_items,
+            "existing": existing,
+            "balance": current_user.get("credits_balance", 0),
+            "user": _ava_credit_public_user(current_user),
+            "amountChargedNow": amount_to_charge,
+            "amountConfigured": total_configured,
+        }
+
+    try:
+        result = store.update(op)
+        job["creditCharged"] = True
+        job["creditChargeMode"] = "charged_after_success" if result.get("amountChargedNow", 0) else "already_charged"
+        job["creditBalance"] = result.get("balance")
+        job["creditChargeResult"] = result
+        if result.get("user"):
+            job["user"] = result["user"]
+        job.pop("creditError", None)
+        return result
+    except HTTPException as exc:
+        job["creditCharged"] = False
+        job["creditChargeMode"] = "charge_failed_after_success"
+        job["creditError"] = exc.detail
+        job["creditErrorStatus"] = exc.status_code
+        return None
+    except Exception as exc:
+        job["creditCharged"] = False
+        job["creditChargeMode"] = "charge_failed_after_success"
+        job["creditError"] = str(exc)
+        return None
+
+
+def _ava_credit_video_actions(job: dict) -> list[dict[str, Any]]:
+    route = str(job.get("route") or "i2v")
+    amount = _video_credit_cost(route)
+    return [{
+        "action_type": f"board_video_{route}",
+        "amount": amount,
+        "label": f"Board video: {route}",
+        "meta": {"kind": "board_video", "route": route},
+    }]
+
+
+def _ava_credit_mmaudio_actions(job: dict) -> list[dict[str, Any]]:
+    return [{
+        "action_type": "board_mmaudio",
+        "amount": MMAUDIO_CREDIT_COST,
+        "label": "MMAudio sound design",
+        "meta": {"kind": "mmaudio"},
+    }]
+
+
+def _ava_credit_assembly_actions_from_payload(payload: dict) -> list[dict[str, Any]]:
+    actions = [{
+        "action_type": "board_assembly_export",
+        "amount": BOARD_ASSEMBLY_EXPORT_CREDIT_COST,
+        "label": "Board Assembly MP4 export",
+        "meta": {"kind": "assembly"},
+    }]
+
+    music = payload.get("music") if isinstance(payload.get("music"), dict) else {}
+    has_music = bool(
+        music.get("asset_id")
+        or music.get("asset_api_path")
+        or music.get("audio_url")
+        or music.get("url")
+        or payload.get("music_audio_url")
+        or payload.get("musicAudioUrl")
+    )
+    if has_music:
+        actions.append({
+            "action_type": "board_assembly_music",
+            "amount": BOARD_ASSEMBLY_MUSIC_CREDIT_COST,
+            "label": "Board Assembly background music",
+            "meta": {"kind": "assembly_music"},
+        })
+
+    watermark = payload.get("watermark") if isinstance(payload.get("watermark"), dict) else {}
+    watermark_enabled = bool(watermark.get("enabled")) and bool(str(watermark.get("text") or "").strip())
+    if watermark_enabled:
+        actions.append({
+            "action_type": "board_assembly_watermark",
+            "amount": BOARD_ASSEMBLY_WATERMARK_CREDIT_COST,
+            "label": "Board Assembly watermark",
+            "meta": {"kind": "assembly_watermark", "motion": watermark.get("motion") or "static"},
+        })
+
+    return actions
+
+
+def _ava_credit_assembly_actions(job: dict) -> list[dict[str, Any]]:
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    return _ava_credit_assembly_actions_from_payload(payload)
+
+
+def _ava_credit_charge_video_job_if_ready(job: dict) -> None:
+    if job.get("videoUrl") or job.get("video_url"):
+        _ava_credit_charge_job_actions(job, _ava_credit_video_actions(job))
+
+
+def _ava_credit_charge_mmaudio_job_if_ready(job: dict) -> None:
+    if job.get("mmaudioVideoUrl") or job.get("mmaudio_video_url") or job.get("videoUrl") or job.get("video_url"):
+        _ava_credit_charge_job_actions(job, _ava_credit_mmaudio_actions(job))
+
+
+def _ava_credit_charge_assembly_job_if_ready(job: dict) -> None:
+    if job.get("videoUrl") or job.get("video_url"):
+        _ava_credit_charge_job_actions(job, _ava_credit_assembly_actions(job))
 
 
 def _clean_comfy_url(value: str | None) -> str:
@@ -759,7 +1026,7 @@ def ping() -> dict[str, Any]:
 
 @router.get("/clip/ltx/tariffs")
 def ltx_tariffs() -> dict[str, Any]:
-    return {"ok": True, "videoRouteCreditCosts": VIDEO_ROUTE_CREDIT_COSTS, "mmaudioCreditCost": MMAUDIO_CREDIT_COST, "chargeMode": "not_charged_until_result_success"}
+    return {"ok": True, "videoRouteCreditCosts": VIDEO_ROUTE_CREDIT_COSTS, "mmaudioCreditCost": MMAUDIO_CREDIT_COST, "boardAssemblyCreditCosts": {"export": BOARD_ASSEMBLY_EXPORT_CREDIT_COST, "music": BOARD_ASSEMBLY_MUSIC_CREDIT_COST, "watermark": BOARD_ASSEMBLY_WATERMARK_CREDIT_COST}, "chargeMode": "preflight_balance_check_then_charge_after_success"}
 
 
 @router.get("/clip/ltx/comfy-status")
@@ -842,19 +1109,29 @@ def extract_last_frame(payload: ExtractLastFrameIn) -> dict[str, Any]:
 
 
 @router.post("/clip/video/start")
-def start_video(payload: VideoStartIn) -> dict[str, Any]:
+def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     route = (payload.route or "i2v").strip() or "i2v"
-    workflow_key = payload.workflow_key or payload.workflowKey or WORKFLOW_ROUTE_MAP.get(route) or WORKFLOW_ROUTE_MAP["i2v"]
+    # AVA_ROUTE_WORKFLOW_LOCK: route is the source of truth for sound/no-sound workflows.
+    # Old Board scenes may keep stale workflow_key values after route changes.
+    if route in ("i2v_text", "i2v_sound", "first_last", "first_last_sound"):
+        workflow_key = WORKFLOW_ROUTE_MAP.get(route) or WORKFLOW_ROUTE_MAP["i2v"]
+    else:
+        workflow_key = payload.workflow_key or payload.workflowKey or WORKFLOW_ROUTE_MAP.get(route) or WORKFLOW_ROUTE_MAP["i2v"]
     workflow_path = WORKFLOWS_DIR / workflow_key
     target_duration = _target_duration(payload)
     generation_duration = _generation_duration(route, target_duration)
     credit_cost = _video_credit_cost(route)
+    project_id_for_credit = payload.project_id or payload.projectId
+    if project_id_for_credit:
+        ensure_project_access(project_id_for_credit, user)
+    _ava_credit_require_balance(user, credit_cost)
     job_id = f"boardjob_{uuid4().hex[:14]}"
     now = datetime.utcnow().isoformat() + "Z"
     main_url = _main_comfy_url()
     if not main_url:
         status = "blocked_missing_comfy_base_url"
         job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "payload": payload.model_dump()}
+        _ava_credit_attach_job_user(job, user)
         BOARD_VIDEO_JOBS[job_id] = job
         return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", **job}
     workflow = _load_workflow(workflow_key)
@@ -896,6 +1173,7 @@ def start_video(payload: VideoStartIn) -> dict[str, Any]:
                 "error": {"code": status, "missing": missing_media},
                 "payload": payload.model_dump(),
             }
+            _ava_credit_attach_job_user(job, user)
             BOARD_VIDEO_JOBS[job_id] = job
             return {
                 "ok": False,
@@ -911,8 +1189,18 @@ def start_video(payload: VideoStartIn) -> dict[str, Any]:
     uploaded_start = _comfy_upload_file(main_url, _local_file_or_data_url(start_url, data_url=start_data_url, fallback_ext='.png'), subfolder=f"ava_{job_id}") if ((start_url and start_url != image_url) or (start_data_url and start_data_url != image_data_url)) else uploaded_image
     uploaded_end = _comfy_upload_file(main_url, _local_file_or_data_url(end_url, data_url=end_data_url, fallback_ext='.png'), subfolder=f"ava_{job_id}") if (end_url or end_data_url) else None
     uploaded_audio = _comfy_upload_file(main_url, _local_file_or_data_url(audio_url, data_url=audio_data_url, fallback_ext='.mp3'), subfolder=f"ava_{job_id}") if (audio_url or audio_data_url) else None
-    positive_prompt = payload.positive_prompt or payload.positivePrompt or payload.video_prompt or payload.videoPrompt or ""
+    # AVA_STAGE78_STRICT_VISIBLE_VIDEO_PROMPT: for Board video generation, video_prompt/videoPrompt is the source of truth.
+    # positive_prompt is only a compatibility alias and must not override the visible Board field.
+    positive_prompt = payload.video_prompt or payload.videoPrompt or payload.positive_prompt or payload.positivePrompt or ""
     negative_prompt = payload.negative_prompt or payload.negativePrompt or ""
+    # AVA_STAGE76_I2V_TEXT_VOICE_ONLY_NEGATIVE
+    if route == "i2v_text":
+        voice_only_negative = (
+            "background music, soundtrack, score, melody, instruments, drums, beat, "
+            "singing, choir, extra voices, random speech, gibberish speech, unrelated voice, "
+            "subtitles, captions, text on screen"
+        )
+        negative_prompt = f"{negative_prompt.strip()}, {voice_only_negative}" if negative_prompt.strip() else voice_only_negative
     width = int(payload.width or 1280)
     height = int(payload.height or 720)
     prompt, patches = _inject_workflow(workflow, positive_prompt=positive_prompt, negative_prompt=negative_prompt, width=width, height=height, target_duration=target_duration, generation_duration=generation_duration, uploaded_image=uploaded_image, uploaded_start=uploaded_start, uploaded_end=uploaded_end, uploaded_audio=uploaded_audio)
@@ -920,8 +1208,9 @@ def start_video(payload: VideoStartIn) -> dict[str, Any]:
     prompt_id = submit_data.get("prompt_id") or submit_data.get("promptId")
     status = "queued" if prompt_id else "queued_no_prompt_id"
     job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "promptId": prompt_id, "promptSubmit": submit_data, "workflowPatches": patches, "uploadedMedia": {"image": uploaded_image, "start": uploaded_start, "end": uploaded_end, "audio": uploaded_audio}, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "comfyBaseUrlConfigured": True, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "not_charged_until_result_success", "payload": payload.model_dump()}
+    _ava_credit_attach_job_user(job, user)
     BOARD_VIDEO_JOBS[job_id] = job
-    return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", "promptId": prompt_id, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "workflowPatchCount": len(patches), "uploadedMedia": job["uploadedMedia"], "jobStored": True}
+    return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", "promptId": prompt_id, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "preflight_ok_charge_after_success", "workflowPatchCount": len(patches), "uploadedMedia": job["uploadedMedia"], "jobStored": True}
 
 
 
@@ -1055,12 +1344,16 @@ def _finalize_video_job_from_outputs(job: dict[str, Any], outputs: list[dict[str
 
 
 @router.get("/clip/video/status/{job_id}")
-def video_status(job_id: str) -> dict[str, Any]:
+def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     job = BOARD_VIDEO_JOBS.get(job_id)
     if not job:
         return {"ok": False, "status": "not_found", "code": "BOARD_VIDEO_JOB_NOT_FOUND", "jobId": job_id}
 
+    _ava_credit_ensure_job_owner(job, user)
+
     if job.get("videoUrl") or job.get("video_url"):
+        _ava_credit_charge_video_job_if_ready(job)
+
         return {"ok": True, **job}
 
     prompt_id = job.get("promptId")
@@ -1077,8 +1370,7 @@ def video_status(job_id: str) -> dict[str, Any]:
                     job.update(final_video)
                     job["status"] = "completed"
                     job["video_status"] = "ready"
-                    job["creditCharged"] = False
-                    job["creditChargeMode"] = "TODO_charge_after_completed_confirmed"
+                    _ava_credit_charge_video_job_if_ready(job)
                 else:
                     job["status"] = "completed_without_video_output"
             except HTTPException as exc:
@@ -1096,6 +1388,9 @@ def video_status(job_id: str) -> dict[str, Any]:
 
         job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
         job["historyPreview"] = history
+
+    _ava_credit_charge_video_job_if_ready(job)
+
 
     return {"ok": True, **job}
 
@@ -1236,7 +1531,7 @@ def _run_mmaudio_submit_job(job_id: str) -> None:
 
 
 @router.post("/clip/mmaudio/start")
-def start_mmaudio(payload: dict[str, Any]) -> dict[str, Any]:
+def start_mmaudio(payload: dict[str, Any], user: dict = Depends(get_current_user)) -> dict[str, Any]:
     # Raw dict is intentional here. Pydantic was dropping video_api_path in some local states,
     # so the job got sourceVideoApiPath="" even when the browser sent it correctly.
     payload_data = dict(payload or {})
@@ -1248,6 +1543,11 @@ def start_mmaudio(payload: dict[str, Any]) -> dict[str, Any]:
     target_duration = max(0.1, _payload_float(payload_data, "target_duration_sec", "targetDurationSec", "duration_sec", "durationSec", default=0.0))
     job_id = f"mmaudio_{uuid4().hex[:14]}"
     now = datetime.utcnow().isoformat() + "Z"
+
+    project_id_for_credit = str(_payload_get(payload_data, "project_id", "projectId", default="") or "")
+    if project_id_for_credit:
+        ensure_project_access(project_id_for_credit, user)
+    _ava_credit_require_balance(user, MMAUDIO_CREDIT_COST)
 
     source_video_api_path = str(_payload_get(payload_data, "video_api_path", "videoApiPath", default="") or "")
     source_video_url = str(_payload_get(payload_data, "video_url", "videoUrl", default="") or "")
@@ -1272,6 +1572,7 @@ def start_mmaudio(payload: dict[str, Any]) -> dict[str, Any]:
         "creditChargeMode": "not_charged_until_result_success",
         "payload": payload_data,
     }
+    _ava_credit_attach_job_user(job, user)
     BOARD_MMAUDIO_JOBS[job_id] = job
 
     try:
@@ -1304,12 +1605,16 @@ def start_mmaudio(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/clip/mmaudio/status/{job_id}")
-def mmaudio_status(job_id: str) -> dict[str, Any]:
+def mmaudio_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     job = BOARD_MMAUDIO_JOBS.get(job_id)
     if not job:
         return {"ok": False, "status": "not_found", "code": "MMAUDIO_JOB_NOT_FOUND", "jobId": job_id}
 
+    _ava_credit_ensure_job_owner(job, user)
+
     if job.get("mmaudioVideoUrl") or job.get("mmaudio_video_url") or job.get("videoUrl") or job.get("video_url"):
+        _ava_credit_charge_mmaudio_job_if_ready(job)
+
         return {"ok": True, **job}
 
     prompt_id = job.get("promptId")
@@ -1330,8 +1635,7 @@ def mmaudio_status(job_id: str) -> dict[str, Any]:
                     job["mmaudio_video_name"] = final_video.get("video_name") or final_video.get("videoName")
                     job["status"] = "completed"
                     job["mmaudio_status"] = "ready"
-                    job["creditCharged"] = False
-                    job["creditChargeMode"] = "TODO_charge_after_completed_confirmed"
+                    _ava_credit_charge_mmaudio_job_if_ready(job)
                 else:
                     job["status"] = "completed_without_video_output"
             except HTTPException as exc:
@@ -1349,6 +1653,9 @@ def mmaudio_status(job_id: str) -> dict[str, Any]:
 
         job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
         job["historyPreview"] = history
+
+    _ava_credit_charge_mmaudio_job_if_ready(job)
+
 
     return {"ok": True, **job}
 
@@ -1545,6 +1852,24 @@ def _normalize_assembly_clip(
     }
 
 
+
+def _assembly_scene_audio_volume_for_item(item: dict[str, Any], audio_mode: str, scene_volume: float) -> float:
+    mode = str(audio_mode or "").lower()
+    route = str((item or {}).get("route") or "").lower()
+
+    if mode == "original_only":
+        return 0.0
+
+    uses_original = mode in {"original_plus_scene", "original_plus_music_scene"}
+    is_lipsync = route in {"ia2v", "ia2v_lipsync", "lip_sync", "lipsync"}
+
+    # Lip-sync / ia2v audio is only a driver for mouth movement.
+    # If master/original audio is present, mute generated scene audio to avoid echo/lead/lag.
+    if uses_original and is_lipsync:
+        return 0.0
+
+    return max(0.0, float(scene_volume))
+
 def _run_board_assembly_job(job_id: str) -> None:
     job = BOARD_ASSEMBLY_JOBS.get(job_id)
     if not job:
@@ -1612,7 +1937,7 @@ def _run_board_assembly_job(job_id: str) -> None:
                 height=height,
                 fps=fps,
                 fallback_duration=duration,
-                audio_volume=0.0 if audio_mode == "original_only" else scene_volume,
+                audio_volume=_assembly_scene_audio_volume_for_item(item, audio_mode, scene_volume),
             )
             prepared.update({
                 "sceneId": scene_id,
@@ -1778,6 +2103,7 @@ def _run_board_assembly_job(job_id: str) -> None:
             "missingItems": missing_items,
             "updatedAt": datetime.utcnow().isoformat() + "Z",
         })
+        _ava_credit_charge_assembly_job_if_ready(job)
     except HTTPException as exc:
         job["status"] = "error"
         job["error"] = exc.detail
@@ -1789,7 +2115,7 @@ def _run_board_assembly_job(job_id: str) -> None:
 
 
 @router.post("/board-assembly/start")
-def start_board_assembly(payload: dict[str, Any]) -> dict[str, Any]:
+def start_board_assembly(payload: dict[str, Any], user: dict = Depends(get_current_user)) -> dict[str, Any]:
     payload_data = dict(payload or {})
     job_id = f"assembly_{uuid4().hex[:14]}"
     now = datetime.utcnow().isoformat() + "Z"
@@ -1798,6 +2124,14 @@ def start_board_assembly(payload: dict[str, Any]) -> dict[str, Any]:
     ready_count = 0
     if isinstance(raw_items, list):
         ready_count = sum(1 for item in raw_items if isinstance(item, dict) and _assembly_item_video_value(item))
+
+    project_id_for_credit = str(payload_data.get("project_id") or payload_data.get("projectId") or "").strip()
+    if project_id_for_credit:
+        ensure_project_access(project_id_for_credit, user)
+
+    assembly_credit_actions = _ava_credit_assembly_actions_from_payload(payload_data)
+    assembly_credit_cost = sum(int(action.get("amount") or 0) for action in assembly_credit_actions)
+    _ava_credit_require_balance(user, assembly_credit_cost)
 
     job = {
         "ok": True,
@@ -1810,8 +2144,13 @@ def start_board_assembly(payload: dict[str, Any]) -> dict[str, Any]:
         "projectId": payload_data.get("project_id") or payload_data.get("projectId") or "",
         "audioMode": payload_data.get("audio_mode") or payload_data.get("audioMode") or "scene_only",
         "readyItemsCount": ready_count,
+        "creditCost": assembly_credit_cost,
+        "creditBreakdown": assembly_credit_actions,
+        "creditCharged": False,
+        "creditChargeMode": "preflight_ok_charge_after_success",
         "payload": payload_data,
     }
+    _ava_credit_attach_job_user(job, user)
     BOARD_ASSEMBLY_JOBS[job_id] = job
 
     try:
@@ -1830,15 +2169,20 @@ def start_board_assembly(payload: dict[str, Any]) -> dict[str, Any]:
         "statusEndpoint": job["statusEndpoint"],
         "audioMode": job["audioMode"],
         "readyItemsCount": ready_count,
+        "creditCost": job.get("creditCost", 0),
+        "creditBreakdown": job.get("creditBreakdown", []),
+        "creditCharged": False,
         "jobStored": True,
     }
 
 
 @router.get("/board-assembly/status/{job_id}")
-def board_assembly_status(job_id: str) -> dict[str, Any]:
+def board_assembly_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     job = BOARD_ASSEMBLY_JOBS.get(job_id)
     if not job:
         return {"ok": False, "status": "not_found", "code": "BOARD_ASSEMBLY_JOB_NOT_FOUND", "jobId": job_id}
+    _ava_credit_ensure_job_owner(job, user)
+    _ava_credit_charge_assembly_job_if_ready(job)
     return {"ok": True, **job}
 
 
@@ -2745,6 +3089,552 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
         fallback = globals().get("_ava_stage610_drawtext_fallback") or globals().get("_ava_stage69n_drawtext") or globals().get("_ava_stage69m2_drawtext")
         if callable(fallback):
             fallback(src_path, out_path, watermark)
+            return
+
+        shutil.copy2(src_path, out_path)
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------
+# Stage 6.11 — Board Assembly high quality default.
+# Assembly now uses CRF 15 + preset fast for normalization and watermark burn-in.
+# This is cleaner than CRF 18/veryfast, without going into huge lossless files.
+# ---------------------------------------------------------------------
+
+AVA_BOARD_ASSEMBLY_CRF = "15"
+AVA_BOARD_ASSEMBLY_PRESET = "fast"
+
+
+def _normalize_assembly_clip(
+    source_path: Path,
+    out_path: Path,
+    *,
+    width: int,
+    height: int,
+    fps: int,
+    fallback_duration: float,
+    audio_volume: float = 1.0,
+) -> dict[str, Any]:
+    source_duration = _ffprobe_duration(source_path)
+    duration = source_duration or fallback_duration or 0.1
+    has_audio = _ffprobe_has_audio(source_path)
+
+    vf = (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+        f"setsar=1,fps={fps},format=yuv420p"
+    )
+
+    if has_audio:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(source_path),
+            "-vf", vf,
+            "-c:v", "libx264",
+            "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+            "-crf", AVA_BOARD_ASSEMBLY_CRF,
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-ar", "48000",
+            "-ac", "2",
+            "-af", f"volume={max(0.0, float(audio_volume)):.4f}",
+            "-shortest",
+            str(out_path),
+        ])
+    else:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(source_path),
+            "-f", "lavfi",
+            "-t", f"{max(duration, 0.1):.3f}",
+            "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-vf", vf,
+            "-c:v", "libx264",
+            "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+            "-crf", AVA_BOARD_ASSEMBLY_CRF,
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            str(out_path),
+        ])
+
+    return {
+        "sourcePath": str(source_path),
+        "normalizedPath": str(out_path),
+        "sourceDurationSec": source_duration,
+        "durationSec": _ffprobe_duration(out_path) or duration,
+        "hadAudio": has_audio,
+        "qualityCrf": AVA_BOARD_ASSEMBLY_CRF,
+        "qualityPreset": AVA_BOARD_ASSEMBLY_PRESET,
+    }
+
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = str((watermark or {}).get("text") or "").strip()
+    if not text:
+        shutil.copy2(src_path, out_path)
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+    motion = str((watermark or {}).get("motion") or "static").lower()
+    png_path = _Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    try:
+        make_png = globals().get("_ava_stage69n_make_png") or globals().get("_ava_stage69m2_make_png")
+        if callable(make_png) and make_png(text, png_path, size=size, opacity=opacity):
+            duration = _ffprobe_duration(src_path) or 0.0
+            duration_args = ["-t", f"{duration:.3f}"] if duration > 0 else []
+
+            if motion == "corners" and callable(globals().get("_ava_stage610e_corners_filter")):
+                filter_complex = globals()["_ava_stage610e_corners_filter"]()
+            elif motion == "corners" and callable(globals().get("_ava_stage610d_dynamic_corner_filter")):
+                filter_complex = globals()["_ava_stage610d_dynamic_corner_filter"]()
+            else:
+                pos_fn = (
+                    globals().get("_ava_stage610e_png_pos_expr")
+                    or globals().get("_ava_stage610d_png_pos_expr")
+                    or globals().get("_ava_stage610_png_pos_expr")
+                    or globals().get("_ava_stage69n_png_pos_expr")
+                    or globals().get("_ava_stage69m2_png_pos_expr")
+                )
+                if callable(pos_fn):
+                    x, y = pos_fn(position)
+                else:
+                    x, y = "main_w-overlay_w-18", "18"
+                filter_complex = f"[1:v]format=rgba[wm];[0:v][wm]overlay={x}:{y}:format=auto:eof_action=repeat:shortest=1[v]"
+
+            _run_ffmpeg([
+                "-y",
+                "-i", str(src_path),
+                "-loop", "1",
+                "-i", str(png_path),
+                *duration_args,
+                "-filter_complex", filter_complex,
+                "-map", "[v]",
+                "-map", "0:a?",
+                "-shortest",
+                "-c:v", "libx264",
+                "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+                "-crf", AVA_BOARD_ASSEMBLY_CRF,
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            return
+
+        fallback = (
+            globals().get("_ava_stage610_drawtext_fallback")
+            or globals().get("_ava_stage69n_drawtext")
+            or globals().get("_ava_stage69m2_drawtext")
+        )
+        if callable(fallback):
+            fallback(src_path, out_path, watermark)
+            return
+
+        shutil.copy2(src_path, out_path)
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------
+# Stage 6.12B — browser/player compatible MP4 output.
+# Fix: PNG/RGBA watermark overlay can make libx264 output yuv444p
+# / High 4:4:4 Predictive, which many players/browsers refuse to play.
+# This final override forces yuv420p + standard H.264 high profile.
+# ---------------------------------------------------------------------
+
+def _ava_stage612b_png_pos_expr(position):
+    pos = str(position or "top_right").lower()
+    mx = 18
+    my = 18
+    if pos == "bottom_left":
+        return str(mx), f"main_h-overlay_h-{my}"
+    if pos == "top_right":
+        return f"main_w-overlay_w-{mx}", str(my)
+    if pos == "top_left":
+        return str(mx), str(my)
+    if pos == "bottom_center":
+        return "(main_w-overlay_w)/2", f"main_h-overlay_h-{my}"
+    if pos == "top_center":
+        return "(main_w-overlay_w)/2", str(my)
+    if pos == "bottom_right":
+        return f"main_w-overlay_w-{mx}", f"main_h-overlay_h-{my}"
+    return f"main_w-overlay_w-{mx}", str(my)
+
+
+def _ava_stage612b_corners_filter():
+    # Final label [v] is always yuv420p to keep MP4 playable everywhere.
+    return (
+        "[1:v]format=rgba,split=4[wm0][wm1][wm2][wm3];"
+        "[0:v][wm0]overlay=main_w-overlay_w-18:18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\,16)\,0\,4)'[v1];"
+        "[v1][wm1]overlay=18:18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\,16)\,4\,8)'[v2];"
+        "[v2][wm2]overlay=18:main_h-overlay_h-18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\,16)\,8\,12)'[v3];"
+        "[v3][wm3]overlay=main_w-overlay_w-18:main_h-overlay_h-18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\,16)\,12\,16)'[ov];"
+        "[ov]format=yuv420p[v]"
+    )
+
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = str((watermark or {}).get("text") or "").strip()
+
+    preset = globals().get("AVA_BOARD_ASSEMBLY_PRESET", "fast")
+    crf = globals().get("AVA_BOARD_ASSEMBLY_CRF", "15")
+
+    if not text:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(src_path),
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-c:v", "libx264",
+            "-preset", preset,
+            "-crf", crf,
+            "-profile:v", "high",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            str(out_path),
+        ])
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+    motion = str((watermark or {}).get("motion") or "static").lower()
+    png_path = _Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    try:
+        make_png = globals().get("_ava_stage69n_make_png") or globals().get("_ava_stage69m2_make_png")
+        if callable(make_png) and make_png(text, png_path, size=size, opacity=opacity):
+            duration = _ffprobe_duration(src_path) or 0.0
+            duration_args = ["-t", f"{duration:.3f}"] if duration > 0 else []
+
+            if motion == "corners":
+                filter_complex = _ava_stage612b_corners_filter()
+            else:
+                pos_fn = (
+                    globals().get("_ava_stage610e_png_pos_expr")
+                    or globals().get("_ava_stage610d_png_pos_expr")
+                    or globals().get("_ava_stage610_png_pos_expr")
+                    or globals().get("_ava_stage69n_png_pos_expr")
+                    or globals().get("_ava_stage69m2_png_pos_expr")
+                    or _ava_stage612b_png_pos_expr
+                )
+                x, y = pos_fn(position)
+                filter_complex = (
+                    f"[1:v]format=rgba[wm];"
+                    f"[0:v][wm]overlay={x}:{y}:format=auto:eof_action=repeat:shortest=1[ov];"
+                    "[ov]format=yuv420p[v]"
+                )
+
+            _run_ffmpeg([
+                "-y",
+                "-i", str(src_path),
+                "-loop", "1",
+                "-i", str(png_path),
+                *duration_args,
+                "-filter_complex", filter_complex,
+                "-map", "[v]",
+                "-map", "0:a?",
+                "-shortest",
+                "-c:v", "libx264",
+                "-preset", preset,
+                "-crf", crf,
+                "-profile:v", "high",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            return
+
+        # Fallback: drawtext path, then force it back to yuv420p.
+        fallback = (
+            globals().get("_ava_stage610_drawtext_fallback")
+            or globals().get("_ava_stage69n_drawtext")
+            or globals().get("_ava_stage69m2_drawtext")
+        )
+        if callable(fallback):
+            temp_path = out_path.with_name(out_path.stem + "_drawtext_tmp.mp4")
+            fallback(src_path, temp_path, watermark)
+            _run_ffmpeg([
+                "-y",
+                "-i", str(temp_path),
+                "-map", "0:v:0",
+                "-map", "0:a?",
+                "-c:v", "libx264",
+                "-preset", preset,
+                "-crf", crf,
+                "-profile:v", "high",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return
+
+        shutil.copy2(src_path, out_path)
+    finally:
+        try:
+            png_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------
+# Stage 6.12C — compatible MP4 with better color/quality.
+# Fixes the playable-yuv420p output while reducing color/quality loss:
+# - keep yuv420p for browser/player compatibility;
+# - use much cleaner CRF 12 for assembly/watermark re-encodes;
+# - use Lanczos scaling;
+# - write BT.709 color metadata explicitly for HD video;
+# - keep dynamic watermark mode.
+# ---------------------------------------------------------------------
+
+AVA_BOARD_ASSEMBLY_CRF = "12"
+AVA_BOARD_ASSEMBLY_PRESET = "fast"
+
+
+def _ava_stage612c_color_args():
+    return [
+        "-color_primaries", "bt709",
+        "-color_trc", "bt709",
+        "-colorspace", "bt709",
+        "-color_range", "tv",
+    ]
+
+
+def _ava_stage612c_video_args():
+    return [
+        "-c:v", "libx264",
+        "-preset", globals().get("AVA_BOARD_ASSEMBLY_PRESET", "fast"),
+        "-crf", globals().get("AVA_BOARD_ASSEMBLY_CRF", "12"),
+        "-profile:v", "high",
+        "-pix_fmt", "yuv420p",
+        "-tune", "film",
+        *_ava_stage612c_color_args(),
+    ]
+
+
+def _normalize_assembly_clip(
+    source_path,
+    out_path,
+    *,
+    width,
+    height,
+    fps,
+    fallback_duration,
+    audio_volume=1.0,
+):
+    source_duration = _ffprobe_duration(source_path)
+    target_duration = _assembly_float(fallback_duration, 0.0)
+    if target_duration <= 0:
+        target_duration = source_duration or 0.1
+    target_duration = max(float(target_duration), 0.1)
+
+    has_audio = _ffprobe_has_audio(source_path)
+
+    # Final montage must follow Manual Timing / Board timeline, not the real
+    # duration returned by each generated MP4. If a generated clip is shorter,
+    # freeze its last frame; if longer, trim it. This prevents cumulative drift.
+    vf = (
+        f"scale={width}:{height}:flags=lanczos:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+        f"setsar=1,"
+        f"tpad=stop_mode=clone:stop_duration={target_duration:.6f},"
+        f"trim=duration={target_duration:.6f},setpts=PTS-STARTPTS,"
+        f"fps={fps},format=yuv420p"
+    )
+
+    if has_audio:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(source_path),
+            "-map", "0:v:0",
+            "-map", "0:a:0",
+            "-vf", vf,
+            *_ava_stage612c_video_args(),
+            "-af", f"volume={max(0.0, float(audio_volume)):.4f},apad=pad_dur={target_duration:.6f},atrim=duration={target_duration:.6f},asetpts=PTS-STARTPTS",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-ar", "48000",
+            "-ac", "2",
+            "-t", f"{target_duration:.6f}",
+            "-movflags", "+faststart",
+            str(out_path),
+        ])
+    else:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(source_path),
+            "-f", "lavfi",
+            "-t", f"{target_duration:.6f}",
+            "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-vf", vf,
+            *_ava_stage612c_video_args(),
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-ar", "48000",
+            "-ac", "2",
+            "-t", f"{target_duration:.6f}",
+            "-movflags", "+faststart",
+            str(out_path),
+        ])
+
+    normalized_duration = _ffprobe_duration(out_path) or target_duration
+    return {
+        "sourcePath": str(source_path),
+        "normalizedPath": str(out_path),
+        "sourceDurationSec": source_duration,
+        "targetDurationSec": target_duration,
+        "durationSec": normalized_duration,
+        "timelineLockApplied": True,
+        "sceneAudioVolumeApplied": max(0.0, float(audio_volume)),
+        "hadAudio": has_audio,
+        "qualityCrf": globals().get("AVA_BOARD_ASSEMBLY_CRF", "12"),
+        "qualityPreset": globals().get("AVA_BOARD_ASSEMBLY_PRESET", "fast"),
+        "qualityColor": "bt709_yuv420p_lanczos",
+    }
+
+
+def _ava_stage612c_png_pos_expr(position):
+    pos = str(position or "top_right").lower()
+    mx = 18
+    my = 18
+    if pos == "bottom_left":
+        return str(mx), f"main_h-overlay_h-{my}"
+    if pos == "top_right":
+        return f"main_w-overlay_w-{mx}", str(my)
+    if pos == "top_left":
+        return str(mx), str(my)
+    if pos == "bottom_center":
+        return "(main_w-overlay_w)/2", f"main_h-overlay_h-{my}"
+    if pos == "top_center":
+        return "(main_w-overlay_w)/2", str(my)
+    if pos == "bottom_right":
+        return f"main_w-overlay_w-{mx}", f"main_h-overlay_h-{my}"
+    return f"main_w-overlay_w-{mx}", str(my)
+
+
+def _ava_stage612c_corners_filter():
+    return (
+        "[1:v]format=rgba,split=4[wm0][wm1][wm2][wm3];"
+        "[0:v][wm0]overlay=main_w-overlay_w-18:18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,0\\,4)'[v1];"
+        "[v1][wm1]overlay=18:18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,4\\,8)'[v2];"
+        "[v2][wm2]overlay=18:main_h-overlay_h-18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,8\\,12)'[v3];"
+        "[v3][wm3]overlay=main_w-overlay_w-18:main_h-overlay_h-18:"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,12\\,16)'[ov];"
+        "[ov]format=yuv420p[v]"
+    )
+
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    from pathlib import Path as _Path
+
+    text = str((watermark or {}).get("text") or "").strip()
+
+    if not text:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(src_path),
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            *_ava_stage612c_video_args(),
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            str(out_path),
+        ])
+        return
+
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = _assembly_float((watermark or {}).get("opacity"), 0.35)
+    position = str((watermark or {}).get("position") or "top_right")
+    motion = str((watermark or {}).get("motion") or "static").lower()
+    png_path = _Path(tempfile.gettempdir()) / f"ava_watermark_{uuid4().hex[:12]}.png"
+
+    try:
+        make_png = globals().get("_ava_stage69n_make_png") or globals().get("_ava_stage69m2_make_png")
+        if callable(make_png) and make_png(text, png_path, size=size, opacity=opacity):
+            duration = _ffprobe_duration(src_path) or 0.0
+            duration_args = ["-t", f"{duration:.3f}"] if duration > 0 else []
+
+            if motion == "corners":
+                filter_complex = _ava_stage612c_corners_filter()
+            else:
+                x, y = _ava_stage612c_png_pos_expr(position)
+                filter_complex = (
+                    f"[1:v]format=rgba[wm];"
+                    f"[0:v][wm]overlay={x}:{y}:format=auto:eof_action=repeat:shortest=1[ov];"
+                    "[ov]format=yuv420p[v]"
+                )
+
+            _run_ffmpeg([
+                "-y",
+                "-i", str(src_path),
+                "-loop", "1",
+                "-i", str(png_path),
+                *duration_args,
+                "-filter_complex", filter_complex,
+                "-map", "[v]",
+                "-map", "0:a?",
+                "-shortest",
+                *_ava_stage612c_video_args(),
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            return
+
+        fallback = (
+            globals().get("_ava_stage610_drawtext_fallback")
+            or globals().get("_ava_stage69n_drawtext")
+            or globals().get("_ava_stage69m2_drawtext")
+        )
+        if callable(fallback):
+            temp_path = out_path.with_name(out_path.stem + "_drawtext_tmp.mp4")
+            fallback(src_path, temp_path, watermark)
+            _run_ffmpeg([
+                "-y",
+                "-i", str(temp_path),
+                "-map", "0:v:0",
+                "-map", "0:a?",
+                *_ava_stage612c_video_args(),
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
             return
 
         shutil.copy2(src_path, out_path)

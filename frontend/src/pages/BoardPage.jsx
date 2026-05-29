@@ -51,10 +51,29 @@ const ROUTE_OPTIONS = [
   { value: 'ia2v', label: 'ia2v lip-sync', hint: 'Фото + audio slice сцены' },
   { value: 'i2v', label: 'i2v', hint: 'Фото → видео без аудио' },
   { value: 'i2v_sound', label: 'i2v sound', hint: 'Фото → видео со звуком из prompt' },
-  { value: 'i2v_text', label: 'i2v text', hint: 'Фото → видео + короткая речь в prompt' },
+  { value: 'i2v_text', label: 'i2v text', hint: 'Фото → видео + голос/звук из prompt' },
   { value: 'first_last', label: 'first-last', hint: 'Первый и последний кадр' },
   { value: 'first_last_sound', label: 'first-last sound', hint: 'Первый/последний кадр + звук' },
 ]
+
+
+const BOARD_ROUTE_WORKFLOW_MAP = {
+  i2v: 'image-video.json',
+  i2v_text: 'image-video-golos-zvuk.json',
+  i2v_sound: 'image-video-golos-zvuk.json',
+  ia2v: 'image-lipsink-video-music.json',
+  ia2v_lipsync: 'image-lipsink-video-music.json',
+  lip_sync: 'image-lipsink-video-music.json',
+  first_last: 'last-first cadr-NO sound.json',
+  first_last_sound: 'last-first cadr-sound.json',
+}
+
+function boardWorkflowKeyForRoute(route, fallbackWorkflowKey = '') {
+  const routeKey = String(route || 'i2v')
+  // Route is the source of truth. Do not allow a stale scene.workflow_key
+  // from another route to override sound/no-sound workflows.
+  return BOARD_ROUTE_WORKFLOW_MAP[routeKey] || fallbackWorkflowKey || BOARD_ROUTE_WORKFLOW_MAP.i2v
+}
 
 const FORMAT_OPTIONS = [
   { value: '16:9', label: '16:9 горизонтально' },
@@ -476,8 +495,10 @@ function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
     meaning_hint_ru: meaning,
     phrase_cut_warning: Boolean(rawScene?.phrase_cut_warning || rawScene?.phraseCutWarning),
     note: savedNote || timingNote,
-    video_prompt: asText(savedScene?.video_prompt || rawScene?.video_prompt || meaning),
-    positive_prompt: asText(savedScene?.positive_prompt || savedScene?.video_prompt || rawScene?.positive_prompt || rawScene?.video_prompt || meaning),
+    // AVA_STAGE78_STRICT_VISIBLE_VIDEO_PROMPT: Board visible textarea is the source of truth.
+    // positive_prompt is only a legacy alias and must not override video_prompt.
+    video_prompt: asText(savedScene?.video_prompt || rawScene?.video_prompt || savedScene?.positive_prompt || rawScene?.positive_prompt || meaning),
+    positive_prompt: asText(savedScene?.video_prompt || rawScene?.video_prompt || savedScene?.positive_prompt || rawScene?.positive_prompt || meaning),
     negative_prompt: asText(savedScene?.negative_prompt || rawScene?.negative_prompt || 'text, watermark, logo, distorted face, extra limbs, low quality'),
     sound_prompt: asText(savedScene?.sound_prompt || rawScene?.sound_prompt),
     image_status: savedScene?.image_status || rawScene?.image_status || 'empty',
@@ -544,37 +565,141 @@ function buildBoardFromTiming(timingData = {}, boardData = {}) {
 }
 
 
-function sceneStatus(scene) {
-  const hasPrompt = Boolean(asText(scene.video_prompt))
-  const hasImage = Boolean(
-    scene.image_url || scene.first_frame_url || scene.last_frame_url ||
-    scene.image_data_url || scene.start_image_data_url || scene.end_image_data_url ||
-    scene.image_name || scene.first_frame_name || scene.last_frame_name
+function isVideoBusyStatus(status) {
+  return ['starting', 'queued', 'preparing', 'submitting', 'running'].includes(String(status || '').toLowerCase())
+}
+
+function scenePreviewVideoUrl(scene) {
+  if (!scene || isVideoBusyStatus(scene.video_status)) return ''
+  return (
+    scene.mmaudio_video_url ||
+    scene.mmaudioVideoUrl ||
+    scene.video_url ||
+    scene.videoUrl ||
+    scene.resultVideoUrl ||
+    scene.result_video_url ||
+    ''
   )
-  const hasVideo = Boolean(scene.video_url || scene.video_name)
-  const videoStatus = String(scene.video_status || '').toLowerCase()
+}
 
-  // Local queue must be visible even if the scene had an old video before regeneration.
-  if (videoStatus === 'queued' && !scene.video_job_id) return { label: 'в очереди', className: 'isRunning' }
-
-  if (['error', 'failed', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(videoStatus)) {
-    return { label: 'ошибка видео', className: 'isError' }
+function scenePreviewVideoLabel(scene) {
+  if (!scene) return 'empty'
+  const status = String(scene.video_status || '').toLowerCase()
+  if (isVideoBusyStatus(status)) {
+    if (status === 'starting') return 'отправляется'
+    if (status === 'queued') return 'в очереди'
+    if (status === 'preparing' || status === 'submitting') return 'подготовка'
+    return 'видео делается'
   }
+  if (scene.mmaudio_video_url || scene.mmaudioVideoUrl) return 'mmaudio ready'
+  return scene.video_status || 'empty'
+}
 
-  // Once backend/frontend has a video result, the strip should show ready.
-  // This also fixes stale "видео делается" after the result already arrived.
-  if (hasVideo || videoStatus === 'ready' || videoStatus === 'completed') {
-    return { label: 'видео готово', className: 'isReady' }
+function normalizeLoadedBoardVideoStatuses(boardData = {}) {
+  const scenes = asArray(boardData.scenes)
+  if (!scenes.length) return boardData
+
+  const resetWhenNoServerJob = new Set(['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'])
+  let changed = false
+
+  const nextScenes = scenes.map((scene) => {
+    const status = String(scene?.video_status || '').toLowerCase()
+    const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
+    const hasVideo = Boolean(scene?.video_url || scene?.videoUrl || scene?.video_name || scene?.videoName)
+
+    if (hasVideo && isVideoBusyStatus(status)) {
+      changed = true
+      return {
+        ...scene,
+        video_status: 'ready',
+        video_job_id: '',
+        video_status_endpoint: '',
+        video_error: '',
+        video_queue_position: 0,
+      }
+    }
+
+    if (status === 'queued' && !hasServerJob) {
+      changed = true
+      return {
+        ...scene,
+        video_status: '',
+        video_error: '',
+        video_queue_position: 0,
+      }
+    }
+
+    if (resetWhenNoServerJob.has(status) && !hasServerJob) {
+      changed = true
+      return {
+        ...scene,
+        video_status: '',
+        video_job_id: '',
+        video_status_endpoint: '',
+        video_error: '',
+        video_queue_position: 0,
+      }
+    }
+
+    return scene
+  })
+
+  if (!changed) return boardData
+  return {
+    ...boardData,
+    scenes: nextScenes,
+    updatedAt: new Date().toISOString(),
   }
+}
 
-  if (['starting', 'running', 'queued_no_prompt_id', 'queued'].includes(videoStatus)) {
-    return { label: videoStatus === 'queued' ? 'в очереди' : 'видео делается', className: 'isRunning' }
-  }
 
+
+function sceneStatus(scene) {
+  const status = String(scene?.video_status || '').toLowerCase()
+  const hasPrompt = Boolean(asText(scene?.video_prompt))
+  const hasImage = Boolean(
+    scene?.image_url || scene?.first_frame_url || scene?.last_frame_url ||
+    scene?.image_data_url || scene?.start_image_data_url || scene?.end_image_data_url ||
+    scene?.image_name || scene?.first_frame_name || scene?.last_frame_name
+  )
+  const hasVideo = Boolean(scene?.video_url || scene?.video_name)
+
+  if (status === 'starting') return { label: 'отправляется', className: 'isRunning' }
+  if (status === 'queued') return { label: 'в очереди', className: 'isRunning' }
+  if (status === 'preparing' || status === 'submitting') return { label: 'подготовка', className: 'isRunning' }
+  if (status === 'running') return { label: 'видео делается', className: 'isRunning' }
+  if (status === 'error') return { label: 'ошибка видео', className: 'isError' }
+  if (hasVideo || status === 'ready') return { label: 'видео готово', className: 'isReady' }
   if (hasImage) return { label: 'кадр готов', className: 'isImage' }
   if (hasPrompt) return { label: 'промт готов', className: 'isPrompt' }
   return { label: 'черновик', className: 'isDraft' }
 }
+
+function videoButtonState(scene) {
+  const status = String(scene?.video_status || '').toLowerCase()
+  const hasVideo = Boolean(scene?.video_url || scene?.video_name)
+
+  if (status === 'starting') {
+    return { className: 'isBusy', label: 'Отправляем видео', sublabel: 'создаём job…' }
+  }
+  if (status === 'queued' || status === 'preparing') {
+    return { className: 'isBusy', label: 'В очереди', sublabel: scene?.video_job_id ? `job · ${scene.video_job_id}` : 'ожидает генерацию' }
+  }
+  if (status === 'running') {
+    return { className: 'isBusy', label: 'Видео делается', sublabel: scene?.video_job_id ? `job · ${scene.video_job_id}` : 'Comfy генерирует…' }
+  }
+  if (status === 'error') {
+    return { className: 'isError', label: 'Ошибка видео', sublabel: scene?.video_error || 'можно попробовать снова' }
+  }
+  if (status === 'blocked_missing_comfy_base_url') {
+    return { className: 'isBlocked', label: 'Видео заблокировано', sublabel: 'нужен COMFY_BASE_URL' }
+  }
+  if (hasVideo || status === 'ready') {
+    return { className: 'isReady', label: 'Сделать заново', sublabel: 'готово · можно перегенерить' }
+  }
+  return { className: '', label: 'Сделать видео', sublabel: 'POST video/start' }
+}
+
 
 function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
   return (
@@ -612,7 +737,28 @@ export default function BoardPage() {
   }
 
   function isBoardVideoErrorStatus(status) {
-    return ['error', 'failed', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(String(status || '').toLowerCase())
+    return ['error', 'failed', 'queued_no_prompt_id', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(String(status || '').toLowerCase())
+  }
+
+  function isBoardVideoBlockedStatus(status) {
+    return String(status || '').toLowerCase().startsWith('blocked_')
+  }
+
+  function isBoardVideoStaleJobStatus(status, data = {}) {
+    const normalized = String(status || '').toLowerCase()
+    const code = String(data?.code || data?.error?.code || '').toUpperCase()
+    return normalized === 'not_found' || code === 'BOARD_VIDEO_JOB_NOT_FOUND'
+  }
+
+  function resetStaleVideoJobPatch(data = {}) {
+    return {
+      video_status: '',
+      video_job_id: '',
+      video_status_endpoint: '',
+      video_error: '',
+      video_queue_position: 0,
+      video_result: data || null,
+    }
   }
 
   function boardVideoUrlFromStatus(data) {
@@ -671,12 +817,12 @@ export default function BoardPage() {
   function sceneVideoActionState(scene) {
     const videoStatus = String(scene?.video_status || '').toLowerCase()
     const hasVideo = Boolean(scene?.video_url || scene?.video_name)
-    const hasServerJob = Boolean(scene?.video_job_id)
+    const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
     const problems = sceneVideoInputProblems(scene)
     const hasInputProblems = problems.length > 0
     const isLocalQueued = videoStatus === 'queued' && !hasServerJob && !hasInputProblems
     const isBusy = !hasVideo && (
-      ['starting', 'running', 'queued_no_prompt_id'].includes(videoStatus) ||
+      ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(videoStatus) ||
       (videoStatus === 'queued' && hasServerJob)
     )
 
@@ -696,22 +842,23 @@ export default function BoardPage() {
                 : hasVideo
                   ? 'готово · можно заново'
                   : (scene?.workflow_key || 'workflow будет выбран автоматически'),
+      disabled: isBusy || isLocalQueued,
     }
   }
 
   function isBoardVideoActiveWorkerStatus(scene) {
     const status = String(scene?.video_status || '').toLowerCase()
-    return status === 'starting' || status === 'running' || (status === 'queued' && Boolean(scene?.video_job_id))
+    return ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status) || (status === 'queued' && Boolean(scene?.video_job_id || scene?.video_status_endpoint))
   }
 
   function activeBoardVideoScene(currentBoard) {
     return asArray(currentBoard?.scenes).find((scene) => {
       const status = String(scene?.video_status || '').toLowerCase()
       const hasVideoResult = Boolean(scene?.video_url || scene?.video_name)
-      const hasServerJob = Boolean(scene?.video_job_id)
+      const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
 
       if (hasVideoResult) return false
-      if (['starting', 'running', 'queued_no_prompt_id'].includes(status)) return true
+      if (['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status)) return true
       if (status === 'queued' && hasServerJob) return true
       return false
     }) || null
@@ -773,6 +920,16 @@ export default function BoardPage() {
 
   function requestSceneVideoQueue() {
     if (!selectedScene) return
+
+    const selectedStatus = String(selectedScene.video_status || '').toLowerCase()
+    const selectedHasServerJob = Boolean(selectedScene.video_job_id || selectedScene.video_status_endpoint)
+    const selectedIsLocalQueued = (selectedStatus === 'queued' && !selectedHasServerJob) || localVideoQueueRef.current.includes(selectedScene.id)
+    const selectedIsBusy = ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(selectedStatus) || (selectedStatus === 'queued' && selectedHasServerJob)
+
+    if (selectedIsBusy || selectedIsLocalQueued) {
+      setStatus(selectedIsLocalQueued ? `Сцена ${selectedScene.id} уже в очереди` : `Сцена ${selectedScene.id} уже генерируется`)
+      return
+    }
 
     localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== selectedScene.id)
 
@@ -846,6 +1003,38 @@ export default function BoardPage() {
         const status = data?.status || data?.video_status || 'running'
         const videoUrl = boardVideoUrlFromStatus(data)
 
+        if (isBoardVideoStaleJobStatus(status, data)) {
+          finishPoll()
+          updateSceneForVideoJob(sceneId, jobId, resetStaleVideoJobPatch(data))
+          setStatus(`Старый video job не найден: ${sceneId}. Статус сброшен.`)
+          pushBoardToast({
+            type: 'info',
+            title: 'Статус видео сброшен',
+            message: `Сцена ${sceneId}: старый job не найден на backend`,
+            sceneId,
+            dedupeKey: `video:${jobId || sceneId}:not_found_reset`,
+          })
+          window.setTimeout(processNextQueuedBoardVideo, 80)
+          return
+        }
+
+        if (isBoardVideoBlockedStatus(status)) {
+          finishPoll()
+          const blockedError = typeof data?.error === 'string' ? data.error : (data?.detail || status)
+          updateSceneForVideoJob(sceneId, jobId, {
+            video_status: status,
+            video_error: blockedError,
+            video_job_id: '',
+            video_status_endpoint: '',
+            video_queue_position: 0,
+            video_result: data || null,
+          })
+          setStatus(`Видео заблокировано: ${blockedError}`)
+          pushBoardToast({ type: 'warning', title: 'Видео заблокировано', message: `Сцена ${sceneId}: ${blockedError}`, sceneId })
+          window.setTimeout(processNextQueuedBoardVideo, 80)
+          return
+        }
+
         if (videoUrl) {
           finishPoll()
           updateScene(sceneId, boardVideoPatchFromStatus(data, endpoint, jobId))
@@ -885,17 +1074,24 @@ export default function BoardPage() {
           return
         }
 
-        updateScene(sceneId, {
-          video_status: status === 'queued' ? 'queued' : 'running',
+        const normalizedRunningStatus = ['queued', 'preparing', 'submitting', 'running', 'starting'].includes(String(status || '').toLowerCase())
+          ? String(status || '').toLowerCase()
+          : 'running'
+
+        updateSceneForVideoJob(sceneId, jobId, {
+          video_status: normalizedRunningStatus,
           video_job_id: data?.jobId || data?.job_id || jobId || '',
           video_status_endpoint: endpoint,
+          video_url: '',
+          video_name: '',
+          video_result: null,
         })
 
         if (attempt < maxAttempts) {
           window.setTimeout(tick, 2500)
         } else {
           finishPoll()
-          updateScene(sceneId, {
+          updateSceneForVideoJob(sceneId, jobId, {
             video_status: 'error',
             video_error: 'poll_timeout',
           })
@@ -909,7 +1105,7 @@ export default function BoardPage() {
           window.setTimeout(tick, 4000)
         } else {
           finishPoll()
-          updateScene(sceneId, {
+          updateSceneForVideoJob(sceneId, jobId, {
             video_status: 'error',
             video_error: error?.message || 'poll_failed',
           })
@@ -1004,7 +1200,7 @@ export default function BoardPage() {
         if (!active) return
         let nextBoard = buildBoardFromTiming(timingData, boardData)
         const hydratedCompleted = applyCompletedJobsToBoard(nextBoard, { projectId: projectId || '', workspaceMode })
-        nextBoard = hydratedCompleted.board
+        nextBoard = normalizeLoadedBoardVideoStatuses(hydratedCompleted.board)
         if (hydratedCompleted.usedKeys.length) {
           const used = new Set(hydratedCompleted.usedKeys)
           writeAvaCompletedJobs(readAvaCompletedJobs().filter((job) => !used.has(job.key)))
@@ -1059,7 +1255,7 @@ export default function BoardPage() {
     if (loading) return undefined
     board.scenes.forEach((scene) => {
       const status = String(scene.video_status || '').toLowerCase()
-      if (!['queued', 'running', 'starting', 'queued_no_prompt_id'].includes(status)) return
+      if (!['queued', 'preparing', 'submitting', 'running', 'starting', 'queued_no_prompt_id'].includes(status)) return
       const endpoint = scene.video_status_endpoint || (scene.video_job_id ? `/api/clip/video/status/${scene.video_job_id}` : '')
       if (!endpoint) return
       pollBoardVideoJob(scene.id, endpoint, scene.video_job_id)
@@ -1130,6 +1326,22 @@ export default function BoardPage() {
       }
     })
   }
+
+  function updateSceneForVideoJob(sceneId, jobId, patch) {
+    setBoard((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene
+        const currentJobId = scene.video_job_id || ''
+        if (jobId && currentJobId && currentJobId !== jobId) {
+          return scene
+        }
+        return { ...scene, ...patch }
+      }),
+      updatedAt: new Date().toISOString(),
+    }))
+  }
+
 
 
   function pushBoardToast({ type = 'info', title = '', message = '', sceneId = '', dedupeKey = '' } = {}) {
@@ -1618,17 +1830,7 @@ async function markVideoPlanned(sceneOverride = null) {
         : formatValue === '4:5'
           ? { width: 1024, height: 1280 }
           : { width: 1280, height: 720 }
-
-    const workflowMap = {
-      i2v: 'image-video.json',
-      i2v_text: 'image-video.json',
-      i2v_sound: 'image-video-golos-zvuk.json',
-      ia2v: 'image-lipsink-video-music.json',
-      ia2v_lipsync: 'image-lipsink-video-music.json',
-      lip_sync: 'image-lipsink-video-music.json',
-      first_last: 'last-first cadr-NO sound.json',
-      first_last_sound: 'last-first cadr-sound.json',
-    }
+    const workflowMap = BOARD_ROUTE_WORKFLOW_MAP
 
     const imageUrl = isFirstLast
       ? (sceneToStart.first_frame_url || sceneToStart.start_image_url || sceneToStart.image_url || '')
@@ -1654,6 +1856,12 @@ async function markVideoPlanned(sceneOverride = null) {
       video_api_path: '',
       video_name: '',
       original_video_url: '',
+      mmaudioVideoUrl: '',
+      mmaudioVideoName: '',
+      resultVideoUrl: '',
+      result_video_url: '',
+      videoUrl: '',
+      videoName: '',
       video_result: null,
       video_ready_at: '',
       video_queue_position: 0,
@@ -1691,12 +1899,27 @@ async function markVideoPlanned(sceneOverride = null) {
         : imageMediaForBackend
       const endMediaForBackend = await boardMediaRefForBackend(endImageUrl, sceneToStart.end_image_data_url || sceneToStart.endImageDataUrl || '')
 
+
+      // AVA_STAGE78_STRICT_VISIBLE_VIDEO_PROMPT: send ONLY what is currently in the visible Board prompt fields.
+      // Do not fallback to old Manual Timing / translation prompts.
+      const finalVisibleVideoPromptForBackend = asText(sceneToStart.video_prompt)
+      const finalVisibleNegativePromptForBackend = asText(sceneToStart.negative_prompt)
+
+      console.log('[BOARD VIDEO PAYLOAD STRICT]', {
+        sceneId: sceneToStart.id,
+        route,
+        finalVisibleVideoPromptForBackend,
+        finalVisibleNegativePromptForBackend,
+        ignoredLegacyPositivePrompt: asText(sceneToStart.positive_prompt),
+        ignoredMeaningHint: asText(sceneToStart.meaning_hint_ru),
+      })
+
       const data = await apiRequest('/clip/video/start', {
         method: 'POST',
         body: JSON.stringify({
           scene_id: sceneToStart.id,
           route,
-          workflow_key: sceneToStart.workflow_key || workflowMap[route] || workflowMap.i2v,
+          workflow_key: boardWorkflowKeyForRoute(route, sceneToStart.workflow_key),
           image_url: imageMediaForBackend.url,
           image_data_url: imageMediaForBackend.dataUrl,
           start_image_url: startMediaForBackend.url || imageMediaForBackend.url,
@@ -1704,9 +1927,13 @@ async function markVideoPlanned(sceneOverride = null) {
           end_image_url: endMediaForBackend.url,
           end_image_data_url: endMediaForBackend.dataUrl,
           audio_slice_url: audioSliceUrl,
-          video_prompt: sceneToStart.video_prompt || sceneToStart.positive_prompt || sceneToStart.meaning_hint_ru || '',
-          positive_prompt: sceneToStart.positive_prompt || sceneToStart.video_prompt || sceneToStart.meaning_hint_ru || '',
-          negative_prompt: sceneToStart.negative_prompt || 'text, watermark, logo, distorted face, extra limbs, low quality',
+          video_prompt: finalVisibleVideoPromptForBackend,
+          videoPrompt: finalVisibleVideoPromptForBackend,
+          positive_prompt: finalVisibleVideoPromptForBackend,
+          positivePrompt: finalVisibleVideoPromptForBackend,
+          prompt: finalVisibleVideoPromptForBackend,
+          negative_prompt: finalVisibleNegativePromptForBackend,
+          negativePrompt: finalVisibleNegativePromptForBackend,
           width: size.width,
           height: size.height,
           format: formatValue,
@@ -1726,7 +1953,7 @@ async function markVideoPlanned(sceneOverride = null) {
         video_status: status,
         video_job_id: jobId,
         video_status_endpoint: data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : ''),
-        workflow_key: data.workflowKey || workflowMap[route] || workflowMap.i2v,
+        workflow_key: data.workflowKey || boardWorkflowKeyForRoute(route, sceneToStart.workflow_key),
         workflow_exists: data.workflowExists,
         target_duration_sec: data.targetDurationSec,
         generation_duration_sec: data.generationDurationSec,
@@ -1952,7 +2179,49 @@ async function importTimingJson(event) {
   }, [board.scenes])
 
   if (loading) {
-    return <div className="avaPage"><div className="avaPanel">Загрузка Storyboard…</div></div>
+    return (
+      <div className="avaPage avaStoryboardLoadingPage">
+        <section className="avaLoadingHero">
+          <div className="avaLoadingCard">
+            <div className="avaLoadingOrb"><Film size={28} /></div>
+            <p className="avaEyebrow"><Sparkles size={14} /> Ava Studio pipeline</p>
+            <h2>Загрузка Storyboard...</h2>
+            <p>Проверяем сцены, промты, видео, звук, блоки и готовим доску к работе.</p>
+            <div className="avaLoadingPipeline" aria-hidden="true">
+              <span className="isDone">Timing</span>
+              <i />
+              <span className="isActive">Storyboard</span>
+              <i />
+              <span>Media</span>
+              <i />
+              <span>Queue</span>
+            </div>
+          </div>
+          <div className="avaLoadingStatusPanel" aria-hidden="true">
+            <div className="avaLoadingStatusCard isDone">
+              <span>01</span>
+              <strong>Timing</strong>
+              <small>таймкоды и блоки получены</small>
+            </div>
+            <div className="avaLoadingStatusCard isActive">
+              <span>02</span>
+              <strong>Storyboard</strong>
+              <small>сцены и промты загружаются</small>
+            </div>
+            <div className="avaLoadingStatusCard">
+              <span>03</span>
+              <strong>Media</strong>
+              <small>проверяем видео и звук</small>
+            </div>
+            <div className="avaLoadingStatusCard">
+              <span>04</span>
+              <strong>Ready</strong>
+              <small>готовим доску к работе</small>
+            </div>
+          </div>
+        </section>
+      </div>
+    )
   }
 
   return (
@@ -1987,6 +2256,7 @@ async function importTimingJson(event) {
           <p>Горизонтальная лента сцен, смысл, video prompts и медиа. Генерацию подключим следующим этапом.</p>
         </div>
         <div className="avaBoardHeaderActions">
+          <Link className="avaBoardHeaderLink avaBoardBackTimingLink" to={projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing'}><Clock3 size={15} /> Назад в Timing</Link>
           <button type="button" onClick={refreshFromTiming}><RefreshCcw size={15} /> Обновить из Timing</button>
           <Link className="avaBoardHeaderLink" to={projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'}><Film size={15} /> Перейти в видео монтаж</Link>
           <button type="button" onClick={() => importRef.current?.click()}><FileJson size={15} /> Импорт JSON</button>
@@ -2137,7 +2407,13 @@ async function importTimingJson(event) {
                   <span>Режим видео</span>
                   <select
                     value={selectedScene.route || 'i2v'}
-                    onChange={(event) => updateScene(selectedScene.id, { route: event.target.value })}
+                    onChange={(event) => {
+                      const nextRoute = event.target.value
+                      updateScene(selectedScene.id, {
+                        route: nextRoute,
+                        workflow_key: boardWorkflowKeyForRoute(nextRoute),
+                      })
+                    }}
                   >
                     {ROUTE_OPTIONS.map((route) => (
                       <option key={route.value} value={route.value}>{route.label}</option>
@@ -2168,7 +2444,16 @@ async function importTimingJson(event) {
                   Positive video prompt
                   <textarea
                     value={selectedScene.video_prompt || ''}
-                    onChange={(event) => updateScene(selectedScene.id, { video_prompt: event.target.value })}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      updateScene(selectedScene.id, {
+                        video_prompt: value,
+                        videoPrompt: value,
+                        positive_prompt: value,
+                        positivePrompt: value,
+                        prompt: value,
+                      })
+                    }}
                     placeholder="Визуал, движение камеры, действие, звук, реплика и кто говорит — всё сюда"
                   />
                 </label>
@@ -2236,73 +2521,20 @@ async function importTimingJson(event) {
             <div className="avaBoardVideoPreview">
               <div className="avaBoardVideoHeader">
                 <strong><Film size={16} /> Видео preview</strong>
-                <span>{sceneMainPreviewStatus(selectedScene)}</span>
+                <span>{scenePreviewVideoLabel(selectedScene)}</span>
               </div>
-              {sceneMainPreviewVideoUrl(selectedScene) ? (
-                <video src={sceneMainPreviewVideoUrl(selectedScene)} controls />
+              {scenePreviewVideoUrl(selectedScene) ? (
+                <video key={scenePreviewVideoUrl(selectedScene)} src={scenePreviewVideoUrl(selectedScene)} controls />
               ) : (
-                <div className="avaBoardVideoEmpty">
+                <div className={`avaBoardVideoEmpty ${isVideoBusyStatus(selectedScene.video_status) ? 'isBusy' : ''}`}>
                   <Film size={34} />
-                  <span>Видео ещё не создано</span>
+                  <span>{isVideoBusyStatus(selectedScene.video_status) ? sceneStatus(selectedScene).label : 'Видео ещё не создано'}</span>
+                  {isVideoBusyStatus(selectedScene.video_status) && (
+                    <small>Старый preview скрыт, ждём новый результат.</small>
+                  )}
                 </div>
               )}
             </div>
-
-            {selectedScene.video_url && (
-              <div className="avaBoardMmaudioPanel">
-                <button
-                  type="button"
-                  className="avaBoardMmaudioToggle"
-                  onClick={() => setMmaudioOpen((value) => !value)}
-                >
-                  <AudioLines size={15} />
-                  <span>MMAudio / озвучить видео</span>
-                  <small>{selectedScene.mmaudio_status === 'ready' ? 'звук готов' : selectedScene.mmaudio_status === 'running' || selectedScene.mmaudio_status === 'starting' || selectedScene.mmaudio_status === 'queued' ? 'в работе' : 'открыть мини-окно'}</small>
-                </button>
-
-                {mmaudioOpen && (
-                  <div className="avaBoardMmaudioBox">
-                    <label className="avaBoardWideField">
-                      Sound positive prompt
-                      <textarea
-                        value={selectedScene.mmaudio_prompt || ''}
-                        onChange={(event) => updateScene(selectedScene.id, { mmaudio_prompt: event.target.value })}
-                        placeholder="Что озвучить: ветер, шаги, вода, животные, помещение, механика..."
-                      />
-                    </label>
-
-                    <label className="avaBoardWideField">
-                      Sound negative prompt
-                      <textarea
-                        value={selectedScene.mmaudio_negative_prompt || ''}
-                        onChange={(event) => updateScene(selectedScene.id, { mmaudio_negative_prompt: event.target.value })}
-                        placeholder="Что запретить: музыка, речь, шум, клиппинг, лишние звуки..."
-                      />
-                    </label>
-
-                    <div className="avaBoardMmaudioActions">
-                      <button type="button" onClick={startMmaudioForSelectedScene}>
-                        <AudioLines size={15} />
-                        {selectedScene.mmaudio_status === 'starting' || selectedScene.mmaudio_status === 'running' || selectedScene.mmaudio_status === 'queued'
-                          ? 'MMAudio делается'
-                          : 'Сделать звук'}
-                      </button>
-                      <span>{selectedScene.mmaudio_status || 'не запускали'}</span>
-                    </div>
-
-                    {selectedScene.mmaudio_error && (
-                      <p className="avaBoardMmaudioError">{String(selectedScene.mmaudio_error)}</p>
-                    )}
-
-                    {selectedScene.mmaudio_video_url && (
-                      <p className="avaBoardMmaudioReadyNote">
-                        Звук готов — результат показан в основном Видео preview.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
 
             <div className="avaBoardSceneWorkflowPanel">
               <div className="avaBoardWorkflowHead">
@@ -2340,12 +2572,90 @@ async function importTimingJson(event) {
                   type="button"
                   className={sceneVideoActionState(selectedScene).className}
                   onClick={requestSceneVideoQueue}
+                  disabled={sceneVideoActionState(selectedScene).disabled}
                 >
                   <Film size={16} />
                   <span>{sceneVideoActionState(selectedScene).label}</span>
                   <small>{sceneVideoActionState(selectedScene).hint}</small>
                 </button>
               </div>
+
+                {/* Stage 76 — MMAudio prompt drawer */}
+                {['i2v', 'first_last'].includes(selectedScene.route) && (() => {
+                  const mmaudioStatus = String(selectedScene.mmaudio_status || selectedScene.mmaudioStatus || '').toLowerCase()
+                  const mmaudioBusy = ['starting', 'queued', 'preparing', 'running'].includes(mmaudioStatus)
+                  const mmaudioReady = mmaudioStatus === 'ready' || Boolean(selectedScene.mmaudio_video_url || selectedScene.mmaudioVideoUrl)
+                  const mmaudioError = mmaudioStatus === 'error'
+                  const hasSourceVideo = Boolean(
+                    selectedScene.video_api_path ||
+                    selectedScene.videoApiPath ||
+                    selectedScene.video_url ||
+                    selectedScene.videoUrl
+                  )
+                  const title = mmaudioBusy ? 'MMAudio делается' : mmaudioReady ? 'MMAudio готово' : 'MMAudio'
+                  const hint = mmaudioBusy
+                    ? (mmaudioStatus === 'queued' ? 'в очереди ComfyLab…' : 'ComfyLab выполняет job…')
+                    : mmaudioReady
+                      ? 'звуковая версия готова'
+                      : hasSourceVideo
+                        ? 'открыть sound prompt'
+                        : 'сначала сделай видео'
+                  const panelClassName = `avaBoardMmaudioPanel ${mmaudioOpen ? 'isOpen' : ''} ${mmaudioBusy ? 'isBusy' : ''} ${mmaudioReady ? 'isReady' : ''} ${mmaudioError ? 'isError' : ''}`.trim()
+
+                  return (
+                    <div className={panelClassName}>
+                      <button
+                        type="button"
+                        className="avaBoardMmaudioToggle isMagic"
+                        onClick={() => setMmaudioOpen((value) => !value)}
+                        title="MMAudio sound design через ComfyLab"
+                      >
+                        <Sparkles size={16} />
+                        <span>{title}</span>
+                        <small>{hint}</small>
+                        {mmaudioOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                      </button>
+
+                      {mmaudioOpen && (
+                        <div className="avaBoardMmaudioBox">
+                          <label className="avaBoardWideField">
+                            Positive sound prompt
+                            <textarea
+                              value={selectedScene.mmaudio_prompt || ''}
+                              onChange={(event) => updateScene(selectedScene.id, { mmaudio_prompt: event.target.value })}
+                              placeholder="Например: quiet African savannah ambience, warm wind through dry grass, distant insects, soft natural wildlife documentary sound"
+                            />
+                          </label>
+
+                          <label className="avaBoardWideField">
+                            Negative sound prompt
+                            <textarea
+                              value={selectedScene.mmaudio_negative_prompt || ''}
+                              onChange={(event) => updateScene(selectedScene.id, { mmaudio_negative_prompt: event.target.value })}
+                              placeholder="music, soundtrack, narration, speech, human voice, distorted audio, clipping, harsh noise, repeated loop"
+                            />
+                          </label>
+
+                          <div className="avaBoardMmaudioActions">
+                            <button
+                              type="button"
+                              onClick={startMmaudioForSelectedScene}
+                              disabled={mmaudioBusy || !hasSourceVideo}
+                            >
+                              <Volume2 size={15} />
+                              {mmaudioBusy ? 'Отправлено…' : 'Отправить MMAudio'}
+                            </button>
+                            <span>{hasSourceVideo ? 'ComfyLab · mmaudio-sound-design.json · 1 кредит после успеха' : 'Сначала сделай базовое видео для этой сцены'}</span>
+                          </div>
+
+                          {mmaudioError && (
+                            <p className="avaBoardMmaudioError">{selectedScene.mmaudio_error || selectedScene.mmaudioError || 'MMAudio ошибка'}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
             </div>
 
             <div className="avaBoardHintBox">
