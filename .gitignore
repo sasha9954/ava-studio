@@ -22,3 +22,8 @@ Thumbs.db
 .vscode/
 .idea/
 backend/storage/users/
+ 
+# Ava local backup/patch files 
+*.bak 
+ava_*.py 
+storage/
