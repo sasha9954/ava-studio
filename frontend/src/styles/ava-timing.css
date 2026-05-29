@@ -593,7 +593,7 @@
 }
 
 .avaTimingSegmentsRow button.hasBlock em {
-  background: rgba(244,248,255,.88);
+  background: transparent !important;
 }
 
 /* Stage 3.6 polish: keep block title + route/time + role label visible */
@@ -630,9 +630,17 @@
   align-self: end;
   max-width: 100%;
   margin-top: 0;
-  padding: 2px 5px;
-  font-size: 9px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  color: #f8fbff !important;
+  font-size: 8.5px;
   line-height: 1;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: .01em;
+  text-shadow: 0 1px 2px rgba(0,0,0,.58);
 }
 
 .avaTimingSegmentsRow button.hasNote::after {
@@ -2916,3 +2924,56 @@
   box-shadow: 0 16px 34px rgba(0,0,0,.22), 0 0 28px rgba(236,72,153,.12);
 }
 
+/* stage108 · compact Podcast labels on Timing scene cards */
+.avaTimingSegmentsRow button .avaTimingSceneRoleBadge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 92%;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #e0f2fe;
+  background: rgba(15, 23, 42, 0.42);
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: .01em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.avaTimingSegmentsRow button .avaTimingSceneRoleBadge:empty {
+  display: none;
+}
+
+/* stage116 · compact podcast role labels: no heavy pill, small readable text */
+.avaTimingSegmentsRow button .avaTimingSceneRoleBadge,
+.avaTimingSegmentsRow button em {
+  display: inline-block !important;
+  max-width: 100% !important;
+  width: auto !important;
+  margin-top: 1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #f8fbff !important;
+  font-size: 8.5px !important;
+  line-height: 1 !important;
+  font-style: normal !important;
+  font-weight: 900 !important;
+  letter-spacing: .01em !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,.7) !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+}
+
+.avaTimingSegmentsRow button.hasBlock em,
+.avaTimingSegmentsRow button.hasBlock .avaTimingSceneRoleBadge {
+  background: transparent !important;
+}

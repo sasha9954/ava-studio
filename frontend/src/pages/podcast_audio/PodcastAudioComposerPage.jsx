@@ -2596,6 +2596,8 @@ export default function PodcastAudioComposerPage() {
   const [repairBusyKey, setRepairBusyKey] = useState("");
   const [hasHydrated, setHasHydrated] = useState(false);
   const [finalAudioBusy, setFinalAudioBusy] = useState("");
+  const [showTimingHandoffConfirm, setShowTimingHandoffConfirm] = useState(false);
+  const timingHandoffConfirmedRef = useRef(false);
 
   const handleStandaloneMainAudioUpload = async (event) => {
     const file = event.target.files?.[0] || null;
@@ -2977,28 +2979,7 @@ export default function PodcastAudioComposerPage() {
 
 
   // PODCAST SAVE PHRASE FEEDBACK EFFECT
-  useEffect(() => {
-    const root = document;
-    const onClick = (event) => {
-      const button = event.target?.closest?.("button");
-      if (!button) return;
-      const text = String(button.textContent || "").trim().toLowerCase();
-      if (!text.includes("сохранить фразу")) return;
-
-      const previousText = button.textContent;
-      button.classList.add("podcastSavePhraseDone");
-      button.textContent = "✓ сохранено";
-
-      window.setTimeout(() => {
-        button.classList.remove("podcastSavePhraseDone");
-        button.textContent = previousText || "Сохранить фразу";
-      }, 1100);
-    };
-
-    root.addEventListener("click", onClick, true);
-    return () => root.removeEventListener("click", onClick, true);
-  }, []);
-
+  
 
   const stage101HydratedRef = useRef(false);
 
@@ -5765,7 +5746,142 @@ export default function PodcastAudioComposerPage() {
     }
   };
 
-  const applyComposedAudioToTiming = async () => {
+  
+function avaStage114StripLargePodcastValue(value, depth = 0) {
+  if (depth > 6) return null;
+  if (value == null) return value;
+
+  if (typeof value === "string") {
+    if (
+      value.startsWith("data:audio/") ||
+      value.startsWith("data:video/") ||
+      value.startsWith("data:image/") ||
+      value.startsWith("blob:")
+    ) {
+      return "";
+    }
+    if (value.length > 12000) return value.slice(0, 12000);
+    return value;
+  }
+
+  if (typeof value !== "object") return value;
+
+  if (Array.isArray(value)) {
+    return value.map((item) => avaStage114StripLargePodcastValue(item, depth + 1));
+  }
+
+  const banned = new Set([
+    "dataUrl",
+    "dataURL",
+    "audioDataUrl",
+    "audio_data_url",
+    "imageDataUrl",
+    "image_data_url",
+    "videoDataUrl",
+    "video_data_url",
+    "blob",
+    "file",
+    "rawFile",
+    "objectUrl",
+    "objectURL",
+    "waveform",
+    "peaks",
+    "samples",
+    "arrayBuffer",
+  ]);
+
+  const out = {};
+  Object.entries(value).forEach(([key, item]) => {
+    if (banned.has(key)) return;
+    out[key] = avaStage114StripLargePodcastValue(item, depth + 1);
+  });
+  return out;
+}
+
+function avaStage114MakeSlimTimingHandoff(project = {}) {
+  return avaStage114StripLargePodcastValue({
+    schema: project.schema || "manual_timing_project_v1",
+    source: project.source || "podcast_audio_composer",
+    audio_source: project.audio_source || "podcast_audio_composer",
+    project_mode: project.project_mode || "podcast_dialogue",
+    audio: project.audio || null,
+    audioName: project.audioName || project.audio_name || project.audio?.filename || project.audio?.name || "",
+    audioUrl: project.audioUrl || project.audio_url || project.audio?.url || project.audio?.assetUrl || "",
+    audioApiPath: project.audioApiPath || project.audio_api_path || project.audio?.assetApiPath || "",
+    audioDurationSec: project.audioDurationSec || project.audio_duration_sec || project.audio?.duration_sec || project.durationSec || 0,
+    durationSec: project.durationSec || project.audioDurationSec || project.audio?.duration_sec || 0,
+    scenes: Array.isArray(project.scenes) ? project.scenes : [],
+    markers: Array.isArray(project.markers) ? project.markers : [],
+    story_blocks: Array.isArray(project.story_blocks) ? project.story_blocks : [],
+    storyBlocks: Array.isArray(project.storyBlocks) ? project.storyBlocks : [],
+    podcast_edit_manifest: project.podcast_edit_manifest || project.podcastEditManifest || null,
+    podcastEditManifest: project.podcastEditManifest || project.podcast_edit_manifest || null,
+    composer_edit_manifest: project.composer_edit_manifest || project.composerEditManifest || null,
+    selectedSceneId: project.selectedSceneId || project.selected_scene_id || "",
+    selectedSceneIndex: project.selectedSceneIndex || 0,
+    handoffSource: project.handoffSource || "podcast_audio_composer",
+    createdAt: project.createdAt || Date.now(),
+    updatedAt: project.updatedAt || new Date().toISOString(),
+  });
+}
+
+function avaStage114SafeStorageSet(storage, key, value) {
+  try {
+    storage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.warn("[PODCAST_STAGE114_STORAGE_SET_SKIPPED]", {
+      key,
+      message: error?.message || String(error || ""),
+    });
+    try {
+      storage.removeItem(key);
+    } catch {}
+    return false;
+  }
+}
+
+function avaStage114StorePodcastHandoff(project = {}) {
+  const slim = avaStage114MakeSlimTimingHandoff(project);
+  const keys = [
+    "ava_manual_timing_podcast_return",
+    "ava:stage106:podcast-to-timing",
+    "ava:stage112:podcast-to-timing",
+    "ava:stage113:podcast-to-timing",
+    "ava:stage114:podcast-to-timing",
+  ];
+
+  keys.forEach((key) => {
+    avaStage114SafeStorageSet(sessionStorage, key, slim);
+  });
+
+  // localStorage держим только как маленький summary, а не полный проект:
+  // иначе 5MB quota падает на собранном Podcast.
+  keys.forEach((key) => {
+    avaStage114SafeStorageSet(localStorage, `${key}:summary`, {
+      source: slim.source,
+      audioName: slim.audioName,
+      audioUrl: slim.audioUrl,
+      audioApiPath: slim.audioApiPath,
+      durationSec: slim.durationSec || slim.audioDurationSec || 0,
+      scenesCount: Array.isArray(slim.scenes) ? slim.scenes.length : 0,
+      silenceScenes: Array.isArray(slim.scenes) ? slim.scenes.filter((scene) => scene?.is_silence || scene?.source_kind === "silence" || scene?.scene_type === "manual_silence").length : 0,
+      createdAt: Date.now(),
+    });
+    try { localStorage.removeItem(key); } catch {}
+  });
+
+  console.log("[PODCAST_STAGE114_HANDOFF_STORED_SLIM]", {
+    scenes: Array.isArray(slim.scenes) ? slim.scenes.length : 0,
+    silenceScenes: Array.isArray(slim.scenes) ? slim.scenes.filter((scene) => scene?.is_silence || scene?.source_kind === "silence" || scene?.scene_type === "manual_silence").length : 0,
+    audioUrl: slim.audioUrl,
+    approxBytes: JSON.stringify(slim).length,
+  });
+
+  return slim;
+}
+
+const applyComposedAudioToTiming = async () => {
     if (finalAudioBusy) return;
     setFinalAudioBusy("timing");
     setMessage("Готовлю финальное аудио для тайминга...");
@@ -5797,7 +5913,34 @@ export default function PodcastAudioComposerPage() {
       } else if (hasEdits) {
         setMessage("Собираю финальное аудио на сервере и сохраняю asset...");
         const pendingManifest = buildPodcastEditManifestForTiming({ finalAudio: null, finalDurationSec: editedTotalDurationSec });
-        finalAudio = await renderComposerAudioToServerAsset({ manifest: pendingManifest, finalDurationSec: editedTotalDurationSec });
+        try {
+          finalAudio = await renderComposerAudioToServerAsset({ manifest: pendingManifest, finalDurationSec: editedTotalDurationSec });
+        } catch (serverRenderError) {
+          console.warn("[PODCAST_STAGE113_RENDER_TO_ASSET_CLIENT_FALLBACK]", {
+            message: serverRenderError?.message || String(serverRenderError || ""),
+            blockCount: Array.isArray(blocks) ? blocks.length : 0,
+            totalDurationSec: editedTotalDurationSec,
+          });
+          setMessage("Серверная сборка Podcast не прошла, собираю аудио на фронте и загружаю asset...");
+          result = await renderComposerAudioBlob();
+          if (Number(result?.blob?.size || 0) > ASSET_UPLOAD_SOFT_LIMIT_BYTES) {
+            throw serverRenderError;
+          }
+          const uploaded = await uploadFinalAudioBlob(result);
+          const finalUrl = String(uploaded.url || uploaded.assetUrl || uploaded.asset_url || uploaded.publicUrl || uploaded.path || "").trim();
+          if (!finalUrl) throw new Error("backend не вернул URL собранного аудио после fallback");
+          const fallbackDurationSec = roundSeconds(uploaded.duration_sec || uploaded.durationSec || result.durationSec || editedTotalDurationSec);
+          const filename = String(uploaded.filename || uploaded.name || result.filename || extractBackendStaticAssetFilename(finalUrl, "podcast_composer.wav")).trim();
+          finalAudio = {
+            url: finalUrl,
+            filename,
+            duration_sec: fallbackDurationSec,
+            duration_ms: Math.round(fallbackDurationSec * 1000),
+            mime_type: String(uploaded.mime_type || uploaded.mimeType || result.blob?.type || inferAudioMimeTypeFromFilename(filename)).trim(),
+            source: PODCAST_AUDIO_HANDOFF_SOURCE,
+          };
+          usedUpload = true;
+        }
       } else {
         setMessage("Собираю финальное аудио и загружаю его в тайминг...");
         result = await renderComposerAudioBlob();
@@ -5859,7 +6002,7 @@ export default function PodcastAudioComposerPage() {
       const isExplicitPodcastProject = baseProjectMode === MANUAL_TIMING_PODCAST_DIALOGUE_MODE || baseProjectKind === MANUAL_TIMING_PODCAST_DIALOGUE_PROJECT_KIND;
       const nextProjectMode = baseProjectMode || MANUAL_TIMING_PODCAST_DIALOGUE_MODE;
       const nextProjectKind = baseProjectKind || MANUAL_TIMING_PODCAST_DIALOGUE_PROJECT_KIND;
-      const usePodcastManifestTiming = nextProjectMode === MANUAL_TIMING_PODCAST_DIALOGUE_MODE;
+      const usePodcastManifestTiming = true; // PODCAST_STAGE113_FORCE_MANIFEST_TIMING // PODCAST_STAGE112_FORCE_MANIFEST_TIMING
       const preservedMarkers = Array.isArray(baseProject.markers) && baseProject.markers.length ? baseProject.markers : handoffMarkers;
       const preservedScenes = Array.isArray(baseProject.scenes) && baseProject.scenes.length ? baseProject.scenes : handoffScenes;
       const preservedStoryBlocks = Array.isArray(baseProject.story_blocks) && baseProject.story_blocks.length ? baseProject.story_blocks : [handoffStoryBlock];
@@ -5873,23 +6016,36 @@ export default function PodcastAudioComposerPage() {
         project_mode: nextProjectMode,
         project_kind: nextProjectKind,
         timing_status: "draft",
-        markers: usePodcastManifestTiming ? handoffMarkers : preservedMarkers,
-        scenes: usePodcastManifestTiming ? handoffScenes : preservedScenes,
-        audio_phrases: usePodcastManifestTiming ? [] : preservedAudioPhrases,
-        selectedSceneId: usePodcastManifestTiming ? (handoffScenes[0]?.scene_id || "") : (baseProject.selectedSceneId || preservedScenes[0]?.scene_id || ""),
-        story_blocks: usePodcastManifestTiming ? [handoffStoryBlock] : preservedStoryBlocks,
+        markers: handoffMarkers,
+        scenes: handoffScenes,
+        audio_phrases: [],
+        selectedSceneId: handoffScenes[0]?.scene_id || "",
+        story_blocks: [handoffStoryBlock],
         podcast_edit_manifest: editManifest,
         composer_edit_manifest: editManifest,
         edit_manifest_source: "podcast_audio_composer",
         composer_audio_applied_at: Date.now(),
         updatedAt: Date.now(),
       };
+      console.log("[PODCAST_STAGE112_FORCE_HANDOFF_SCENES]", {
+        handoffScenes: handoffScenes.length,
+        nextProjectScenes: nextProject.scenes?.length || 0,
+        silenceScenes: handoffScenes.filter((scene) => scene?.is_silence || scene?.source_kind === "silence" || scene?.scene_type === "manual_silence").length,
+        firstScene: handoffScenes[0],
+        blocks: editManifest?.blocks?.length || 0,
+      });
+      console.log("[PODCAST_STAGE113_FORCE_HANDOFF_SCENES]", {
+        handoffScenes: handoffScenes.length,
+        nextProjectScenes: nextProject.scenes?.length || 0,
+        silenceScenes: handoffScenes.filter((scene) => scene?.is_silence || scene?.source_kind === "silence" || scene?.scene_type === "manual_silence").length,
+        firstScene: handoffScenes[0],
+        blocks: editManifest?.blocks?.length || 0,
+      });
       persistManualTimingProject(nextProject);
       setMessage("Готовое аудио и podcast_edit_manifest загружены. Открываю Manual Timing...");
       if (typeof window !== "undefined") {
-        sessionStorage.setItem("ava_manual_timing_podcast_return", JSON.stringify(nextProject));
-        localStorage.setItem(`ava_podcast_timing_return:${sourceNodeId}`, JSON.stringify(nextProject));
-      }
+        avaStage114StorePodcastHandoff(nextProject); // PODCAST_STAGE114_HANDOFF_STORAGE_REPLACED
+                }
       const timingPath = routeProjectId ? `/app/projects/${routeProjectId}/timing` : "/app/workspace/timing";
       navigate(timingPath, {
         state: {
@@ -5899,6 +6055,9 @@ export default function PodcastAudioComposerPage() {
           project_mode: nextProjectMode,
           project_kind: nextProjectKind,
           audio: finalAudio,
+          scenes: handoffScenes,
+          podcastTimingHandoff: nextProject,
+          timingHandoff: nextProject,
           podcast_edit_manifest: editManifest,
         },
       });
@@ -5934,7 +6093,17 @@ export default function PodcastAudioComposerPage() {
         </div>
         <div className="podcastComposerHeaderActions">
           <button type="button" onClick={clearAll} disabled={!audio.url}>Очистить всё</button>
-          <button type="button" onClick={onBackToNode}>Перейти в Timing</button>
+          <button
+              type="button"
+              onClick={() => {
+                setShowTimingHandoffConfirm(true)
+                setMessage("Подтверди переход в Timing: старый Timing / Board / Монтаж будут очищены.")
+              }}
+              disabled={!!finalAudioBusy || !audio.url || !blocks.length}
+              data-stage="PODCAST_STAGE116_TOP_BUTTON_CONFIRM"
+            >
+              {finalAudioBusy === "timing" ? "Собираю..." : "Перейти в Timing"}
+            </button>
         </div>
       </header>
 
@@ -5956,7 +6125,14 @@ export default function PodcastAudioComposerPage() {
             <button className="podcastPrimaryAction" type="button" onClick={() => mainAudioInputRef.current?.click()}>
               🎧 Загрузить аудио
             </button>
-            <button type="button" onClick={onBackToNode}>
+            <button type="button" onClick={() => {
+            if (typeof setShowTimingHandoffConfirm === 'function') {
+              setShowTimingHandoffConfirm(true)
+              setMessage('Подтверди переход в Timing: старый Timing / Board / Монтаж будут очищены.')
+            } else {
+              applyComposedAudioToTiming()
+            }
+          }}>
               Перейти в Timing
             </button>
           </div>
@@ -6016,7 +6192,16 @@ export default function PodcastAudioComposerPage() {
             <button className="podcastFinalDownloadButton" type="button" onClick={downloadComposedAudio} disabled={!!finalAudioBusy || !blocks.length}>
               {finalAudioBusy === "download" ? "Собираю..." : "⬇ скачать аудио"}
             </button>
-            <button className="podcastFinalTimingButton" type="button" onClick={applyComposedAudioToTiming} disabled={!!finalAudioBusy || !blocks.length}>
+            <button
+              className="podcastFinalTimingButton"
+              type="button"
+              onClick={() => {
+                setShowTimingHandoffConfirm(true)
+                setMessage("Подтверди переход в Timing: старый Timing / Board / Монтаж будут очищены.")
+              }}
+              disabled={!!finalAudioBusy || !blocks.length}
+              data-stage="PODCAST_STAGE116_BOTTOM_BUTTON_CONFIRM"
+            >
               {finalAudioBusy === "timing" ? "Собираю..." : "→ перейти в тайминг"}
             </button>
           </div>
@@ -6215,6 +6400,35 @@ export default function PodcastAudioComposerPage() {
                 <button className="podcastMenuSaveAction" type="button" onClick={() => saveActorDependentPhrasesAsIndependent(deleteActorDialog.actorId)} disabled={deleteActorDialog.busy}>
                   {deleteActorDialog.busy ? "Saving..." : "Save dependent phrases as independent assets first"}
                 </button>
+              </div>
+            </div>
+          ) : null}
+
+
+          {showTimingHandoffConfirm ? (
+            <div className="podcastTimingConfirmOverlay" role="presentation" onClick={() => setShowTimingHandoffConfirm(false)}>
+              <div className="podcastTimingConfirmCard" role="dialog" aria-modal="true" aria-label="Подтверждение перехода в Timing" onClick={(event) => event.stopPropagation()}>
+                <div className="podcastTimingConfirmIcon">↪</div>
+                <div className="podcastTimingConfirmBody">
+                  <span className="podcastTimingConfirmKicker">AVA STUDIO PIPELINE</span>
+                  <h3>Перейти в Timing?</h3>
+                  <p>Новое собранное аудио из Podcast заменит текущий Timing.</p>
+                  <p>Старые данные Board и Видео монтаж для этой рабочей области будут очищены, чтобы не смешать их со старым аудио.</p>
+                  <small>Если старую работу нужно сохранить — сначала сохрани проект или экспортируй JSON.</small>
+                </div>
+                <div className="podcastTimingConfirmActions">
+                  <button type="button" onClick={() => {
+                    setShowTimingHandoffConfirm(false);
+                    setMessage("Переход в Timing отменён. Старые этапы не очищены.");
+                  }}>Отмена</button>
+                  <button className="isDanger" type="button" onClick={() => {
+                    // PODCAST_STAGE116_MODAL_CONFIRM_APPLY
+                    timingHandoffConfirmedRef.current = true;
+                    setShowTimingHandoffConfirm(false);
+                    setMessage("Собираю Podcast и передаю новое аудио в Timing...");
+                    void applyComposedAudioToTiming();
+                  }}>Перейти и очистить</button>
+                </div>
               </div>
             </div>
           ) : null}

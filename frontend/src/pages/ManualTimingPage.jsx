@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Clock3, Film, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { fetchProtectedBlobUrl, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
+import { fetchProtectedBlobUrl, getAuthHeaders, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
 
 const STAGE = 'manual_timing'
 const DRAFT_VERSION = 'manual_timing_single_timeline_v6_handoff_manifest'
@@ -35,6 +35,29 @@ function avaStage95HandoffMatches(handoff = {}, projectId = '') {
   return !handoffProjectId || handoff.workspaceMode === true || handoff.scope === 'workspace'
 }
 
+
+function avaStage116AssetApiPathFromUrl(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw || raw.startsWith('blob:') || raw.startsWith('data:')) return ''
+
+  try {
+    const parsed = new URL(raw, window.location.origin)
+    const path = String(parsed.pathname || '').trim()
+    if (path.startsWith('/api/assets/')) return path.slice(4)
+    if (path.startsWith('/assets/')) return path
+  } catch {
+    // fall back to string checks below
+  }
+
+  if (raw.startsWith('/api/assets/')) return raw.slice(4)
+  if (raw.startsWith('/assets/')) return raw
+  return ''
+}
+
+function avaStage116ShouldAuthFetch(value = '') {
+  return Boolean(avaStage116AssetApiPathFromUrl(value))
+}
+
 function avaStage95AudioUrlToPreview(value = '') {
   const raw = String(value || '').trim()
   if (!raw) return ''
@@ -62,6 +85,157 @@ function avaStage95SceneFromHandoff(scene = {}, index = 0, durationSec = 0) {
     blockId: scene.blockId || scene.block_id || '',
     blockColor: scene.blockColor || scene.block_color || scene.color || '',
   })
+}
+
+
+function avaStage110PodcastLabelFromBlock(block = {}, index = 0) {
+  const isSilence = Boolean(
+    block?.is_silence ||
+    block?.isSilence ||
+    block?.source_kind === 'silence' ||
+    block?.sourceKind === 'silence' ||
+    block?.type === 'silence' ||
+    block?.block_type === 'silence' ||
+    block?.source_audio_id === 'silence'
+  )
+
+  if (isSilence) {
+    return String(block?.label || block?.role_label || block?.speaker_label || block?.badge || 'ТИШ').trim() || 'ТИШ'
+  }
+
+  return String(
+    block?.roleLabel ||
+    block?.role_label ||
+    block?.speakerLabel ||
+    block?.speaker_label ||
+    block?.blockTitle ||
+    block?.block_title ||
+    block?.label ||
+    block?.source_label ||
+    block?.sourceLabel ||
+    block?.source_audio_name ||
+    block?.sourceAudioName ||
+    block?.saved_clip_label ||
+    block?.inserted_phrase_label ||
+    block?.actor_label ||
+    block?.type ||
+    `Podcast ${index + 1}`
+  ).trim()
+}
+
+function avaStage110ReadBlockStart(block = {}, fallback = 0) {
+  const value =
+    block?.timeline_start_sec ??
+    block?.timelineStart ??
+    block?.timeline_start ??
+    block?.start_sec ??
+    block?.start ??
+    fallback
+  return Number(value || 0)
+}
+
+function avaStage110ReadBlockEnd(block = {}, start = 0) {
+  const raw =
+    block?.timeline_end_sec ??
+    block?.timelineEnd ??
+    block?.timeline_end ??
+    block?.end_sec ??
+    block?.end
+  const direct = Number(raw || 0)
+  if (direct > start) return direct
+  const duration = Number(block?.duration_sec ?? block?.durationSec ?? block?.duration ?? 0)
+  return start + Math.max(0, duration)
+}
+
+function avaStage110ForcePodcastBlockScenes(handoff = {}) {
+  const manifest =
+    handoff.podcast_edit_manifest ||
+    handoff.podcastEditManifest ||
+    handoff.composer_edit_manifest ||
+    handoff.composerEditManifest ||
+    {}
+
+  const manifestBlocks = Array.isArray(manifest.blocks) ? manifest.blocks : []
+  const directBlocks = Array.isArray(handoff.blocks) ? handoff.blocks : []
+  const sourceBlocks = manifestBlocks.length ? manifestBlocks : directBlocks
+
+  if (!sourceBlocks.length) return handoff
+
+  let cursor = 0
+  const scenes = sourceBlocks
+    .map((block, index) => {
+      const start = avaStage110ReadBlockStart(block, cursor)
+      const end = avaStage110ReadBlockEnd(block, start)
+      cursor = end
+      if (!(end > start)) return null
+
+      const isSilence = Boolean(
+        block?.is_silence ||
+        block?.isSilence ||
+        block?.source_kind === 'silence' ||
+        block?.sourceKind === 'silence' ||
+        block?.type === 'silence' ||
+        block?.block_type === 'silence' ||
+        block?.source_audio_id === 'silence'
+      )
+      const label = avaStage110PodcastLabelFromBlock(block, index)
+      const sceneId = formatSceneId(index)
+      const blockId = String(block?.block_id || block?.blockId || block?.id || `podcast_block_${index + 1}`)
+
+      return {
+        id: sceneId,
+        scene_id: sceneId,
+        title: sceneId,
+        index,
+        start,
+        end,
+        start_sec: start,
+        end_sec: end,
+        duration_sec: Number((end - start).toFixed(3)),
+        route: isSilence ? 'i2v_sound' : 'i2v',
+        blockId,
+        block_id: blockId,
+        blockTitle: label,
+        block_title: label,
+        roleLabel: label,
+        role_label: label,
+        speakerLabel: label,
+        speaker_label: label,
+        composer_block_id: blockId,
+        composer_block_type: String(block?.type || ''),
+        composer_source_kind: String(block?.source_kind || block?.type || ''),
+        composer_source_audio_id: String(block?.source_audio_id || block?.sourceAudioId || ''),
+        composer_source_audio_name: String(block?.source_audio_name || block?.sourceAudioName || ''),
+        composer_saved_clip_id: String(block?.saved_clip_id || block?.savedClipId || ''),
+        composer_saved_clip_label: String(block?.saved_clip_label || ''),
+        is_silence: isSilence,
+        source_kind: isSilence ? 'silence' : (block?.source_kind || block?.type || 'audio'),
+        original_text: isSilence ? '[тишина]' : label,
+        translated_text_ru: isSilence ? '[тишина]' : label,
+        meaning_hint_ru: isSilence
+          ? 'Вставленная пользователем тишина из Podcast Composer.'
+          : `Фрагмент Podcast: ${label}.`,
+        note: isSilence ? 'Тишина из Podcast Composer.' : `Podcast: ${label}`,
+      }
+    })
+    .filter(Boolean)
+
+  if (!scenes.length) return handoff
+
+  console.log('[MANUAL_TIMING_STAGE110_BLOCK_SCENES_FORCED]', {
+    inputScenes: Array.isArray(handoff.scenes) ? handoff.scenes.length : 0,
+    blockScenes: scenes.length,
+    silenceScenes: scenes.filter((scene) => scene.is_silence).length,
+    firstScene: scenes[0],
+  })
+
+  return {
+    ...handoff,
+    scenes,
+    blocks: sourceBlocks,
+    podcast_edit_manifest: { ...manifest, blocks: sourceBlocks },
+    composer_edit_manifest: { ...manifest, blocks: sourceBlocks },
+  }
 }
 
 function avaStage95DraftFromPodcastHandoff(handoff = {}) {
@@ -859,7 +1033,7 @@ export default function ManualTimingPage() {
 
         const hasPodcastHandoff = Boolean(incomingPodcastProject?.audio || incomingPodcastProject?.finalAudio || incomingPodcastProject?.final_audio)
         let normalized = hasPodcastHandoff
-          ? avaStage95DraftFromPodcastHandoff(incomingPodcastProject)
+          ? avaStage95DraftFromPodcastHandoff(avaStage110ForcePodcastBlockScenes(incomingPodcastProject))
           : normalizeDraft(data)
 
         if (hasPodcastHandoff) {
@@ -903,20 +1077,28 @@ export default function ManualTimingPage() {
 
     async function loadAudioBlob() {
       setAudioSrc('')
-      if (!draft.audioApiPath) {
-        if (draft.audioUrl) {
-          const directUrl = avaStage95AudioUrlToPreview(draft.audioUrl)
-          if (!cancelled) setAudioSrc(directUrl)
-        }
-        return
-      }
+
+      const directUrl = String(draft.audioUrl || draft.asset_url || '').trim()
+      const protectedApiPath = String(draft.audioApiPath || '').trim() || avaStage116AssetApiPathFromUrl(directUrl)
+
+      if (!protectedApiPath && !directUrl) return
+
       try {
-        objectUrl = await fetchProtectedBlobUrl(draft.audioApiPath)
-        if (!cancelled) setAudioSrc(objectUrl)
+        if (protectedApiPath) {
+          objectUrl = await fetchProtectedBlobUrl(protectedApiPath)
+          if (!cancelled) setAudioSrc(objectUrl)
+          return
+        }
+
+        const previewUrl = avaStage95AudioUrlToPreview(directUrl)
+        if (!cancelled) setAudioSrc(previewUrl)
       } catch (err) {
-        if (draft.audioUrl) {
-          const directUrl = avaStage95AudioUrlToPreview(draft.audioUrl)
-          if (!cancelled) setAudioSrc(directUrl)
+        // Do not fall back to /api/assets direct URL: <audio> cannot send Authorization,
+        // and that causes 401/no playback. Only fall back to public/static urls.
+        const previewUrl = avaStage95AudioUrlToPreview(directUrl)
+        const isProtectedDirect = avaStage116ShouldAuthFetch(previewUrl)
+        if (previewUrl && !isProtectedDirect) {
+          if (!cancelled) setAudioSrc(previewUrl)
           return
         }
         if (!cancelled) setStatus(`ошибка аудио: ${err.message}`)
@@ -928,7 +1110,7 @@ export default function ManualTimingPage() {
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [draft.audioApiPath, draft.audioUrl])
+  }, [draft.audioApiPath, draft.audioUrl, draft.asset_url])
 
 
 
@@ -2086,7 +2268,8 @@ const clearedDraft = normalizeDraft({
     try {
       setStatus(`готовлю WAV сцены: ${formatTime(start, true)} → ${formatTime(end, true)}`)
 
-      const response = await fetch(sourceUrl)
+      const fetchOptions = avaStage116ShouldAuthFetch(sourceUrl) ? { headers: getAuthHeaders() } : {}
+      const response = await fetch(sourceUrl, fetchOptions)
       if (!response.ok) throw new Error(`audio_fetch_failed_${response.status}`)
 
       const arrayBuffer = await response.arrayBuffer()
@@ -2440,6 +2623,18 @@ const clearedDraft = normalizeDraft({
             {scenes.map((scene) => {
               const sceneWidth = draft.audioDurationSec > 0 ? `${Math.max(0.5, ((scene.end - scene.start) / draft.audioDurationSec) * 100)}%` : `${100 / scenes.length}%`
               const roleLabels = getSceneRoleLabels(scene)
+              const podcastRoleLabel = String(
+                scene.roleLabel ||
+                scene.role_label ||
+                scene.speakerLabel ||
+                scene.speaker_label ||
+                scene.composer_role_label ||
+                scene.composer_block_label ||
+                scene.blockTitle ||
+                scene.block_title ||
+                ''
+              ).trim()
+              const visibleRoleLabels = podcastRoleLabel ? [podcastRoleLabel] : roleLabels
               return (
                 <button
                   key={`${scene.id}-${scene.start}-${scene.end}`}
@@ -2453,9 +2648,9 @@ const clearedDraft = normalizeDraft({
                   }}
                 
                   title={getSceneTooltip(scene)}>
-                  <b>{scene.blockTitle || scene.title}</b>
+                  <b>{scene.title}</b>
+                  {visibleRoleLabels.length > 0 && <em className="avaTimingSceneRoleBadge">{visibleRoleLabels.slice(0, 2).join(' / ')}</em>}
                   <small>{scene.route && scene.route !== 'auto' ? `${scene.route} · ` : ''}{formatTime(scene.start)} → {formatTime(scene.end)}</small>
-                  {roleLabels.length > 0 && <em>{roleLabels.join(' / ')}</em>}
                 </button>
               )
             })}
