@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Brain, ChevronLeft, ChevronRight, FolderKanban, Home, LogOut, PlusCircle, Settings, WalletCards, UserRound } from 'lucide-react'
+import { Brain, ChevronLeft, ChevronRight, FolderKanban, GitBranch, Home, LogOut, PlusCircle, Settings, WalletCards, UserRound } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { getProjectTheme } from '../utils/projectTheme.js'
@@ -12,6 +12,7 @@ const navItems = [
   { to: '/app/projects/new', label: 'Создать проект', icon: PlusCircle },
   { to: '/app/account', label: 'Кабинет', icon: UserRound },
   { to: '/app/credits', label: 'Пополнить счёт', icon: WalletCards },
+  { to: '/app/workspace/video-node', label: 'Видео нода', icon: GitBranch },
 ]
 
 const SIDEBAR_OPEN_KEY = 'ava_sidebar_open'

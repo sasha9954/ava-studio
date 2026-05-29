@@ -2150,6 +2150,391 @@ const clearedDraft = normalizeDraft({
     setStatus('JSON экспортирован')
   }
 
+  function buildVideoMatchSeedPayload() {
+    const manualTimingSeed = buildExportPayload()
+    const audioDurationSec = Number(draft.audioDurationSec || 0)
+    const timingScenes = Array.isArray(scenes) ? scenes : []
+    const timingSegments = timingScenes.map((scene, index) => {
+      const startSec = Number(scene.start ?? scene.start_sec ?? 0)
+      const endSec = Number(scene.end ?? scene.end_sec ?? startSec)
+      const durationSec = Math.max(0, Number((endSec - startSec).toFixed(3)))
+      const sceneId = String(scene.id || scene.scene_id || `seg_${String(index + 1).padStart(3, '0')}`)
+      const speechExport = buildSceneSpeechExport(scene, draft.speechSegments || [])
+      const roleLabels = typeof getSceneRoleLabels === 'function' ? getSceneRoleLabels(scene) : (scene.roleLabels || [])
+      const title = scene.title || `Сцена ${index + 1}`
+      const note = scene.note || ''
+      const isSilence = Boolean(scene.isSilence || scene.is_silence || scene.silence || String(title || '').trim() === '[тишина]')
+      const text = speechExport.scene_word_text || note || title || ''
+      const route = String(scene.route || scene.videoRoute || scene.route_key || (isSilence ? 'silence' : 'auto')).trim() || 'auto'
+      const routeLower = route.toLowerCase()
+      const roleText = Array.isArray(roleLabels) ? roleLabels.join(' ').toLowerCase() : String(roleLabels || '').toLowerCase()
+      const looksLikeLipSync = Boolean(
+        routeLower.includes('ia2v') ||
+        routeLower.includes('lip') ||
+        routeLower.includes('talk') ||
+        routeLower.includes('dialog') ||
+        routeLower.includes('voice') ||
+        roleText.includes('ls_') ||
+        roleText.includes('дик') ||
+        roleText.includes('вед') ||
+        roleText.includes('гид') ||
+        roleText.includes('рыбак') ||
+        roleText.includes('пастор') ||
+        roleText.includes('фермер')
+      )
+      const pendingCandidateId = `${sceneId}_codex_pending_01`
+      return {
+        id: sceneId,
+        scene_id: sceneId,
+        audio_scene_id: sceneId,
+        index: index + 1,
+        start_sec: startSec,
+        end_sec: endSec,
+        target_t0: startSec,
+        target_t1: endSec,
+        targetStartSec: startSec,
+        targetEndSec: endSec,
+        duration_sec: durationSec,
+        durationSec,
+        title,
+        text,
+        original_text: speechExport.scene_word_text || '',
+        translated_text_ru: speechExport.translated_text_ru || scene.translatedTextRu || scene.translationText || scene.text_ru || '',
+        meaning_hint_ru: speechExport.meaning_hint_ru || scene.meaningText || scene.meaning_hint_ru || '',
+        scene_word_text: speechExport.scene_word_text || '',
+        lyrics_text: speechExport.lyrics_text || speechExport.scene_word_text || '',
+        source_phrase_ids: speechExport.source_phrase_ids || [],
+        phrase_cut_warning: Boolean(speechExport.phrase_cut_warning),
+        roleLabels,
+        role_labels: roleLabels,
+        route,
+        suggested_video_role: isSilence ? 'silence_gap' : (looksLikeLipSync ? 'reserved_generated_lipsync_or_character_insert' : 'source_video_broll'),
+        is_lipsync_candidate: looksLikeLipSync,
+        is_silence: isSilence,
+        source_kind: isSilence ? 'silence' : 'timing_audio',
+        blockId: scene.blockId || '',
+        blockTitle: scene.blockTitle || '',
+        block_id: scene.blockId || '',
+        block_title: scene.blockTitle || '',
+        note,
+        user_scene_label: title,
+        selected_candidate_id: pendingCandidateId,
+        candidates: [
+          {
+            id: pendingCandidateId,
+            candidate_id: pendingCandidateId,
+            candidateType: 'needs_codex_match',
+            candidate_type: 'needs_codex_match',
+            sourceKind: isSilence ? 'silence_placeholder' : (looksLikeLipSync ? 'reserved_generated_lipsync' : 'pending_codex_source_window'),
+            source_kind: isSilence ? 'silence_placeholder' : (looksLikeLipSync ? 'reserved_generated_lipsync' : 'pending_codex_source_window'),
+            video_t0: 0,
+            video_t1: durationSec,
+            sourceVideoStartSec: 0,
+            sourceVideoEndSec: durationSec,
+            fit_mode: 'pending_codex',
+            confidence: 0,
+            match_reason: isSilence
+              ? 'Timing silence segment. Preserve this gap or use neutral filler if needed.'
+              : looksLikeLipSync
+                ? 'Potential lip-sync/dialogue scene. Codex should reserve generated lip-sync if a speaking character is required; source video can be used as background/reference only.'
+                : 'Timing seed only. Codex must replace this placeholder with real source-video candidates without changing target timing.',
+            codex_replace_required: !isSilence,
+            do_not_change_target_timing: true,
+          },
+        ],
+      }
+    })
+
+    return {
+      schema: 'video_match_board_v2',
+      seed_schema: 'manual_timing_to_video_match_job_seed_v1',
+      status: 'timing_seed_needs_codex_match',
+      source: 'manual_timing',
+      exportedAt: new Date().toISOString(),
+      source_of_truth: 'manual_timing.scenes',
+      do_not_change_audio_timings: true,
+      do_not_reanalyze_audio: true,
+      timing_locked: true,
+      project_id: projectId || activeProject?.id || null,
+      sourceNodeId: projectId ? `ava_project_${projectId}_manual_timing` : 'ava_workspace_manual_timing',
+      audio_duration_sec: audioDurationSec,
+      source_audio: {
+        filename: draft.audioName || '',
+        name: draft.audioName || '',
+        asset_id: draft.audioAssetId || '',
+        assetId: draft.audioAssetId || '',
+        asset_api_path: draft.audioApiPath || '',
+        assetApiPath: draft.audioApiPath || '',
+        duration_sec: audioDurationSec,
+        durationSec: audioDurationSec,
+      },
+      source_video: {
+        path: '',
+        filename: '',
+        duration_sec: 0,
+        user_must_provide_local_path: true,
+        use_original_file_for_final_assembly: true,
+        proxy_or_contact_sheet_allowed_for_analysis: true,
+      },
+      audio_map: {
+        source_of_truth: 'manual_timing.scenes',
+        do_not_change_audio_timings: true,
+        duration_sec: audioDurationSec,
+        audioDurationSec,
+        segments: timingSegments,
+      },
+      timingContext: {
+        sourceAudioUrl: draft.audioApiPath || draft.audioUrl || '',
+        sourceAudioAssetId: draft.audioAssetId || '',
+        sourceAudioName: draft.audioName || '',
+        audioDurationSec,
+        timingScenes: timingSegments,
+        segments: timingSegments,
+        sourceOfTruth: 'manual_timing.scenes',
+        podcastEditManifest: draft.podcastEditManifest || draft.podcast_edit_manifest || null,
+        composerEditManifest: draft.composerEditManifest || draft.composer_edit_manifest || null,
+        updatedAt: Date.now(),
+      },
+      manual_timing_seed: manualTimingSeed,
+      podcast_edit_manifest: draft.podcastEditManifest || draft.podcast_edit_manifest || null,
+      story_blocks: draft.storyBlocks || [],
+      roles: draft.roles || [],
+      speech_segments: draft.speechSegments || [],
+      silent_segments: draft.silentSegments || [],
+      segments: timingSegments,
+      codex_job_instructions: {
+        entrypoint: 'video_match_from_manual_timing_seed',
+        goal: 'Use this timing seed and source video to build final video_match_board_v2.',
+        strict_rules: [
+          'Do not change target_t0/target_t1/duration_sec.',
+          'Do not re-run ASR or reinterpret audio timings.',
+          'Use source video analysis to replace pending candidates with real source windows.',
+          'Analyze the entire source video, not only the first minutes.',
+          'For lip-sync/generated insert scenes, reserve generated_lipsync candidates and keep real source only as visual/background reference.',
+          'Return final schema video_match_board_v2 with candidates and selected_candidate_id for every segment.',
+        ],
+      },
+    }
+  }
+
+  function exportVideoMatchSeedJson() {
+    const payload = buildVideoMatchSeedPayload()
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeName = (draft.audioName || 'manual_timing').replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_')
+    link.href = url
+    link.download = `${safeName}_video_match_seed.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    setStatus(`JSON для видео экспортирован: ${payload.segments.length} сцен · тайминги locked`)
+  }
+
+  function buildVideoMatchCodexJobPayload() {
+    const seed = buildVideoMatchSeedPayload()
+    const segments = Array.isArray(seed.segments) ? seed.segments : []
+    const lipSyncCandidates = segments.filter((seg) => seg.is_lipsync_candidate)
+    const silenceSegments = segments.filter((seg) => seg.is_silence)
+    const brollSegments = segments.filter((seg) => !seg.is_silence && !seg.is_lipsync_candidate)
+    return {
+      schema: 'ava_codex_video_match_job_v1',
+      entrypoint: 'video_match_from_manual_timing_seed',
+      status: 'ready_for_codex_after_user_answers',
+      exportedAt: new Date().toISOString(),
+      purpose: 'Codex receives this JSON plus a local source video path, analyzes the real source video, and returns a final importable video_match_board_v2.json.',
+      chatgpt_understanding: {
+        current_stage: 'final_video_match_after_manual_timing_asr',
+        core_rule: 'Не текст ищет кадры. Кадры рождают текст. Но на этом финальном этапе аудио и Manual Timing уже являются locked source of truth.',
+        what_is_locked: [
+          'assembled audio duration',
+          'Manual Timing scene start/end/duration',
+          'scene ids',
+          'source_phrase_ids',
+          'roles and silence markers',
+          'podcast_edit_manifest / source-map when present',
+        ],
+        what_codex_may_choose: [
+          'source video windows for b-roll scenes',
+          'candidate ranking and selected_candidate_id',
+          'reserved generated lip-sync placeholders for speaking character scenes',
+          'visual notes, contact sheets and validation report',
+        ],
+      },
+      user_questions_before_codex: [
+        {
+          id: 'source_video_local_path',
+          required: true,
+          question_ru: 'Где лежит исходное видео на компьютере? Укажи полный путь, например C:\\Users\\...\\video.mp4.',
+          answer: '',
+        },
+        {
+          id: 'workflow_mode',
+          required: true,
+          default: 'final_match_after_manual_timing',
+          options: ['final_match_after_manual_timing', 'video_first_inventory_before_script', 'existing_montage_retime'],
+          question_ru: 'Мы делаем финальный match по готовому аудио/Timing или сначала только visual inventory/story?',
+          answer: 'final_match_after_manual_timing',
+        },
+        {
+          id: 'story_style',
+          required: false,
+          default: 'travel_documentary_poetic_realistic',
+          question_ru: 'Какой стиль монтажа: документальный, клип, тревел, мрачный, спокойный, динамичный?',
+          answer: '',
+        },
+        {
+          id: 'matching_priority',
+          required: false,
+          default: 'meaning_first_then_visual_beauty',
+          options: ['meaning_first_then_visual_beauty', 'visual_beauty_first', 'motion_energy_first', 'chronology_first'],
+          question_ru: 'Что важнее: смысл слов, красота кадра, движение/энергия или хронология исходника?',
+          answer: '',
+        },
+        {
+          id: 'repeat_policy',
+          required: false,
+          default: 'avoid_duplicates_unless_necessary',
+          options: ['avoid_duplicates_unless_necessary', 'allow_repeats_with_new_crop', 'allow_repeats_freely'],
+          question_ru: 'Можно ли повторять один и тот же кусок видео в разных сценах?',
+          answer: '',
+        },
+        {
+          id: 'speed_policy',
+          required: false,
+          default: 'no_speed_change_for_now',
+          options: ['no_speed_change_for_now', 'allow_slight_slowmo_or_speedup', 'allow_any_retime_if_natural'],
+          question_ru: 'Можно ли ускорять/замедлять исходные кадры ради попадания в длительность сцены?',
+          answer: '',
+        },
+        {
+          id: 'lipsync_policy',
+          required: false,
+          default: 'reserve_generated_lipsync_for_speaking_character_scenes',
+          options: ['reserve_generated_lipsync_for_speaking_character_scenes', 'use_only_broll_no_lipsync', 'ask_per_scene'],
+          question_ru: 'Если сцена выглядит как речь персонажа, резервировать её под generated lip-sync или искать только b-roll?',
+          answer: '',
+        },
+        {
+          id: 'must_use_or_avoid_moments',
+          required: false,
+          question_ru: 'Есть ли моменты исходного видео, которые обязательно использовать или не использовать?',
+          answer: '',
+        },
+      ],
+      inputs: {
+        timing_seed_included: true,
+        timing_seed_schema: seed.seed_schema,
+        source_video: {
+          local_path: '',
+          filename: '',
+          note: 'User must fill local_path before Codex starts. Browser blob URLs are not valid for Codex or backend assembly.',
+          analyze_full_video: true,
+          use_original_for_final_assembly: true,
+          proxy_allowed_for_analysis: true,
+        },
+        source_audio: seed.source_audio,
+      },
+      codex_steps: [
+        {
+          step: '00_validate_inputs',
+          do: [
+            'Read this JSON as UTF-8 and strip BOM before JSON.parse/json.load if needed.',
+            'Verify audio_map.segments exists and has all timing scenes.',
+            'Verify source_video.local_path points to a real video file.',
+            'If audio_map exists, do not analyze audio again and do not change timing.',
+          ],
+          safe_stop_if_missing: 'blocked_missing_audio_map_or_source_video_path',
+        },
+        {
+          step: '01_source_video_inventory',
+          do: [
+            'Analyze the entire source video duration.',
+            'Create visual inventory and source shot index.',
+            'Detect visual families, weak/duplicate shots, strong cinematic windows, human/context shots, motion/brightness/scene changes.',
+            'Create contact sheets if possible for manual review.',
+          ],
+        },
+        {
+          step: '02_match_timing_segments',
+          do: [
+            'For every locked timing segment, pick 2-3 candidate source windows when possible.',
+            'Candidate duration should fit target duration or explain fit_mode.',
+            'Never change segment target_t0/target_t1/duration_sec.',
+            'For silence segments, preserve as silence/filler/neutral visual gap.',
+            'For lip-sync candidate scenes, create reserved_generated_lipsync candidate; real video may be background/reference only.',
+          ],
+        },
+        {
+          step: '03_write_final_board',
+          do: [
+            'Return importable video_match_board_v2.json.',
+            'Every segment must have selected_candidate_id and candidates.',
+            'Use source_video.path from user local path, not browser blob URL.',
+            'Preserve scene_id, audio_scene_id, source_phrase_ids, roles, silence markers, block ids and text fields.',
+          ],
+        },
+      ],
+      output_requirements: {
+        final_import_file: 'video_match_board_v2.json',
+        required_extra_files: [
+          'visual_inventory.md',
+          'source_shot_index.json',
+          'contact_sheet_overview.jpg or contact_sheet_overview.md',
+          'validation_report.json',
+        ],
+        video_match_board_v2_must_include: [
+          'schema',
+          'source_video.path',
+          'audio_map.segments',
+          'segments[].scene_id',
+          'segments[].target_t0',
+          'segments[].target_t1',
+          'segments[].duration_sec',
+          'segments[].candidates[]',
+          'segments[].selected_candidate_id',
+          'segments[].source_phrase_ids',
+          'segments[].roleLabels',
+          'segments[].is_silence',
+        ],
+      },
+      validation_rules: [
+        'sum of output target durations must match locked manual timing duration within 0.05 sec per segment tolerance.',
+        'No invented visual objects in b-roll match reasons unless they are actually visible in source inventory.',
+        'No final output with status blocked_missing_audio_map if this JSON has audio_map.segments.',
+        'Do not depend on corrupted Cyrillic file path inside imported JSON if user manually provides local source video.',
+        'Do not write browser blob: URLs into final persistent JSON.',
+      ],
+      quick_summary_for_user: {
+        total_segments: segments.length,
+        broll_segments: brollSegments.length,
+        lipsync_or_speaking_candidates: lipSyncCandidates.length,
+        silence_segments: silenceSegments.length,
+        audio_duration_sec: seed.audio_duration_sec,
+        timing_locked: true,
+      },
+      video_match_seed: seed,
+    }
+  }
+
+  function exportVideoMatchCodexJobJson() {
+    const payload = buildVideoMatchCodexJobPayload()
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeName = (draft.audioName || 'manual_timing').replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_')
+    link.href = url
+    link.download = `${safeName}_codex_video_job.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    setStatus(`Codex JSON экспортирован: ${payload.quick_summary_for_user.total_segments} сцен · нужен путь к source video`)
+  }
+
+
+
   async function importTimingJson(event) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -2541,7 +2926,10 @@ const clearedDraft = normalizeDraft({
             <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Загрузить аудио'}
           </button>
           <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт JSON</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>          <button className="avaSoftButton avaTimingActionButton avaTimingActionPodcast" type="button" onClick={openPodcastComposer} disabled={!hasAudio || loading}>🎙 Подкаст / аудио</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchSeedJson} disabled={loading || !scenes.length}>📷 JSON для видео</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchCodexJobJson} disabled={loading || !scenes.length}>🧠 JSON для Codex</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionPodcast" type="button" onClick={openPodcastComposer} disabled={!hasAudio || loading}>🎙 Подкаст / аудио</button>
 
           <Link className="avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink" to={projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'}>
             <Film size={16} /> Перейти в доску

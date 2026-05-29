@@ -15,6 +15,7 @@ import BoardPage from './pages/BoardPage.jsx'
 import BoardAssemblyPage from './pages/BoardAssemblyPage.jsx'
 import ModulePlaceholderPage from './pages/ModulePlaceholderPage.jsx'
 import PodcastAudioComposerPage from './pages/podcast_audio/PodcastAudioComposerPage.jsx'
+import VideoMatchBoardPage from './pages/video_match_board/VideoMatchBoardPage.jsx'
 
 function Protected({ children }) {
   const { token, booting } = useAuth()
@@ -30,6 +31,8 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/studio/podcast-audio-composer" element={<Protected><PodcastAudioComposerPage /></Protected>} />
+      <Route path="/studio/video-node" element={<Protected><VideoMatchBoardPage /></Protected>} />
+      <Route path="/studio/video-match-board" element={<Protected><VideoMatchBoardPage /></Protected>} />
       <Route
         path="/app"
         element={
@@ -46,13 +49,15 @@ export default function App() {
         <Route path="workspace/podcast" element={<PodcastAudioComposerPage />} />
         <Route path="workspace/board" element={<BoardPage />} />
         <Route path="workspace/board-assembly" element={<BoardAssemblyPage />} />
-        <Route path="workspace/video-node" element={<ModulePlaceholderPage stage="video_node" />} />
+        <Route path="workspace/video-node" element={<VideoMatchBoardPage />} />
+        <Route path="workspace/video-match-board" element={<VideoMatchBoardPage />} />
         <Route path="workspace/generator" element={<ModulePlaceholderPage stage="generator" />} />
         <Route path="projects/:projectId/timing" element={<ManualTimingPage />} />
         <Route path="projects/:projectId/podcast" element={<PodcastAudioComposerPage />} />
         <Route path="projects/:projectId/board" element={<BoardPage />} />
         <Route path="projects/:projectId/board-assembly" element={<BoardAssemblyPage />} />
-        <Route path="projects/:projectId/video-node" element={<ModulePlaceholderPage stage="video_node" />} />
+        <Route path="projects/:projectId/video-node" element={<VideoMatchBoardPage />} />
+        <Route path="projects/:projectId/video-match-board" element={<VideoMatchBoardPage />} />
         <Route path="projects/:projectId/generator" element={<ModulePlaceholderPage stage="generator" />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="credits" element={<CreditsPage />} />
