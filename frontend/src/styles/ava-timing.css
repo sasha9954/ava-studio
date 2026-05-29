@@ -2903,3 +2903,16 @@
   17%, 100% { transform: translateX(120%); opacity: 0; }
 }
 
+/* Stage 8.0 - Podcast Composer handoff button */
+.avaTimingHeaderActions .avaTimingActionPodcast {
+  background:
+    linear-gradient(135deg, rgba(236, 72, 153, .22), rgba(126, 90, 255, .18)),
+    rgba(255,255,255,.055);
+  color: #ffe9fb;
+  border-color: rgba(236, 72, 153, .32);
+}
+.avaTimingHeaderActions .avaTimingActionPodcast:hover {
+  border-color: rgba(244, 114, 182, .72);
+  box-shadow: 0 16px 34px rgba(0,0,0,.22), 0 0 28px rgba(236,72,153,.12);
+}
+

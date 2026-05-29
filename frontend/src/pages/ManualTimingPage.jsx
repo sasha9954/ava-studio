@@ -9,6 +9,133 @@ const DRAFT_VERSION = 'manual_timing_single_timeline_v6_handoff_manifest'
 const MIN_SCENE_SEC = 0.18
 const MAX_UNDO = 30
 
+
+const AVA_PODCAST_TO_TIMING_KEY_STAGE95 = 'ava:podcast-to-timing:v1'
+const AVA_DOWNSTREAM_RESET_KEY_STAGE95 = 'ava:downstream-reset:v1'
+const AVA_ACTIVE_JOBS_KEY_STAGE95 = 'ava:active-jobs:v1'
+const AVA_COMPLETED_JOBS_KEY_STAGE95 = 'ava:completed-jobs:v1'
+
+function avaStage95JsonReadOnce(key) {
+  let value = null
+  try {
+    const raw = sessionStorage.getItem(key) || localStorage.getItem(key)
+    value = raw ? JSON.parse(raw) : null
+    sessionStorage.removeItem(key)
+    localStorage.removeItem(key)
+  } catch {
+    value = null
+  }
+  return value
+}
+
+function avaStage95HandoffMatches(handoff = {}, projectId = '') {
+  const currentProjectId = String(projectId || '').trim()
+  const handoffProjectId = String(handoff.projectId || handoff.project_id || '').trim()
+  if (currentProjectId) return currentProjectId === handoffProjectId
+  return !handoffProjectId || handoff.workspaceMode === true || handoff.scope === 'workspace'
+}
+
+function avaStage95AudioUrlToPreview(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('blob:') || raw.startsWith('data:') || /^https?:\/\//i.test(raw)) return raw
+  const base = String(window.location.origin || '').replace(/:\d+$/, ':8000')
+  if (raw.startsWith('/api/')) return `${base}${raw.slice(4)}`
+  if (raw.startsWith('/static/') || raw.startsWith('/assets/')) return `${base}${raw}`
+  return raw
+}
+
+function avaStage95PickHandoffAudio(handoff = {}) {
+  return handoff.finalAudio || handoff.final_audio || handoff.audio || {}
+}
+
+function avaStage95SceneFromHandoff(scene = {}, index = 0, durationSec = 0) {
+  const start = Number(scene.start ?? scene.start_sec ?? scene.t0 ?? 0)
+  const end = Number(scene.end ?? scene.end_sec ?? scene.t1 ?? Math.min(durationSec, start + 1))
+  return makeScene(index, Math.max(0, start), Math.max(start + 0.05, end), {
+    ...scene,
+    id: formatSceneId(index),
+    title: scene.title || scene.id || formatSceneId(index),
+    route: scene.route || 'auto',
+    note: scene.note || '',
+    blockTitle: scene.blockTitle || scene.block_title || '',
+    blockId: scene.blockId || scene.block_id || '',
+    blockColor: scene.blockColor || scene.block_color || scene.color || '',
+  })
+}
+
+function avaStage95DraftFromPodcastHandoff(handoff = {}) {
+  const audio = avaStage95PickHandoffAudio(handoff)
+  const audioUrl = String(audio.url || audio.audioUrl || audio.audio_url || audio.assetUrl || audio.asset_url || audio.publicUrl || audio.public_url || '').trim()
+  const duration = Math.max(0, Number(audio.durationSec || audio.duration_sec || handoff.finalDurationSec || handoff.final_duration_sec || 0))
+  const rawScenes = Array.isArray(handoff.scenes) ? handoff.scenes : []
+  const scenes = rawScenes.length
+    ? rawScenes.map((scene, index) => avaStage95SceneFromHandoff(scene, index, duration))
+    : makeSingleScene(duration)
+
+  return normalizeDraft({
+    ...emptyDraft,
+    audioName: audio.filename || audio.name || audio.audioName || 'AVA_podcast_audio.mp3',
+    audioAssetId: audio.assetId || audio.asset_id || '',
+    audioApiPath: audio.assetApiPath || audio.asset_api_path || audio.audioApiPath || audio.audio_api_path || '',
+    audioUrl,
+    audioSizeBytes: Number(audio.size_bytes || audio.audio_size_bytes || audio.size || 0),
+    audioDurationSec: duration,
+    scenes,
+    scenesCount: scenes.length,
+    selectedSceneIndex: 0,
+    storyBlocks: [],
+    roles: [],
+    speechSegments: [],
+    audioPhrases: [],
+    missingSpeechHints: [],
+    silentSegments: [],
+    vocalAudioName: '',
+    vocalAudioAssetId: '',
+    vocalAudioApiPath: '',
+    vocalAudioSizeBytes: 0,
+    vocalAudioDurationSec: 0,
+    vocalOffsetSec: 0,
+    handoffSource: 'podcast_audio_composer',
+    podcastEditManifest: handoff.podcast_edit_manifest || handoff.podcastEditManifest || null,
+    podcast_edit_manifest: handoff.podcast_edit_manifest || handoff.podcastEditManifest || null,
+    podcastBlocks: handoff.blocks || [],
+    podcastActorAudios: handoff.actorAudios || [],
+    historySnapshots: [],
+    notes: 'Получено из Podcast / Audio Composer',
+  })
+}
+
+function avaStage95EmptyBoardSnapshot() {
+  return {
+    boardVersion: 'ava_board_foundation_v1',
+    source: 'board',
+    importedFrom: '',
+    updatedAt: new Date().toISOString(),
+    audio: null,
+    roles: [],
+    speechSegments: [],
+    audioPhrases: [],
+    missingSpeechHints: [],
+    storyBlocks: [],
+    scenes: [],
+    selectedSceneId: '',
+    notes: '',
+    resetReason: 'podcast_new_audio',
+  }
+}
+
+function avaStage95ClearAssemblyState(projectId = '') {
+  try {
+    localStorage.removeItem(projectId ? `ava:board-assembly:${projectId}:settings:v1` : 'ava:board-assembly:workspace:settings:v1')
+    localStorage.removeItem(AVA_ACTIVE_JOBS_KEY_STAGE95)
+    localStorage.removeItem(AVA_COMPLETED_JOBS_KEY_STAGE95)
+    localStorage.removeItem(AVA_DOWNSTREAM_RESET_KEY_STAGE95)
+    localStorage.removeItem('ava:open-board-scene:v1')
+  } catch {}
+}
+
+
 const emptyDraft = {
   timingDraftVersion: DRAFT_VERSION,
   audioName: '',
@@ -711,13 +838,54 @@ export default function ManualTimingPage() {
       try {
         const data = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
         if (!active) return
-        const normalized = normalizeDraft(data)
-        const loadedHistory = Array.isArray(normalized.historySnapshots) ? normalized.historySnapshots : []
+        let incomingPodcastProject = null
+        try {
+          const rawPodcastReturn =
+            sessionStorage.getItem("ava_manual_timing_podcast_return")
+            || localStorage.getItem("ava_manual_timing_podcast_return")
+            || sessionStorage.getItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
+            || localStorage.getItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
+
+          incomingPodcastProject = rawPodcastReturn ? JSON.parse(rawPodcastReturn) : null
+          if (rawPodcastReturn) {
+            sessionStorage.removeItem("ava_manual_timing_podcast_return")
+            localStorage.removeItem("ava_manual_timing_podcast_return")
+            sessionStorage.removeItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
+            localStorage.removeItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
+          }
+        } catch {
+          incomingPodcastProject = null
+        }
+
+        const hasPodcastHandoff = Boolean(incomingPodcastProject?.audio || incomingPodcastProject?.finalAudio || incomingPodcastProject?.final_audio)
+        let normalized = hasPodcastHandoff
+          ? avaStage95DraftFromPodcastHandoff(incomingPodcastProject)
+          : normalizeDraft(data)
+
+        if (hasPodcastHandoff) {
+          try {
+            if (workspaceMode) {
+              await saveWorkspaceStage(STAGE, { ...normalized, updatedAt: new Date().toISOString(), saveReason: 'podcast_handoff_replace_timing' })
+              await saveWorkspaceStage('board', avaStage95EmptyBoardSnapshot())
+            } else {
+              await saveStage(projectId, STAGE, { ...normalized, updatedAt: new Date().toISOString(), saveReason: 'podcast_handoff_replace_timing' }, 'replace')
+              await saveStage(projectId, 'board', avaStage95EmptyBoardSnapshot(), 'replace')
+            }
+            avaStage95ClearAssemblyState(projectId || '')
+          } catch (saveError) {
+            console.warn('[MANUAL TIMING PODCAST HANDOFF SAVE/CLEAR FAILED]', saveError)
+          }
+        }
+
+        const loadedHistory = hasPodcastHandoff ? [] : (Array.isArray(normalized.historySnapshots) ? normalized.historySnapshots : [])
         historyRef.current = loadedHistory
         setDraft(normalized)
         setHistory(loadedHistory)
+        setBlockSelection([])
+        setBlockDraft({ title: '' })
+        setSceneEditor(null)
         setCursorSec(normalized.scenes?.[normalized.selectedSceneIndex]?.start || 0)
-        setStatus('snapshot загружен')
+        setStatus(hasPodcastHandoff ? 'получено новое аудио из Podcast: Timing заменён, Board/Монтаж очищены' : 'snapshot загружен')
       } catch (err) {
         if (!active) return
         setStatus(`ошибка загрузки: ${err.message}`)
@@ -735,11 +903,22 @@ export default function ManualTimingPage() {
 
     async function loadAudioBlob() {
       setAudioSrc('')
-      if (!draft.audioApiPath) return
+      if (!draft.audioApiPath) {
+        if (draft.audioUrl) {
+          const directUrl = avaStage95AudioUrlToPreview(draft.audioUrl)
+          if (!cancelled) setAudioSrc(directUrl)
+        }
+        return
+      }
       try {
         objectUrl = await fetchProtectedBlobUrl(draft.audioApiPath)
         if (!cancelled) setAudioSrc(objectUrl)
       } catch (err) {
+        if (draft.audioUrl) {
+          const directUrl = avaStage95AudioUrlToPreview(draft.audioUrl)
+          if (!cancelled) setAudioSrc(directUrl)
+          return
+        }
         if (!cancelled) setStatus(`ошибка аудио: ${err.message}`)
       }
     }
@@ -749,7 +928,7 @@ export default function ManualTimingPage() {
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [draft.audioApiPath])
+  }, [draft.audioApiPath, draft.audioUrl])
 
 
 
@@ -1981,6 +2160,62 @@ const clearedDraft = normalizeDraft({
     </div>
   )
 
+  function openPodcastComposer() {
+    const sourceNodeId = projectId ? `ava_project_${projectId}_manual_timing` : "ava_workspace_manual_timing";
+    const scenes = Array.isArray(draft.scenes) ? draft.scenes : [];
+    const audioUrl = draft.audioUrl || draft.asset_url || "";
+    const handoffProject = {
+      nodeId: sourceNodeId,
+      sourceNodeId,
+      project_runtime_type: "manual_timing",
+      project_mode: "podcast_dialogue",
+      project_kind: "podcast",
+      audio: {
+        url: audioUrl,
+        audioUrl,
+        assetApiPath: draft.audioApiPath || "",
+        asset_api_path: draft.audioApiPath || "",
+        assetId: draft.audioAssetId || "",
+        asset_id: draft.audioAssetId || "",
+        filename: draft.audioName || "audio",
+        name: draft.audioName || "audio",
+        duration_sec: Number(draft.audioDurationSec || 0),
+        durationSec: Number(draft.audioDurationSec || 0),
+      },
+      audio_duration_sec: Number(draft.audioDurationSec || 0),
+      roles: Array.isArray(draft.roles) ? draft.roles : [],
+      audio_phrases: Array.isArray(draft.audioPhrases) ? draft.audioPhrases : [],
+      speech_segments: Array.isArray(draft.speechSegments) ? draft.speechSegments : [],
+      story_blocks: Array.isArray(draft.storyBlocks) ? draft.storyBlocks : [],
+      markers: scenes.length
+        ? [...scenes.map((scene) => Number(scene.start || 0)), Number(scenes[scenes.length - 1]?.end || draft.audioDurationSec || 0)]
+        : [0, Number(draft.audioDurationSec || 0)],
+      scenes: scenes.map((scene, index) => ({
+        ...scene,
+        scene_id: scene.id || scene.scene_id || `seg_${String(index + 1).padStart(2, "0")}`,
+        index: index + 1,
+        start_sec: Number(scene.start ?? scene.start_sec ?? 0),
+        end_sec: Number(scene.end ?? scene.end_sec ?? 0),
+        duration_sec: Math.max(0, Number(scene.end ?? scene.end_sec ?? 0) - Number(scene.start ?? scene.start_sec ?? 0)),
+      })),
+      podcast_edit_manifest: draft.podcastEditManifest || draft.podcast_edit_manifest || null,
+      updatedAt: Date.now(),
+    };
+
+    try {
+      localStorage.setItem(`ava_podcast_timing_handoff:${sourceNodeId}`, JSON.stringify(handoffProject));
+      sessionStorage.setItem(`ava_podcast_timing_handoff:${sourceNodeId}`, JSON.stringify(handoffProject));
+    } catch (error) {
+      console.warn("[AVA PODCAST HANDOFF SAVE FAILED]", error);
+    }
+
+    const podcastPath = projectId
+      ? `/app/projects/${projectId}/podcast?sourceNodeId=${encodeURIComponent(sourceNodeId)}`
+      : `/app/workspace/podcast?sourceNodeId=${encodeURIComponent(sourceNodeId)}`;
+    window.location.assign(podcastPath);
+  }
+
+
   return (
     <div className="avaPage avaTimingFlatPage">
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
@@ -1998,7 +2233,8 @@ const clearedDraft = normalizeDraft({
             <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Загрузить аудио'}
           </button>
           <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт JSON</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>          <button className="avaSoftButton avaTimingActionButton avaTimingActionPodcast" type="button" onClick={openPodcastComposer} disabled={!hasAudio || loading}>🎙 Подкаст / аудио</button>
+
           <Link className="avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink" to={projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'}>
             <Film size={16} /> Перейти в доску
           </Link>
