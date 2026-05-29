@@ -36,6 +36,107 @@ function avaStage95HandoffMatches(handoff = {}, projectId = '') {
 }
 
 
+
+
+function avaStage118AssetIdFromValue(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  const direct = raw.match(/(^|[/?:&=])(asset_[A-Za-z0-9_-]+)/)
+  if (direct?.[2]) return direct[2]
+
+  const pathMatch = raw.match(/\/(?:api\/)?assets\/([^/]+)\/file/i)
+  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1])
+
+  return ''
+}
+
+function avaStage118AsrAssetId(sourceDraft = {}, useVocalStem = false) {
+  if (typeof avaStage117AssetIdFromAudioDraft === 'function') {
+    const value = avaStage117AssetIdFromAudioDraft(sourceDraft, useVocalStem)
+    if (value) return value
+  }
+
+  if (useVocalStem) {
+    return String(
+      sourceDraft.vocalAudioAssetId ||
+      avaStage118AssetIdFromValue(sourceDraft.vocalAudioApiPath) ||
+      avaStage118AssetIdFromValue(sourceDraft.vocalAudioUrl) ||
+      ''
+    ).trim()
+  }
+
+  const candidates = [
+    sourceDraft.audioAssetId,
+    sourceDraft.assetId,
+    sourceDraft.asset_id,
+    sourceDraft.audio_asset_id,
+    sourceDraft.audioApiPath,
+    sourceDraft.audio_api_path,
+    sourceDraft.audioUrl,
+    sourceDraft.audio_url,
+    sourceDraft.asset_url,
+    sourceDraft.url,
+  ]
+
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim()
+    if (!value) continue
+    if (value.startsWith('asset_')) return value
+    const parsed = avaStage118AssetIdFromValue(value)
+    if (parsed) return parsed
+  }
+
+  return ''
+}
+
+function avaStage117AssetIdFromValue(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  const direct = raw.match(/(^|[/?:&=])(asset_[A-Za-z0-9_-]+)/)
+  if (direct?.[2]) return direct[2]
+
+  const pathMatch = raw.match(/\/(?:api\/)?assets\/([^/]+)\/file/i)
+  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1])
+
+  return ''
+}
+
+function avaStage117AssetIdFromAudioDraft(sourceDraft = {}, useVocalStem = false) {
+  if (useVocalStem) {
+    return String(
+      sourceDraft.vocalAudioAssetId ||
+      avaStage117AssetIdFromValue(sourceDraft.vocalAudioApiPath) ||
+      avaStage117AssetIdFromValue(sourceDraft.vocalAudioUrl) ||
+      ''
+    ).trim()
+  }
+
+  const candidates = [
+    sourceDraft.audioAssetId,
+    sourceDraft.assetId,
+    sourceDraft.asset_id,
+    sourceDraft.audio_asset_id,
+    sourceDraft.audioApiPath,
+    sourceDraft.audio_api_path,
+    sourceDraft.audioUrl,
+    sourceDraft.audio_url,
+    sourceDraft.asset_url,
+    sourceDraft.url,
+  ]
+
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim()
+    if (!value) continue
+    if (value.startsWith('asset_')) return value
+    const parsed = avaStage117AssetIdFromValue(value)
+    if (parsed) return parsed
+  }
+
+  return ''
+}
+
 function avaStage116AssetApiPathFromUrl(value = '') {
   const raw = String(value || '').trim()
   if (!raw || raw.startsWith('blob:') || raw.startsWith('data:')) return ''
@@ -869,6 +970,8 @@ export default function ManualTimingPage() {
   const jsonInputRef = useRef(null)
 
   const hasAudio = Boolean(draft.audioAssetId || draft.audioApiPath || draft.audioUrl)
+  const narratorAsrAssetId = avaStage118AsrAssetId(draft, false)
+  const vocalAsrAssetId = avaStage118AsrAssetId(draft, true)
   const scenes = useMemo(() => normalizeScenes(draft, draft.audioDurationSec), [draft.scenes, draft.scenesCount, draft.audioDurationSec])
   const selectedScene = scenes[Math.min(draft.selectedSceneIndex, scenes.length - 1)] || scenes[0] || makeScene(0, 0, 0)
   const scopeTitle = workspaceMode ? 'Рабочая область' : activeProject?.name || 'Проект'
@@ -1843,10 +1946,18 @@ export default function ManualTimingPage() {
     if (mode === 'vocal') return runVocalStemAsrExact()
 const useVocalStem = mode === 'vocal'
     const sourceDraft = draft
-    const assetId = useVocalStem ? sourceDraft.vocalAudioAssetId : sourceDraft.audioAssetId
+    const assetId = avaStage117AssetIdFromAudioDraft(sourceDraft, useVocalStem)
 
     if (!assetId) {
-      setStatus(useVocalStem ? 'сначала загрузите vocal stem' : 'сначала загрузите аудио')
+      console.warn('[MANUAL_TIMING_STAGE117_ASR_NO_ASSET_ID]', {
+        useVocalStem,
+        audioAssetId: sourceDraft.audioAssetId,
+        audioApiPath: sourceDraft.audioApiPath,
+        audioUrl: sourceDraft.audioUrl,
+        vocalAudioAssetId: sourceDraft.vocalAudioAssetId,
+        vocalAudioApiPath: sourceDraft.vocalAudioApiPath,
+      })
+      setStatus(useVocalStem ? 'сначала загрузите vocal stem' : 'ASR не нашёл assetId у аудио. Нужен /api/assets/asset_xxx/file или audioAssetId.')
       return
     }
 const clearedDraft = normalizeDraft({
@@ -1866,6 +1977,13 @@ const clearedDraft = normalizeDraft({
     setAsrRunning(true)
     setStatus(useVocalStem ? 'ASR распознаёт vocal stem…' : mode === 'music' ? 'ASR распознаёт master без VAD…' : 'ASR распознаёт диктора…')
     try {
+      console.log('[MANUAL_TIMING_STAGE117_ASR_START]', {
+        assetId,
+        mode,
+        useVocalStem,
+        audioApiPath: sourceDraft.audioApiPath,
+        audioUrl: sourceDraft.audioUrl,
+      })
       const result = await transcribeAudioAsset({
         assetId,
         projectId: projectId || activeProject?.id || null,
@@ -1894,6 +2012,13 @@ const clearedDraft = normalizeDraft({
       await saveDraft(nextDraft, sourceName)
       setStatus(`ASR готово: ${nextSegments.length} фраз · ${useVocalStem ? 'vocal stem / speech+VAD' : result.mode || mode} · VAD ${result.vad_filter ? 'on' : 'off'}`)
     } catch (err) {
+      console.error('[MANUAL_TIMING_STAGE117_ASR_FAILED]', {
+        message: err?.message || String(err || ''),
+        assetId,
+        mode,
+        audioApiPath: sourceDraft.audioApiPath,
+        audioUrl: sourceDraft.audioUrl,
+      })
       setStatus(`ошибка ASR: ${err.message}`)
     } finally {
       setAsrRunning(false)
@@ -2840,7 +2965,7 @@ const clearedDraft = normalizeDraft({
                 <strong>Диктор / обычная речь</strong>
                 <p>Для подкаста, озвучки, интервью и рассказчика. Берём слова прямо из основного аудио.</p>
               </div>
-              <button type="button" onClick={() => runAudioAsr('speech')} disabled={!hasAudio || !draft.audioAssetId || asrRunning}>
+              <button type="button" onClick={() => runAudioAsr('speech')} disabled={!hasAudio || !narratorAsrAssetId || asrRunning} title={narratorAsrAssetId ? `ASR asset: ${narratorAsrAssetId}` : 'ASR не нашёл assetId у аудио'}>
                 {asrRunning ? 'ASR…' : 'ASR диктор · 1 кредит'}
               </button>
             </div>
@@ -2879,7 +3004,9 @@ const clearedDraft = normalizeDraft({
                   {asrRunning ? 'ASR vocal…' : 'ASR vocal stem точно · 1 кредит'}
                 </button>
                 <button type="button"
-                  disabled={!draft.vocalAudioAssetId || asrRunning}>
+                  disabled={!vocalAsrAssetId || asrRunning}
+                  title={vocalAsrAssetId ? `vocal asset: ${vocalAsrAssetId}` : 'загрузите vocal stem'}
+                >
                   ASR vocal stem точно
                 </button>
               </div>
