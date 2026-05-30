@@ -27,3 +27,4 @@ backend/storage/users/
 *.bak 
 ava_*.py 
 storage/
+backend/static/assets/

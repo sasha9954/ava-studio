@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Brain, ChevronLeft, ChevronRight, FolderKanban, GitBranch, Home, LogOut, PlusCircle, Settings, WalletCards, UserRound } from 'lucide-react'
+import { Brain, ChevronLeft, ChevronRight, FolderKanban, GitBranch, Home, LogOut, PlusCircle, Settings, Sparkles, UserRound, WalletCards } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { getProjectTheme } from '../utils/projectTheme.js'
 import { apiRequest } from '../services/apiClient.js'
+import GlobalJobNotifier from '../components/GlobalJobNotifier.jsx'
 
 const navItems = [
   { to: '/app/dashboard', label: 'Главная', icon: Home },
@@ -13,6 +14,7 @@ const navItems = [
   { to: '/app/account', label: 'Кабинет', icon: UserRound },
   { to: '/app/credits', label: 'Пополнить счёт', icon: WalletCards },
   { to: '/app/workspace/video-node', label: 'Видео нода', icon: GitBranch },
+  { to: '/app/workspace/generator', label: 'Генератор', icon: Sparkles },
 ]
 
 const SIDEBAR_OPEN_KEY = 'ava_sidebar_open'
@@ -501,6 +503,7 @@ export default function AvaShellLayout() {
           <Outlet />
         </section>
       </main>
-    </div>
+          <GlobalJobNotifier />
+</div>
   )
 }

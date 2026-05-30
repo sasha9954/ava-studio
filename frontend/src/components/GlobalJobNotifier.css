@@ -1,0 +1,84 @@
+.avaGlobalJobToasts {
+  position: fixed;
+  right: 24px;
+  top: 24px;
+  bottom: auto;
+  z-index: 5000;
+  display: grid;
+  gap: 12px;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.avaGlobalJobToast {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(112, 236, 255, 0.28);
+  background:
+    radial-gradient(circle at 16% 16%, rgba(91, 219, 255, 0.18), transparent 42%),
+    linear-gradient(135deg, rgba(12, 22, 48, 0.96), rgba(14, 36, 48, 0.96));
+  color: #f5fbff;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(16px);
+  animation: avaGlobalJobToastIn 0.22s ease;
+}
+
+.avaGlobalJobToastIcon {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #05202a;
+  background: linear-gradient(135deg, #7affd7, #5ed7ff);
+  font-weight: 950;
+  box-shadow: 0 0 28px rgba(94, 215, 255, 0.24);
+}
+
+.avaGlobalJobToastText {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.avaGlobalJobToastText strong {
+  font-size: 15px;
+}
+
+.avaGlobalJobToastText span {
+  color: rgba(229, 242, 255, 0.78);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.avaGlobalJobToastActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avaGlobalJobToastActions button {
+  border: 0;
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(118, 99, 255, 0.96), rgba(58, 203, 255, 0.96));
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.avaGlobalJobToastActions button.isGhost {
+  width: 34px;
+  padding: 10px 0;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@keyframes avaGlobalJobToastIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
