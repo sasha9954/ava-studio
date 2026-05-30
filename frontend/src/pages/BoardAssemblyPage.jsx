@@ -84,6 +84,120 @@ function durationOf(scene) {
   return Math.max(0, toNumber(scene?.end_sec ?? scene?.end, 0) - toNumber(scene?.start_sec ?? scene?.start, 0))
 }
 
+
+function assemblyStableHueFromText(value, fallbackIndex = 0) {
+  const text = String(value || '').trim()
+  if (!text) return 185 + ((Number(fallbackIndex || 0) * 47) % 150)
+  let hash = 0
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i)
+    hash |= 0
+  }
+  return 185 + (Math.abs(hash) % 150)
+}
+
+function assemblySceneColor(scene, index = 0) {
+  const blockKey = String(
+    scene?.blockId ??
+    scene?.block_id ??
+    scene?.semanticBlockId ??
+    scene?.semantic_block_id ??
+    scene?.blockTitle ??
+    scene?.block_title ??
+    scene?.storyBlockId ??
+    scene?.story_block_id ??
+    ''
+  ).trim()
+
+  const blockNumber = Number(
+    scene?.blockIndex ??
+    scene?.block_index ??
+    scene?.blockNumber ??
+    scene?.block_number
+  )
+
+  if (blockKey) {
+    if (Number.isFinite(blockNumber)) return 185 + ((blockNumber * 47) % 150)
+    return assemblyStableHueFromText(`block:${blockKey}`, index)
+  }
+
+  const direct = Number(
+    scene?.blockColor ??
+    scene?.block_color ??
+    scene?.blockHue ??
+    scene?.block_hue ??
+    scene?.color ??
+    scene?.sceneColor ??
+    scene?.scene_color ??
+    scene?.hue
+  )
+  if (Number.isFinite(direct)) return direct
+
+  return 185 + ((Number(index || 0) * 47) % 150)
+}
+
+function assemblySceneBlockLabel(scene = {}) {
+  return String(
+    scene.blockTitle ??
+    scene.block_title ??
+    scene.storyBlockTitle ??
+    scene.story_block_title ??
+    scene.blockLabel ??
+    scene.block_label ??
+    scene.blockId ??
+    scene.block_id ??
+    scene.semanticBlockId ??
+    scene.semantic_block_id ??
+    ''
+  ).trim()
+}
+
+function AvaAssemblyLoading({ title = 'Загрузка видео монтажа…', subtitle = 'Подключаем сцены, видео, звук и блоки.' }) {
+  return (
+    <div className="avaPage avaStoryboardLoadingPage">
+      <section className="avaLoadingHero">
+        <div className="avaLoadingCard">
+          <div className="avaLoadingOrb"><Clapperboard size={28} /></div>
+          <p className="avaEyebrow">Ava Studio pipeline</p>
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+          <div className="avaLoadingPipeline" aria-hidden="true">
+            <span className="isDone">Timing</span>
+            <i />
+            <span className="isActive">Board</span>
+            <i />
+            <span>Media</span>
+            <i />
+            <span>Montage</span>
+          </div>
+        </div>
+        <div className="avaLoadingStatusPanel" aria-hidden="true">
+            <div className="avaLoadingStatusCard isDone">
+              <span>01</span>
+              <strong>Timing</strong>
+              <small>таймкоды и блоки получены</small>
+            </div>
+            <div className="avaLoadingStatusCard isActive">
+              <span>02</span>
+              <strong>Storyboard</strong>
+              <small>сцены и промты загружаются</small>
+            </div>
+            <div className="avaLoadingStatusCard">
+              <span>03</span>
+              <strong>Media</strong>
+              <small>проверяем видео и звук</small>
+            </div>
+            <div className="avaLoadingStatusCard">
+              <span>04</span>
+              <strong>Ready</strong>
+              <small>готовим доску к работе</small>
+            </div>
+          </div>
+      </section>
+    </div>
+  )
+}
+
 function sceneVideoUrl(scene, preferMmaudio = true) {
   if (preferMmaudio && (scene?.mmaudio_video_url || scene?.mmaudioVideoUrl)) {
     return scene.mmaudio_video_url || scene.mmaudioVideoUrl
@@ -143,6 +257,8 @@ function buildSceneItems(board, preferMmaudio = true) {
       hasSound,
       duration,
       route: scene?.route || 'i2v',
+      hue: assemblySceneColor(scene, index),
+      blockLabel: assemblySceneBlockLabel(scene),
       start: toNumber(scene?.start_sec ?? scene?.start, 0),
       end: toNumber(scene?.end_sec ?? scene?.end, 0),
       raw: scene,
@@ -176,6 +292,9 @@ export default function BoardAssemblyPage() {
   const [watermarkPosition, setWatermarkPosition] = useState('bottom_right')
   const [watermarkOpacity, setWatermarkOpacity] = useState(35)
   const [watermarkSize, setWatermarkSize] = useState(28)
+  const [watermarkMotion, setWatermarkMotion] = useState('static')
+  const [musicPanelOpen, setMusicPanelOpen] = useState(true)
+  const [watermarkPanelOpen, setWatermarkPanelOpen] = useState(true)
   const [assemblyJob, setAssemblyJob] = useState(null)
   const [assemblyRunning, setAssemblyRunning] = useState(false)
   const [finalVideoUrl, setFinalVideoUrl] = useState('')
@@ -206,6 +325,9 @@ export default function BoardAssemblyPage() {
     setWatermarkPosition(watermark.position || 'bottom_right')
     setWatermarkOpacity(clampNumber(watermark.opacityPercent, 5, 100, 35))
     setWatermarkSize(clampNumber(watermark.size, 14, 72, 28))
+    setWatermarkMotion(watermark.motion || 'static')
+    setMusicPanelOpen(savedSettings.musicPanelOpen ?? true)
+    setWatermarkPanelOpen(savedSettings.watermarkPanelOpen ?? true)
 
     setFinalVideoUrl(savedSettings.finalVideoUrl || '')
     setFinalDirty(Boolean(savedSettings.finalDirty))
@@ -331,6 +453,7 @@ export default function BoardAssemblyPage() {
         position: watermarkPosition,
         opacityPercent: watermarkOpacity,
         size: watermarkSize,
+        motion: watermarkMotion,
       },
       selectedSceneId,
       finalVideoUrl,
@@ -367,6 +490,9 @@ export default function BoardAssemblyPage() {
     watermarkPosition,
     watermarkOpacity,
     watermarkSize,
+    watermarkMotion,
+    musicPanelOpen,
+    watermarkPanelOpen,
     selectedSceneId,
     finalVideoUrl,
     finalDirty,
@@ -433,6 +559,7 @@ export default function BoardAssemblyPage() {
         position: watermarkPosition,
         opacity: watermarkOpacity / 100,
         size: watermarkSize,
+        motion: watermarkMotion,
       },
       items,
     }
@@ -549,7 +676,7 @@ export default function BoardAssemblyPage() {
   }
 
   if (loading) {
-    return <div className="avaPage"><div className="avaPanel">Загрузка видео монтажа…</div></div>
+    return <AvaAssemblyLoading />
   }
 
   return (
@@ -564,9 +691,6 @@ export default function BoardAssemblyPage() {
           <Link className="avaSecondaryButton" to={boardRoute}><ArrowLeft size={16} /> Вернуться в доску</Link>
           <button type="button" onClick={loadBoardSnapshot}><RefreshCcw size={15} /> Обновить из Board</button>
           <button type="button" disabled><Wand2 size={15} /> Собрать preview</button>
-          <button type="button" className="avaBoardPrimary" onClick={startAssembly} disabled={assemblyRunning || !stats.ready}>
-            <Download size={15} /> {assemblyRunning ? 'Собирается…' : finalDirty ? 'Пересобрать MP4' : 'Собрать MP4'}
-          </button>
         </div>
       </section>
 
@@ -596,12 +720,14 @@ export default function BoardAssemblyPage() {
               <button
                 key={item.id}
                 type="button"
-                className={`avaAssemblySceneItem ${selectedItem?.id === item.id ? 'isActive' : ''} ${item.hasVideo ? 'isReady' : 'isMissing'}`}
+                className={`avaAssemblySceneItem ${selectedItem?.id === item.id ? 'isActive' : ''} ${item.hasVideo ? 'isReady' : 'isMissing'} ${item.blockLabel ? 'hasBlock' : ''}`}
+                style={{ '--scene-hue': item.hue }}
                 onClick={() => setSelectedSceneId(item.id)}
               >
                 <strong>{item.title}</strong>
                 <span>{formatTime(item.start)} → {formatTime(item.end || item.start + item.duration)}</span>
                 <small>{item.route} · {item.hasVideo ? 'video' : 'нет видео'}{item.hasMmaudio ? ' · MMAudio' : item.hasSound ? ' · sound' : ''}</small>
+                {item.blockLabel && <em className="avaAssemblyBlockBadge">{item.blockLabel}</em>}
               </button>
             ))}
             {!sceneItems.length && <div className="avaInfoBox">Сцен нет. Вернись в Board или Manual Timing.</div>}
@@ -635,6 +761,23 @@ export default function BoardAssemblyPage() {
                 <Link className="avaSecondaryButton" to={boardRoute}>Вернуться в доску</Link>
               </div>
             )}
+          </div>
+
+          <div className="avaAssemblyBuildDock">
+            <div className="avaAssemblyBuildText">
+              <p className="avaEyebrow"><Download size={14} /> export</p>
+              <strong>{finalDirty ? 'Нужно пересобрать MP4' : finalVideoUrl ? 'Финальный MP4 готов' : 'Собрать финальный ролик'}</strong>
+              <span>
+                {assemblyRunning
+                  ? 'FFmpeg собирает финальный файл…'
+                  : stats.ready
+                    ? 'Сцены, звук, музыка и watermark уйдут в один MP4.'
+                    : 'Сначала подготовь хотя бы одну сцену с видео.'}
+              </span>
+            </div>
+            <button type="button" className="avaBoardPrimary avaAssemblyBuildButton" onClick={startAssembly} disabled={assemblyRunning || !stats.ready}>
+              <Download size={16} /> {assemblyRunning ? 'Собирается…' : finalDirty ? 'Пересобрать MP4' : 'Собрать MP4'}
+            </button>
           </div>
 
           {finalVideoUrl && finalDirty && (
@@ -723,37 +866,51 @@ export default function BoardAssemblyPage() {
             Пропускать сцены без видео
           </label>
 
-          <div className="avaAssemblyMusicBox">
-            <strong>Фоновая музыка</strong>
-            <div className={`avaAssemblyMusicStatus ${musicAsset ? 'isReady' : musicUploading ? 'isLoading' : ''}`}>
-              <span>{musicUploading ? 'Загрузка…' : musicAsset ? 'Музыка загружена' : 'Музыка не загружена'}</span>
-              <b>{musicAsset?.audio_name || musicFile?.name || 'MP3/WAV пока не выбран'}</b>
-              {musicAsset?.audio_duration_sec ? <em>{formatTime(musicAsset.audio_duration_sec)}</em> : null}
-            </div>
+          <div className={`avaAssemblyMusicBox ${musicPanelOpen ? 'isOpen' : 'isCollapsed'}`}>
+            <button type="button" className="avaAssemblyPanelToggle" onClick={() => setMusicPanelOpen((value) => !value)}>
+              <span>
+                <strong>Фоновая музыка</strong>
+                <em>{musicAsset ? (musicAsset.audio_name || musicFile?.name || 'загружена') : 'MP3/WAV пока не выбран'}</em>
+              </span>
+              <b>{musicPanelOpen ? '−' : '+'}</b>
+            </button>
 
-            {musicPreviewUrl && (
-              <audio className="avaAssemblyMusicPlayer" src={musicPreviewUrl} controls preload="metadata" />
-            )}
+            {musicPanelOpen && (
+              <div className="avaAssemblyPanelBody">
+                <div className={`avaAssemblyMusicStatus ${musicAsset ? 'isReady' : musicUploading ? 'isLoading' : ''}`}>
+                  <span>{musicUploading ? 'Загрузка…' : musicAsset ? 'Музыка загружена' : 'Музыка не загружена'}</span>
+                  <b>{musicAsset?.audio_name || musicFile?.name || 'MP3/WAV пока не выбран'}</b>
+                  {musicAsset?.audio_duration_sec ? <em>{formatTime(musicAsset.audio_duration_sec)}</em> : null}
+                </div>
 
-            <label className={`avaBoardSmallButton ${musicUploading ? 'isDisabled' : ''}`}>
-              <UploadCloud size={14} /> {musicUploading ? 'Загружается…' : musicAsset ? 'Заменить музыку' : 'Загрузить музыку'}
-              <input type="file" accept="audio/*" onChange={handleMusicSelect} disabled={musicUploading} />
-            </label>
-            <label className="avaAssemblyCheck">
-              <input type="checkbox" checked={musicLoop} onChange={(event) => setMusicLoop(event.target.checked)} />
-              Зациклить музыку до конца ролика
-            </label>
-            <label className="avaAssemblyCheck">
-              <input type="checkbox" checked={musicFadeOut} onChange={(event) => setMusicFadeOut(event.target.checked)} />
-              Плавное затухание в конце
-            </label>
-          </div>
-          <div className={`avaAssemblyWatermarkBox ${watermarkEnabled ? 'isEnabled' : ''}`}>
-            <div className="avaAssemblyWatermarkHeader">
-              <div>
-                <strong>Водный знак</strong>
-                <span>{watermarkEnabled ? 'Будет запечён в финальный MP4' : 'Настройки можно подготовить заранее'}</span>
+                {musicPreviewUrl && (
+                  <audio className="avaAssemblyMusicPlayer" src={musicPreviewUrl} controls preload="metadata" />
+                )}
+
+                <label className={`avaBoardSmallButton ${musicUploading ? 'isDisabled' : ''}`}>
+                  <UploadCloud size={14} /> {musicUploading ? 'Загружается…' : musicAsset ? 'Заменить музыку' : 'Загрузить музыку'}
+                  <input type="file" accept="audio/*" onChange={handleMusicSelect} disabled={musicUploading} />
+                </label>
+                <label className="avaAssemblyCheck">
+                  <input type="checkbox" checked={musicLoop} onChange={(event) => setMusicLoop(event.target.checked)} />
+                  Зациклить музыку до конца ролика
+                </label>
+                <label className="avaAssemblyCheck">
+                  <input type="checkbox" checked={musicFadeOut} onChange={(event) => setMusicFadeOut(event.target.checked)} />
+                  Плавное затухание в конце
+                </label>
               </div>
+            )}
+          </div>
+          <div className={`avaAssemblyWatermarkBox ${watermarkEnabled ? 'isEnabled' : ''} ${watermarkPanelOpen ? 'isOpen' : 'isCollapsed'}`}>
+            <div className="avaAssemblyWatermarkHeader">
+              <button type="button" className="avaAssemblyPanelToggle isWatermark" onClick={() => setWatermarkPanelOpen((value) => !value)}>
+                <span>
+                  <strong>Водный знак</strong>
+                  <em>{watermarkEnabled ? 'Будет запечён в финальный MP4' : 'Настройки можно подготовить заранее'}</em>
+                </span>
+                <b>{watermarkPanelOpen ? '−' : '+'}</b>
+              </button>
               <button
                 type="button"
                 className={`avaAssemblyToggleButton ${watermarkEnabled ? 'isOn' : ''}`}
@@ -767,7 +924,9 @@ export default function BoardAssemblyPage() {
               </button>
             </div>
 
-            <label className="avaAssemblyField">
+            {watermarkPanelOpen && (
+              <div className="avaAssemblyPanelBody">
+                <label className="avaAssemblyField">
               <span>Текст водного знака</span>
               <input
                 type="text"
@@ -796,16 +955,26 @@ export default function BoardAssemblyPage() {
               </div>
             </div>
 
-            <div className="avaAssemblyWatermarkSliders">
-              <label>
-                <span>Прозрачность: {watermarkOpacity}%</span>
-                <input type="range" min="5" max="100" value={watermarkOpacity} onChange={(event) => { setWatermarkEnabled(true); setWatermarkOpacity(Number(event.target.value)) }} />
-              </label>
-              <label>
-                <span>Размер: {watermarkSize}px</span>
-                <input type="range" min="14" max="72" value={watermarkSize} onChange={(event) => { setWatermarkEnabled(true); setWatermarkSize(Number(event.target.value)) }} />
-              </label>
-            </div>
+                <label className="avaAssemblyField">
+                  <span>Движение</span>
+                  <select value={watermarkMotion} onChange={(event) => { setWatermarkEnabled(true); setWatermarkMotion(event.target.value) }}>
+                    <option value="static">Статично</option>
+                    <option value="corners">Блуждать по углам</option>
+                  </select>
+                </label>
+
+                <div className="avaAssemblyWatermarkSliders">
+                  <label>
+                    <span>Прозрачность: {watermarkOpacity}%</span>
+                    <input type="range" min="5" max="100" value={watermarkOpacity} onChange={(event) => { setWatermarkEnabled(true); setWatermarkOpacity(Number(event.target.value)) }} />
+                  </label>
+                  <label>
+                    <span>Размер: {watermarkSize}px</span>
+                    <input type="range" min="14" max="72" value={watermarkSize} onChange={(event) => { setWatermarkEnabled(true); setWatermarkSize(Number(event.target.value)) }} />
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
         </aside>

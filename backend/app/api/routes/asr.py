@@ -948,6 +948,14 @@ def transcribe_audio_asset(payload: AsrTranscribeRequest, user: dict = Depends(g
     try:
         words, metadata = transcribe_words_faster_whisper(audio_path, safe)
     except Exception as exc:
+        logger.exception(
+            "MANUAL_TIMING_STAGE117_LOCAL_ASR_FAILED asset_id=%s path=%s model=%s device=%s compute=%s",
+            payload.asset_id,
+            audio_path,
+            safe.model_size,
+            os.getenv("MANUAL_TIMING_ASR_DEVICE") or getattr(settings_obj, "asr_device", None) or "cpu",
+            os.getenv("MANUAL_TIMING_ASR_COMPUTE_TYPE") or getattr(settings_obj, "asr_compute_type", None) or "",
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Local ASR failed: {exc}",

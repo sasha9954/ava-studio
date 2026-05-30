@@ -593,7 +593,7 @@
 }
 
 .avaTimingSegmentsRow button.hasBlock em {
-  background: rgba(244,248,255,.88);
+  background: transparent !important;
 }
 
 /* Stage 3.6 polish: keep block title + route/time + role label visible */
@@ -630,9 +630,17 @@
   align-self: end;
   max-width: 100%;
   margin-top: 0;
-  padding: 2px 5px;
-  font-size: 9px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  color: #f8fbff !important;
+  font-size: 8.5px;
   line-height: 1;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: .01em;
+  text-shadow: 0 1px 2px rgba(0,0,0,.58);
 }
 
 .avaTimingSegmentsRow button.hasNote::after {
@@ -2593,4 +2601,379 @@
 .avaTimingDownloadSceneButton .avaTimingDownloadSceneIcon {
   font-size: 17px !important;
   margin-left: 8px !important;
+}
+
+/* Stage 6.2.3 - stronger timing header buttons and loading screen */
+.avaTimingHeaderActions {
+  align-items: center;
+}
+
+.avaTimingHeaderActions .avaTimingActionButton {
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 16px;
+  gap: 8px;
+  font-weight: 950;
+  letter-spacing: -.01em;
+  text-decoration: none;
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 12px 28px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.08);
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.avaTimingHeaderActions .avaTimingActionButton:hover {
+  transform: translateY(-1px);
+  border-color: rgba(120,220,255,.42);
+  box-shadow: 0 16px 34px rgba(0,0,0,.22), 0 0 24px rgba(69,216,255,.08);
+}
+
+.avaTimingHeaderActions .avaTimingActionAudio {
+  background:
+    linear-gradient(135deg, rgba(33, 215, 153, .22), rgba(69,216,255,.11)),
+    rgba(255,255,255,.045);
+  color: #dfffee;
+}
+
+.avaTimingHeaderActions .avaTimingActionJson {
+  background:
+    linear-gradient(135deg, rgba(120, 132, 255, .18), rgba(255,255,255,.055)),
+    rgba(255,255,255,.045);
+  color: #eef3ff;
+}
+
+.avaTimingHeaderActions .avaTimingActionBoard {
+  background:
+    linear-gradient(135deg, rgba(69,216,255,.24), rgba(126,90,255,.18)),
+    rgba(255,255,255,.055);
+  color: #eafaff;
+  border-color: rgba(69,216,255,.28);
+}
+
+.avaTimingHeaderActions .avaTimingActionSave {
+  min-width: 188px;
+  background:
+    linear-gradient(135deg, rgba(126,90,255,.95), rgba(34,206,238,.92));
+  border-color: rgba(255,255,255,.22);
+}
+
+.avaTimingLoadingPage {
+  min-height: calc(100vh - 88px);
+  display: grid;
+  place-items: center;
+}
+
+.avaTimingLoadingShell {
+  width: min(1180px, 100%);
+  display: grid;
+  grid-template-columns: minmax(420px, 1.35fr) minmax(300px, .65fr);
+  gap: 22px;
+  align-items: stretch;
+}
+
+.avaTimingLoadingMain,
+.avaTimingLoadingSide {
+  border-radius: 30px;
+  border: 1px solid rgba(255,255,255,.12);
+  background:
+    radial-gradient(circle at 14% 10%, rgba(126,90,255,.18), transparent 36%),
+    linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.025)),
+    rgba(7,13,29,.88);
+  box-shadow: 0 32px 90px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.07);
+}
+
+.avaTimingLoadingMain {
+  min-height: 390px;
+  padding: clamp(30px, 4vw, 56px);
+}
+
+.avaTimingLoadingIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  color: #a7f8ff;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.22), transparent 42%),
+    linear-gradient(135deg, rgba(69,216,255,.2), rgba(126,90,255,.18));
+  border: 1px solid rgba(255,255,255,.16);
+  box-shadow: 0 0 36px rgba(69,216,255,.12);
+  margin-bottom: 28px;
+}
+
+.avaTimingLoadingMain h1 {
+  margin: 14px 0 10px;
+  font-size: clamp(36px, 5vw, 58px);
+  line-height: .98;
+  letter-spacing: -.055em;
+}
+
+.avaTimingLoadingMain > p:not(.avaEyebrow) {
+  color: #aeb7ce;
+  font-size: 18px;
+  max-width: 760px;
+}
+
+.avaTimingLoadingMain small {
+  display: inline-flex;
+  margin-top: 20px;
+  color: #8ef1ff;
+  font-weight: 800;
+}
+
+.avaTimingLoadingSteps {
+  margin-top: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.avaTimingLoadingSteps span {
+  min-height: 42px;
+  padding: 0 17px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,.055);
+  border: 1px solid rgba(255,255,255,.11);
+  color: #b9c2d7;
+  font-weight: 900;
+}
+
+.avaTimingLoadingSteps span.isActive {
+  color: #ecfbff;
+  border-color: rgba(69,216,255,.38);
+  background: rgba(69,216,255,.14);
+  box-shadow: 0 0 28px rgba(69,216,255,.12);
+}
+
+.avaTimingLoadingSteps i {
+  width: 34px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(69,216,255,.3), rgba(126,90,255,.38));
+}
+
+.avaTimingLoadingSide {
+  padding: 26px;
+  display: grid;
+  gap: 14px;
+}
+
+.avaTimingLoadingSide b {
+  border-radius: 18px;
+  min-height: 74px;
+  display: block;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.045), rgba(69,216,255,.12), rgba(255,255,255,.045));
+  background-size: 220% 100%;
+  border: 1px solid rgba(255,255,255,.08);
+  animation: avaTimingSkeletonMove 1.8s ease-in-out infinite;
+}
+
+.avaTimingLoadingSide b:nth-child(2) { animation-delay: .12s; }
+.avaTimingLoadingSide b:nth-child(3) { animation-delay: .24s; }
+.avaTimingLoadingSide b:nth-child(4) { animation-delay: .36s; }
+
+@keyframes avaTimingSkeletonMove {
+  0% { background-position: 120% 0; opacity: .56; }
+  50% { opacity: 1; }
+  100% { background-position: -120% 0; opacity: .64; }
+}
+
+@media (max-width: 980px) {
+  .avaTimingLoadingShell {
+    grid-template-columns: 1fr;
+  }
+
+  .avaTimingHeaderActions .avaTimingActionButton {
+    flex: 1 1 160px;
+  }
+}
+
+/* Stage 6.2.4 - compact one-card timing loading with animated route steps */
+.avaTimingLoadingPage {
+  min-height: calc(100vh - 88px);
+  display: grid;
+  place-items: center;
+  padding: clamp(22px, 4vw, 52px);
+}
+
+.avaTimingLoadingShell {
+  width: min(780px, calc(100vw - 56px));
+  display: block !important;
+  grid-template-columns: 1fr !important;
+  gap: 0 !important;
+}
+
+.avaTimingLoadingSide {
+  display: none !important;
+}
+
+.avaTimingLoadingMain {
+  width: 100%;
+  min-height: 330px !important;
+  padding: clamp(26px, 4vw, 44px) !important;
+  border-radius: 30px;
+}
+
+.avaTimingLoadingMain h1 {
+  font-size: clamp(34px, 4.2vw, 48px) !important;
+  line-height: 1.02 !important;
+}
+
+.avaTimingLoadingMain > p:not(.avaEyebrow) {
+  max-width: 620px;
+  font-size: 16px !important;
+}
+
+.avaTimingLoadingIcon {
+  width: 64px !important;
+  height: 64px !important;
+  border-radius: 22px !important;
+  margin-bottom: 22px !important;
+}
+
+.avaTimingLoadingSteps {
+  margin-top: 26px !important;
+  gap: 10px !important;
+}
+
+.avaTimingLoadingSteps span {
+  position: relative;
+  min-height: 42px !important;
+  padding: 0 17px !important;
+  overflow: hidden;
+  isolation: isolate;
+  animation: avaTimingRouteStepPulse 4s ease-in-out infinite;
+}
+
+.avaTimingLoadingSteps span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
+  transform: translateX(-120%);
+  animation: avaTimingRouteStepSweep 4s ease-in-out infinite;
+  z-index: -1;
+}
+
+.avaTimingLoadingSteps span:nth-of-type(1),
+.avaTimingLoadingSteps span:nth-of-type(1)::after {
+  animation-delay: 0s;
+}
+
+.avaTimingLoadingSteps span:nth-of-type(2),
+.avaTimingLoadingSteps span:nth-of-type(2)::after {
+  animation-delay: 1s;
+}
+
+.avaTimingLoadingSteps span:nth-of-type(3),
+.avaTimingLoadingSteps span:nth-of-type(3)::after {
+  animation-delay: 2s;
+}
+
+.avaTimingLoadingSteps span:nth-of-type(4),
+.avaTimingLoadingSteps span:nth-of-type(4)::after {
+  animation-delay: 3s;
+}
+
+.avaTimingLoadingSteps i {
+  width: 26px !important;
+  opacity: .72;
+}
+
+@keyframes avaTimingRouteStepPulse {
+  0%, 19%, 100% {
+    color: #b9c2d7;
+    border-color: rgba(255,255,255,.12);
+    background: rgba(255,255,255,.055);
+    box-shadow: none;
+    transform: translateY(0);
+  }
+  5%, 14% {
+    color: #ecfbff;
+    border-color: rgba(69,216,255,.55);
+    background:
+      linear-gradient(135deg, rgba(69,216,255,.22), rgba(126,90,255,.18)),
+      rgba(255,255,255,.07);
+    box-shadow: 0 0 30px rgba(69,216,255,.16);
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes avaTimingRouteStepSweep {
+  0%, 3% { transform: translateX(-120%); opacity: 0; }
+  6%, 13% { opacity: 1; }
+  17%, 100% { transform: translateX(120%); opacity: 0; }
+}
+
+/* Stage 8.0 - Podcast Composer handoff button */
+.avaTimingHeaderActions .avaTimingActionPodcast {
+  background:
+    linear-gradient(135deg, rgba(236, 72, 153, .22), rgba(126, 90, 255, .18)),
+    rgba(255,255,255,.055);
+  color: #ffe9fb;
+  border-color: rgba(236, 72, 153, .32);
+}
+.avaTimingHeaderActions .avaTimingActionPodcast:hover {
+  border-color: rgba(244, 114, 182, .72);
+  box-shadow: 0 16px 34px rgba(0,0,0,.22), 0 0 28px rgba(236,72,153,.12);
+}
+
+/* stage108 · compact Podcast labels on Timing scene cards */
+.avaTimingSegmentsRow button .avaTimingSceneRoleBadge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 92%;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #e0f2fe;
+  background: rgba(15, 23, 42, 0.42);
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: .01em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.avaTimingSegmentsRow button .avaTimingSceneRoleBadge:empty {
+  display: none;
+}
+
+/* stage116 · compact podcast role labels: no heavy pill, small readable text */
+.avaTimingSegmentsRow button .avaTimingSceneRoleBadge,
+.avaTimingSegmentsRow button em {
+  display: inline-block !important;
+  max-width: 100% !important;
+  width: auto !important;
+  margin-top: 1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #f8fbff !important;
+  font-size: 8.5px !important;
+  line-height: 1 !important;
+  font-style: normal !important;
+  font-weight: 900 !important;
+  letter-spacing: .01em !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,.7) !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+}
+
+.avaTimingSegmentsRow button.hasBlock em,
+.avaTimingSegmentsRow button.hasBlock .avaTimingSceneRoleBadge {
+  background: transparent !important;
 }

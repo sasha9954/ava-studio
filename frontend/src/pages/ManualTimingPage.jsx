@@ -1,13 +1,415 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { Clock3, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
+import { Clock3, Film, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { fetchProtectedBlobUrl, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
+import { fetchProtectedBlobUrl, getAuthHeaders, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
 
 const STAGE = 'manual_timing'
 const DRAFT_VERSION = 'manual_timing_single_timeline_v6_handoff_manifest'
 const MIN_SCENE_SEC = 0.18
 const MAX_UNDO = 30
+
+
+const AVA_PODCAST_TO_TIMING_KEY_STAGE95 = 'ava:podcast-to-timing:v1'
+const AVA_DOWNSTREAM_RESET_KEY_STAGE95 = 'ava:downstream-reset:v1'
+const AVA_ACTIVE_JOBS_KEY_STAGE95 = 'ava:active-jobs:v1'
+const AVA_COMPLETED_JOBS_KEY_STAGE95 = 'ava:completed-jobs:v1'
+
+function avaStage95JsonReadOnce(key) {
+  let value = null
+  try {
+    const raw = sessionStorage.getItem(key) || localStorage.getItem(key)
+    value = raw ? JSON.parse(raw) : null
+    sessionStorage.removeItem(key)
+    localStorage.removeItem(key)
+  } catch {
+    value = null
+  }
+  return value
+}
+
+function avaStage95HandoffMatches(handoff = {}, projectId = '') {
+  const currentProjectId = String(projectId || '').trim()
+  const handoffProjectId = String(handoff.projectId || handoff.project_id || '').trim()
+  if (currentProjectId) return currentProjectId === handoffProjectId
+  return !handoffProjectId || handoff.workspaceMode === true || handoff.scope === 'workspace'
+}
+
+
+
+
+function avaStage118AssetIdFromValue(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  const direct = raw.match(/(^|[/?:&=])(asset_[A-Za-z0-9_-]+)/)
+  if (direct?.[2]) return direct[2]
+
+  const pathMatch = raw.match(/\/(?:api\/)?assets\/([^/]+)\/file/i)
+  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1])
+
+  return ''
+}
+
+function avaStage118AsrAssetId(sourceDraft = {}, useVocalStem = false) {
+  if (typeof avaStage117AssetIdFromAudioDraft === 'function') {
+    const value = avaStage117AssetIdFromAudioDraft(sourceDraft, useVocalStem)
+    if (value) return value
+  }
+
+  if (useVocalStem) {
+    return String(
+      sourceDraft.vocalAudioAssetId ||
+      avaStage118AssetIdFromValue(sourceDraft.vocalAudioApiPath) ||
+      avaStage118AssetIdFromValue(sourceDraft.vocalAudioUrl) ||
+      ''
+    ).trim()
+  }
+
+  const candidates = [
+    sourceDraft.audioAssetId,
+    sourceDraft.assetId,
+    sourceDraft.asset_id,
+    sourceDraft.audio_asset_id,
+    sourceDraft.audioApiPath,
+    sourceDraft.audio_api_path,
+    sourceDraft.audioUrl,
+    sourceDraft.audio_url,
+    sourceDraft.asset_url,
+    sourceDraft.url,
+  ]
+
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim()
+    if (!value) continue
+    if (value.startsWith('asset_')) return value
+    const parsed = avaStage118AssetIdFromValue(value)
+    if (parsed) return parsed
+  }
+
+  return ''
+}
+
+function avaStage117AssetIdFromValue(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  const direct = raw.match(/(^|[/?:&=])(asset_[A-Za-z0-9_-]+)/)
+  if (direct?.[2]) return direct[2]
+
+  const pathMatch = raw.match(/\/(?:api\/)?assets\/([^/]+)\/file/i)
+  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1])
+
+  return ''
+}
+
+function avaStage117AssetIdFromAudioDraft(sourceDraft = {}, useVocalStem = false) {
+  if (useVocalStem) {
+    return String(
+      sourceDraft.vocalAudioAssetId ||
+      avaStage117AssetIdFromValue(sourceDraft.vocalAudioApiPath) ||
+      avaStage117AssetIdFromValue(sourceDraft.vocalAudioUrl) ||
+      ''
+    ).trim()
+  }
+
+  const candidates = [
+    sourceDraft.audioAssetId,
+    sourceDraft.assetId,
+    sourceDraft.asset_id,
+    sourceDraft.audio_asset_id,
+    sourceDraft.audioApiPath,
+    sourceDraft.audio_api_path,
+    sourceDraft.audioUrl,
+    sourceDraft.audio_url,
+    sourceDraft.asset_url,
+    sourceDraft.url,
+  ]
+
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim()
+    if (!value) continue
+    if (value.startsWith('asset_')) return value
+    const parsed = avaStage117AssetIdFromValue(value)
+    if (parsed) return parsed
+  }
+
+  return ''
+}
+
+function avaStage116AssetApiPathFromUrl(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw || raw.startsWith('blob:') || raw.startsWith('data:')) return ''
+
+  try {
+    const parsed = new URL(raw, window.location.origin)
+    const path = String(parsed.pathname || '').trim()
+    if (path.startsWith('/api/assets/')) return path.slice(4)
+    if (path.startsWith('/assets/')) return path
+  } catch {
+    // fall back to string checks below
+  }
+
+  if (raw.startsWith('/api/assets/')) return raw.slice(4)
+  if (raw.startsWith('/assets/')) return raw
+  return ''
+}
+
+function avaStage116ShouldAuthFetch(value = '') {
+  return Boolean(avaStage116AssetApiPathFromUrl(value))
+}
+
+function avaStage95AudioUrlToPreview(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('blob:') || raw.startsWith('data:') || /^https?:\/\//i.test(raw)) return raw
+  const base = String(window.location.origin || '').replace(/:\d+$/, ':8000')
+  if (raw.startsWith('/api/')) return `${base}${raw.slice(4)}`
+  if (raw.startsWith('/static/') || raw.startsWith('/assets/')) return `${base}${raw}`
+  return raw
+}
+
+function avaStage95PickHandoffAudio(handoff = {}) {
+  return handoff.finalAudio || handoff.final_audio || handoff.audio || {}
+}
+
+function avaStage95SceneFromHandoff(scene = {}, index = 0, durationSec = 0) {
+  const start = Number(scene.start ?? scene.start_sec ?? scene.t0 ?? 0)
+  const end = Number(scene.end ?? scene.end_sec ?? scene.t1 ?? Math.min(durationSec, start + 1))
+  return makeScene(index, Math.max(0, start), Math.max(start + 0.05, end), {
+    ...scene,
+    id: formatSceneId(index),
+    title: scene.title || scene.id || formatSceneId(index),
+    route: scene.route || 'auto',
+    note: scene.note || '',
+    blockTitle: scene.blockTitle || scene.block_title || '',
+    blockId: scene.blockId || scene.block_id || '',
+    blockColor: scene.blockColor || scene.block_color || scene.color || '',
+  })
+}
+
+
+function avaStage110PodcastLabelFromBlock(block = {}, index = 0) {
+  const isSilence = Boolean(
+    block?.is_silence ||
+    block?.isSilence ||
+    block?.source_kind === 'silence' ||
+    block?.sourceKind === 'silence' ||
+    block?.type === 'silence' ||
+    block?.block_type === 'silence' ||
+    block?.source_audio_id === 'silence'
+  )
+
+  if (isSilence) {
+    return String(block?.label || block?.role_label || block?.speaker_label || block?.badge || 'ТИШ').trim() || 'ТИШ'
+  }
+
+  return String(
+    block?.roleLabel ||
+    block?.role_label ||
+    block?.speakerLabel ||
+    block?.speaker_label ||
+    block?.blockTitle ||
+    block?.block_title ||
+    block?.label ||
+    block?.source_label ||
+    block?.sourceLabel ||
+    block?.source_audio_name ||
+    block?.sourceAudioName ||
+    block?.saved_clip_label ||
+    block?.inserted_phrase_label ||
+    block?.actor_label ||
+    block?.type ||
+    `Podcast ${index + 1}`
+  ).trim()
+}
+
+function avaStage110ReadBlockStart(block = {}, fallback = 0) {
+  const value =
+    block?.timeline_start_sec ??
+    block?.timelineStart ??
+    block?.timeline_start ??
+    block?.start_sec ??
+    block?.start ??
+    fallback
+  return Number(value || 0)
+}
+
+function avaStage110ReadBlockEnd(block = {}, start = 0) {
+  const raw =
+    block?.timeline_end_sec ??
+    block?.timelineEnd ??
+    block?.timeline_end ??
+    block?.end_sec ??
+    block?.end
+  const direct = Number(raw || 0)
+  if (direct > start) return direct
+  const duration = Number(block?.duration_sec ?? block?.durationSec ?? block?.duration ?? 0)
+  return start + Math.max(0, duration)
+}
+
+function avaStage110ForcePodcastBlockScenes(handoff = {}) {
+  const manifest =
+    handoff.podcast_edit_manifest ||
+    handoff.podcastEditManifest ||
+    handoff.composer_edit_manifest ||
+    handoff.composerEditManifest ||
+    {}
+
+  const manifestBlocks = Array.isArray(manifest.blocks) ? manifest.blocks : []
+  const directBlocks = Array.isArray(handoff.blocks) ? handoff.blocks : []
+  const sourceBlocks = manifestBlocks.length ? manifestBlocks : directBlocks
+
+  if (!sourceBlocks.length) return handoff
+
+  let cursor = 0
+  const scenes = sourceBlocks
+    .map((block, index) => {
+      const start = avaStage110ReadBlockStart(block, cursor)
+      const end = avaStage110ReadBlockEnd(block, start)
+      cursor = end
+      if (!(end > start)) return null
+
+      const isSilence = Boolean(
+        block?.is_silence ||
+        block?.isSilence ||
+        block?.source_kind === 'silence' ||
+        block?.sourceKind === 'silence' ||
+        block?.type === 'silence' ||
+        block?.block_type === 'silence' ||
+        block?.source_audio_id === 'silence'
+      )
+      const label = avaStage110PodcastLabelFromBlock(block, index)
+      const sceneId = formatSceneId(index)
+      const blockId = String(block?.block_id || block?.blockId || block?.id || `podcast_block_${index + 1}`)
+
+      return {
+        id: sceneId,
+        scene_id: sceneId,
+        title: sceneId,
+        index,
+        start,
+        end,
+        start_sec: start,
+        end_sec: end,
+        duration_sec: Number((end - start).toFixed(3)),
+        route: isSilence ? 'i2v_sound' : 'i2v',
+        blockId,
+        block_id: blockId,
+        blockTitle: label,
+        block_title: label,
+        roleLabel: label,
+        role_label: label,
+        speakerLabel: label,
+        speaker_label: label,
+        composer_block_id: blockId,
+        composer_block_type: String(block?.type || ''),
+        composer_source_kind: String(block?.source_kind || block?.type || ''),
+        composer_source_audio_id: String(block?.source_audio_id || block?.sourceAudioId || ''),
+        composer_source_audio_name: String(block?.source_audio_name || block?.sourceAudioName || ''),
+        composer_saved_clip_id: String(block?.saved_clip_id || block?.savedClipId || ''),
+        composer_saved_clip_label: String(block?.saved_clip_label || ''),
+        is_silence: isSilence,
+        source_kind: isSilence ? 'silence' : (block?.source_kind || block?.type || 'audio'),
+        original_text: isSilence ? '[тишина]' : label,
+        translated_text_ru: isSilence ? '[тишина]' : label,
+        meaning_hint_ru: isSilence
+          ? 'Вставленная пользователем тишина из Podcast Composer.'
+          : `Фрагмент Podcast: ${label}.`,
+        note: isSilence ? 'Тишина из Podcast Composer.' : `Podcast: ${label}`,
+      }
+    })
+    .filter(Boolean)
+
+  if (!scenes.length) return handoff
+
+  console.log('[MANUAL_TIMING_STAGE110_BLOCK_SCENES_FORCED]', {
+    inputScenes: Array.isArray(handoff.scenes) ? handoff.scenes.length : 0,
+    blockScenes: scenes.length,
+    silenceScenes: scenes.filter((scene) => scene.is_silence).length,
+    firstScene: scenes[0],
+  })
+
+  return {
+    ...handoff,
+    scenes,
+    blocks: sourceBlocks,
+    podcast_edit_manifest: { ...manifest, blocks: sourceBlocks },
+    composer_edit_manifest: { ...manifest, blocks: sourceBlocks },
+  }
+}
+
+function avaStage95DraftFromPodcastHandoff(handoff = {}) {
+  const audio = avaStage95PickHandoffAudio(handoff)
+  const audioUrl = String(audio.url || audio.audioUrl || audio.audio_url || audio.assetUrl || audio.asset_url || audio.publicUrl || audio.public_url || '').trim()
+  const duration = Math.max(0, Number(audio.durationSec || audio.duration_sec || handoff.finalDurationSec || handoff.final_duration_sec || 0))
+  const rawScenes = Array.isArray(handoff.scenes) ? handoff.scenes : []
+  const scenes = rawScenes.length
+    ? rawScenes.map((scene, index) => avaStage95SceneFromHandoff(scene, index, duration))
+    : makeSingleScene(duration)
+
+  return normalizeDraft({
+    ...emptyDraft,
+    audioName: audio.filename || audio.name || audio.audioName || 'AVA_podcast_audio.mp3',
+    audioAssetId: audio.assetId || audio.asset_id || '',
+    audioApiPath: audio.assetApiPath || audio.asset_api_path || audio.audioApiPath || audio.audio_api_path || '',
+    audioUrl,
+    audioSizeBytes: Number(audio.size_bytes || audio.audio_size_bytes || audio.size || 0),
+    audioDurationSec: duration,
+    scenes,
+    scenesCount: scenes.length,
+    selectedSceneIndex: 0,
+    storyBlocks: [],
+    roles: [],
+    speechSegments: [],
+    audioPhrases: [],
+    missingSpeechHints: [],
+    silentSegments: [],
+    vocalAudioName: '',
+    vocalAudioAssetId: '',
+    vocalAudioApiPath: '',
+    vocalAudioSizeBytes: 0,
+    vocalAudioDurationSec: 0,
+    vocalOffsetSec: 0,
+    handoffSource: 'podcast_audio_composer',
+    podcastEditManifest: handoff.podcast_edit_manifest || handoff.podcastEditManifest || null,
+    podcast_edit_manifest: handoff.podcast_edit_manifest || handoff.podcastEditManifest || null,
+    podcastBlocks: handoff.blocks || [],
+    podcastActorAudios: handoff.actorAudios || [],
+    historySnapshots: [],
+    notes: 'Получено из Podcast / Audio Composer',
+  })
+}
+
+function avaStage95EmptyBoardSnapshot() {
+  return {
+    boardVersion: 'ava_board_foundation_v1',
+    source: 'board',
+    importedFrom: '',
+    updatedAt: new Date().toISOString(),
+    audio: null,
+    roles: [],
+    speechSegments: [],
+    audioPhrases: [],
+    missingSpeechHints: [],
+    storyBlocks: [],
+    scenes: [],
+    selectedSceneId: '',
+    notes: '',
+    resetReason: 'podcast_new_audio',
+  }
+}
+
+function avaStage95ClearAssemblyState(projectId = '') {
+  try {
+    localStorage.removeItem(projectId ? `ava:board-assembly:${projectId}:settings:v1` : 'ava:board-assembly:workspace:settings:v1')
+    localStorage.removeItem(AVA_ACTIVE_JOBS_KEY_STAGE95)
+    localStorage.removeItem(AVA_COMPLETED_JOBS_KEY_STAGE95)
+    localStorage.removeItem(AVA_DOWNSTREAM_RESET_KEY_STAGE95)
+    localStorage.removeItem('ava:open-board-scene:v1')
+  } catch {}
+}
+
 
 const emptyDraft = {
   timingDraftVersion: DRAFT_VERSION,
@@ -562,10 +964,14 @@ export default function ManualTimingPage() {
   const [audioSrc, setAudioSrc] = useState('')
   const audioRef = useRef(null)
   const translatorPreviewRangeRef = useRef(null)
+  const scenePreviewRangeRef = useRef(null)
+  const sceneStopTimerRef = useRef(null)
   const fileInputRef = useRef(null)
   const jsonInputRef = useRef(null)
 
   const hasAudio = Boolean(draft.audioAssetId || draft.audioApiPath || draft.audioUrl)
+  const narratorAsrAssetId = avaStage118AsrAssetId(draft, false)
+  const vocalAsrAssetId = avaStage118AsrAssetId(draft, true)
   const scenes = useMemo(() => normalizeScenes(draft, draft.audioDurationSec), [draft.scenes, draft.scenesCount, draft.audioDurationSec])
   const selectedScene = scenes[Math.min(draft.selectedSceneIndex, scenes.length - 1)] || scenes[0] || makeScene(0, 0, 0)
   const scopeTitle = workspaceMode ? 'Рабочая область' : activeProject?.name || 'Проект'
@@ -709,13 +1115,54 @@ export default function ManualTimingPage() {
       try {
         const data = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
         if (!active) return
-        const normalized = normalizeDraft(data)
-        const loadedHistory = Array.isArray(normalized.historySnapshots) ? normalized.historySnapshots : []
+        let incomingPodcastProject = null
+        try {
+          const rawPodcastReturn =
+            sessionStorage.getItem("ava_manual_timing_podcast_return")
+            || localStorage.getItem("ava_manual_timing_podcast_return")
+            || sessionStorage.getItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
+            || localStorage.getItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
+
+          incomingPodcastProject = rawPodcastReturn ? JSON.parse(rawPodcastReturn) : null
+          if (rawPodcastReturn) {
+            sessionStorage.removeItem("ava_manual_timing_podcast_return")
+            localStorage.removeItem("ava_manual_timing_podcast_return")
+            sessionStorage.removeItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
+            localStorage.removeItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
+          }
+        } catch {
+          incomingPodcastProject = null
+        }
+
+        const hasPodcastHandoff = Boolean(incomingPodcastProject?.audio || incomingPodcastProject?.finalAudio || incomingPodcastProject?.final_audio)
+        let normalized = hasPodcastHandoff
+          ? avaStage95DraftFromPodcastHandoff(avaStage110ForcePodcastBlockScenes(incomingPodcastProject))
+          : normalizeDraft(data)
+
+        if (hasPodcastHandoff) {
+          try {
+            if (workspaceMode) {
+              await saveWorkspaceStage(STAGE, { ...normalized, updatedAt: new Date().toISOString(), saveReason: 'podcast_handoff_replace_timing' })
+              await saveWorkspaceStage('board', avaStage95EmptyBoardSnapshot())
+            } else {
+              await saveStage(projectId, STAGE, { ...normalized, updatedAt: new Date().toISOString(), saveReason: 'podcast_handoff_replace_timing' }, 'replace')
+              await saveStage(projectId, 'board', avaStage95EmptyBoardSnapshot(), 'replace')
+            }
+            avaStage95ClearAssemblyState(projectId || '')
+          } catch (saveError) {
+            console.warn('[MANUAL TIMING PODCAST HANDOFF SAVE/CLEAR FAILED]', saveError)
+          }
+        }
+
+        const loadedHistory = hasPodcastHandoff ? [] : (Array.isArray(normalized.historySnapshots) ? normalized.historySnapshots : [])
         historyRef.current = loadedHistory
         setDraft(normalized)
         setHistory(loadedHistory)
+        setBlockSelection([])
+        setBlockDraft({ title: '' })
+        setSceneEditor(null)
         setCursorSec(normalized.scenes?.[normalized.selectedSceneIndex]?.start || 0)
-        setStatus('snapshot загружен')
+        setStatus(hasPodcastHandoff ? 'получено новое аудио из Podcast: Timing заменён, Board/Монтаж очищены' : 'snapshot загружен')
       } catch (err) {
         if (!active) return
         setStatus(`ошибка загрузки: ${err.message}`)
@@ -733,11 +1180,30 @@ export default function ManualTimingPage() {
 
     async function loadAudioBlob() {
       setAudioSrc('')
-      if (!draft.audioApiPath) return
+
+      const directUrl = String(draft.audioUrl || draft.asset_url || '').trim()
+      const protectedApiPath = String(draft.audioApiPath || '').trim() || avaStage116AssetApiPathFromUrl(directUrl)
+
+      if (!protectedApiPath && !directUrl) return
+
       try {
-        objectUrl = await fetchProtectedBlobUrl(draft.audioApiPath)
-        if (!cancelled) setAudioSrc(objectUrl)
+        if (protectedApiPath) {
+          objectUrl = await fetchProtectedBlobUrl(protectedApiPath)
+          if (!cancelled) setAudioSrc(objectUrl)
+          return
+        }
+
+        const previewUrl = avaStage95AudioUrlToPreview(directUrl)
+        if (!cancelled) setAudioSrc(previewUrl)
       } catch (err) {
+        // Do not fall back to /api/assets direct URL: <audio> cannot send Authorization,
+        // and that causes 401/no playback. Only fall back to public/static urls.
+        const previewUrl = avaStage95AudioUrlToPreview(directUrl)
+        const isProtectedDirect = avaStage116ShouldAuthFetch(previewUrl)
+        if (previewUrl && !isProtectedDirect) {
+          if (!cancelled) setAudioSrc(previewUrl)
+          return
+        }
         if (!cancelled) setStatus(`ошибка аудио: ${err.message}`)
       }
     }
@@ -747,12 +1213,13 @@ export default function ManualTimingPage() {
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [draft.audioApiPath])
+  }, [draft.audioApiPath, draft.audioUrl, draft.asset_url])
 
 
 
   useEffect(() => {
     return () => {
+      clearSceneStopTimer()
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel()
       }
@@ -770,8 +1237,10 @@ export default function ManualTimingPage() {
     try {
       if (workspaceMode) await saveWorkspaceStage(STAGE, payload)
       else await saveStage(projectId, STAGE, payload, 'replace')
-      setDraft(payload)
-      if (!quiet) setStatus('сохранено')
+      if (!quiet) {
+        setDraft(payload)
+        setStatus('сохранено')
+      }
     } catch (err) {
       setStatus(`ошибка сохранения: ${err.message}`)
     } finally {
@@ -824,10 +1293,14 @@ export default function ManualTimingPage() {
         }
       }
 
-      if (playingMode === 'scene' && selectedScene && current >= selectedScene.end - 0.01) {
+      const sceneRange = scenePreviewRangeRef.current || selectedScene
+      if (playingMode === 'scene' && sceneRange && current >= Number(sceneRange.end || 0) - 0.015) {
+        clearSceneStopTimer()
+        const stopAt = clampCursor(Number(sceneRange.end || current), draft.audioDurationSec)
         audio.pause()
-        audio.currentTime = selectedScene.end
-        setCursorSec(selectedScene.end)
+        audio.currentTime = stopAt
+        scenePreviewRangeRef.current = null
+        setCursorSec(stopAt)
         setPlayingMode(null)
         return
       }
@@ -840,7 +1313,16 @@ export default function ManualTimingPage() {
     return () => window.cancelAnimationFrame(frameId)
   }, [playingMode, selectedScene?.start, selectedScene?.end])
 
+  function clearSceneStopTimer() {
+    if (sceneStopTimerRef.current) {
+      window.clearTimeout(sceneStopTimerRef.current)
+      sceneStopTimerRef.current = null
+    }
+  }
+
   function stopAudio(nextCursor = cursorSec) {
+    clearSceneStopTimer()
+    scenePreviewRangeRef.current = null
     const next = clampCursor(nextCursor, draft.audioDurationSec)
     const audio = audioRef.current
     if (audio) {
@@ -1464,10 +1946,18 @@ export default function ManualTimingPage() {
     if (mode === 'vocal') return runVocalStemAsrExact()
 const useVocalStem = mode === 'vocal'
     const sourceDraft = draft
-    const assetId = useVocalStem ? sourceDraft.vocalAudioAssetId : sourceDraft.audioAssetId
+    const assetId = avaStage117AssetIdFromAudioDraft(sourceDraft, useVocalStem)
 
     if (!assetId) {
-      setStatus(useVocalStem ? 'сначала загрузите vocal stem' : 'сначала загрузите аудио')
+      console.warn('[MANUAL_TIMING_STAGE117_ASR_NO_ASSET_ID]', {
+        useVocalStem,
+        audioAssetId: sourceDraft.audioAssetId,
+        audioApiPath: sourceDraft.audioApiPath,
+        audioUrl: sourceDraft.audioUrl,
+        vocalAudioAssetId: sourceDraft.vocalAudioAssetId,
+        vocalAudioApiPath: sourceDraft.vocalAudioApiPath,
+      })
+      setStatus(useVocalStem ? 'сначала загрузите vocal stem' : 'ASR не нашёл assetId у аудио. Нужен /api/assets/asset_xxx/file или audioAssetId.')
       return
     }
 const clearedDraft = normalizeDraft({
@@ -1487,6 +1977,13 @@ const clearedDraft = normalizeDraft({
     setAsrRunning(true)
     setStatus(useVocalStem ? 'ASR распознаёт vocal stem…' : mode === 'music' ? 'ASR распознаёт master без VAD…' : 'ASR распознаёт диктора…')
     try {
+      console.log('[MANUAL_TIMING_STAGE117_ASR_START]', {
+        assetId,
+        mode,
+        useVocalStem,
+        audioApiPath: sourceDraft.audioApiPath,
+        audioUrl: sourceDraft.audioUrl,
+      })
       const result = await transcribeAudioAsset({
         assetId,
         projectId: projectId || activeProject?.id || null,
@@ -1515,6 +2012,13 @@ const clearedDraft = normalizeDraft({
       await saveDraft(nextDraft, sourceName)
       setStatus(`ASR готово: ${nextSegments.length} фраз · ${useVocalStem ? 'vocal stem / speech+VAD' : result.mode || mode} · VAD ${result.vad_filter ? 'on' : 'off'}`)
     } catch (err) {
+      console.error('[MANUAL_TIMING_STAGE117_ASR_FAILED]', {
+        message: err?.message || String(err || ''),
+        assetId,
+        mode,
+        audioApiPath: sourceDraft.audioApiPath,
+        audioUrl: sourceDraft.audioUrl,
+      })
       setStatus(`ошибка ASR: ${err.message}`)
     } finally {
       setAsrRunning(false)
@@ -1646,6 +2150,391 @@ const clearedDraft = normalizeDraft({
     setStatus('JSON экспортирован')
   }
 
+  function buildVideoMatchSeedPayload() {
+    const manualTimingSeed = buildExportPayload()
+    const audioDurationSec = Number(draft.audioDurationSec || 0)
+    const timingScenes = Array.isArray(scenes) ? scenes : []
+    const timingSegments = timingScenes.map((scene, index) => {
+      const startSec = Number(scene.start ?? scene.start_sec ?? 0)
+      const endSec = Number(scene.end ?? scene.end_sec ?? startSec)
+      const durationSec = Math.max(0, Number((endSec - startSec).toFixed(3)))
+      const sceneId = String(scene.id || scene.scene_id || `seg_${String(index + 1).padStart(3, '0')}`)
+      const speechExport = buildSceneSpeechExport(scene, draft.speechSegments || [])
+      const roleLabels = typeof getSceneRoleLabels === 'function' ? getSceneRoleLabels(scene) : (scene.roleLabels || [])
+      const title = scene.title || `Сцена ${index + 1}`
+      const note = scene.note || ''
+      const isSilence = Boolean(scene.isSilence || scene.is_silence || scene.silence || String(title || '').trim() === '[тишина]')
+      const text = speechExport.scene_word_text || note || title || ''
+      const route = String(scene.route || scene.videoRoute || scene.route_key || (isSilence ? 'silence' : 'auto')).trim() || 'auto'
+      const routeLower = route.toLowerCase()
+      const roleText = Array.isArray(roleLabels) ? roleLabels.join(' ').toLowerCase() : String(roleLabels || '').toLowerCase()
+      const looksLikeLipSync = Boolean(
+        routeLower.includes('ia2v') ||
+        routeLower.includes('lip') ||
+        routeLower.includes('talk') ||
+        routeLower.includes('dialog') ||
+        routeLower.includes('voice') ||
+        roleText.includes('ls_') ||
+        roleText.includes('дик') ||
+        roleText.includes('вед') ||
+        roleText.includes('гид') ||
+        roleText.includes('рыбак') ||
+        roleText.includes('пастор') ||
+        roleText.includes('фермер')
+      )
+      const pendingCandidateId = `${sceneId}_codex_pending_01`
+      return {
+        id: sceneId,
+        scene_id: sceneId,
+        audio_scene_id: sceneId,
+        index: index + 1,
+        start_sec: startSec,
+        end_sec: endSec,
+        target_t0: startSec,
+        target_t1: endSec,
+        targetStartSec: startSec,
+        targetEndSec: endSec,
+        duration_sec: durationSec,
+        durationSec,
+        title,
+        text,
+        original_text: speechExport.scene_word_text || '',
+        translated_text_ru: speechExport.translated_text_ru || scene.translatedTextRu || scene.translationText || scene.text_ru || '',
+        meaning_hint_ru: speechExport.meaning_hint_ru || scene.meaningText || scene.meaning_hint_ru || '',
+        scene_word_text: speechExport.scene_word_text || '',
+        lyrics_text: speechExport.lyrics_text || speechExport.scene_word_text || '',
+        source_phrase_ids: speechExport.source_phrase_ids || [],
+        phrase_cut_warning: Boolean(speechExport.phrase_cut_warning),
+        roleLabels,
+        role_labels: roleLabels,
+        route,
+        suggested_video_role: isSilence ? 'silence_gap' : (looksLikeLipSync ? 'reserved_generated_lipsync_or_character_insert' : 'source_video_broll'),
+        is_lipsync_candidate: looksLikeLipSync,
+        is_silence: isSilence,
+        source_kind: isSilence ? 'silence' : 'timing_audio',
+        blockId: scene.blockId || '',
+        blockTitle: scene.blockTitle || '',
+        block_id: scene.blockId || '',
+        block_title: scene.blockTitle || '',
+        note,
+        user_scene_label: title,
+        selected_candidate_id: pendingCandidateId,
+        candidates: [
+          {
+            id: pendingCandidateId,
+            candidate_id: pendingCandidateId,
+            candidateType: 'needs_codex_match',
+            candidate_type: 'needs_codex_match',
+            sourceKind: isSilence ? 'silence_placeholder' : (looksLikeLipSync ? 'reserved_generated_lipsync' : 'pending_codex_source_window'),
+            source_kind: isSilence ? 'silence_placeholder' : (looksLikeLipSync ? 'reserved_generated_lipsync' : 'pending_codex_source_window'),
+            video_t0: 0,
+            video_t1: durationSec,
+            sourceVideoStartSec: 0,
+            sourceVideoEndSec: durationSec,
+            fit_mode: 'pending_codex',
+            confidence: 0,
+            match_reason: isSilence
+              ? 'Timing silence segment. Preserve this gap or use neutral filler if needed.'
+              : looksLikeLipSync
+                ? 'Potential lip-sync/dialogue scene. Codex should reserve generated lip-sync if a speaking character is required; source video can be used as background/reference only.'
+                : 'Timing seed only. Codex must replace this placeholder with real source-video candidates without changing target timing.',
+            codex_replace_required: !isSilence,
+            do_not_change_target_timing: true,
+          },
+        ],
+      }
+    })
+
+    return {
+      schema: 'video_match_board_v2',
+      seed_schema: 'manual_timing_to_video_match_job_seed_v1',
+      status: 'timing_seed_needs_codex_match',
+      source: 'manual_timing',
+      exportedAt: new Date().toISOString(),
+      source_of_truth: 'manual_timing.scenes',
+      do_not_change_audio_timings: true,
+      do_not_reanalyze_audio: true,
+      timing_locked: true,
+      project_id: projectId || activeProject?.id || null,
+      sourceNodeId: projectId ? `ava_project_${projectId}_manual_timing` : 'ava_workspace_manual_timing',
+      audio_duration_sec: audioDurationSec,
+      source_audio: {
+        filename: draft.audioName || '',
+        name: draft.audioName || '',
+        asset_id: draft.audioAssetId || '',
+        assetId: draft.audioAssetId || '',
+        asset_api_path: draft.audioApiPath || '',
+        assetApiPath: draft.audioApiPath || '',
+        duration_sec: audioDurationSec,
+        durationSec: audioDurationSec,
+      },
+      source_video: {
+        path: '',
+        filename: '',
+        duration_sec: 0,
+        user_must_provide_local_path: true,
+        use_original_file_for_final_assembly: true,
+        proxy_or_contact_sheet_allowed_for_analysis: true,
+      },
+      audio_map: {
+        source_of_truth: 'manual_timing.scenes',
+        do_not_change_audio_timings: true,
+        duration_sec: audioDurationSec,
+        audioDurationSec,
+        segments: timingSegments,
+      },
+      timingContext: {
+        sourceAudioUrl: draft.audioApiPath || draft.audioUrl || '',
+        sourceAudioAssetId: draft.audioAssetId || '',
+        sourceAudioName: draft.audioName || '',
+        audioDurationSec,
+        timingScenes: timingSegments,
+        segments: timingSegments,
+        sourceOfTruth: 'manual_timing.scenes',
+        podcastEditManifest: draft.podcastEditManifest || draft.podcast_edit_manifest || null,
+        composerEditManifest: draft.composerEditManifest || draft.composer_edit_manifest || null,
+        updatedAt: Date.now(),
+      },
+      manual_timing_seed: manualTimingSeed,
+      podcast_edit_manifest: draft.podcastEditManifest || draft.podcast_edit_manifest || null,
+      story_blocks: draft.storyBlocks || [],
+      roles: draft.roles || [],
+      speech_segments: draft.speechSegments || [],
+      silent_segments: draft.silentSegments || [],
+      segments: timingSegments,
+      codex_job_instructions: {
+        entrypoint: 'video_match_from_manual_timing_seed',
+        goal: 'Use this timing seed and source video to build final video_match_board_v2.',
+        strict_rules: [
+          'Do not change target_t0/target_t1/duration_sec.',
+          'Do not re-run ASR or reinterpret audio timings.',
+          'Use source video analysis to replace pending candidates with real source windows.',
+          'Analyze the entire source video, not only the first minutes.',
+          'For lip-sync/generated insert scenes, reserve generated_lipsync candidates and keep real source only as visual/background reference.',
+          'Return final schema video_match_board_v2 with candidates and selected_candidate_id for every segment.',
+        ],
+      },
+    }
+  }
+
+  function exportVideoMatchSeedJson() {
+    const payload = buildVideoMatchSeedPayload()
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeName = (draft.audioName || 'manual_timing').replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_')
+    link.href = url
+    link.download = `${safeName}_video_match_seed.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    setStatus(`JSON для видео экспортирован: ${payload.segments.length} сцен · тайминги locked`)
+  }
+
+  function buildVideoMatchCodexJobPayload() {
+    const seed = buildVideoMatchSeedPayload()
+    const segments = Array.isArray(seed.segments) ? seed.segments : []
+    const lipSyncCandidates = segments.filter((seg) => seg.is_lipsync_candidate)
+    const silenceSegments = segments.filter((seg) => seg.is_silence)
+    const brollSegments = segments.filter((seg) => !seg.is_silence && !seg.is_lipsync_candidate)
+    return {
+      schema: 'ava_codex_video_match_job_v1',
+      entrypoint: 'video_match_from_manual_timing_seed',
+      status: 'ready_for_codex_after_user_answers',
+      exportedAt: new Date().toISOString(),
+      purpose: 'Codex receives this JSON plus a local source video path, analyzes the real source video, and returns a final importable video_match_board_v2.json.',
+      chatgpt_understanding: {
+        current_stage: 'final_video_match_after_manual_timing_asr',
+        core_rule: 'Не текст ищет кадры. Кадры рождают текст. Но на этом финальном этапе аудио и Manual Timing уже являются locked source of truth.',
+        what_is_locked: [
+          'assembled audio duration',
+          'Manual Timing scene start/end/duration',
+          'scene ids',
+          'source_phrase_ids',
+          'roles and silence markers',
+          'podcast_edit_manifest / source-map when present',
+        ],
+        what_codex_may_choose: [
+          'source video windows for b-roll scenes',
+          'candidate ranking and selected_candidate_id',
+          'reserved generated lip-sync placeholders for speaking character scenes',
+          'visual notes, contact sheets and validation report',
+        ],
+      },
+      user_questions_before_codex: [
+        {
+          id: 'source_video_local_path',
+          required: true,
+          question_ru: 'Где лежит исходное видео на компьютере? Укажи полный путь, например C:\\Users\\...\\video.mp4.',
+          answer: '',
+        },
+        {
+          id: 'workflow_mode',
+          required: true,
+          default: 'final_match_after_manual_timing',
+          options: ['final_match_after_manual_timing', 'video_first_inventory_before_script', 'existing_montage_retime'],
+          question_ru: 'Мы делаем финальный match по готовому аудио/Timing или сначала только visual inventory/story?',
+          answer: 'final_match_after_manual_timing',
+        },
+        {
+          id: 'story_style',
+          required: false,
+          default: 'travel_documentary_poetic_realistic',
+          question_ru: 'Какой стиль монтажа: документальный, клип, тревел, мрачный, спокойный, динамичный?',
+          answer: '',
+        },
+        {
+          id: 'matching_priority',
+          required: false,
+          default: 'meaning_first_then_visual_beauty',
+          options: ['meaning_first_then_visual_beauty', 'visual_beauty_first', 'motion_energy_first', 'chronology_first'],
+          question_ru: 'Что важнее: смысл слов, красота кадра, движение/энергия или хронология исходника?',
+          answer: '',
+        },
+        {
+          id: 'repeat_policy',
+          required: false,
+          default: 'avoid_duplicates_unless_necessary',
+          options: ['avoid_duplicates_unless_necessary', 'allow_repeats_with_new_crop', 'allow_repeats_freely'],
+          question_ru: 'Можно ли повторять один и тот же кусок видео в разных сценах?',
+          answer: '',
+        },
+        {
+          id: 'speed_policy',
+          required: false,
+          default: 'no_speed_change_for_now',
+          options: ['no_speed_change_for_now', 'allow_slight_slowmo_or_speedup', 'allow_any_retime_if_natural'],
+          question_ru: 'Можно ли ускорять/замедлять исходные кадры ради попадания в длительность сцены?',
+          answer: '',
+        },
+        {
+          id: 'lipsync_policy',
+          required: false,
+          default: 'reserve_generated_lipsync_for_speaking_character_scenes',
+          options: ['reserve_generated_lipsync_for_speaking_character_scenes', 'use_only_broll_no_lipsync', 'ask_per_scene'],
+          question_ru: 'Если сцена выглядит как речь персонажа, резервировать её под generated lip-sync или искать только b-roll?',
+          answer: '',
+        },
+        {
+          id: 'must_use_or_avoid_moments',
+          required: false,
+          question_ru: 'Есть ли моменты исходного видео, которые обязательно использовать или не использовать?',
+          answer: '',
+        },
+      ],
+      inputs: {
+        timing_seed_included: true,
+        timing_seed_schema: seed.seed_schema,
+        source_video: {
+          local_path: '',
+          filename: '',
+          note: 'User must fill local_path before Codex starts. Browser blob URLs are not valid for Codex or backend assembly.',
+          analyze_full_video: true,
+          use_original_for_final_assembly: true,
+          proxy_allowed_for_analysis: true,
+        },
+        source_audio: seed.source_audio,
+      },
+      codex_steps: [
+        {
+          step: '00_validate_inputs',
+          do: [
+            'Read this JSON as UTF-8 and strip BOM before JSON.parse/json.load if needed.',
+            'Verify audio_map.segments exists and has all timing scenes.',
+            'Verify source_video.local_path points to a real video file.',
+            'If audio_map exists, do not analyze audio again and do not change timing.',
+          ],
+          safe_stop_if_missing: 'blocked_missing_audio_map_or_source_video_path',
+        },
+        {
+          step: '01_source_video_inventory',
+          do: [
+            'Analyze the entire source video duration.',
+            'Create visual inventory and source shot index.',
+            'Detect visual families, weak/duplicate shots, strong cinematic windows, human/context shots, motion/brightness/scene changes.',
+            'Create contact sheets if possible for manual review.',
+          ],
+        },
+        {
+          step: '02_match_timing_segments',
+          do: [
+            'For every locked timing segment, pick 2-3 candidate source windows when possible.',
+            'Candidate duration should fit target duration or explain fit_mode.',
+            'Never change segment target_t0/target_t1/duration_sec.',
+            'For silence segments, preserve as silence/filler/neutral visual gap.',
+            'For lip-sync candidate scenes, create reserved_generated_lipsync candidate; real video may be background/reference only.',
+          ],
+        },
+        {
+          step: '03_write_final_board',
+          do: [
+            'Return importable video_match_board_v2.json.',
+            'Every segment must have selected_candidate_id and candidates.',
+            'Use source_video.path from user local path, not browser blob URL.',
+            'Preserve scene_id, audio_scene_id, source_phrase_ids, roles, silence markers, block ids and text fields.',
+          ],
+        },
+      ],
+      output_requirements: {
+        final_import_file: 'video_match_board_v2.json',
+        required_extra_files: [
+          'visual_inventory.md',
+          'source_shot_index.json',
+          'contact_sheet_overview.jpg or contact_sheet_overview.md',
+          'validation_report.json',
+        ],
+        video_match_board_v2_must_include: [
+          'schema',
+          'source_video.path',
+          'audio_map.segments',
+          'segments[].scene_id',
+          'segments[].target_t0',
+          'segments[].target_t1',
+          'segments[].duration_sec',
+          'segments[].candidates[]',
+          'segments[].selected_candidate_id',
+          'segments[].source_phrase_ids',
+          'segments[].roleLabels',
+          'segments[].is_silence',
+        ],
+      },
+      validation_rules: [
+        'sum of output target durations must match locked manual timing duration within 0.05 sec per segment tolerance.',
+        'No invented visual objects in b-roll match reasons unless they are actually visible in source inventory.',
+        'No final output with status blocked_missing_audio_map if this JSON has audio_map.segments.',
+        'Do not depend on corrupted Cyrillic file path inside imported JSON if user manually provides local source video.',
+        'Do not write browser blob: URLs into final persistent JSON.',
+      ],
+      quick_summary_for_user: {
+        total_segments: segments.length,
+        broll_segments: brollSegments.length,
+        lipsync_or_speaking_candidates: lipSyncCandidates.length,
+        silence_segments: silenceSegments.length,
+        audio_duration_sec: seed.audio_duration_sec,
+        timing_locked: true,
+      },
+      video_match_seed: seed,
+    }
+  }
+
+  function exportVideoMatchCodexJobJson() {
+    const payload = buildVideoMatchCodexJobPayload()
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeName = (draft.audioName || 'manual_timing').replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_')
+    link.href = url
+    link.download = `${safeName}_codex_video_job.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    setStatus(`Codex JSON экспортирован: ${payload.quick_summary_for_user.total_segments} сцен · нужен путь к source video`)
+  }
+
+
+
   async function importTimingJson(event) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -1747,6 +2636,8 @@ const clearedDraft = normalizeDraft({
   async function toggleTranslatorPreview(startSec, endSec, previewId) {
     const audio = audioRef.current
     if (!audio || !hasAudio || !audioSrc) return
+    clearSceneStopTimer()
+    scenePreviewRangeRef.current = null
 
     const start = clampCursor(Number(startSec || 0), draft.audioDurationSec)
     const safeEnd = clampCursor(Number(endSec || start + 0.1), draft.audioDurationSec)
@@ -1782,24 +2673,50 @@ const clearedDraft = normalizeDraft({
   async function toggleScenePlay() {
     const audio = audioRef.current
     if (!audio || !hasAudio) return
+    clearSceneStopTimer()
     translatorPreviewRangeRef.current = null
     setTranslatorPlayingId('')
+
     if (playingMode === 'scene') {
       const pausedAt = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
       audio.pause()
+      scenePreviewRangeRef.current = null
       setCursorSec(pausedAt)
       setPlayingMode(null)
       return
     }
-    const current = clampCursor(audio.currentTime || cursorSec, draft.audioDurationSec)
-    const canResumeInsideScene = current > selectedScene.start + 0.01 && current < selectedScene.end - 0.01
-    const startAt = canResumeInsideScene ? current : selectedScene.start
+
+    const startAt = clampCursor(Number(selectedScene?.start || 0), draft.audioDurationSec)
+    const endAt = clampCursor(Math.max(startAt + 0.05, Number(selectedScene?.end || startAt)), draft.audioDurationSec)
+    const fixedRange = {
+      id: selectedScene?.id || selectedScene?.title || 'scene',
+      start: startAt,
+      end: endAt,
+    }
+
+    scenePreviewRangeRef.current = fixedRange
     setPlayingMode('scene')
     audio.currentTime = startAt
     setCursorSec(startAt)
+
     try {
       await audio.play()
+      clearSceneStopTimer()
+      sceneStopTimerRef.current = window.setTimeout(() => {
+        const nextAudio = audioRef.current
+        const range = scenePreviewRangeRef.current
+        if (!nextAudio || !range) return
+        const stopAt = clampCursor(Number(range.end || endAt), draft.audioDurationSec)
+        nextAudio.pause()
+        nextAudio.currentTime = stopAt
+        scenePreviewRangeRef.current = null
+        sceneStopTimerRef.current = null
+        setCursorSec(stopAt)
+        setPlayingMode(null)
+      }, Math.max(80, Math.round((endAt - startAt) * 1000 + 25)))
     } catch (err) {
+      scenePreviewRangeRef.current = null
+      clearSceneStopTimer()
       setPlayingMode(null)
       setStatus(`ошибка проигрывания: ${err.message}`)
     }
@@ -1808,6 +2725,8 @@ const clearedDraft = normalizeDraft({
   async function toggleAllPlay() {
     const audio = audioRef.current
     if (!audio || !hasAudio) return
+    clearSceneStopTimer()
+    scenePreviewRangeRef.current = null
     translatorPreviewRangeRef.current = null
     setTranslatorPlayingId('')
     if (playingMode === 'all') {
@@ -1859,7 +2778,8 @@ const clearedDraft = normalizeDraft({
     try {
       setStatus(`готовлю WAV сцены: ${formatTime(start, true)} → ${formatTime(end, true)}`)
 
-      const response = await fetch(sourceUrl)
+      const fetchOptions = avaStage116ShouldAuthFetch(sourceUrl) ? { headers: getAuthHeaders() } : {}
+      const response = await fetch(sourceUrl, fetchOptions)
       if (!response.ok) throw new Error(`audio_fetch_failed_${response.status}`)
 
       const arrayBuffer = await response.arrayBuffer()
@@ -1904,6 +2824,91 @@ const clearedDraft = normalizeDraft({
     }
   }
 
+  if (loading) return (
+    <div className="avaPage avaTimingFlatPage avaTimingLoadingPage">
+      <div className="avaTimingLoadingShell">
+        <div className="avaTimingLoadingMain">
+          <div className="avaTimingLoadingIcon"><Clock3 size={32} /></div>
+          <p className="avaEyebrow">Storyboard → Timing</p>
+          <h1>Загрузка Manual Timing...</h1>
+          <p>Возвращаем таймкоды, блоки, аудио и разрезы. Дождись восстановления проекта перед правками.</p>
+          <div className="avaTimingLoadingSteps">
+            <span className="isActive">Timing</span>
+            <i />
+            <span>Audio</span>
+            <i />
+            <span>Blocks</span>
+            <i />
+            <span>Ready</span>
+          </div>
+          <small>{status || 'загрузка snapshot…'}</small>
+        </div>
+        <div className="avaTimingLoadingSide" aria-hidden="true">
+          <b />
+          <b />
+          <b />
+          <b />
+        </div>
+      </div>
+    </div>
+  )
+
+  function openPodcastComposer() {
+    const sourceNodeId = projectId ? `ava_project_${projectId}_manual_timing` : "ava_workspace_manual_timing";
+    const scenes = Array.isArray(draft.scenes) ? draft.scenes : [];
+    const audioUrl = draft.audioUrl || draft.asset_url || "";
+    const handoffProject = {
+      nodeId: sourceNodeId,
+      sourceNodeId,
+      project_runtime_type: "manual_timing",
+      project_mode: "podcast_dialogue",
+      project_kind: "podcast",
+      audio: {
+        url: audioUrl,
+        audioUrl,
+        assetApiPath: draft.audioApiPath || "",
+        asset_api_path: draft.audioApiPath || "",
+        assetId: draft.audioAssetId || "",
+        asset_id: draft.audioAssetId || "",
+        filename: draft.audioName || "audio",
+        name: draft.audioName || "audio",
+        duration_sec: Number(draft.audioDurationSec || 0),
+        durationSec: Number(draft.audioDurationSec || 0),
+      },
+      audio_duration_sec: Number(draft.audioDurationSec || 0),
+      roles: Array.isArray(draft.roles) ? draft.roles : [],
+      audio_phrases: Array.isArray(draft.audioPhrases) ? draft.audioPhrases : [],
+      speech_segments: Array.isArray(draft.speechSegments) ? draft.speechSegments : [],
+      story_blocks: Array.isArray(draft.storyBlocks) ? draft.storyBlocks : [],
+      markers: scenes.length
+        ? [...scenes.map((scene) => Number(scene.start || 0)), Number(scenes[scenes.length - 1]?.end || draft.audioDurationSec || 0)]
+        : [0, Number(draft.audioDurationSec || 0)],
+      scenes: scenes.map((scene, index) => ({
+        ...scene,
+        scene_id: scene.id || scene.scene_id || `seg_${String(index + 1).padStart(2, "0")}`,
+        index: index + 1,
+        start_sec: Number(scene.start ?? scene.start_sec ?? 0),
+        end_sec: Number(scene.end ?? scene.end_sec ?? 0),
+        duration_sec: Math.max(0, Number(scene.end ?? scene.end_sec ?? 0) - Number(scene.start ?? scene.start_sec ?? 0)),
+      })),
+      podcast_edit_manifest: draft.podcastEditManifest || draft.podcast_edit_manifest || null,
+      updatedAt: Date.now(),
+    };
+
+    try {
+      localStorage.setItem(`ava_podcast_timing_handoff:${sourceNodeId}`, JSON.stringify(handoffProject));
+      sessionStorage.setItem(`ava_podcast_timing_handoff:${sourceNodeId}`, JSON.stringify(handoffProject));
+    } catch (error) {
+      console.warn("[AVA PODCAST HANDOFF SAVE FAILED]", error);
+    }
+
+    const podcastPath = projectId
+      ? `/app/projects/${projectId}/podcast?sourceNodeId=${encodeURIComponent(sourceNodeId)}`
+      : `/app/workspace/podcast?sourceNodeId=${encodeURIComponent(sourceNodeId)}`;
+    window.location.assign(podcastPath);
+  }
+
+
   return (
     <div className="avaPage avaTimingFlatPage">
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
@@ -1917,12 +2922,19 @@ const clearedDraft = normalizeDraft({
           <span>ASR → song structure → Clip Pass</span>
         </div>
         <div className="avaTimingHeaderActions">
-          <button className="avaSoftButton" type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || loading}>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionAudio" type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || loading}>
             <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Загрузить аудио'}
           </button>
-          <button className="avaSoftButton" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт JSON</button>
-          <button className="avaSoftButton" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>
-          <button className="avaPrimaryButton" type="button" onClick={() => saveDraft(draft, 'button_save')} disabled={saving || loading}>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт JSON</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchSeedJson} disabled={loading || !scenes.length}>📷 JSON для видео</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchCodexJobJson} disabled={loading || !scenes.length}>🧠 JSON для Codex</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionPodcast" type="button" onClick={openPodcastComposer} disabled={!hasAudio || loading}>🎙 Подкаст / аудио</button>
+
+          <Link className="avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink" to={projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'}>
+            <Film size={16} /> Перейти в доску
+          </Link>
+          <button className="avaPrimaryButton avaTimingActionButton avaTimingActionSave" type="button" onClick={() => saveDraft(draft, 'button_save')} disabled={saving || loading}>
             <Save size={16} /> {saving ? 'Сохраняем…' : 'Сохранить'}
           </button>
         </div>
@@ -2124,6 +3136,18 @@ const clearedDraft = normalizeDraft({
             {scenes.map((scene) => {
               const sceneWidth = draft.audioDurationSec > 0 ? `${Math.max(0.5, ((scene.end - scene.start) / draft.audioDurationSec) * 100)}%` : `${100 / scenes.length}%`
               const roleLabels = getSceneRoleLabels(scene)
+              const podcastRoleLabel = String(
+                scene.roleLabel ||
+                scene.role_label ||
+                scene.speakerLabel ||
+                scene.speaker_label ||
+                scene.composer_role_label ||
+                scene.composer_block_label ||
+                scene.blockTitle ||
+                scene.block_title ||
+                ''
+              ).trim()
+              const visibleRoleLabels = podcastRoleLabel ? [podcastRoleLabel] : roleLabels
               return (
                 <button
                   key={`${scene.id}-${scene.start}-${scene.end}`}
@@ -2137,9 +3161,9 @@ const clearedDraft = normalizeDraft({
                   }}
                 
                   title={getSceneTooltip(scene)}>
-                  <b>{scene.blockTitle || scene.title}</b>
+                  <b>{scene.title}</b>
+                  {visibleRoleLabels.length > 0 && <em className="avaTimingSceneRoleBadge">{visibleRoleLabels.slice(0, 2).join(' / ')}</em>}
                   <small>{scene.route && scene.route !== 'auto' ? `${scene.route} · ` : ''}{formatTime(scene.start)} → {formatTime(scene.end)}</small>
-                  {roleLabels.length > 0 && <em>{roleLabels.join(' / ')}</em>}
                 </button>
               )
             })}
@@ -2329,7 +3353,7 @@ const clearedDraft = normalizeDraft({
                 <strong>Диктор / обычная речь</strong>
                 <p>Для подкаста, озвучки, интервью и рассказчика. Берём слова прямо из основного аудио.</p>
               </div>
-              <button type="button" onClick={() => runAudioAsr('speech')} disabled={!hasAudio || !draft.audioAssetId || asrRunning}>
+              <button type="button" onClick={() => runAudioAsr('speech')} disabled={!hasAudio || !narratorAsrAssetId || asrRunning} title={narratorAsrAssetId ? `ASR asset: ${narratorAsrAssetId}` : 'ASR не нашёл assetId у аудио'}>
                 {asrRunning ? 'ASR…' : 'ASR диктор · 1 кредит'}
               </button>
             </div>
@@ -2368,7 +3392,9 @@ const clearedDraft = normalizeDraft({
                   {asrRunning ? 'ASR vocal…' : 'ASR vocal stem точно · 1 кредит'}
                 </button>
                 <button type="button"
-                  disabled={!draft.vocalAudioAssetId || asrRunning}>
+                  disabled={!vocalAsrAssetId || asrRunning}
+                  title={vocalAsrAssetId ? `vocal asset: ${vocalAsrAssetId}` : 'загрузите vocal stem'}
+                >
                   ASR vocal stem точно
                 </button>
               </div>

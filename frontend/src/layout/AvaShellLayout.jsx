@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Brain, ChevronLeft, ChevronRight, FolderKanban, Home, LogOut, PlusCircle, Settings, WalletCards, UserRound } from 'lucide-react'
+import { Brain, ChevronLeft, ChevronRight, FolderKanban, GitBranch, Home, LogOut, PlusCircle, Settings, WalletCards, UserRound } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { getProjectTheme } from '../utils/projectTheme.js'
@@ -12,6 +12,7 @@ const navItems = [
   { to: '/app/projects/new', label: 'Создать проект', icon: PlusCircle },
   { to: '/app/account', label: 'Кабинет', icon: UserRound },
   { to: '/app/credits', label: 'Пополнить счёт', icon: WalletCards },
+  { to: '/app/workspace/video-node', label: 'Видео нода', icon: GitBranch },
 ]
 
 const SIDEBAR_OPEN_KEY = 'ava_sidebar_open'
@@ -85,7 +86,14 @@ function avaJobVideoUrl(kind, data) {
 }
 
 function avaJobIsError(status) {
-  return ['error', 'failed', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(String(status || '').toLowerCase())
+  const normalized = String(status || '').toLowerCase()
+  return normalized.startsWith('blocked_') || ['error', 'failed', 'queued_no_prompt_id', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(normalized)
+}
+
+function avaJobIsStale(status, data = {}) {
+  const normalized = String(status || '').toLowerCase()
+  const code = String(data?.code || data?.error?.code || '').toUpperCase()
+  return normalized === 'not_found' || code === 'BOARD_VIDEO_JOB_NOT_FOUND' || code === 'BOARD_MMAUDIO_JOB_NOT_FOUND'
 }
 
 
@@ -343,6 +351,10 @@ export default function AvaShellLayout() {
               to: job.to || '',
               dedupeKey: `${job.kind}:${key}:done`,
             })
+          } else if (avaJobIsStale(status, data)) {
+            // Backend stores Board jobs in memory. After backend restart old job ids are gone;
+            // remove them from the global watcher instead of polling forever.
+            changed = true
           } else if (avaJobIsError(status)) {
             changed = true
             pushGlobalToast({
