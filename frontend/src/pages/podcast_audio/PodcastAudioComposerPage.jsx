@@ -13,6 +13,8 @@ import {
   readManualTimingProjectForNode,
 } from "../clip_nodes/manual_timing/manualTimingDomain.js";
 import "./PodcastAudioComposerPage.css";
+import WorkflowStageControls from "../../components/WorkflowStageControls.jsx";
+import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, makeWorkflowEntry, rememberWorkflowEntry } from "../../utils/workflowNavigation.js";
 
 const AVA_STAGE101_PODCAST_DB = "ava_podcast_audio_persist_v1";
 const AVA_STAGE101_ACTOR_STORE = "actor_audio_blobs";
@@ -650,6 +652,19 @@ const COMPOSER_STORAGE_VERSION = 44;
 const RESTORABLE_STORAGE_VERSIONS = new Set([30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]);
 const ACTOR_AUDIO_DB_NAME = "podcast_audio_composer_assets_v1";
 const ACTOR_AUDIO_DB_STORE = "audio_files";
+const PODCAST_STAGE_CLEARED_STORAGE_KEY = 'ava:podcast:cleared:v1';
+
+function isPodcastClearedStorageMarkerActive() {
+  try {
+    return Boolean(
+      localStorage.getItem(PODCAST_STAGE_CLEARED_STORAGE_KEY) ||
+      sessionStorage.getItem(PODCAST_STAGE_CLEARED_STORAGE_KEY)
+    );
+  } catch {
+    return false;
+  }
+}
+
 const DEFAULT_MICRO_STEP_SEC = 0.5;
 const MIN_BLOCK_SEC = 0.001;
 const MAX_HISTORY_ITEMS = 50;
@@ -1083,6 +1098,7 @@ function getComposerStorageKey(sourceNodeId = "") {
 }
 
 function readComposerStorage(sourceNodeId = "") {
+  if (isPodcastClearedStorageMarkerActive()) return null;
   try {
     const raw = localStorage.getItem(getComposerStorageKey(sourceNodeId));
     return raw ? JSON.parse(raw) : null;
@@ -1092,6 +1108,7 @@ function readComposerStorage(sourceNodeId = "") {
 }
 
 function writeComposerStorage(sourceNodeId = "", payload = {}) {
+  if (isPodcastClearedStorageMarkerActive()) return;
   try {
     localStorage.setItem(getComposerStorageKey(sourceNodeId), JSON.stringify(payload));
   } catch {}
@@ -1222,6 +1239,7 @@ async function deleteActorAudioBlob(key = "") {
 }
 
 async function restoreActorAudiosFromStorage(sourceNodeId = "", actorAudios = []) {
+  if (isPodcastClearedStorageMarkerActive()) return [];
   const rows = Array.isArray(actorAudios) ? actorAudios : [];
   const restored = [];
   for (const actor of rows) {
@@ -1494,7 +1512,7 @@ function resolveServerRenderableBlockSource({ block = {}, mainAudio = {}, origin
   if (sourceId !== "main" && actorUrl) return { sourceUrl: actorUrl, resolvedVia: registry?.sourceUrlByLegacyActorId?.has(sourceId) ? "legacy_actor" : "actor", savedClip };
 
   const fallbackOriginalUrl = String(originalAudioUrl || mainAudio?.url || "").trim();
-  if (sourceId === "main" && isBackendStaticAssetUrl(fallbackOriginalUrl)) return { sourceUrl: fallbackOriginalUrl, resolvedVia: "main", savedClip };
+  if (sourceId === "main" && fallbackOriginalUrl) return { sourceUrl: fallbackOriginalUrl, resolvedVia: isBackendStaticAssetUrl(fallbackOriginalUrl) ? "main" : "main_asset_url", savedClip };
 
   return { sourceUrl: "", resolvedVia: "missing", savedClip };
 }
@@ -1527,7 +1545,7 @@ function resolveServerRenderableBlockSourceUrl({ block = {}, mainAudio = {}, ori
   }
 
   const fallbackOriginalUrl = String(originalAudioUrl || mainAudio?.url || "").trim();
-  if (sourceId === "main" && isBackendStaticAssetUrl(fallbackOriginalUrl)) return fallbackOriginalUrl;
+  if (sourceId === "main" && fallbackOriginalUrl) return fallbackOriginalUrl;
 
   return "";
 }
@@ -2540,6 +2558,7 @@ export default function PodcastAudioComposerPage() {
   const routeProjectId = String(projectId || searchParams.get("projectId") || "").trim();
   const fallbackSourceNodeId = routeProjectId ? `ava_project_${routeProjectId}_podcast_audio` : "ava_workspace_podcast_audio";
   const sourceNodeId = String(location.state?.sourceNodeId || searchParams.get("sourceNodeId") || fallbackSourceNodeId).trim();
+  const podcastStageCleared = isWorkflowStageCleared("podcast");
   const [standaloneAudio, setStandaloneAudio] = useState(() => {
     try {
       const raw = sessionStorage.getItem(`ava_podcast_standalone_audio:${sourceNodeId}`) || localStorage.getItem(`ava_podcast_standalone_audio:${sourceNodeId}`);
@@ -2552,10 +2571,11 @@ export default function PodcastAudioComposerPage() {
   const stateAudio = normalizeManualTimingAudio(location.state?.audio);
   const storedManualTimingProject = useMemo(() => readManualTimingProjectForNode(sourceNodeId), [sourceNodeId]);
   const audio = useMemo(() => {
+    if (podcastStageCleared) return normalizeManualTimingAudio({});
     if (standaloneAudio.url) return standaloneAudio;
     if (stateAudio.url) return stateAudio;
     return normalizeManualTimingAudio(storedManualTimingProject?.audio);
-  }, [standaloneAudio, stateAudio, storedManualTimingProject]);
+  }, [standaloneAudio, stateAudio, storedManualTimingProject, podcastStageCleared]);
 
   const audioRef = useRef(null);
   const runtimeAudioBlobCacheRef = useRef({});
@@ -2822,6 +2842,7 @@ export default function PodcastAudioComposerPage() {
     });
   }, [audio.url, audioSignature, blocks, selectedBlockId, deletionMarkers, savedClips, actorAudios, microStepSec, hasHydrated, sourceNodeId]);
   useEffect(() => {
+    if (podcastStageCleared) return;
     if (!hasHydrated || !actorAudios.length) return;
     actorAudios.forEach((actor) => {
       if (!actor?.id || !isBlobUrl(actor.url)) return;
@@ -2835,6 +2856,21 @@ export default function PodcastAudioComposerPage() {
 
   const hydrateState = async (nextDurationSec) => {
     const safeDuration = roundSeconds(nextDurationSec);
+
+    if (podcastStageCleared) {
+      removeComposerStorage(sourceNodeId);
+      setBlocks([]);
+      setSelectedBlockId("");
+      setDeletionMarkers([]);
+      setSavedClips([]);
+      setActorAudios([]);
+      setMicroStepSec(DEFAULT_MICRO_STEP_SEC);
+      setMessage("Подкаст очищен. Перейди из Тайминга или загрузи новое аудио.");
+      setHasHydrated(true);
+      hydratedRef.current = true;
+      return;
+    }
+
     if (!audio.url || safeDuration <= 0) return;
     const saved = readComposerStorage(sourceNodeId);
     const signature = getAudioSignature(audio, safeDuration);
@@ -4465,7 +4501,9 @@ export default function PodcastAudioComposerPage() {
     setActorAudios((items) => items.map((item) => item.id === actorId ? { ...item, selectedBlockId: block.id, currentTimeSec: roundSeconds(virtualStart + resumeOffset), isPlaying: true } : { ...item, isPlaying: false }));
     try {
       await element.play();
-    } catch {
+    } catch (error) {
+      console.warn("[PODCAST ACTOR AUDIO PLAY FAILED]", { actorId, error });
+      setMessage("Браузер не запустил аудио актёра. Нажми Play ещё раз или проверь, что файл не пустой.");
       stopActorPlayback({ pause: false });
     }
   };
@@ -6047,8 +6085,19 @@ const applyComposedAudioToTiming = async () => {
         avaStage114StorePodcastHandoff(nextProject); // PODCAST_STAGE114_HANDOFF_STORAGE_REPLACED
                 }
       const timingPath = routeProjectId ? `/app/projects/${routeProjectId}/timing` : "/app/workspace/timing";
+      const podcastTimingWorkflowEntry = makeWorkflowEntry({
+        from: 'podcast',
+        to: 'manual_timing',
+        fromPath: routeProjectId ? `/app/projects/${routeProjectId}/podcast` : '/app/workspace/podcast',
+        toPath: timingPath,
+        projectId: routeProjectId || '',
+        source: 'podcast_to_manual_timing_apply_audio',
+      });
+      clearWorkflowStageClearedMarker('manual_timing');
+      rememberWorkflowEntry(podcastTimingWorkflowEntry);
       navigate(timingPath, {
         state: {
+          workflowEntry: podcastTimingWorkflowEntry,
           sourceNodeId,
           fromPodcastComposer: true,
           replaceAudio: true,
@@ -6086,6 +6135,16 @@ const applyComposedAudioToTiming = async () => {
 
   return (
     <div className="podcastComposerPage" data-build={BUILD_ID}>
+      {/* AVA08N_PODCAST_TOP_CONTROLS */}
+      <WorkflowStageControls
+        stageKey="podcast"
+        stageLabel="Подкаст"
+        clearLabel="Очистить подкаст"
+        clearStages={[]}
+        clearStorageMatchers={['podcast', 'podcast_audio', 'ava_podcast', 'manual_timing_podcast_return']}
+        clearDescription="Очистит локальный проект подкаста, временные ключи и IndexedDB с actor/audio blobs. Backend assets на диске не удаляются."
+      />
+
       <header className="podcastComposerHeader">
         <div>
           <p className="podcastComposerEyebrow">Podcast Audio Composer · {BUILD_ID}</p>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle,
   AudioLines,
@@ -12,15 +12,19 @@ import {
   Image as ImageIcon,
   Pause,
   Play,
+  Plus,
   RefreshCcw,
   Save,
   Scissors,
   Sparkles,
+  Trash2,
   UploadCloud,
   Volume2,
 } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { apiRequest, fetchProtectedBlobUrl } from '../services/apiClient.js'
+import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
+import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, readWorkflowEntry } from '../utils/workflowNavigation.js'
 import '../styles/ava-board.css'
 
 const STAGE = 'board'
@@ -46,7 +50,6 @@ function writeAvaGlobalJobs(jobs) {
   }
 }
 
-
 const ROUTE_OPTIONS = [
   { value: 'ia2v', label: 'ia2v lip-sync', hint: 'Фото + audio slice сцены' },
   { value: 'i2v', label: 'i2v', hint: 'Фото → видео без аудио' },
@@ -55,7 +58,6 @@ const ROUTE_OPTIONS = [
   { value: 'first_last', label: 'first-last', hint: 'Первый и последний кадр' },
   { value: 'first_last_sound', label: 'first-last sound', hint: 'Первый/последний кадр + звук' },
 ]
-
 
 const BOARD_ROUTE_WORKFLOW_MAP = {
   i2v: 'image-video.json',
@@ -82,6 +84,132 @@ const FORMAT_OPTIONS = [
   { value: '4:5', label: '4:5 соцсети' },
   { value: '21:9', label: '21:9 кино' },
 ]
+
+
+const AVA_BOARD_DURABLE_PREFIX = 'ava:board:durable:v1';
+
+function boardDurableKey({ projectId = '', workspaceMode = true } = {}) {
+  const projectPart = workspaceMode ? 'workspace' : `project:${String(projectId || 'unknown')}`;
+  return `${AVA_BOARD_DURABLE_PREFIX}:${projectPart}`;
+}
+
+function readBoardDurableBackup(key = '') {
+  if (!key || typeof localStorage === 'undefined') return null;
+
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (!Array.isArray(parsed.scenes)) return null;
+    return parsed;
+  } catch (error) {
+    console.warn('[BOARD DURABLE] read failed', { key, error });
+    return null;
+  }
+}
+
+function writeBoardDurableBackup(key = '', boardData = {}) {
+  if (!key || typeof localStorage === 'undefined') return;
+
+  try {
+    const payload = {
+      ...boardData,
+      boardVersion: boardData?.boardVersion || BOARD_VERSION,
+      durableSavedAt: new Date().toISOString(),
+      updatedAt: boardData?.updatedAt || new Date().toISOString(),
+    };
+    localStorage.setItem(key, JSON.stringify(payload));
+  } catch (error) {
+    console.warn('[BOARD DURABLE] write failed', { key, error });
+  }
+}
+
+function removeBoardDurableBackup(key = '') {
+  if (!key || typeof localStorage === 'undefined') return;
+
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
+function boardSceneIdentity(scene = {}) {
+  return asText(scene.scene_id || scene.id);
+}
+
+function boardHasManualScenes(boardData = {}) {
+  return asArray(boardData?.scenes).some((scene) => (
+    scene?.source === 'manual_board_scene' ||
+    scene?.importedFrom === 'manual_board'
+  ));
+}
+
+function boardLooksTimingImported(boardData = {}) {
+  const existing = boardData?.board || boardData || {};
+  if (existing?.importedFrom === 'manual_timing' || existing?.source === 'manual_timing') return true;
+  return asArray(existing?.scenes).some((scene) => (
+    scene?.importedFrom === 'manual_timing' ||
+    scene?.source === 'manual_timing' ||
+    scene?.blockTitle ||
+    scene?.block_id ||
+    asArray(scene?.source_phrase_ids).length > 0
+  ));
+}
+
+function boardDataForStandaloneEntry(boardData = {}) {
+  const existing = boardData?.board || boardData || {};
+  const scenes = asArray(existing?.scenes);
+
+  const manualScenes = scenes.filter((scene) => (
+    scene?.source === 'manual_board_scene' ||
+    scene?.importedFrom === 'manual_board'
+  ));
+
+  if (manualScenes.length) {
+    const selectedId = existing.selectedSceneId || existing.selected_scene_id || '';
+    const selectedStillExists = manualScenes.some((scene) => (
+      (scene.id || scene.scene_id) === selectedId
+    ));
+
+    return {
+      ...existing,
+      importedFrom: 'manual_board',
+      source: existing.source || 'manual_board',
+      scenes: manualScenes,
+      selectedSceneId: selectedStillExists ? selectedId : (manualScenes[0]?.id || manualScenes[0]?.scene_id || ''),
+    };
+  }
+
+  if (boardLooksTimingImported(existing)) {
+    return {
+      ...emptyBoard,
+      source: 'standalone_board',
+      importedFrom: 'standalone_board',
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  return existing;
+}
+
+function chooseBoardDataForLoad(serverBoardData = {}, localBoardData = null) {
+  if (!localBoardData || !Array.isArray(localBoardData.scenes)) return serverBoardData || {};
+
+  const serverScenes = asArray(serverBoardData?.scenes);
+  const localScenes = asArray(localBoardData?.scenes);
+  if (!serverScenes.length && localScenes.length) return localBoardData;
+  if (localScenes.length > serverScenes.length) return localBoardData;
+  if (boardHasManualScenes(localBoardData) && !boardHasManualScenes(serverBoardData)) return localBoardData;
+
+  const serverUpdated = Date.parse(serverBoardData?.updatedAt || serverBoardData?.durableSavedAt || '') || 0;
+  const localUpdated = Date.parse(localBoardData?.updatedAt || localBoardData?.durableSavedAt || '') || 0;
+  if (localUpdated > serverUpdated) return localBoardData;
+
+  return serverBoardData || {};
+}
+
 
 const emptyBoard = {
   boardVersion: BOARD_VERSION,
@@ -534,8 +662,23 @@ function buildBoardFromTiming(timingData = {}, boardData = {}) {
     return normalizeBoardScene(scene, index, phrases, savedScenes.get(id) || {})
   })
 
-  const fallbackScenes = asArray(existing.scenes).map((scene, index) => normalizeBoardScene(scene, index, phrases, scene))
-  const finalScenes = scenes.length ? scenes : fallbackScenes
+  const existingScenes = asArray(existing.scenes)
+  const fallbackScenes = existingScenes.map((scene, index) => normalizeBoardScene(scene, index, phrases, scene))
+
+  // AVA09B_KEEP_EXTRA_BOARD_SCENES:
+  // Timing may be the source for imported scenes, but manual Board scenes must survive F5.
+  // If timing.scenes exist, append saved Board scenes whose ids are not present in Timing.
+  const timingSceneIds = new Set(scenes.map((scene) => asText(scene.scene_id || scene.id)))
+  const extraBoardScenes = scenes.length
+    ? existingScenes
+        .filter((scene) => {
+          const id = asText(scene.scene_id || scene.id)
+          return id && !timingSceneIds.has(id)
+        })
+        .map((scene, offset) => normalizeBoardScene(scene, scenes.length + offset, phrases, scene))
+    : []
+
+  const finalScenes = scenes.length ? [...scenes, ...extraBoardScenes] : fallbackScenes
   const audio = timing.audio || existing.audio || {
     name: timing.audioName || timing.audio_name || '',
     assetId: timing.audioAssetId || timing.audio_asset_id || '',
@@ -727,9 +870,14 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
 
 export default function BoardPage() {
   const { projectId } = useParams()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const boardWorkflowEntry = useMemo(() => readWorkflowEntry('board', location.state), [location.state])
+  const openedFromTiming = boardWorkflowEntry?.from === 'manual_timing'
   const workspaceMode = !projectId
   const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
   const [board, setBoard] = useState(emptyBoard)
+  const [manualSceneDurationSec, setManualSceneDurationSec] = useState(6)
 
 
   function isBoardVideoDoneStatus(status) {
@@ -1195,9 +1343,34 @@ export default function BoardPage() {
       setLoading(true)
       setStatus('Загружаем Storyboard и данные Manual Timing…')
       try {
-        const boardData = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
-        const timingData = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
+        const durableKey = boardDurableKey({ projectId, workspaceMode })
+        const localBoardData = readBoardDurableBackup(durableKey)
+
+        if (isWorkflowStageCleared('board')) {
+          removeBoardDurableBackup(durableKey)
+          const clearedBoard = {
+            ...emptyBoard,
+            source: 'board_cleared',
+            importedFrom: 'standalone_board',
+            updatedAt: new Date().toISOString(),
+          }
+          if (!active) return
+          setBoard(clearedBoard)
+          setStatus('Доска очищена. Нажми “+ Сцена” или “Обновить с тайминга”.')
+          setLoading(false)
+          return
+        }
+
+        const serverBoardData = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
+        const rawBoardData = chooseBoardDataForLoad(serverBoardData, localBoardData)
+        const boardData = openedFromTiming ? rawBoardData : boardDataForStandaloneEntry(rawBoardData)
+
+        const timingData = openedFromTiming
+          ? (workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing'))
+          : {}
+
         if (!active) return
+        // AVA09D2_STANDALONE_BOARD_DOES_NOT_PULL_TIMING
         let nextBoard = buildBoardFromTiming(timingData, boardData)
         const hydratedCompleted = applyCompletedJobsToBoard(nextBoard, { projectId: projectId || '', workspaceMode })
         nextBoard = normalizeLoadedBoardVideoStatuses(hydratedCompleted.board)
@@ -1247,9 +1420,18 @@ export default function BoardPage() {
 
   useEffect(() => {
     if (loading) return undefined
+
+    // AVA09C_FAST_LOCAL_BOARD_BACKUP_EFFECT:
+    // local backup must be immediate; backend save can still be delayed.
+    writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), {
+      ...board,
+      boardVersion: BOARD_VERSION,
+      updatedAt: board?.updatedAt || new Date().toISOString(),
+    })
+
     const timer = window.setTimeout(() => saveBoard(board, true), 900)
     return () => window.clearTimeout(timer)
-  }, [loading, board])
+  }, [loading, board, projectId, workspaceMode])
 
   useEffect(() => {
     if (loading) return undefined
@@ -1287,6 +1469,8 @@ export default function BoardPage() {
 
   async function saveBoard(nextBoard = board, quiet = false) {
     const payload = { ...nextBoard, boardVersion: BOARD_VERSION, updatedAt: new Date().toISOString() }
+    // AVA09B_WRITE_LOCAL_BEFORE_BACKEND_SAVE
+    writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), payload)
     try {
       if (!quiet) {
         setSaving(true)
@@ -1395,8 +1579,170 @@ export default function BoardPage() {
   }
 
   function selectScene(sceneId) {
-    setBoard((current) => ({ ...current, selectedSceneId: sceneId }))
+    setBoard((current) => {
+      const scene = asArray(current.scenes).find((item) => asText(item.id || item.scene_id) === asText(sceneId))
+      if (scene) {
+        const sceneDuration = durationOf(scene)
+        if (sceneDuration > 0) setManualSceneDurationSec(sceneDuration)
+      }
+      return { ...current, selectedSceneId: sceneId }
+    })
   }
+
+  function createManualScene() {
+    // AVA09D2_MANUAL_SCENE_CLEARS_MARKER_AND_SAVES
+    // AVA09C_CLEAR_BOARD_MARKER_ON_MANUAL_SCENE
+    clearWorkflowStageClearedMarker('board')
+    const safeDuration = Math.max(2, Math.min(12, toNumber(manualSceneDurationSec, 6)))
+    let createdId = ''
+    let boardToPersist = null
+
+    setBoard((current) => {
+      const scenes = Array.isArray(current.scenes) ? current.scenes : []
+      const usedIds = new Set(scenes.map((scene) => asText(scene.id || scene.scene_id)))
+      let nextIndex = scenes.length + 1
+      let nextId = `seg_${String(nextIndex).padStart(2, '0')}`
+
+      while (usedIds.has(nextId)) {
+        nextIndex += 1
+        nextId = `seg_${String(nextIndex).padStart(2, '0')}`
+      }
+
+      const lastEnd = scenes.reduce((maxValue, scene) => {
+        const value = toNumber(scene.end_sec ?? scene.end, maxValue)
+        return Math.max(maxValue, value)
+      }, 0)
+
+      const start = Number(lastEnd.toFixed(3))
+      const end = Number((start + safeDuration).toFixed(3))
+      const format = current.format || current.aspect_ratio || '16:9'
+      const titleNumber = scenes.length + 1
+      createdId = nextId
+
+      const nextScene = {
+        id: nextId,
+        scene_id: nextId,
+        title: `Сцена ${titleNumber}`,
+        index: scenes.length,
+        source: 'manual_board_scene',
+        importedFrom: 'manual_board',
+        start,
+        end,
+        start_sec: start,
+        end_sec: end,
+        duration_sec: safeDuration,
+        route: 'i2v',
+        workflow_key: boardWorkflowKeyForRoute('i2v'),
+        format,
+        aspect_ratio: format,
+        blockId: '',
+        block_id: '',
+        blockTitle: 'Manual',
+        block_title: 'Manual',
+        roleLabels: [],
+        source_phrase_ids: [],
+        scene_word_text: '',
+        lyrics_text: '',
+        translated_text_ru: '',
+        meaning_hint_ru: '',
+        phrase_cut_warning: false,
+        note: '',
+        video_prompt: '',
+        positive_prompt: '',
+        negative_prompt: 'text, watermark, logo, distorted face, extra limbs, low quality',
+        sound_prompt: '',
+        image_status: 'empty',
+        video_status: 'empty',
+        image_url: '',
+        image_data_url: '',
+        image_name: '',
+        first_frame_url: '',
+        start_image_data_url: '',
+        first_frame_name: '',
+        last_frame_url: '',
+        end_image_data_url: '',
+        last_frame_name: '',
+        video_url: '',
+        video_api_path: '',
+        video_name: '',
+        original_video_url: '',
+        video_result: null,
+        audio_slice_url: '',
+        audio_slice_status: 'not_required',
+        previous_frame_status: 'empty',
+        createdAt: new Date().toISOString(),
+      }
+
+      const nextBoard = {
+        ...current,
+        source: current.source || 'board',
+        importedFrom: current.importedFrom || 'manual_board',
+        scenes: [...scenes, nextScene],
+        selectedSceneId: nextId,
+        updatedAt: new Date().toISOString(),
+      }
+
+      boardToPersist = nextBoard
+      // AVA09B_WRITE_LOCAL_INSIDE_CREATE_MANUAL_SCENE
+      writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), nextBoard)
+      return nextBoard
+    })
+
+    window.setTimeout(() => {
+      // AVA09A_IMMEDIATE_SAVE_MANUAL_SCENE:
+      // autosave is still active, but this prevents losing a new scene on quick F5.
+      if (boardToPersist) saveBoard(boardToPersist, true)
+      setStatus(createdId ? `Добавлена ${createdId} · ${safeDuration} сек` : `Добавлена сцена · ${safeDuration} сек`)
+    }, 0)
+  }
+
+  function updateSelectedSceneDuration(nextValue) {
+    const safeDuration = Math.max(2, Math.min(12, toNumber(nextValue, 6)))
+    setManualSceneDurationSec(safeDuration)
+
+    let boardToPersist = null
+
+    setBoard((current) => {
+      const scenes = asArray(current.scenes)
+      const selectedId = asText(current.selectedSceneId || current.selected_scene_id)
+
+      if (!selectedId || !scenes.length) return current
+
+      const nextScenes = scenes.map((scene) => {
+        const id = asText(scene.id || scene.scene_id)
+        if (id !== selectedId) return scene
+
+        const start = toNumber(scene.start_sec ?? scene.start, 0)
+        const end = Number((start + safeDuration).toFixed(3))
+
+        return {
+          ...scene,
+          duration_sec: safeDuration,
+          duration: safeDuration,
+          end_sec: end,
+          end,
+          updatedAt: new Date().toISOString(),
+        }
+      })
+
+      const nextBoard = {
+        ...current,
+        scenes: nextScenes,
+        updatedAt: new Date().toISOString(),
+      }
+
+      boardToPersist = nextBoard
+      if (typeof writeBoardDurableBackup === 'function') {
+        writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), nextBoard)
+      }
+      return nextBoard
+    })
+
+    window.setTimeout(() => {
+      if (boardToPersist) saveBoard(boardToPersist, true)
+    }, 0)
+  }
+
 
   function togglePanel(panelKey) {
     setCollapsedPanels((current) => ({
@@ -1614,7 +1960,7 @@ function boardAudioSourcePayloadForBackend() {
         audio_slice_status: 'error',
         audio_slice_error: 'missing_board_audio_source',
       })
-      setStatus('В Board нет исходного audio asset. Нажми “Обновить из Timing” или проверь audio.assetApiPath.')
+      setStatus('В Board нет исходного audio asset. Нажми “Обновить” или проверь audio.assetApiPath.')
       return
     }
 
@@ -1666,13 +2012,33 @@ function boardAudioSourcePayloadForBackend() {
     }
   }
 
-async function takePreviousLastFrame() {
-    if (!selectedScene || !previousScene) return
+async function takePreviousLastFrame(event = null) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+
+    if (!selectedScene) {
+      setStatus('Сначала выбери сцену, куда поставить кадр.')
+      return
+    }
+    if (!previousScene) {
+      setStatus('Для первой сцены нет предыдущего видео.')
+      return
+    }
 
     const sourceLabel = previousScene.title || previousScene.id
-    const videoUrl = previousScene.video_url || previousScene.videoUrl || ''
-    const videoApiPath = previousScene.video_api_path || previousScene.videoApiPath || ''
+    const videoUrl = (
+      scenePreviewVideoUrl(previousScene) ||
+      previousScene.mmaudio_video_url || previousScene.mmaudioVideoUrl ||
+      previousScene.resultVideoUrl || previousScene.result_video_url ||
+      previousScene.video_url || previousScene.videoUrl || ''
+    )
+    const videoApiPath = (
+      previousScene.mmaudio_video_api_path || previousScene.mmaudioVideoApiPath ||
+      previousScene.video_api_path || previousScene.videoApiPath || ''
+    )
     const hasPreviousVideo = Boolean(videoUrl || videoApiPath)
+
+    setStatus(`Нажали “Взять последний кадр”: источник ${sourceLabel}`)
 
     if (hasPreviousVideo) {
       updateScene(selectedScene.id, {
@@ -1684,7 +2050,7 @@ async function takePreviousLastFrame() {
       })
 
       try {
-        setStatus(`Извлекаем последний кадр из ВИДЕО предыдущей сцены: ${sourceLabel}`)
+        setStatus(`Извлекаем последний кадр из видео предыдущей сцены: ${sourceLabel}`)
         const data = await apiRequest('/clip/video/extract-last-frame', {
           method: 'POST',
           body: JSON.stringify({
@@ -1699,23 +2065,33 @@ async function takePreviousLastFrame() {
           }),
         })
 
-        const imageUrl = data.imageUrl || data.image_url || ''
+        const imageUrl = data.imageUrl || data.image_url || data.imageApiPath || data.image_api_path || ''
+        const imageApiPath = data.imageApiPath || data.image_api_path || ''
         const imageName = data.imageName || data.image_name || `last-frame-from-${previousScene.id}.jpg`
         if (!imageUrl) throw new Error('extract_last_frame_returned_no_image_url')
 
         updateScene(selectedScene.id, {
           ...staleVideoPatch('source_frame_changed'),
+          // AVA_LAST_FRAME_V4_BOARD_VISIBLE_IMAGE
           first_frame_url: imageUrl,
-          first_frame_api_path: data.imageApiPath || data.image_api_path || '',
+          first_frame_api_path: imageApiPath,
+          start_image_url: imageUrl,
+          startImageUrl: imageUrl,
           start_image_data_url: '',
+          startImageDataUrl: '',
           first_frame_name: imageName,
+          image_url: imageUrl,
+          image_api_path: imageApiPath,
+          image_data_url: '',
+          imageDataUrl: '',
+          image_name: imageName,
           first_frame_status: 'extracted_from_previous_video',
           first_frame_source_scene_id: previousScene.id,
           first_frame_source: 'previous_video_last_frame',
           first_frame_error: '',
           image_status: 'server_frame_ready',
         })
-        setStatus(`Последний кадр из видео поставлен как первый кадр: ${selectedScene.id}`)
+        setStatus(`Готово: последний кадр из предыдущего видео поставлен в Фото/Start: ${selectedScene.id}`)
       } catch (error) {
         console.error('[Board] extract previous last frame failed', error)
         updateScene(selectedScene.id, {
@@ -1729,23 +2105,31 @@ async function takePreviousLastFrame() {
       return
     }
 
-    const url = previousScene.last_frame_url || previousScene.image_url || previousScene.first_frame_url || ''
+    const url = previousScene.last_frame_url || previousScene.end_image_url || previousScene.image_url || previousScene.first_frame_url || previousScene.start_image_url || ''
     const dataUrl = previousScene.end_image_data_url || previousScene.image_data_url || previousScene.start_image_data_url || ''
     const previewUrl = url || dataUrl
-    const name = previousScene.last_frame_name || previousScene.image_name || previousScene.first_frame_name || ''
+    const name = previousScene.last_frame_name || previousScene.image_name || previousScene.first_frame_name || `frame-from-${previousScene.id}`
 
     if (previewUrl) {
       updateScene(selectedScene.id, {
         ...staleVideoPatch('source_frame_changed'),
+        // AVA_LAST_FRAME_V4_BOARD_FALLBACK_VISIBLE
         first_frame_url: previewUrl,
+        start_image_url: previewUrl,
+        startImageUrl: previewUrl,
         start_image_data_url: dataUrl || (String(previewUrl).startsWith('data:') ? previewUrl : selectedScene.start_image_data_url || ''),
-        first_frame_name: name || `frame-from-${previousScene.id}`,
+        startImageDataUrl: dataUrl || (String(previewUrl).startsWith('data:') ? previewUrl : selectedScene.startImageDataUrl || ''),
+        first_frame_name: name,
+        image_url: previewUrl,
+        image_data_url: dataUrl || (String(previewUrl).startsWith('data:') ? previewUrl : selectedScene.image_data_url || ''),
+        imageDataUrl: dataUrl || (String(previewUrl).startsWith('data:') ? previewUrl : selectedScene.imageDataUrl || ''),
+        image_name: name,
         first_frame_status: 'copied_from_previous_frame_fallback',
         first_frame_source_scene_id: previousScene.id,
         first_frame_source: 'previous_scene_frame_fallback_no_video',
         image_status: 'local_preview',
       })
-      setStatus(`У предыдущей сцены нет видео, поэтому взят доступный кадр: ${sourceLabel}`)
+      setStatus(`У предыдущей сцены нет видео, взят доступный кадр: ${sourceLabel}`)
       return
     }
 
@@ -1846,6 +2230,14 @@ async function markVideoPlanned(sceneOverride = null) {
     if (!imageUrl) warnings.push('missing_start_image')
     if (isFirstLast && !endImageUrl) warnings.push('missing_last_frame')
     if (isLipSync && !audioSliceUrl) warnings.push('missing_audio_slice')
+
+    // AVA_LAST_FRAME_V4_BOARD_NO_POST_WITHOUT_MEDIA
+    if (warnings.length) {
+      const labels = warnings.map((item) => item === 'missing_start_image' ? 'нет фото/start image' : item === 'missing_last_frame' ? 'нет последнего кадра' : item === 'missing_audio_slice' ? 'нет audio slice для lip-sync' : item)
+      showSceneVideoInputError(sceneToStart, labels)
+      window.setTimeout(processNextQueuedBoardVideo, 80)
+      return
+    }
 
     updateScene(sceneToStart.id, {
       ...staleVideoPatch('video_restarting'),
@@ -2228,6 +2620,16 @@ async function importTimingJson(event) {
     <div className="avaPage avaBoardPage">
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" />
 
+      <WorkflowStageControls
+        stageKey="board"
+        stageLabel="Доска"
+        clearLabel="Очистить доску"
+        clearStages={['board']}
+        clearStorageMatchers={['ava:open-board-scene', 'ava_board', 'board:']}
+        clearDescription="Очистит snapshot доски и временные ключи доски. Видео/assets на диске не удаляются."
+      />
+
+
       {boardToasts.length > 0 && (
         <div className="avaBoardToastStack" role="status" aria-live="polite">
           {boardToasts.map((toast) => (
@@ -2256,14 +2658,81 @@ async function importTimingJson(event) {
           <p>Горизонтальная лента сцен, смысл, video prompts и медиа. Генерацию подключим следующим этапом.</p>
         </div>
         <div className="avaBoardHeaderActions">
-          <Link className="avaBoardHeaderLink avaBoardBackTimingLink" to={projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing'}><Clock3 size={15} /> Назад в Timing</Link>
-          <button type="button" onClick={refreshFromTiming}><RefreshCcw size={15} /> Обновить из Timing</button>
-          <Link className="avaBoardHeaderLink" to={projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'}><Film size={15} /> Перейти в видео монтаж</Link>
-          <button type="button" onClick={() => importRef.current?.click()}><FileJson size={15} /> Импорт JSON</button>
-          <button type="button" onClick={exportBoardJson}><FileJson size={15} /> Экспорт Storyboard</button>
-          <button className="avaBoardPrimary" type="button" onClick={() => saveBoard(board, false)} disabled={saving}><Save size={15} /> Сохранить</button>
+          <button
+            type="button"
+            className="avaBoardHeaderButton avaBoardActionRefresh"
+            onClick={() => {
+              try {
+                localStorage.removeItem('ava:board:cleared:v1')
+                sessionStorage.removeItem('ava:board:cleared:v1')
+              } catch {
+                // ignore
+              }
+              refreshFromTiming()
+            }}
+          >
+            <RefreshCcw size={15} /> Обновить с тайминга
+          </button>
+
+          <Link
+            className="avaBoardHeaderLink avaBoardActionMontage"
+            to={projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'}
+            onClick={() => {
+              const toPath = projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'
+              const fromPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+              try {
+                sessionStorage.setItem('ava:workflow-entry:board_assembly', JSON.stringify({
+                  schema: 'ava_workflow_entry_v1',
+                  from: 'board',
+                  to: 'board_assembly',
+                  fromLabel: 'Доска',
+                  toLabel: 'Монтажник',
+                  fromPath,
+                  toPath,
+                  projectId: projectId || '',
+                  source: 'board_to_assembly_button',
+                  enteredByUserClick: true,
+                  createdAt: Date.now(),
+                }))
+                localStorage.removeItem('ava:board-assembly:cleared:v1')
+                sessionStorage.removeItem('ava:board-assembly:cleared:v1')
+              } catch {
+                // ignore
+              }
+            }}
+          >
+            <Film size={15} /> В монтаж
+          </Link>
+
+          <button
+            type="button"
+            className="avaBoardHeaderButton avaBoardActionJson avaBoardActionImport"
+            onClick={() => importRef.current?.click()}
+          >
+            <FileJson size={15} /> Импорт
+          </button>
+
+          <button
+            type="button"
+            className="avaBoardHeaderButton avaBoardActionJson avaBoardActionExport"
+            onClick={exportBoardJson}
+          >
+            <FileJson size={15} /> Экспорт
+          </button>
         </div>
+      </section>      {/* AVA09G_HIDE_AVA08Z_BOARD_ADD_SCENE_TOP_BUTTON */}
+      {!openedFromTiming ? (
+      <section className="avaBoardManualSceneTopBar">
+        <div className="avaBoardManualSceneInfo">
+          <strong>Ручные сцены</strong>
+          <span>Добавляй сцены без тайминга — они встанут в конец доски.</span>
+        </div>
+
+        <button type="button" className="avaBoardAddSceneButton" onClick={createManualScene}>
+          + Сцена
+        </button>
       </section>
+      ) : null}
 
       <input ref={importRef} className="avaHiddenInput" type="file" accept="application/json,.json" onChange={importTimingJson} />
 
@@ -2493,7 +2962,7 @@ async function importTimingJson(event) {
                 <ImageSlot
                   title="Первый кадр"
                   subtitle="start frame"
-                  value={selectedScene.first_frame_url}
+                  value={selectedScene.first_frame_url || selectedScene.start_image_url || selectedScene.image_url}
                   name={selectedScene.first_frame_name}
                   onSelect={(event) => setSceneFile(selectedScene, 'first_frame_url', 'first_frame_name', 'image_status', event)}
                   onClear={() => clearSceneFile(selectedScene, ['first_frame_url', 'first_frame_name'])}
@@ -2511,7 +2980,7 @@ async function importTimingJson(event) {
               <ImageSlot
                 title="Фото / Start image"
                 subtitle="основной кадр для i2v / ia2v"
-                value={selectedScene.image_url}
+                value={selectedScene.image_url || selectedScene.first_frame_url || selectedScene.start_image_url}
                 name={selectedScene.image_name}
                 onSelect={(event) => setSceneFile(selectedScene, 'image_url', 'image_name', 'image_status', event)}
                 onClear={() => clearSceneFile(selectedScene, ['image_url', 'image_name'])}
@@ -2534,7 +3003,23 @@ async function importTimingJson(event) {
                   )}
                 </div>
               )}
-            </div>
+            </div>            {/* AVA09G_HIDE_AVA08Z_BOARD_DURATION_SLIDER_UNDER_VIDEO */}
+            {!openedFromTiming ? (
+            <section className="avaBoardSceneDurationPanel">
+              <label className="avaBoardDurationSlider">
+                <span>Длительность сцены: <strong>{manualSceneDurationSec} сек</strong></span>
+                <input
+                  type="range"
+                  min="2"
+                  max="12"
+                  step="0.5"
+                  value={manualSceneDurationSec}
+                  onChange={(event) => updateSelectedSceneDuration(Number(event.target.value))}
+                />
+              </label>
+            </section>
+            ) : null}
+
 
             <div className="avaBoardSceneWorkflowPanel">
               <div className="avaBoardWorkflowHead">
@@ -2548,6 +3033,7 @@ async function importTimingJson(event) {
                     type="button"
                     className={`avaBoardWorkflowButton isFrame ${selectedScene.first_frame_url ? 'isReady' : selectedScene.first_frame_status ? 'isPlanned' : ''}`}
                     onClick={takePreviousLastFrame}
+                    title={previousScene ? 'Взять последний кадр из видео предыдущей сцены' : 'Нет предыдущей сцены'}
                   >
                     <ImageIcon size={16} />
                     <span>Взять последний кадр</span>

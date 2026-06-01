@@ -1,0 +1,218 @@
+.avaWorkflowControls {
+  width: 100%;
+  margin: 0 0 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(128, 210, 255, 0.16);
+  background:
+    radial-gradient(circle at 8% 10%, rgba(101, 215, 255, 0.11), transparent 32%),
+    linear-gradient(135deg, rgba(17, 28, 58, 0.68), rgba(8, 19, 42, 0.62));
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.18);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.avaWorkflowControls.isCompact {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+}
+
+.avaWorkflowControlsInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.avaWorkflowControlsInfo span {
+  color: rgba(248, 252, 255, 0.95);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.avaWorkflowControlsInfo small {
+  color: rgba(216, 232, 255, 0.62);
+  font-size: 12px;
+}
+
+.avaWorkflowControlsActions {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.avaWorkflowControlsActions button {
+  border: 0;
+  border-radius: 15px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.avaWorkflowControlsActions button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.avaWorkflowBackButton {
+  color: #061426;
+  background: linear-gradient(135deg, #72ffd8, #62d8ff);
+}
+
+.avaWorkflowClearButton {
+  color: rgba(255, 232, 236, 0.94);
+  background: rgba(255, 91, 128, 0.14);
+  border: 1px solid rgba(255, 91, 128, 0.24) !important;
+}
+
+.avaWorkflowConfirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(91, 218, 255, 0.13), transparent 34%),
+    rgba(2, 6, 18, 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.avaWorkflowConfirmModal {
+  position: relative;
+  width: min(520px, calc(100vw - 34px));
+  border-radius: 28px;
+  border: 1px solid rgba(139, 207, 255, 0.22);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(111, 116, 255, 0.2), transparent 34%),
+    radial-gradient(circle at 94% 18%, rgba(255, 87, 119, 0.12), transparent 34%),
+    linear-gradient(145deg, rgba(18, 25, 52, 0.97), rgba(8, 18, 39, 0.97));
+  box-shadow:
+    0 34px 110px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 26px;
+  text-align: center;
+}
+
+.avaWorkflowConfirmClose {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 0;
+  color: rgba(242, 248, 255, 0.78);
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+
+.avaWorkflowConfirmIcon {
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  color: #061426;
+  background: linear-gradient(135deg, #ff7a9e, #ffd166);
+  box-shadow: 0 18px 42px rgba(255, 112, 144, 0.2);
+}
+
+.avaWorkflowEyebrow {
+  margin: 0 0 8px;
+  color: #7de4ff;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.18em;
+}
+
+.avaWorkflowConfirmModal h3 {
+  margin: 0 0 10px;
+  color: #fff;
+  font-size: 24px;
+}
+
+.avaWorkflowConfirmModal p {
+  margin: 0;
+  color: rgba(226, 239, 255, 0.72);
+  line-height: 1.55;
+}
+
+.avaWorkflowClearScope {
+  margin-top: 14px;
+  padding: 11px 13px;
+  border-radius: 15px;
+  color: rgba(226, 239, 255, 0.72);
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 13px;
+}
+
+.avaWorkflowError {
+  margin-top: 14px;
+  padding: 11px 13px;
+  border-radius: 15px;
+  color: #ffd5dd;
+  background: rgba(255, 77, 109, 0.12);
+  border: 1px solid rgba(255, 77, 109, 0.26);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.avaWorkflowConfirmActions {
+  margin-top: 22px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.avaWorkflowConfirmActions button {
+  border: 0;
+  min-width: 140px;
+  border-radius: 17px;
+  padding: 13px 18px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.avaWorkflowCancel {
+  color: rgba(238, 245, 255, 0.86);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.avaWorkflowDanger {
+  color: #18060a;
+  background: linear-gradient(135deg, #ff7a9e, #ffd166);
+}
+
+@media (max-width: 760px) {
+  .avaWorkflowControls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .avaWorkflowControlsActions,
+  .avaWorkflowControlsActions button {
+    width: 100%;
+  }
+
+  .avaWorkflowControlsActions button {
+    justify-content: center;
+  }
+
+  .avaWorkflowConfirmActions {
+    flex-direction: column-reverse;
+  }
+
+  .avaWorkflowConfirmActions button {
+    width: 100%;
+  }
+}

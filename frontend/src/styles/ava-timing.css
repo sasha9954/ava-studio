@@ -40,16 +40,38 @@
 
 .avaTimingHeaderActions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
-  min-width: 360px;
+  align-items: center;
+  min-width: min(760px, 58vw);
 }
 
 .avaTimingHeaderActions .avaSoftButton,
 .avaTimingHeaderActions .avaPrimaryButton {
-  min-width: 168px;
+  min-width: 116px;
+  min-height: 46px;
+  padding: 10px 13px;
   justify-content: center;
+  font-size: 13px;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.avaTimingHeaderActions .avaTimingActionAudio {
+  min-width: 132px;
+}
+
+.avaTimingHeaderActions .avaTimingActionSave {
+  min-width: 136px;
+}
+
+.avaTimingHeaderActions .avaTimingActionJson {
+  min-width: 112px;
+}
+
+.avaTimingHeaderActions .avaTimingActionBoard {
+  min-width: 118px;
 }
 
 .avaTimingPillLine {
@@ -2976,4 +2998,177 @@
 .avaTimingSegmentsRow button.hasBlock em,
 .avaTimingSegmentsRow button.hasBlock .avaTimingSceneRoleBadge {
   background: transparent !important;
+}
+
+
+/* AVA08L compact manual timing header actions */
+.avaTimingHeaderActions {
+  gap: 8px;
+  align-items: center;
+  min-width: min(760px, 58vw);
+}
+
+.avaTimingHeaderActions .avaSoftButton,
+.avaTimingHeaderActions .avaPrimaryButton {
+  min-width: 116px;
+  min-height: 46px;
+  padding: 10px 13px;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.avaTimingHeaderActions .avaTimingActionAudio {
+  min-width: 132px;
+}
+
+.avaTimingHeaderActions .avaTimingActionSave {
+  min-width: 136px;
+}
+
+.avaTimingHeaderActions .avaTimingActionJson {
+  min-width: 112px;
+}
+
+.avaTimingHeaderActions .avaTimingActionBoard {
+  min-width: 118px;
+}
+
+@media (max-width: 1180px) {
+  .avaTimingFlatHeader {
+    gap: 18px;
+  }
+
+  .avaTimingHeaderActions {
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .avaTimingHeaderActions .avaSoftButton,
+  .avaTimingHeaderActions .avaPrimaryButton {
+    min-width: 104px;
+    font-size: 12px;
+    padding-inline: 11px;
+  }
+}
+
+
+/* AVA08S clean manual timing header row */
+.avaTimingHeaderActions {
+  gap: 8px;
+  align-items: center;
+}
+
+.avaTimingHeaderActions .avaSoftButton,
+.avaTimingHeaderActions .avaPrimaryButton {
+  min-width: 106px;
+  min-height: 44px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  line-height: 1.05;
+}
+
+.avaTimingHeaderActions .avaTimingActionAudio {
+  min-width: 126px;
+}
+
+.avaTimingHeaderActions .avaTimingActionBoard {
+  min-width: 106px;
+}
+
+.avaTimingHeaderActions .avaTimingActionPodcast,
+.avaTimingHeaderActions .avaTimingActionSave {
+  display: none !important;
+}
+
+/* PATCH 07AQ: Manual Timing board-ready glow */
+.avaTimingHeaderActions .avaTimingActionBoard {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.avaTimingHeaderActions .avaTimingActionBoard.isReadyForBoard {
+  color: #061426 !important;
+  border-color: rgba(113, 255, 222, 0.72) !important;
+  background:
+    linear-gradient(120deg, rgba(126, 255, 217, 0.96), rgba(87, 210, 255, 0.92) 42%, rgba(173, 149, 255, 0.92) 72%, rgba(126, 255, 217, 0.96)) !important;
+  background-size: 260% 260% !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.22) inset,
+    0 12px 34px rgba(74, 222, 255, 0.26),
+    0 0 28px rgba(113, 255, 222, 0.22);
+  animation:
+    avaTimingBoardReadyGradient 2.4s ease-in-out infinite,
+    avaTimingBoardReadyPulse 1.8s ease-in-out infinite;
+}
+
+.avaTimingHeaderActions .avaTimingActionBoard.isReadyForBoard svg {
+  color: #061426 !important;
+  filter: drop-shadow(0 0 5px rgba(255,255,255,.55));
+}
+
+.avaTimingHeaderActions .avaTimingActionBoard.isReadyForBoard::before {
+  content: '';
+  position: absolute;
+  inset: -35% -55%;
+  z-index: -1;
+  background:
+    linear-gradient(115deg, transparent 30%, rgba(255,255,255,.62) 48%, transparent 66%);
+  transform: translateX(-48%);
+  animation: avaTimingBoardReadySweep 2.2s ease-in-out infinite;
+}
+
+.avaTimingHeaderActions .avaTimingActionBoard.isReadyForBoard::after {
+  content: 'готово';
+  margin-left: 7px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #053020;
+  background: rgba(255,255,255,.56);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+@keyframes avaTimingBoardReadyGradient {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes avaTimingBoardReadyPulse {
+  0%, 100% {
+    transform: translateY(0);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.22) inset,
+      0 12px 34px rgba(74, 222, 255, 0.24),
+      0 0 22px rgba(113, 255, 222, 0.18);
+  }
+  50% {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.3) inset,
+      0 16px 42px rgba(74, 222, 255, 0.34),
+      0 0 36px rgba(113, 255, 222, 0.3);
+  }
+}
+
+@keyframes avaTimingBoardReadySweep {
+  0% { transform: translateX(-58%) rotate(8deg); opacity: 0; }
+  20% { opacity: .85; }
+  56% { opacity: .55; }
+  100% { transform: translateX(58%) rotate(8deg); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avaTimingHeaderActions .avaTimingActionBoard.isReadyForBoard {
+    animation: none;
+  }
+
+  .avaTimingHeaderActions .avaTimingActionBoard.isReadyForBoard::before {
+    display: none;
+  }
 }

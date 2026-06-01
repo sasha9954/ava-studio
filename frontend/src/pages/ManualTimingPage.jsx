@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Clock3, Film, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { fetchProtectedBlobUrl, getAuthHeaders, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
+import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
+import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, makeWorkflowEntry, navigateWithWorkflowEntry, rememberWorkflowEntry, readWorkflowEntry } from '../utils/workflowNavigation.js'
 
 const STAGE = 'manual_timing'
 const DRAFT_VERSION = 'manual_timing_single_timeline_v6_handoff_manifest'
@@ -936,6 +938,10 @@ function applySceneSliceTranslations(sceneList = [], translatedItems = [], speec
 
 export default function ManualTimingPage() {
   const { projectId } = useParams()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const manualTimingWorkflowEntry = useMemo(() => readWorkflowEntry('manual_timing', location.state), [location.state])
+  const openedFromPodcast = manualTimingWorkflowEntry?.from === 'podcast'
   const { activeProject, loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
   const workspaceMode = !projectId
   const [draft, setDraft] = useState(emptyDraft)
@@ -1113,6 +1119,21 @@ export default function ManualTimingPage() {
       setLoading(true)
       setStatus('загрузка snapshot…')
       try {
+        if (isWorkflowStageCleared('manual_timing')) {
+          if (!active) return
+          historyRef.current = []
+          setDraft(emptyDraft)
+          setHistory([])
+          setBlockSelection([])
+          setBlockDraft({ title: '' })
+          setSceneEditor(null)
+          setCursorSec(0)
+          setAudioSrc('')
+          setStatus('Тайминг очищен. Загрузи новое аудио или импортируй JSON.')
+          setLoading(false)
+          return
+        }
+
         const data = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
         if (!active) return
         let incomingPodcastProject = null
@@ -1135,6 +1156,17 @@ export default function ManualTimingPage() {
         }
 
         const hasPodcastHandoff = Boolean(incomingPodcastProject?.audio || incomingPodcastProject?.finalAudio || incomingPodcastProject?.final_audio)
+        if (hasPodcastHandoff) {
+          clearWorkflowStageClearedMarker('manual_timing')
+          rememberWorkflowEntry(makeWorkflowEntry({
+            from: 'podcast',
+            to: 'manual_timing',
+            fromPath: projectId ? `/app/projects/${projectId}/podcast` : '/app/workspace/podcast',
+            toPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+            projectId,
+            source: 'podcast_to_manual_timing_handoff',
+          }))
+        }
         let normalized = hasPodcastHandoff
           ? avaStage95DraftFromPodcastHandoff(avaStage110ForcePodcastBlockScenes(incomingPodcastProject))
           : normalizeDraft(data)
@@ -1655,6 +1687,7 @@ export default function ManualTimingPage() {
   }
 
   async function handleAudioUpload(event) {
+    clearWorkflowStageClearedMarker('manual_timing')
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
@@ -2905,6 +2938,14 @@ const clearedDraft = normalizeDraft({
     const podcastPath = projectId
       ? `/app/projects/${projectId}/podcast?sourceNodeId=${encodeURIComponent(sourceNodeId)}`
       : `/app/workspace/podcast?sourceNodeId=${encodeURIComponent(sourceNodeId)}`;
+    rememberWorkflowEntry(makeWorkflowEntry({
+      from: 'manual_timing',
+      to: 'podcast',
+      fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+      toPath: podcastPath,
+      projectId,
+      source: 'manual_timing_to_podcast_button',
+    }));
     window.location.assign(podcastPath);
   }
 
@@ -2915,6 +2956,16 @@ const clearedDraft = normalizeDraft({
       <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm" hidden onChange={handleAudioUpload} />
       <input ref={jsonInputRef} type="file" accept="application/json,.json" hidden onChange={importTimingJson} />
 
+      {/* AVA08D_MANUAL_TIMING_CONTROLS */}
+      <WorkflowStageControls
+        stageKey="manual_timing"
+        stageLabel="Тайминг"
+        clearLabel="Очистить тайминг"
+        clearStages={['manual_timing']}
+        clearStorageMatchers={['manual_timing', 'timing', 'podcast-to-timing', 'downstream-reset']}
+        clearDescription="Очистит snapshot тайминга и временные ключи тайминга. Загруженные assets на диске не удаляются."
+      />
+
       <div className="avaTimingFlatHeader">
         <div>
           <p><Clock3 size={15} /> STAGE 3.4 · basic timing controls</p>
@@ -2923,19 +2974,29 @@ const clearedDraft = normalizeDraft({
         </div>
         <div className="avaTimingHeaderActions">
           <button className="avaSoftButton avaTimingActionButton avaTimingActionAudio" type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || loading}>
-            <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Загрузить аудио'}
+            <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Аудио'}
           </button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт JSON</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchSeedJson} disabled={loading || !scenes.length}>📷 JSON для видео</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchCodexJobJson} disabled={loading || !scenes.length}>🧠 JSON для Codex</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionPodcast" type="button" onClick={openPodcastComposer} disabled={!hasAudio || loading}>🎙 Подкаст / аудио</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchSeedJson} disabled={loading || !scenes.length}>📷 Видео JSON</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchCodexJobJson} disabled={loading || !scenes.length}>🧠 Codex</button>
 
-          <Link className="avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink" to={projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'}>
-            <Film size={16} /> Перейти в доску
-          </Link>
-          <button className="avaPrimaryButton avaTimingActionButton avaTimingActionSave" type="button" onClick={() => saveDraft(draft, 'button_save')} disabled={saving || loading}>
-            <Save size={16} /> {saving ? 'Сохраняем…' : 'Сохранить'}
+          <button
+            className={`avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink ${hasAudio ? 'isReadyForBoard' : ''}`}
+            type="button"
+            onClick={() => {
+              const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+              navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
+                from: 'manual_timing',
+                to: 'board',
+                fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+                toPath,
+                projectId,
+                source: 'manual_timing_to_board_button',
+              }))
+            }}
+          >
+            <Film size={16} /> В доску
           </button>
         </div>
       </div>

@@ -4,6 +4,8 @@ import { ArrowLeft, Clapperboard, Download, Music, RefreshCcw, SlidersHorizontal
 import { useProjects } from '../context/ProjectContext.jsx'
 import { apiRequest, fetchProtectedBlobUrl, uploadAudioAsset } from '../services/apiClient.js'
 import '../styles/ava-board.css'
+import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
+import { AVA_BOARD_ASSEMBLY_CLEARED_KEY } from '../utils/workflowNavigation.js'
 
 const AUDIO_MODES = [
   {
@@ -36,6 +38,33 @@ function assemblySettingsKey(projectId = '') {
   return projectId
     ? `ava:board-assembly:${projectId}:settings:v1`
     : 'ava:board-assembly:workspace:settings:v1'
+}
+
+function isBoardAssemblyCleared() {
+  try {
+    return Boolean(localStorage.getItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY) || sessionStorage.getItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY))
+  } catch {
+    return false
+  }
+}
+
+function clearBoardAssemblyClearedMarker() {
+  try {
+    localStorage.removeItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY)
+    sessionStorage.removeItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+function emptyBoardAssemblySource() {
+  return {
+    source: 'board_assembly_cleared',
+    boardVersion: 'board_assembly_cleared_v1',
+    scenes: [],
+    audio: null,
+    updatedAt: new Date().toISOString(),
+  }
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -408,6 +437,19 @@ export default function BoardAssemblyPage() {
   async function loadBoardSnapshot() {
     setLoading(true)
     setStatus('Загружаем Board snapshot…')
+
+    if (isBoardAssemblyCleared()) {
+      setBoard(emptyBoardAssemblySource())
+      setSelectedSceneId('')
+      setFinalVideoUrl('')
+      setFinalDirty(false)
+      setAssemblyJob(null)
+      setAssemblyRunning(false)
+      setStatus('Монтаж очищен. Нажми “Обновить из Board”, чтобы снова подтянуть сцены.')
+      setLoading(false)
+      return
+    }
+
     try {
       const data = workspaceMode
         ? await loadWorkspaceStage('board')
@@ -723,6 +765,15 @@ export default function BoardAssemblyPage() {
 
   return (
     <div className="avaPage avaAssemblyPage">
+      <WorkflowStageControls
+        stageKey="board_assembly"
+        stageLabel="Монтажник"
+        clearLabel="Очистить монтаж"
+        clearStages={[]}
+        clearStorageMatchers={['board-assembly', 'board_assembly', 'assemblyjob']}
+        clearDescription="Очистит настройки и временный результат монтажника. Сцены и медиа-файлы не удаляются."
+      />
+
       <section className="avaAssemblyHeader">
         <div>
           <p className="avaEyebrow"><Clapperboard size={15} /> Stage 6.1 video montage foundation</p>
@@ -730,8 +781,13 @@ export default function BoardAssemblyPage() {
           <p>Сборка готовых сцен из Board в финальный ролик. Длительность сцен не подгоняем здесь — это делается в Доске при генерации.</p>
         </div>
         <div className="avaAssemblyHeaderActions">
-          <Link className="avaSecondaryButton" to={boardRoute}><ArrowLeft size={16} /> Вернуться в доску</Link>
-          <button type="button" onClick={loadBoardSnapshot}><RefreshCcw size={15} /> Обновить из Board</button>
+          <button
+              type="button"
+              onClick={() => {
+                clearBoardAssemblyClearedMarker()
+                loadBoardSnapshot()
+              }}
+            ><RefreshCcw size={15} /> Обновить из Board</button>
           <button type="button" disabled><Wand2 size={15} /> Собрать preview</button>
         </div>
       </section>

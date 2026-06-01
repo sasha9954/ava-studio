@@ -22,6 +22,7 @@ VIDEO_MATCH_SOURCES_DIR = Path(__file__).resolve().parents[2] / "static" / "asse
 
 
 
+VIDEO_MATCH_AUDIO_DIR = Path(__file__).resolve().parents[2] / "static" / "assets" / "video_match_audio"
 # AVA_PATCH06_RESOLVE_BOARD_OVERRIDE_URL: allow Video Node assembly to use Board clips by /static URL when localPath is missing.
 def _resolve_override_path_from_url(raw_url: str | None) -> Path | None:
     raw = str(raw_url or "").strip()
@@ -291,6 +292,67 @@ async def get_video_match_source(filename: str):
     return FileResponse(path, media_type="video/mp4", filename=safe_name)
 
 
+
+
+@router.get("/audio/{filename}")
+async def get_video_match_audio(filename: str):
+    safe_name = Path(filename).name
+    if safe_name != filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail={"code": "invalid_filename"})
+    path = VIDEO_MATCH_AUDIO_DIR / safe_name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail={"code": "audio_not_found"})
+    media_type = "audio/mpeg"
+    suffix = path.suffix.lower()
+    if suffix == ".wav":
+        media_type = "audio/wav"
+    elif suffix == ".m4a":
+        media_type = "audio/mp4"
+    elif suffix == ".aac":
+        media_type = "audio/aac"
+    elif suffix == ".flac":
+        media_type = "audio/flac"
+    elif suffix == ".ogg":
+        media_type = "audio/ogg"
+    return FileResponse(path, media_type=media_type, filename=safe_name)
+
+
+@router.post("/audio-upload")
+async def upload_video_match_audio(
+    file: UploadFile = File(...),
+    nodeId: str | None = Form(default=None),
+    _user=Depends(get_current_user),
+):
+    _ = nodeId
+    original_name = str(file.filename or "audio.mp3").strip() or "audio.mp3"
+    suffix = Path(original_name).suffix.lower()
+    allowed_ext = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
+    content_type = str(file.content_type or "").lower()
+    if not (content_type.startswith("audio/") or suffix in allowed_ext):
+        raise HTTPException(status_code=400, detail={"code": "invalid_audio_type"})
+    safe_ext = suffix if suffix in allowed_ext else ".mp3"
+    VIDEO_MATCH_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    stored_filename = f"video_match_audio_{uuid.uuid4().hex}{safe_ext}"
+    stored_path = VIDEO_MATCH_AUDIO_DIR / stored_filename
+    with stored_path.open("wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
+    duration_sec = _probe_duration_sec(stored_path)
+    return {
+        "ok": True,
+        "audioPathForAssembly": str(stored_path),
+        "audioPath": str(stored_path),
+        "audioUrl": f"/api/video-match/audio/{stored_filename}",
+        "filename": original_name,
+        "storedFilename": stored_filename,
+        "durationSec": round(float(duration_sec or 0), 3),
+        "duration_sec": round(float(duration_sec or 0), 3),
+    }
+
+
 @router.post("/assemble")
 async def assemble_video_match_preview(payload: AssembleVideoMatchRequest = Body(...), _user=Depends(get_current_user)):
     source_path = Path(payload.sourceVideoPath).expanduser()
@@ -459,7 +521,7 @@ async def assemble_video_match_preview(payload: AssembleVideoMatchRequest = Body
         output_path = VIDEO_MATCH_OUTPUTS_DIR / output_name
         audio_path_raw = str(payload.audioPath or "").strip()
         audio_input = Path(audio_path_raw).expanduser() if audio_path_raw else None
-        audio_ext_allowed = {".mp3", ".wav", ".m4a", ".aac"}
+        audio_ext_allowed = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
         has_audio = False
         if payload.includeAudio:
             if not audio_path_raw:

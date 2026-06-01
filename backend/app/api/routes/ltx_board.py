@@ -553,6 +553,13 @@ def _resolve_local_file(value: str | None = None, *, asset_id: str | None = None
         if path.exists() and path.is_file():
             return path
 
+    # AVA_LAST_FRAME_V4_RESOLVE_STATIC_URL
+    parsed_url = urllib.parse.urlparse(raw)
+    if parsed_url.scheme in {"http", "https"} and parsed_url.path.startswith("/static/"):
+        path = _settings_static_path() / parsed_url.path[len("/static/") :]
+        if path.exists() and path.is_file():
+            return path
+
     public_base = _settings_public_base_url()
     if public_base and raw.startswith(public_base):
         tail = raw[len(public_base) :]
@@ -1144,46 +1151,51 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     end_data_url = payload.end_image_data_url or payload.endImageDataUrl
     audio_data_url = payload.audio_data_url or payload.audioDataUrl
 
-    if route.startswith("first_last"):
-        missing_media = []
-        if not (start_url or image_url or start_data_url or image_data_url):
-            missing_media.append("start_image")
-        if not (end_url or end_data_url):
-            missing_media.append("end_image")
-        if missing_media:
-            status = "blocked_missing_first_last_media"
-            job = {
-                "jobId": job_id,
-                "status": status,
-                "createdAt": now,
-                "updatedAt": now,
-                "sceneId": payload.scene_id or payload.sceneId,
-                "projectId": payload.project_id or payload.projectId,
-                "route": route,
-                "workflowKey": workflow_key,
-                "workflowExists": workflow_path.exists(),
-                "targetComfy": "main_ltx",
-                "targetComfyBaseUrl": main_url,
-                "targetDurationSec": target_duration,
-                "generationDurationSec": generation_duration,
-                "trimToDurationSec": target_duration,
-                "plusOneSecondApplied": generation_duration > target_duration,
-                "creditCost": credit_cost,
-                "creditCharged": False,
-                "error": {"code": status, "missing": missing_media},
-                "payload": payload.model_dump(),
-            }
-            _ava_credit_attach_job_user(job, user)
-            BOARD_VIDEO_JOBS[job_id] = job
-            return {
-                "ok": False,
-                "jobId": job_id,
-                "job_id": job_id,
-                "status": status,
-                "statusEndpoint": f"/api/clip/video/status/{job_id}",
-                "missing": missing_media,
-                **job,
-            }
+    # AVA_LAST_FRAME_V4_BLOCK_REQUIRED_MEDIA
+    requires_start_image = route in {"i2v", "ia2v", "ia2v_lipsync", "lip_sync", "i2v_sound", "i2v_text", "first_last", "first_last_sound"} or route.startswith("first_last")
+    requires_end_image = route.startswith("first_last")
+    requires_audio_slice = route in {"ia2v", "ia2v_lipsync", "lip_sync"}
+    missing_media = []
+    if requires_start_image and not (start_url or image_url or start_data_url or image_data_url):
+        missing_media.append("start_image")
+    if requires_end_image and not (end_url or end_data_url):
+        missing_media.append("end_image")
+    if requires_audio_slice and not (audio_url or audio_data_url):
+        missing_media.append("audio_slice")
+    if missing_media:
+        status = "blocked_missing_required_media"
+        job = {
+            "jobId": job_id,
+            "status": status,
+            "createdAt": now,
+            "updatedAt": now,
+            "sceneId": payload.scene_id or payload.sceneId,
+            "projectId": payload.project_id or payload.projectId,
+            "route": route,
+            "workflowKey": workflow_key,
+            "workflowExists": workflow_path.exists(),
+            "targetComfy": "main_ltx",
+            "targetComfyBaseUrl": main_url,
+            "targetDurationSec": target_duration,
+            "generationDurationSec": generation_duration,
+            "trimToDurationSec": target_duration,
+            "plusOneSecondApplied": generation_duration > target_duration,
+            "creditCost": credit_cost,
+            "creditCharged": False,
+            "error": {"code": status, "missing": missing_media},
+            "payload": payload.model_dump(),
+        }
+        _ava_credit_attach_job_user(job, user)
+        BOARD_VIDEO_JOBS[job_id] = job
+        return {
+            "ok": False,
+            "jobId": job_id,
+            "job_id": job_id,
+            "status": status,
+            "statusEndpoint": f"/api/clip/video/status/{job_id}",
+            "missing": missing_media,
+            **job,
+        }
 
     uploaded_image = _comfy_upload_file(main_url, _local_file_or_data_url(image_url, data_url=image_data_url, fallback_ext='.png'), subfolder=f"ava_{job_id}") if (image_url or image_data_url) else None
     uploaded_start = _comfy_upload_file(main_url, _local_file_or_data_url(start_url, data_url=start_data_url, fallback_ext='.png'), subfolder=f"ava_{job_id}") if ((start_url and start_url != image_url) or (start_data_url and start_data_url != image_data_url)) else uploaded_image

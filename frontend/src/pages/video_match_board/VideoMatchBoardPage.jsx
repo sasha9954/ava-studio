@@ -23,6 +23,7 @@ import {
 } from "../clip_nodes/video_match/videoMatchBoardDomain.js";
 import "./VideoMatchBoardPage.css";
 import { WORKFLOW_PRESETS, getPresetById } from "../../data/codex_jobs/index.js";
+import WorkflowStageControls from "../../components/WorkflowStageControls.jsx";
 
 const DEFAULT_WORKFLOW_PRESET = "video_first_documentary";
 const DEFAULT_WORKFLOW_STEP = "01_video_inventory";
@@ -526,7 +527,7 @@ function getResolvedOverrideUrl(blockOrCandidate = {}) {
   return resolveOutputUrl(blockOrCandidate?.overrideVideoUrl || "");
 }
 
-const AUDIO_EXPORT_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac"];
+const AUDIO_EXPORT_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"];
 
 function validateAssembleAudioPath(rawPath = "") {
   const value = String(rawPath || "").trim();
@@ -552,11 +553,11 @@ function resolveAssembleApiErrorMessage(error) {
     || error?.response?.detail?.code
     || "",
   ).trim();
-  if (code === "AUDIO_PATH_REQUIRED") return "Для сборки MP4 с аудио укажите путь к аудиофайлу.";
+  if (code === "AUDIO_PATH_REQUIRED") return "Загрузите аудио через +Аудио: файл должен сохраниться на backend для MP4-сборки.";
   if (code === "AUDIO_PATH_NOT_FOUND") return "Файл не найден по указанному пути к аудио.";
   if (code === "AUDIO_PATH_INVALID_EXT") return "Неподдерживаемый формат аудио. Используйте .mp3, .wav, .m4a или .aac.";
   if (["AUDIO_PATH_PREVIEW_ONLY", "AUDIO_PATH_NOT_LOCAL", "AUDIO_PATH_TRUNCATED"].includes(code)) {
-    return "Путь к аудио выглядит неверно. Для MP4 с аудио укажите реальный локальный путь.";
+    return "Аудио не готово для MP4. Нажмите +Аудио ещё раз, чтобы файл загрузился на backend.";
   }
   return String(error?.message || error || "Не удалось собрать MP4");
 }
@@ -695,6 +696,20 @@ export default function VideoMatchBoardPage() {
     errorMessage: "",
   });
   const [audioLoadMessage, setAudioLoadMessage] = useState("");
+  const audioLoadMessageTone = useMemo(() => {
+    const value = String(audioLoadMessage || "").toLowerCase();
+    if (!value) return "";
+    if (value.includes("готово") || value.includes("загружено на backend") || value.includes("ready")) return "isSuccess";
+    if (value.includes("загружаю") || value.includes("upload")) return "isInfo";
+    return "isError";
+  }, [audioLoadMessage]);
+
+  useEffect(() => {
+    const value = String(audioLoadMessage || "").toLowerCase();
+    if (!(value.includes("готово") || value.includes("загружено на backend") || value.includes("ready"))) return undefined;
+    const timer = window.setTimeout(() => setAudioLoadMessage(""), 3600);
+    return () => window.clearTimeout(timer);
+  }, [audioLoadMessage]);
   const [previewCandidateId, setPreviewCandidateId] = useState("");
   const [isAssemblyPlaying, setIsAssemblyPlaying] = useState(false);
   const [isPlaybackActive, setIsPlaybackActive] = useState(false);
@@ -709,6 +724,7 @@ export default function VideoMatchBoardPage() {
   const [jsonInputDraft, setJsonInputDraft] = useState("");
   const [boardGeneratedClips, setBoardGeneratedClips] = useState([]);
   const [boardGeneratedClipsStatus, setBoardGeneratedClipsStatus] = useState("");
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   const refreshBoardGeneratedClips = useCallback(async (reason = "auto") => {
     try {
@@ -750,7 +766,15 @@ export default function VideoMatchBoardPage() {
   const runtimeAudioPreviewUrlRef = useRef(String(initialProject?.audioPreviewUrl || "").startsWith("blob:") ? String(initialProject?.audioPreviewUrl || "") : "");
   const useAudioPreview = Boolean(project.useAudioPreview);
   const wantsAssembleWithAudio = useAudioPreview;
-  const resolvedAssembleAudioPath = String(assembleAudioPath || project?.timingContext?.sourceAudioPath || "").trim();
+  const uploadedAssemblyAudioPath = String(
+    project?.audioPathForAssembly
+    || project?.audioPreviewMeta?.backendPath
+    || project?.timingContext?.sourceAudioPath
+    || project?.assembleAudioPath
+    || assembleAudioPath
+    || ""
+  ).trim();
+  const resolvedAssembleAudioPath = /(^|[\\/])path[\\/]to[\\/]|practice_30/i.test(uploadedAssemblyAudioPath) ? "" : uploadedAssemblyAudioPath;
   const assembleAudioPathValidation = validateAssembleAudioPath(resolvedAssembleAudioPath);
   const isAssembleAudioPathValid = assembleAudioPathValidation.ok;
   const audioPathInputError = wantsAssembleWithAudio && !isAssembleAudioPathValid;
@@ -928,7 +952,7 @@ export default function VideoMatchBoardPage() {
     setPreviewCandidateId("");
     setIsAssemblyPlaying(false);
     setIsPlaybackActive(false);
-    setAssembleAudioPath(String(initialProject?.assembleAudioPath || initialProject?.audioPath || ""));
+    setAssembleAudioPath(String(initialProject?.audioPathForAssembly || initialProject?.audioPreviewMeta?.backendPath || initialProject?.timingContext?.sourceAudioPath || initialProject?.assembleAudioPath || initialProject?.audioPath || ""));
     setAssembledPreview(null);
     setAssembleError("");
     setAssembleWarning("");
@@ -969,7 +993,7 @@ export default function VideoMatchBoardPage() {
         setProject(restoredProject);
         setVideoDurationSec(Number(restoredProject?.sourceVideo?.duration_sec || 0));
         setAudioDurationSec(Number(restoredProject?.audioPreviewMeta?.duration_sec || restoredProject?.timingContext?.audioDurationSec || 0));
-        setAssembleAudioPath(String(restoredProject?.assembleAudioPath || restoredProject?.audioPath || ""));
+        setAssembleAudioPath(String(restoredProject?.audioPathForAssembly || restoredProject?.audioPreviewMeta?.backendPath || restoredProject?.timingContext?.sourceAudioPath || restoredProject?.assembleAudioPath || restoredProject?.audioPath || ""));
         setStateOrigin("backend_workspace_restored");
         console.info("[VIDEO MATCH BACKEND WORKSPACE RESTORED]", {
           nodeId,
@@ -1765,7 +1789,7 @@ export default function VideoMatchBoardPage() {
     }
   };
 
-  const onAudioFileChange = (file) => {
+  const onAudioFileChange = async (file) => {
     if (!file) return;
     if (audioObjectUrlRef.current) URL.revokeObjectURL(audioObjectUrlRef.current);
     const url = URL.createObjectURL(file);
@@ -1773,17 +1797,66 @@ export default function VideoMatchBoardPage() {
     runtimeAudioPreviewUrlRef.current = url;
     setAudioDurationSec(0);
     setAudioCurrentTimeSec(0);
-    setAudioLoadMessage("");
+    setAudioLoadMessage("Загружаю аудио на backend для MP4-сборки...");
+    setAssembleAudioPath("");
+    const baseAudioMeta = {
+      filename: file.name || "audio.mp3",
+      duration_sec: 0,
+      type: file.type || "audio/mpeg",
+      size: file.size || 0,
+    };
     patchProject({
       audioPreviewUrl: url,
-      audioPreviewMeta: {
-        filename: file.name || "audio.mp3",
-        duration_sec: 0,
-        type: file.type || "audio/mpeg",
-        size: file.size || 0,
-      },
+      audioPreviewMeta: baseAudioMeta,
+      assembleAudioPath: "",
+      audioPathForAssembly: "",
       useAudioPreview: true,
     });
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("nodeId", nodeId);
+    try {
+      const response = await fetch(`${API_BASE}/api/video-match/audio-upload`, {
+        method: "POST",
+        credentials: "include",
+        headers: getVideoMatchAuthHeaders(),
+        body: formData,
+      });
+      const data = await readVideoMatchJsonResponse(response);
+      if (!response.ok || !data?.ok) throw new Error(getVideoMatchApiErrorMessage(data, response, "audio upload failed"));
+      const backendAudioPath = String(data.audioPathForAssembly || data.audioPath || "").trim();
+      const rawAudioUrl = String(data.audioUrl || "").trim();
+      const backendAudioUrl = rawAudioUrl
+        ? (rawAudioUrl.startsWith("http") ? rawAudioUrl : `${API_BASE}${rawAudioUrl}`)
+        : "";
+      const backendDuration = Number(data.durationSec || data.duration_sec || 0) || 0;
+      if (!backendAudioPath) throw new Error("audio upload response missing audioPathForAssembly");
+      setAssembleAudioPath(backendAudioPath);
+      patchProject({
+        assembleAudioPath: backendAudioPath,
+        audioPathForAssembly: backendAudioPath,
+        audioPreviewBackendUrl: backendAudioUrl,
+        audioPreviewMeta: {
+          ...baseAudioMeta,
+          backendPath: backendAudioPath,
+          backendUrl: backendAudioUrl,
+          duration_sec: backendDuration || 0,
+        },
+        timingContext: {
+          ...(project.timingContext || {}),
+          sourceAudioPath: backendAudioPath,
+          sourceAudioFilename: data.filename || file.name || "audio.mp3",
+          sourceAudioDurationSec: backendDuration || Number(project.timingContext?.audioDurationSec || 0) || 0,
+        },
+        useAudioPreview: true,
+      });
+      setAudioLoadMessage("Аудио загружено на backend и готово для MP4-сборки.");
+    } catch (error) {
+      setAssembleAudioPath("");
+      patchProject({ assembleAudioPath: "", audioPathForAssembly: "" }, { lastGood: false });
+      setAudioLoadMessage(`Аудио играет в preview, но НЕ загрузилось на backend для MP4: ${String(error?.message || error)}`);
+    }
   };
 
   const onLoadedMetadata = () => {
@@ -2057,7 +2130,7 @@ export default function VideoMatchBoardPage() {
       return;
     }
     if (wantsAssembleWithAudio && !isAssembleAudioPathValid) {
-      setAssembleError("Путь к аудио выглядит неверно. Для MP4 с аудио укажите реальный локальный путь.");
+      setAssembleError("Для MP4 с аудио нажмите +Аудио: файл должен загрузиться на backend автоматически. Ручной путь больше не нужен.");
       return;
     }
     setIsAssemblingMp4(true);
@@ -2717,12 +2790,42 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
 
   return (
     <div className="videoMatchPage">
+
+      {/* AVA_PATCH_VIDEO_MATCH_CLEAR_MODAL_V9_START */}
+      {resetConfirmOpen ? (
+        <div className="videoMatchModalOverlay" role="dialog" aria-modal="true" aria-label="Очистить Video Match Node" onMouseDown={() => setResetConfirmOpen(false)}>
+          <div className="videoMatchResetModal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="videoMatchResetModalTop">
+              <span className="videoMatchResetModalIcon">🧹</span>
+              <div>
+                <h3>Очистить Video Match Node?</h3>
+                <p>Удалится текущая доска, candidates и черновая сборка. Это действие не отправляет ничего в генерацию.</p>
+              </div>
+            </div>
+            <div className="videoMatchResetModalWarn">Лучше сначала экспортировать пакет/JSON, если этот board ещё нужен.</div>
+            <div className="videoMatchResetModalActions">
+              <button className="videoMatchModalCancelBtn" type="button" onClick={() => setResetConfirmOpen(false)}>Отмена</button>
+              <button className="videoMatchModalDangerBtn" type="button" onClick={() => { setResetConfirmOpen(false); clearNodeState(); }}>Очистить</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {/* AVA_PATCH_VIDEO_MATCH_CLEAR_MODAL_V9_END */}
       <div className="videoMatchHeader">
         <div>
           <h1>Video Match Board</h1>
           <p>Компактная доска подбора фрагментов большого видео под аудио-карту.</p>
         </div>
-        <button className="btn" type="button" onClick={() => navigate(-1)}>Назад в граф</button>
+        <div className="videoMatchHeaderActions">
+          <button className="videoMatchTopClearBtn" type="button" onClick={() => setResetConfirmOpen(true)} title="Очистить текущую доску">
+            <span className="videoMatchTopClearIcon">🧹</span>
+            <span>Очистить</span>
+          </button>
+          <button className="videoMatchBackMenuBtn" type="button" onClick={() => navigate(-1)} title="Вернуться к предыдущему экрану">
+            <span className="videoMatchBackMenuIcon">←</span>
+            <span>Назад в меню</span>
+          </button>
+        </div>
       </div>
 
       <div className="videoMatchSummaryBar">
@@ -2776,7 +2879,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
             preload="metadata"
           />
           {sourceVideoLoadMessage ? <div className="videoMatchError">{sourceVideoLoadMessage}</div> : null}
-          {audioLoadMessage ? <div className="videoMatchError videoMatchAudioNotice">{audioLoadMessage}</div> : null}
+          {audioLoadMessage ? <div className={`videoMatchAudioNotice ${audioLoadMessageTone || "isInfo"}`}>{audioLoadMessage}</div> : null}
 
           <div className="videoMatchTimelineMeta">
             <span>{project.sourceVideo?.filename || "source.mp4"}</span>
@@ -2831,8 +2934,8 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
               : <span className="videoMatchAudioStatusBadge isWarn">⚠️ Аудио для предпросмотра не загружено</span>}
             {wantsAssembleWithAudio ? (
               isAssembleAudioPathValid
-                ? <span className="videoMatchAudioStatusBadge isOk">✅ Путь к аудио для MP4 указан</span>
-                : <span className={`videoMatchAudioStatusBadge ${resolvedAssembleAudioPath ? "isError" : "isWarn"}`}>{resolvedAssembleAudioPath ? "❌ Путь к аудио выглядит неверно" : "⚠️ Путь к аудио для MP4 не указан"}</span>
+                ? <span className="videoMatchAudioStatusBadge isOk">✅ Аудио для MP4 готово</span>
+                : <span className={`videoMatchAudioStatusBadge ${resolvedAssembleAudioPath ? "isError" : "isWarn"}`}>{resolvedAssembleAudioPath ? "❌ Аудио не готово для MP4" : "⚠️ Нажмите +Аудио для MP4"}</span>
             ) : (
               <span className="videoMatchAudioStatusBadge isWarn">⚠️ Собрать без аудио</span>
             )}
@@ -2867,22 +2970,16 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
             <span>{selectedBlock ? `${selectedBlock.id}: ${formatSec(selectedBlock.sourceVideoStartSec)}–${formatSec(selectedBlock.sourceVideoEndSec)} с` : "Кусок не выбран"}</span>
           </div>
           <div className="videoMatchContextRows">
-            <label>
-              Путь к аудио для сборки
-              <input
-                type="text"
-                value={assembleAudioPath}
-                className={audioPathInputError ? "videoMatchInputInvalid" : ""}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setAssembleAudioPath(value);
-                  patchProject({ assembleAudioPath: value }, { lastGood: false });
-                }}
-                placeholder="C:\\path\\to\\practice_30sec_audio.mp3"
-              />
-            </label>
-            <div className="videoMatchWarnings">
-              Для MP4-сборки нужен реальный путь к mp3 на диске. Загруженный через +Аудио blob используется только для предпросмотра.
+            <div className={`videoMatchAutoAudioBox ${isAssembleAudioPathValid ? "isReady" : "isMissing"}`}>
+              <div className="videoMatchAutoAudioTitle">
+                {isAssembleAudioPathValid ? "✓ Аудио готово для MP4-сборки" : "⚠ MP4-аудио не подготовлено"}
+              </div>
+              <div className="videoMatchAutoAudioText">
+                {isAssembleAudioPathValid
+                  ? "Файл уже загружен на backend через +Аудио. Ручной путь больше не нужен."
+                  : "Нажмите +Аудио и выберите mp3/wav/m4a — система сама сохранит файл для сборки."}
+              </div>
+              {isAssembleAudioPathValid ? <div className="videoMatchAssemblyAudioPathHint">{resolvedAssembleAudioPath}</div> : null}
             </div>
             <details className="videoMatchAudioMixDetails">
               <summary>
@@ -3102,7 +3199,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
             <button className="clipSB_btn clipSB_btnPrimary" type="button" onClick={onApplyJson}>✅ Применить</button>
             <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => forceApplyVideoMatchJsonText(String(jsonInputDraft || project.jsonInputPreview || project.jsonInput || ""))}>⚠️ Заменить проект</button>
             <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={onExportChatGptPackage}>📤 Пакет для ChatGPT</button>
-            <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => { if (window.confirm("Очистить Video Match Node и удалить текущий board/candidates/черновую сборку?")) clearNodeState(); }}>🧹 Очистить</button>
+            <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => setResetConfirmOpen(true)}>🧹 Очистить</button>
           </div>
           <div className="videoMatchWorkflowStatus">Пакет для ChatGPT сохраняет контекст. Пришлите его в чат — ChatGPT предложит следующий шаг и напишет точное задание Codex.</div>
           <textarea value={jsonInputDraft || project.jsonInputPreview || ""} onChange={(event) => setJsonInputDraft(event.target.value)} placeholder="Вставьте JSON schema video_match_board_v1 или video_match_board_v2..." />

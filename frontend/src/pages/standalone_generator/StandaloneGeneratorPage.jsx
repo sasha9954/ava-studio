@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './StandaloneGeneratorPage.css'
 import { pickLatestGeneratorJob, upsertGlobalJob } from '../../services/generatorJobs'
+import { makeWorkflowEntry, rememberWorkflowEntry } from '../../utils/workflowNavigation.js'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
@@ -342,6 +343,73 @@ function readFileAsDataUrl(file) {
     reader.onload = () => resolve(String(reader.result || ''))
     reader.onerror = () => reject(reader.error || new Error('file read failed'))
     reader.readAsDataURL(file)
+  })
+}
+
+function readBlobAsDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    if (!blob) return resolve('')
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('blob read failed'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function readUrlAsDataUrl(url) {
+  const cleanUrl = normalizeUrl(url)
+  if (!cleanUrl) return ''
+  if (cleanUrl.startsWith('data:')) return cleanUrl
+  const response = await fetch(cleanUrl)
+  if (!response.ok) throw new Error(`frame image download failed: ${response.status}`)
+  const blob = await response.blob()
+  return readBlobAsDataUrl(blob)
+}
+
+function extractLastFrameFromVideoInBrowser(url) {
+  return new Promise((resolve, reject) => {
+    const cleanUrl = normalizeUrl(url)
+    if (!cleanUrl) return reject(new Error('missing video url'))
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.muted = true
+    video.preload = 'auto'
+    video.playsInline = true
+    let done = false
+    const fail = (message) => {
+      if (done) return
+      done = true
+      try { video.removeAttribute('src'); video.load?.() } catch {}
+      reject(new Error(message))
+    }
+    const finish = () => {
+      if (done) return
+      try {
+        const width = Math.max(2, video.videoWidth || 1280)
+        const height = Math.max(2, video.videoHeight || 720)
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(video, 0, 0, width, height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+        done = true
+        try { video.removeAttribute('src'); video.load?.() } catch {}
+        resolve(dataUrl)
+      } catch (error) {
+        fail(error?.message || 'browser frame capture failed')
+      }
+    }
+    video.onerror = () => fail('browser could not load source video')
+    video.onloadedmetadata = () => {
+      const duration = Number(video.duration || 0)
+      const target = Number.isFinite(duration) && duration > 0.2 ? Math.max(0, duration - 0.12) : 0
+      try { video.currentTime = target } catch { finish() }
+    }
+    video.onseeked = finish
+    video.src = cleanUrl
+    video.load?.()
+    window.setTimeout(() => fail('browser frame capture timeout'), 12000)
   })
 }
 
@@ -811,6 +879,7 @@ export default function StandaloneGeneratorPage() {
   const [rawResponse, setRawResponse] = useState(null)
   const [generatedVideos, setGeneratedVideos] = useState(() => readGeneratorGalleryDraft())
   const [selectedGalleryVideoUrl, setSelectedGalleryVideoUrl] = useState('')
+  const [frameExtractBusy, setFrameExtractBusy] = useState(false)
   const [montageConfirmOpen, setMontageConfirmOpen] = useState(false)
   const [montageConfirmBusy, setMontageConfirmBusy] = useState(false)
   const [montageConfirmError, setMontageConfirmError] = useState('')
@@ -870,6 +939,7 @@ export default function StandaloneGeneratorPage() {
   const aspectInfo = useMemo(() => ASPECTS.find((item) => item.value === aspect) || ASPECTS[1], [aspect])
   const hasEndThumb = !!(endPreview || routeInfo.needsEnd)
   const displayedResultUrl = selectedGalleryVideoUrl || mmaudioResultUrl || resultUrl
+  const previousVideoForFrame = normalizeUrl(selectedGalleryVideoUrl || generatedVideos[0]?.url || resultUrl || mmaudioResultUrl || displayedResultUrl || '')
   const canUseMmaudio = !!resultUrl && ['i2v', 'first_last'].includes(route)
   const targetDurationSec = Number(durationSec) || 1
   const generationDurationSec = routeInfo.kind === 'video' ? targetDurationSec + EXTRA_TAIL_SEC : targetDurationSec
@@ -953,6 +1023,79 @@ export default function StandaloneGeneratorPage() {
     }
   }, [selectedGalleryVideoUrl])
 
+  const takeLastFrameFromPreviousVideo = useCallback(async (eventOrUrl = '') => {
+    eventOrUrl?.stopPropagation?.()
+    eventOrUrl?.preventDefault?.()
+
+    const overrideUrl = typeof eventOrUrl === 'string' ? eventOrUrl : ''
+    const sourceVideoUrl = normalizeUrl(overrideUrl || previousVideoForFrame)
+    if (!sourceVideoUrl) {
+      setError('Сначала нужно получить или выбрать видео в нижней ленте.')
+      setStatusText('нет видео в ленте')
+      return
+    }
+
+    setError('')
+    setFrameExtractBusy(true)
+    setStatusText('беру последний кадр из последнего видео в ленте...')
+
+    try {
+      const sceneId = `generator_prev_frame_${Date.now()}`
+      const staticIndex = sourceVideoUrl.indexOf('/static/')
+      const videoApiPath = staticIndex >= 0 ? sourceVideoUrl.slice(staticIndex) : ''
+      let imageRef = ''
+      let imageDataUrl = ''
+      let imageName = 'last-frame.jpg'
+
+      try {
+        const data = await fetchJson('/api/clip/video/extract-last-frame', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scene_id: sceneId,
+            sceneId,
+            source: 'standalone_generator',
+            video_url: sourceVideoUrl,
+            videoUrl: sourceVideoUrl,
+            video_api_path: videoApiPath,
+            videoApiPath: videoApiPath,
+          }),
+        })
+        imageRef = normalizeUrl(data?.imageApiPath || data?.image_api_path || data?.imageUrl || data?.image_url || '')
+        imageName = data?.imageName || data?.image_name || imageName
+        if (!imageRef) throw new Error('backend не вернул image_url')
+        imageDataUrl = await readUrlAsDataUrl(imageRef)
+      } catch (backendError) {
+        console.warn('[GENERATOR LAST FRAME BACKEND FAILED, TRY BROWSER]', backendError)
+        setStatusText('backend не взял кадр, пробую через браузер...')
+        imageDataUrl = await extractLastFrameFromVideoInBrowser(sourceVideoUrl)
+        imageRef = sourceVideoUrl
+      }
+
+      if (!imageDataUrl || !imageDataUrl.startsWith('data:image/')) {
+        throw new Error('не удалось получить dataUrl последнего кадра')
+      }
+
+      setStartFile(null)
+      setStartPersistedDataUrl(imageDataUrl)
+      setStartPreview(imageDataUrl)
+      await writeGeneratorMediaToDb({
+        ...readGeneratorMediaDraft(),
+        startPersistedDataUrl: imageDataUrl,
+        startFrameSource: 'previous_video_last_frame',
+        startFrameSourceVideoUrl: sourceVideoUrl,
+        startFrameImageUrl: imageRef,
+        startFrameName: imageName,
+      })
+      setStatusText('последний кадр поставлен как Start image')
+    } catch (exc) {
+      setError(`Не удалось взять последний кадр: ${String(exc?.message || exc)}`)
+      setStatusText('ошибка извлечения кадра')
+    } finally {
+      setFrameExtractBusy(false)
+    }
+  }, [previousVideoForFrame])
+
   const goToVideoMontageFromGenerator = useCallback(() => {
     const clips = (Array.isArray(generatedVideos) ? generatedVideos : [])
       .filter((item) => item?.url)
@@ -994,7 +1137,15 @@ export default function StandaloneGeneratorPage() {
       await saveGeneratorHandoffBoardSnapshot(boardSnapshot)
       setMontageConfirmOpen(false)
 
-      navigate('/app/workspace/board-assembly', {
+      rememberWorkflowEntry(makeWorkflowEntry({
+      from: 'standalone_generator',
+      to: 'board_assembly',
+      fromPath: '/app/workspace/generator',
+      toPath: '/app/workspace/board-assembly',
+      source: 'standalone_generator_handoff',
+    }))
+
+    navigate('/app/workspace/board-assembly', {
         state: {
           source: 'standalone_generator',
           board: boardSnapshot,
@@ -1443,7 +1594,7 @@ export default function StandaloneGeneratorPage() {
       setError('Режим картинки по описанию пока только в UI. Подключим модель позже.')
       return
     }
-    if (routeInfo.needsStart && !startFile && !startPersistedDataUrl) {
+    if (routeInfo.needsStart && !startFile && !startPersistedDataUrl && !startPreview) {
       setError('Нужно загрузить стартовое изображение.')
       return
     }
@@ -1481,17 +1632,44 @@ export default function StandaloneGeneratorPage() {
       const startDataUrl = includeStart ? (freshStartDataUrl || startPersistedDataUrl || startPreview || '') : ''
       const endDataUrl = includeEnd ? (freshEndDataUrl || endPersistedDataUrl || endPreview || '') : ''
       const audioDataUrl = includeAudio ? (freshAudioDataUrl || audioPersistedDataUrl || audioPreviewUrl || '') : ''
+
+      // AVA_LAST_FRAME_V4_GENERATOR_NO_POST_WITHOUT_START
+      if (includeStart && !startDataUrl) {
+        throw new Error('Стартовое изображение пустое: видео не отправлено.')
+      }
+      if (includeStart && String(startDataUrl).startsWith('blob:')) {
+        throw new Error('Стартовое изображение было временным blob и потеряно. Загрузите фото заново или возьмите кадр из ленты.')
+      }
+      if (includeEnd && !endDataUrl) {
+        throw new Error('Последний кадр пустой: first-last не отправлен.')
+      }
+
+      const startRef = String(startDataUrl || '')
+      const endRef = String(endDataUrl || '')
+      const startIsDataUrl = startRef.startsWith('data:')
+      const endIsDataUrl = endRef.startsWith('data:')
+      const startImageUrlForBackend = startRef && !startIsDataUrl ? startRef : ''
+      const endImageUrlForBackend = endRef && !endIsDataUrl ? endRef : ''
+      const startImageDataUrlForBackend = startIsDataUrl ? startRef : ''
+      const endImageDataUrlForBackend = endIsDataUrl ? endRef : ''
+
       const sceneId = `generator_${Date.now()}`
       const payload = {
         scene_id: sceneId,
         sceneId,
         route,
-        image_data_url: startDataUrl,
-        imageDataUrl: startDataUrl,
-        start_image_data_url: startDataUrl,
-        startImageDataUrl: startDataUrl,
-        end_image_data_url: endDataUrl,
-        endImageDataUrl: endDataUrl,
+        image_url: startImageUrlForBackend,
+        imageUrl: startImageUrlForBackend,
+        image_data_url: startImageDataUrlForBackend,
+        imageDataUrl: startImageDataUrlForBackend,
+        start_image_url: startImageUrlForBackend,
+        startImageUrl: startImageUrlForBackend,
+        start_image_data_url: startImageDataUrlForBackend,
+        startImageDataUrl: startImageDataUrlForBackend,
+        end_image_url: endImageUrlForBackend,
+        endImageUrl: endImageUrlForBackend,
+        end_image_data_url: endImageDataUrlForBackend,
+        endImageDataUrl: endImageDataUrlForBackend,
         audio_data_url: audioDataUrl,
         audioDataUrl: audioDataUrl,
         video_prompt: prompt,
@@ -1736,6 +1914,17 @@ export default function StandaloneGeneratorPage() {
             <button className="avaGeneratorPrimary" onClick={submitGeneration} disabled={busy || routeInfo.notReady}>
               {busy ? 'Генерация...' : routeInfo.notReady ? 'Модель позже' : '▶ Сгенерировать'}
             </button>
+            {routeInfo.needsStart ? (
+              <button
+                type="button"
+                className="avaGeneratorSecondary avaGeneratorFrameQuickAction"
+                onClick={takeLastFrameFromPreviousVideo}
+                disabled={frameExtractBusy || busy || !previousVideoForFrame}
+                title={previousVideoForFrame ? 'Взять последний кадр из последнего/выбранного видео в ленте' : 'Сначала сгенерируй видео'}
+              >
+                {frameExtractBusy ? '⏳ Кадр...' : '↳ Кадр из ленты'}
+              </button>
+            ) : null}
             <button className="avaGeneratorSecondary" onClick={stopPolling}>Стоп polling</button>
             <button className="avaGeneratorGhost" onClick={clearDraft}>Очистить</button>
           </div>
@@ -1934,6 +2123,15 @@ export default function StandaloneGeneratorPage() {
                 <div className="avaGeneratorHistoryMeta">
                   <strong>{item.label || 'Видео'} #{generatedVideos.length - index}</strong>
                   <span>{item.kind === 'mmaudio' ? 'со звуком' : 'result'} · {formatGeneratorGalleryTime(item.createdAt)}</span>
+                  <button
+                    type="button"
+                    className="avaGeneratorHistoryUseFrame"
+                    onClick={(event) => { event.stopPropagation(); takeLastFrameFromPreviousVideo(item.url || '') }}
+                    disabled={frameExtractBusy || busy}
+                    title="Поставить последний кадр этого видео в Start"
+                  >
+                    ↳ кадр в Start
+                  </button>
                 </div>
               </article>
             ))}
