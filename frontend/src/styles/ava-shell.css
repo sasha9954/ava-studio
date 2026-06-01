@@ -1,0 +1,406 @@
+.avaShell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  transition: grid-template-columns .22s ease;
+}
+
+.avaShell.isSidebarOpen {
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.avaSidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 18px 14px;
+  background: rgba(4, 8, 20, .72);
+  backdrop-filter: blur(22px);
+  border-right: 1px solid var(--stroke);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow: hidden;
+}
+
+.avaSidebarToggle {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 15px;
+  color: #dce8ff;
+  background: rgba(255,255,255,.06);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.avaSidebarToggle:hover {
+  background: rgba(255,255,255,.1);
+}
+
+.avaBrand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.avaBrandIcon,
+.avaSplashLogo,
+.avaMiniLogo svg,
+.avaHeroBrain,
+.avaModuleIcon {
+  background: linear-gradient(135deg, rgba(143,124,255,.95), rgba(69,216,255,.9));
+}
+
+.avaBrandIcon {
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgba(75, 112, 255, .28);
+}
+
+.avaBrand strong { display: block; font-size: 18px; }
+.avaBrand em { display: block; font-style: normal; color: var(--muted); font-size: 12px; }
+
+.avaSidebarText,
+.avaNavItem span,
+.avaSidebarProject span,
+.avaSidebarProject strong,
+.avaSidebarProject small {
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.avaShell.isSidebarClosed .avaSidebarText,
+.avaShell.isSidebarClosed .avaNavItem span,
+.avaShell.isSidebarClosed .avaSidebarProject span,
+.avaShell.isSidebarClosed .avaSidebarProject strong,
+.avaShell.isSidebarClosed .avaSidebarProject small {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-8px);
+  width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.avaNav { display: grid; gap: 8px; }
+
+.avaNavItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 13px;
+  border-radius: 15px;
+  color: #b7c3de;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.avaShell.isSidebarClosed .avaNavItem {
+  width: 50px;
+  justify-content: center;
+  padding: 0;
+}
+
+.avaNavItem.isActive,
+.avaNavItem:hover {
+  color: var(--text);
+  background: rgba(255,255,255,.07);
+  border-color: rgba(255,255,255,.12);
+}
+
+.avaNavItem.isActive {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 12px 30px rgba(69,216,255,.08);
+}
+
+.avaSidebarProject {
+  margin-top: auto;
+  min-height: 92px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, rgba(143,124,255,.12), rgba(69,216,255,.08));
+  border: 1px solid var(--stroke);
+}
+
+.avaShell.isProjectMode .avaSidebarProject {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ava-project-accent, #2affc4) 18%, transparent), rgba(69,216,255,.07));
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 34%, transparent);
+  box-shadow: 0 18px 52px var(--ava-project-glow, rgba(42,255,196,.2));
+}
+
+.avaShell.isSidebarClosed .avaSidebarProject {
+  min-height: 50px;
+  width: 50px;
+  padding: 0;
+  border-radius: 17px;
+}
+
+.avaShell.isSidebarClosed .avaSidebarProject::before {
+  content: '';
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin: 18px auto 0;
+  border-radius: 999px;
+  background: rgba(69,216,255,.9);
+  box-shadow: 0 0 18px rgba(69,216,255,.45);
+}
+
+.avaShell.isProjectMode.isSidebarClosed .avaSidebarProject::before {
+  background: var(--ava-project-accent, #2affc4);
+  box-shadow: 0 0 18px var(--ava-project-glow, rgba(42,255,196,.5));
+}
+
+.avaSidebarProject span,
+.avaSidebarProject small { display: block; color: var(--muted); }
+.avaSidebarProject strong { display: block; margin: 6px 0; }
+
+.avaShell.isSidebarClosed .avaGhostButton {
+  width: 50px;
+  justify-content: center;
+  padding: 0;
+}
+
+.avaMain { min-width: 0; }
+
+.avaTopbar {
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 34px;
+  border-bottom: 1px solid var(--stroke);
+  background: rgba(7, 11, 24, .42);
+  backdrop-filter: blur(14px);
+}
+
+.avaShell.isProjectMode .avaTopbar {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ava-project-accent, #2affc4) 11%, transparent), rgba(7, 11, 24, .42));
+  border-bottom-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 24%, transparent);
+}
+
+.avaTopbarLeft { min-width: 0; }
+.avaTopbar p { margin: 0; color: var(--muted); font-size: 13px; }
+.avaTopbar h1 { margin: 2px 0 0; font-size: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.avaTopbarRight { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+
+.avaSavePill,
+.avaCreditPill,
+.avaModePill,
+.avaExitProjectButton {
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 999px;
+  padding: 10px 13px;
+  color: #d7e3ff;
+  background: rgba(255,255,255,.05);
+  font-size: 13px;
+}
+
+.avaModePill {
+  color: #91e9ff;
+  border-color: rgba(69,216,255,.2);
+}
+
+.avaShell.isProjectMode .avaModePill {
+  color: var(--ava-project-accent, #9dffd8);
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 32%, transparent);
+  background: color-mix(in srgb, var(--ava-project-accent, #2affc4) 10%, transparent);
+}
+
+.avaExitProjectButton {
+  cursor: pointer;
+}
+
+.avaExitProjectButton:hover {
+  background: rgba(255,255,255,.1);
+}
+
+.avaContent { padding: 32px; }
+
+@media (max-width: 900px) {
+  .avaShell,
+  .avaShell.isSidebarOpen,
+  .avaShell.isSidebarClosed { grid-template-columns: 1fr; }
+  .avaSidebar {
+    position: relative;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+  }
+  .avaSidebarProject,
+  .avaGhostButton { display: none; }
+  .avaTopbar { flex-direction: column; align-items: flex-start; gap: 12px; height: auto; padding: 18px; }
+  .avaTopbarRight { justify-content: flex-start; }
+  .avaContent { padding: 18px; }
+}
+
+
+/* Stage 5.38: global app notifications */
+.avaGlobalToastStack {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  z-index: 200;
+  display: grid;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.avaGlobalToast {
+  pointer-events: auto;
+  border: 1px solid rgba(139, 165, 255, 0.24);
+  background: linear-gradient(135deg, rgba(12, 20, 40, 0.97), rgba(18, 25, 48, 0.95));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.42);
+  border-radius: 16px;
+  padding: 11px 11px 11px 13px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  color: #eaf2ff;
+  backdrop-filter: blur(16px);
+}
+
+.avaGlobalToastBody {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.avaGlobalToastBody strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.avaGlobalToastBody span {
+  color: #aebbe0;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.avaGlobalToast button {
+  border: 1px solid rgba(139, 165, 255, 0.24);
+  background: rgba(30, 41, 75, 0.86);
+  color: #dbe7ff;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.avaGlobalToastClose {
+  width: 28px;
+  height: 28px;
+  padding: 0 !important;
+  font-size: 18px !important;
+  line-height: 1;
+}
+
+.avaGlobalToast.is-success {
+  border-color: rgba(74, 255, 174, 0.35);
+  background: linear-gradient(135deg, rgba(10, 54, 43, 0.97), rgba(18, 25, 48, 0.95));
+}
+
+.avaGlobalToast.is-error {
+  border-color: rgba(255, 105, 125, 0.42);
+  background: linear-gradient(135deg, rgba(73, 24, 35, 0.97), rgba(18, 25, 48, 0.95));
+}
+
+.avaGlobalToast.is-warning {
+  border-color: rgba(255, 214, 100, 0.42);
+  background: linear-gradient(135deg, rgba(79, 57, 18, 0.97), rgba(18, 25, 48, 0.95));
+}
+
+.avaGlobalToast.is-info {
+  border-color: rgba(84, 203, 255, 0.32);
+}
+
+@media (max-width: 720px) {
+  .avaGlobalToastStack {
+    top: 10px;
+    right: 10px;
+    width: calc(100vw - 20px);
+  }
+
+  .avaGlobalToast {
+    grid-template-columns: 1fr auto;
+  }
+
+  .avaGlobalToast button:not(.avaGlobalToastClose) {
+    grid-column: 1 / -1;
+  }
+}
+
+
+/* Stage 5.42: toast Open is a real link for reliable navigation */
+.avaGlobalToastOpen {
+  border: 1px solid rgba(139, 165, 255, 0.24);
+  background: rgba(30, 41, 75, 0.86);
+  color: #dbe7ff;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.avaGlobalToastOpen:hover {
+  background: rgba(52, 68, 116, 0.92);
+  color: #ffffff;
+}
+
+
+/* Stage 5.42: project card is a div role=button to avoid nested button HTML */
+.avaProjectCard {
+  cursor: pointer;
+}
+
+.avaProjectCard:focus-visible {
+  outline: 2px solid rgba(105, 216, 255, 0.85);
+  outline-offset: 4px;
+}
+
+
+/* Stage 6.13: project accent skin */
+.avaShell.isProjectMode .avaBrandIcon,
+.avaShell.isProjectMode .avaSplashLogo,
+.avaShell.isProjectMode .avaMiniLogo svg,
+.avaShell.isProjectMode .avaHeroBrain,
+.avaShell.isProjectMode .avaModuleIcon {
+  background: linear-gradient(135deg, var(--ava-project-accent, #2affc4), var(--ava-project-accent-2, #45d8ff));
+  box-shadow: 0 16px 46px var(--ava-project-glow, rgba(42,255,196,.22));
+}
+
+.avaShell.isProjectMode .avaNavItem.isActive,
+.avaShell.isProjectMode .avaNavItem:hover {
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 34%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ava-project-accent, #2affc4) 11%, transparent), rgba(255,255,255,.045));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 12px 34px var(--ava-project-glow, rgba(42,255,196,.12));
+}
+
+.avaShell.isProjectMode .avaPrimaryButton,
+.avaShell.isProjectMode .avaBoardPrimary {
+  background: linear-gradient(135deg, var(--ava-project-accent, #2affc4), var(--ava-project-accent-2, #45d8ff)) !important;
+  border-color: color-mix(in srgb, var(--ava-project-accent-2, #45d8ff) 54%, white 10%) !important;
+  box-shadow: 0 16px 44px var(--ava-project-glow, rgba(42,255,196,.24));
+}
+
+.avaShell.isProjectMode .avaCreditPill,
+.avaShell.isProjectMode .avaSavePill {
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 24%, transparent);
+  background: color-mix(in srgb, var(--ava-project-accent, #2affc4) 8%, transparent);
+}

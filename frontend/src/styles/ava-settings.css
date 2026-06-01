@@ -1,0 +1,170 @@
+.avaSettingsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+
+.avaSettingsStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.avaSettingsStatCard {
+  min-height: 118px;
+  border: 1px solid var(--stroke);
+  border-radius: 22px;
+  background: rgba(12, 18, 38, .74);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  display: grid;
+  gap: 5px;
+  align-content: center;
+}
+
+.avaSettingsStatCard strong {
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: -.04em;
+  color: #f4f8ff;
+}
+
+.avaSettingsStatCard span {
+  color: #b9c6e3;
+  font-weight: 800;
+}
+
+.avaSettingsStatCard small {
+  color: var(--muted);
+}
+
+.avaSettingsPanel {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.avaSettingsPanel .avaEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.avaSettingsHeaderActions,
+.avaSettingsActionRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.avaSettingsMiniList {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
+  gap: 10px 14px;
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px;
+  background: rgba(255,255,255,.04);
+}
+
+.avaSettingsMiniList span {
+  color: var(--muted);
+}
+
+.avaSettingsMiniList strong {
+  color: #f4f8ff;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaSettingsList {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.avaSettingsListItem {
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 16px;
+  background: rgba(255,255,255,.045);
+}
+
+.avaSettingsListItem strong {
+  color: #f4f8ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaSettingsListItem span {
+  color: #b9c6e3;
+  font-size: 13px;
+}
+
+.avaSettingsListItem small {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaSystemCheckList {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.avaSystemCheckRow {
+  display: grid;
+  grid-template-columns: 22px minmax(150px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 15px;
+  background: rgba(255,255,255,.045);
+}
+
+.avaSystemCheckRow.isOk svg,
+.avaSystemCheckRow.isOk span {
+  color: #9dffd8;
+}
+
+.avaSystemCheckRow.isBad svg,
+.avaSystemCheckRow.isBad span {
+  color: #ff9aa8;
+}
+
+.avaSystemCheckRow strong {
+  color: #f4f8ff;
+}
+
+.avaSystemCheckRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaGhostButton.isActive {
+  border-color: rgba(69,216,255,.24);
+  color: #f4f8ff;
+  background: rgba(69,216,255,.08);
+}
+
+@media (max-width: 680px) {
+  .avaSettingsMiniList,
+  .avaSystemCheckRow {
+    grid-template-columns: 1fr;
+  }
+}

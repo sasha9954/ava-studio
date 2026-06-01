@@ -1,0 +1,171 @@
+export const WORKFLOW_NAV_STORAGE_PREFIX = 'ava:workflow-entry:'
+export const AVA_BOARD_ASSEMBLY_CLEARED_KEY = 'ava:board-assembly:cleared:v1'
+
+export const WORKFLOW_STAGE_INFO = {
+  manual_timing: {
+    key: 'manual_timing',
+    label: 'Тайминг',
+    workspacePath: '/app/workspace/timing',
+    projectPath: (projectId) => `/app/projects/${projectId}/timing`,
+  },
+  board: {
+    key: 'board',
+    label: 'Доска',
+    workspacePath: '/app/workspace/board',
+    projectPath: (projectId) => `/app/projects/${projectId}/board`,
+  },
+  board_assembly: {
+    key: 'board_assembly',
+    label: 'Монтажник',
+    workspacePath: '/app/workspace/board-assembly',
+    projectPath: (projectId) => `/app/projects/${projectId}/board-assembly`,
+  },
+  video_node: {
+    key: 'video_node',
+    label: 'Видео нода',
+    workspacePath: '/app/workspace/video-node',
+    projectPath: (projectId) => `/app/projects/${projectId}/video-node`,
+  },
+  standalone_generator: {
+    key: 'standalone_generator',
+    label: 'Генератор',
+    workspacePath: '/app/workspace/generator',
+    projectPath: (projectId) => `/app/projects/${projectId}/generator`,
+  },
+}
+
+export function stageInfo(stageKey = '') {
+  return WORKFLOW_STAGE_INFO[stageKey] || {
+    key: stageKey || 'unknown',
+    label: stageKey || 'Источник',
+    workspacePath: '/app/dashboard',
+    projectPath: () => '/app/dashboard',
+  }
+}
+
+export function stagePath(stageKey = '', projectId = '') {
+  const info = stageInfo(stageKey)
+  return projectId && typeof info.projectPath === 'function'
+    ? info.projectPath(projectId)
+    : info.workspacePath
+}
+
+export function makeWorkflowEntry({
+  from,
+  to,
+  fromLabel = '',
+  toLabel = '',
+  fromPath = '',
+  toPath = '',
+  projectId = '',
+  source = 'manual_click',
+} = {}) {
+  const fromInfo = stageInfo(from)
+  const toInfo = stageInfo(to)
+  return {
+    schema: 'ava_workflow_entry_v1',
+    from,
+    to,
+    fromLabel: fromLabel || fromInfo.label,
+    toLabel: toLabel || toInfo.label,
+    fromPath: fromPath || stagePath(from, projectId),
+    toPath: toPath || stagePath(to, projectId),
+    projectId: projectId || '',
+    source,
+    enteredByUserClick: true,
+    createdAt: Date.now(),
+  }
+}
+
+export function workflowEntryStorageKey(stageKey = '') {
+  return `${WORKFLOW_NAV_STORAGE_PREFIX}${stageKey || 'unknown'}`
+}
+
+export function rememberWorkflowEntry(entry = {}) {
+  if (typeof window === 'undefined') return
+  if (!entry?.to || !entry?.enteredByUserClick) return
+  try {
+    if (entry.to === 'board_assembly') {
+      window.localStorage.removeItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY)
+      window.sessionStorage.removeItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY)
+    }
+    window.sessionStorage.setItem(workflowEntryStorageKey(entry.to), JSON.stringify(entry))
+  } catch {}
+}
+
+export function readWorkflowEntry(stageKey = '', locationState = null) {
+  const stateEntry = locationState?.workflowEntry || null
+  if (stateEntry?.enteredByUserClick && stateEntry?.to === stageKey) {
+    rememberWorkflowEntry(stateEntry)
+    return stateEntry
+  }
+
+  if (typeof window === 'undefined') return null
+
+  try {
+    const raw = window.sessionStorage.getItem(workflowEntryStorageKey(stageKey))
+    if (!raw) return null
+    const entry = JSON.parse(raw)
+    if (!entry?.enteredByUserClick || entry?.to !== stageKey) return null
+
+    const ageMs = Date.now() - Number(entry.createdAt || 0)
+    if (Number.isFinite(ageMs) && ageMs > 1000 * 60 * 60 * 8) {
+      window.sessionStorage.removeItem(workflowEntryStorageKey(stageKey))
+      return null
+    }
+
+    return entry
+  } catch {
+    return null
+  }
+}
+
+export function clearWorkflowEntry(stageKey = '') {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.removeItem(workflowEntryStorageKey(stageKey))
+  } catch {}
+}
+
+export function navigateWithWorkflowEntry(navigate, path, entry = {}, state = {}) {
+  rememberWorkflowEntry(entry)
+  navigate(path, {
+    state: {
+      ...(state || {}),
+      workflowEntry: entry,
+    },
+  })
+}
+
+export function clearStorageByMatchers(matchers = []) {
+  if (typeof window === 'undefined') return []
+  const normalized = (Array.isArray(matchers) ? matchers : [])
+    .map((item) => String(item || '').toLowerCase())
+    .filter(Boolean)
+
+  if (!normalized.length) return []
+
+  const removed = []
+
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    try {
+      const keys = []
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index)
+        const lowered = String(key || '').toLowerCase()
+        if (key && normalized.some((matcher) => lowered.includes(matcher))) {
+          keys.push(key)
+        }
+      }
+
+      for (const key of keys) {
+        try {
+          storage.removeItem(key)
+          removed.push(key)
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return removed
+}

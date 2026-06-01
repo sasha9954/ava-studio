@@ -1,0 +1,122 @@
+.avaPublicHomeInner {
+  position: relative;
+  z-index: 1;
+  width: min(1180px, calc(100vw - 48px));
+  display: grid;
+  gap: 22px;
+  transition: opacity .65s ease, transform .65s ease;
+}
+
+.avaPublicHomeInner.isHidden {
+  opacity: 0;
+  transform: translateY(18px) scale(.98);
+  pointer-events: none;
+}
+
+.avaPublicHomeInner.isVisible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.avaGuestHome {
+  align-content: start;
+  place-items: stretch center;
+  padding: 34px 24px 54px;
+  overflow: auto;
+}
+
+.avaGuestHome .avaSplashCard {
+  justify-self: center;
+  width: min(760px, 100%);
+}
+
+.avaPublicTopbar {
+  position: relative;
+  z-index: 2;
+  width: min(1180px, calc(100vw - 48px));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin: 0 auto 14px;
+}
+
+.avaPublicTopbarActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.avaPublicModules {
+  position: relative;
+  z-index: 1;
+  width: min(1180px, calc(100vw - 48px));
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin: 4px auto 0;
+}
+
+.avaPublicModuleCard {
+  min-height: 205px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--stroke);
+  border-radius: 24px;
+  color: var(--text);
+  background: rgba(12, 18, 38, .74);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+  transition: transform .18s ease, border-color .18s ease, background .18s ease;
+}
+
+.avaPublicModuleCard:hover {
+  transform: translateY(-3px);
+  border-color: rgba(113, 214, 255, .36);
+  background: rgba(20, 32, 64, .86);
+}
+
+.avaPublicModuleCard .avaModuleIcon {
+  margin-bottom: 4px;
+}
+
+.avaPublicModuleCard h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.avaPublicModuleCard p {
+  margin: 0;
+  color: #b9c6e3;
+  line-height: 1.55;
+}
+
+.avaPublicModuleCard span {
+  margin-top: auto;
+  color: #8ee9ff;
+  background: rgba(69,216,255,.08);
+  border: 1px solid rgba(69,216,255,.18);
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.avaGuestButton {
+  background: rgba(255,255,255,.055);
+}
+
+@media (max-width: 740px) {
+  .avaPublicTopbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .avaPublicModules {
+    grid-template-columns: 1fr;
+  }
+}

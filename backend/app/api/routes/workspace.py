@@ -1,0 +1,160 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from app.api.deps import get_current_user
+from app.core.security import make_id, now_iso
+from app.core.storage import store
+from app.schemas import SnapshotSaveRequest
+
+router = APIRouter(prefix='/workspace', tags=['workspace'])
+
+STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator'}
+
+
+def workspace_public(workspace: dict) -> dict:
+    return {k: v for k, v in workspace.items() if k != 'user_id'}
+
+
+def get_or_create_workspace(db: dict, user: dict) -> dict:
+    workspace = next(
+        (item for item in db['workspaces'].values() if item.get('user_id') == user['id'] and item.get('status') == 'active'),
+        None,
+    )
+    if workspace:
+        return workspace
+
+    workspace_id = make_id('w')
+    workspace = {
+        'id': workspace_id,
+        'user_id': user['id'],
+        'name': 'Рабочая область',
+        'status': 'active',
+        'kind': 'current_workspace',
+        'ttl_days': 3,
+        'created_at': now_iso(),
+        'updated_at': now_iso(),
+    }
+    db['workspaces'][workspace_id] = workspace
+    db['workspace_snapshots'][workspace_id] = {}
+    return workspace
+
+
+def count_items(data: dict, keys: list[str]) -> int:
+    if not isinstance(data, dict):
+        return 0
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, list):
+            return len(value)
+        if isinstance(value, dict):
+            return len(value)
+        if value:
+            return 1
+    return 0
+
+
+def has_any(data: dict, keys: list[str]) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return any(bool(data.get(key)) for key in keys)
+
+
+def build_workspace_summary(snapshots: dict) -> dict:
+    manual = (snapshots.get('manual_timing') or {}).get('data') or {}
+    podcast = (snapshots.get('podcast') or {}).get('data') or {}
+    board = (snapshots.get('board') or {}).get('data') or {}
+    assembly = (snapshots.get('board_assembly') or {}).get('data') or {}
+    video_node = (snapshots.get('video_node') or {}).get('data') or {}
+    generator = (snapshots.get('generator') or {}).get('data') or {}
+
+    return {
+        'manual_timing': {
+            'audio_loaded': has_any(manual, ['audio', 'audio_file', 'audio_url', 'audio_name']),
+            'scenes_count': count_items(manual, ['scenes', 'segments']),
+            'phrases_count': count_items(manual, ['phrases', 'asr_phrases', 'audio_phrases']),
+        },
+        'podcast': {
+            'audio_loaded': has_any(podcast, ['assembled_audio', 'audio', 'audio_url']),
+            'roles_count': count_items(podcast, ['roles', 'speakers']),
+            'insertions_count': count_items(podcast, ['insertions', 'clips', 'items']),
+        },
+        'board': {
+            'scenes_count': count_items(board, ['board_scenes', 'scenes']),
+            'images_count': count_items(board, ['images', 'image_urls', 'generated_images']),
+            'videos_count': count_items(board, ['videos', 'video_urls', 'generated_videos']),
+        },
+        'board_assembly': {
+            'ready_videos_count': count_items(assembly, ['ready_videos', 'scene_videos', 'videos']),
+            'final_video_ready': has_any(assembly, ['final_video_url', 'finalVideoUrl', 'output_url']),
+        },
+        'video_node': {
+            'segments_count': count_items(video_node, ['segments']),
+            'candidates_count': count_items(video_node, ['candidates', 'selected_candidates']),
+            'final_video_ready': has_any(video_node, ['final_video_url', 'finalVideoUrl', 'output_url']),
+        },
+        'generator': {
+            'jobs_count': count_items(generator, ['jobs', 'generations']),
+            'completed_count': count_items(generator, ['completed', 'completed_jobs', 'videos']),
+        },
+    }
+
+
+@router.get('/current')
+def current_workspace(user: dict = Depends(get_current_user)):
+    def op(db):
+        workspace = get_or_create_workspace(db, user)
+        return {'workspace': workspace_public(workspace)}
+    return store.update(op)
+
+
+@router.get('/summary')
+def workspace_summary(user: dict = Depends(get_current_user)):
+    def op(db):
+        workspace = get_or_create_workspace(db, user)
+        snapshots = db['workspace_snapshots'].get(workspace['id'], {})
+        return {
+            'workspace': workspace_public(workspace),
+            'summary': build_workspace_summary(snapshots),
+            'updated_at': workspace.get('updated_at'),
+        }
+    return store.update(op)
+
+
+@router.get('/snapshots/{stage}')
+def get_workspace_snapshot(stage: str, user: dict = Depends(get_current_user)):
+    if stage not in STAGES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unknown stage')
+
+    def op(db):
+        workspace = get_or_create_workspace(db, user)
+        snapshot = db['workspace_snapshots'].get(workspace['id'], {}).get(stage)
+        return {'workspace': workspace_public(workspace), 'snapshot': snapshot or {'stage': stage, 'data': {}, 'updated_at': None}}
+    return store.update(op)
+
+
+@router.post('/snapshots/{stage}')
+def save_workspace_snapshot(stage: str, payload: SnapshotSaveRequest, user: dict = Depends(get_current_user)):
+    if stage not in STAGES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unknown stage')
+
+    def op(db):
+        workspace = get_or_create_workspace(db, user)
+        db['workspace_snapshots'].setdefault(workspace['id'], {})
+        snapshot = {
+            'stage': stage,
+            'data': payload.data or {},
+            'client_version': payload.client_version,
+            'updated_at': now_iso(),
+        }
+        db['workspace_snapshots'][workspace['id']][stage] = snapshot
+        workspace['updated_at'] = now_iso()
+        return {'saved': True, 'workspace': workspace_public(workspace), 'snapshot': snapshot}
+    return store.update(op)
+
+
+@router.delete('/current')
+def clear_workspace(user: dict = Depends(get_current_user)):
+    def op(db):
+        workspace = get_or_create_workspace(db, user)
+        db['workspace_snapshots'][workspace['id']] = {}
+        workspace['updated_at'] = now_iso()
+        return {'cleared': True, 'workspace': workspace_public(workspace)}
+    return store.update(op)

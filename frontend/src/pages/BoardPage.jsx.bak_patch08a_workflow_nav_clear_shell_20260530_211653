@@ -1,0 +1,2684 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import {
+  AlertTriangle,
+  AudioLines,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  FileJson,
+  Film,
+  Image as ImageIcon,
+  Pause,
+  Play,
+  RefreshCcw,
+  Save,
+  Scissors,
+  Sparkles,
+  UploadCloud,
+  Volume2,
+} from 'lucide-react'
+import { useProjects } from '../context/ProjectContext.jsx'
+import { apiRequest, fetchProtectedBlobUrl } from '../services/apiClient.js'
+import '../styles/ava-board.css'
+
+const STAGE = 'board'
+const BOARD_VERSION = 'ava_board_foundation_v1'
+const AVA_GLOBAL_JOBS_KEY = 'ava:active-jobs:v1'
+const AVA_COMPLETED_JOBS_KEY = 'ava:completed-jobs:v1'
+const AVA_OPEN_BOARD_SCENE_KEY = 'ava:open-board-scene:v1'
+
+function readAvaGlobalJobs() {
+  try {
+    return JSON.parse(localStorage.getItem(AVA_GLOBAL_JOBS_KEY) || '[]')
+  } catch (error) {
+    return []
+  }
+}
+
+function writeAvaGlobalJobs(jobs) {
+  try {
+    localStorage.setItem(AVA_GLOBAL_JOBS_KEY, JSON.stringify(Array.isArray(jobs) ? jobs : []))
+    window.dispatchEvent(new CustomEvent('ava:jobs-changed'))
+  } catch (error) {
+    // ignore storage errors
+  }
+}
+
+
+const ROUTE_OPTIONS = [
+  { value: 'ia2v', label: 'ia2v lip-sync', hint: 'Фото + audio slice сцены' },
+  { value: 'i2v', label: 'i2v', hint: 'Фото → видео без аудио' },
+  { value: 'i2v_sound', label: 'i2v sound', hint: 'Фото → видео со звуком из prompt' },
+  { value: 'i2v_text', label: 'i2v text', hint: 'Фото → видео + голос/звук из prompt' },
+  { value: 'first_last', label: 'first-last', hint: 'Первый и последний кадр' },
+  { value: 'first_last_sound', label: 'first-last sound', hint: 'Первый/последний кадр + звук' },
+]
+
+
+const BOARD_ROUTE_WORKFLOW_MAP = {
+  i2v: 'image-video.json',
+  i2v_text: 'image-video-golos-zvuk.json',
+  i2v_sound: 'image-video-golos-zvuk.json',
+  ia2v: 'image-lipsink-video-music.json',
+  ia2v_lipsync: 'image-lipsink-video-music.json',
+  lip_sync: 'image-lipsink-video-music.json',
+  first_last: 'last-first cadr-NO sound.json',
+  first_last_sound: 'last-first cadr-sound.json',
+}
+
+function boardWorkflowKeyForRoute(route, fallbackWorkflowKey = '') {
+  const routeKey = String(route || 'i2v')
+  // Route is the source of truth. Do not allow a stale scene.workflow_key
+  // from another route to override sound/no-sound workflows.
+  return BOARD_ROUTE_WORKFLOW_MAP[routeKey] || fallbackWorkflowKey || BOARD_ROUTE_WORKFLOW_MAP.i2v
+}
+
+const FORMAT_OPTIONS = [
+  { value: '16:9', label: '16:9 горизонтально' },
+  { value: '9:16', label: '9:16 вертикально' },
+  { value: '1:1', label: '1:1 квадрат' },
+  { value: '4:5', label: '4:5 соцсети' },
+  { value: '21:9', label: '21:9 кино' },
+]
+
+const emptyBoard = {
+  boardVersion: BOARD_VERSION,
+  source: 'board',
+  importedFrom: '',
+  updatedAt: null,
+  audio: null,
+  roles: [],
+  speechSegments: [],
+  audioPhrases: [],
+  missingSpeechHints: [],
+  storyBlocks: [],
+  scenes: [],
+  selectedSceneId: '',
+  notes: '',
+}
+
+
+function readAvaCompletedJobs() {
+  try {
+    return JSON.parse(localStorage.getItem(AVA_COMPLETED_JOBS_KEY) || '[]')
+  } catch (error) {
+    return []
+  }
+}
+
+function writeAvaCompletedJobs(jobs) {
+  try {
+    localStorage.setItem(AVA_COMPLETED_JOBS_KEY, JSON.stringify(Array.isArray(jobs) ? jobs : []))
+    window.dispatchEvent(new CustomEvent('ava:completed-jobs-changed'))
+  } catch (error) {
+    // ignore storage errors
+  }
+}
+
+function completedJobMatchesBoard(job = {}, { projectId = '', workspaceMode = true } = {}) {
+  const jobProjectId = String(job.projectId || '')
+  if (workspaceMode) return !jobProjectId
+  return Boolean(jobProjectId) && jobProjectId === String(projectId || '')
+}
+
+function completedJobVideoUrl(kind, data = {}) {
+  if (kind === 'mmaudio') {
+    return data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
+  }
+  return data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
+}
+
+function completedJobPatch(job = {}) {
+  const data = job.data || {}
+  const kind = job.kind || 'video'
+
+  if (kind === 'mmaudio') {
+    const videoUrl = completedJobVideoUrl(kind, data)
+    if (!videoUrl) return null
+
+    return {
+      mmaudio_status: 'ready',
+      mmaudio_video_url: videoUrl,
+      mmaudio_video_name: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
+      mmaudio_job_id: data?.jobId || data?.job_id || job.jobId || '',
+      mmaudio_status_endpoint: job.statusEndpoint || '',
+      mmaudio_error: '',
+      mmaudio_result: data,
+      mmaudio_ready_at: data?.completedAt || job.completedAt || new Date().toISOString(),
+    }
+  }
+
+  const videoUrl = completedJobVideoUrl(kind, data)
+  if (!videoUrl) return null
+
+  return {
+    video_url: videoUrl,
+    video_api_path: data?.videoApiPath || data?.video_api_path || '',
+    video_name: data?.videoName || data?.video_name || 'video.mp4',
+    original_video_url: data?.originalVideoUrl || data?.original_video_url || '',
+    video_status: 'ready',
+    video_job_id: data?.jobId || data?.job_id || job.jobId || '',
+    video_status_endpoint: job.statusEndpoint || '',
+    video_error: '',
+    video_result: data,
+    video_ready_at: data?.completedAt || job.completedAt || new Date().toISOString(),
+  }
+}
+
+function applyCompletedJobsToBoard(boardData = {}, context = {}) {
+  const jobs = readAvaCompletedJobs()
+  if (!jobs.length || !Array.isArray(boardData.scenes)) {
+    return { board: boardData, usedKeys: [] }
+  }
+
+  const usedKeys = []
+  const matchingJobs = jobs.filter((job) => completedJobMatchesBoard(job, context))
+  if (!matchingJobs.length) return { board: boardData, usedKeys }
+
+  let changed = false
+  const scenes = boardData.scenes.map((scene) => {
+    const sceneId = scene?.id || scene?.scene_id
+    const sceneJobs = matchingJobs.filter((job) => job.sceneId === sceneId)
+    if (!sceneJobs.length) return scene
+
+    let nextScene = scene
+    for (const job of sceneJobs) {
+      const patch = completedJobPatch(job)
+      if (!patch) continue
+
+      nextScene = {
+        ...nextScene,
+        ...patch,
+      }
+      usedKeys.push(job.key)
+      changed = true
+    }
+
+    return nextScene
+  })
+
+  if (!changed) return { board: boardData, usedKeys: [] }
+
+  return {
+    board: {
+      ...boardData,
+      scenes,
+      updatedAt: new Date().toISOString(),
+    },
+    usedKeys,
+  }
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function asText(value) {
+  return String(value || '').trim()
+}
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function formatTime(seconds) {
+  const safe = Math.max(0, toNumber(seconds, 0))
+  const mins = String(Math.floor(safe / 60)).padStart(2, '0')
+  const secs = String(Math.floor(safe % 60)).padStart(2, '0')
+  const ms = String(Math.floor((safe - Math.floor(safe)) * 1000)).padStart(3, '0')
+  return `${mins}:${secs}.${ms}`
+}
+
+function formatRange(scene) {
+  if (!scene) return '00:00.000 → 00:00.000'
+  return `${formatTime(scene.start)} → ${formatTime(scene.end)}`
+}
+
+function durationOf(scene) {
+  return Math.max(0, toNumber(scene.end, 0) - toNumber(scene.start, 0))
+}
+
+function isFirstLastRoute(route) {
+  return String(route || '').startsWith('first_last')
+}
+
+function normalizePhrase(raw, index = 0) {
+  const phraseId = asText(raw?.phrase_id || raw?.id || `phr_${String(index + 1).padStart(3, '0')}`)
+  const start = toNumber(raw?.start_sec ?? raw?.start, 0)
+  const end = toNumber(raw?.end_sec ?? raw?.end, start)
+  return {
+    ...raw,
+    phrase_id: phraseId,
+    id: raw?.id || phraseId,
+    start,
+    end,
+    start_sec: start,
+    end_sec: end,
+    text_original: asText(raw?.text_original || raw?.original_text || raw?.originalText || raw?.text_en || raw?.text),
+    translation_ru: asText(raw?.translation_ru || raw?.text_ru || raw?.ruText),
+    meaning_hint_ru: asText(raw?.meaning_hint_ru || raw?.meaningText || raw?.meaning_ru),
+    label: asText(raw?.label || raw?.role_label || raw?.roleLabel || ''),
+    words: asArray(raw?.words),
+  }
+}
+
+function buildPhraseList(timing = {}) {
+  const audioPhrases = asArray(timing.audio_phrases || timing.audioPhrases).map(normalizePhrase)
+  const speechSegments = asArray(timing.speechSegments || timing.speech_segments).map(normalizePhrase)
+  const byId = new Map()
+  ;[...audioPhrases, ...speechSegments].forEach((phrase, index) => {
+    const id = phrase.phrase_id || phrase.id || `phr_${index + 1}`
+    byId.set(id, { ...(byId.get(id) || {}), ...phrase, phrase_id: id })
+  })
+  return Array.from(byId.values()).sort((a, b) => a.start - b.start)
+}
+
+function getScenePhraseIds(scene, phrases) {
+  const explicit = asArray(scene?.source_phrase_ids || scene?.sourcePhraseIds)
+    .map((item) => asText(item))
+    .filter(Boolean)
+  if (explicit.length) return explicit
+
+  const start = toNumber(scene?.start_sec ?? scene?.start, 0)
+  const end = toNumber(scene?.end_sec ?? scene?.end, start)
+  return phrases
+    .filter((phrase) => phrase.end > start && phrase.start < end)
+    .map((phrase) => phrase.phrase_id)
+}
+
+function phraseWordsInScene(phrase, scene) {
+  const words = asArray(phrase.words)
+  if (!words.length) return ''
+  const start = toNumber(scene?.start_sec ?? scene?.start, 0)
+  const end = toNumber(scene?.end_sec ?? scene?.end, start)
+  const selected = words
+    .filter((word) => {
+      const wordStart = toNumber(word.start_sec ?? word.start, 0)
+      const wordEnd = toNumber(word.end_sec ?? word.end, wordStart)
+      return wordEnd > start && wordStart < end
+    })
+    .map((word) => asText(word.word || word.text))
+    .filter(Boolean)
+  return selected.join(' ')
+}
+
+function collectSceneText(scene, phrases) {
+  const explicit = asText(scene.scene_word_text || scene.lyrics_text || scene.text || scene.original_text)
+  if (explicit) return explicit
+
+  const phraseIds = new Set(getScenePhraseIds(scene, phrases))
+  const parts = phrases
+    .filter((phrase) => phraseIds.has(phrase.phrase_id))
+    .map((phrase) => phraseWordsInScene(phrase, scene) || phrase.text_original)
+    .filter(Boolean)
+  return parts.join(' ')
+}
+
+function collectByField(scene, phrases, fieldNames, fallback = '') {
+  const phraseIds = new Set(getScenePhraseIds(scene, phrases))
+  const parts = phrases
+    .filter((phrase) => phraseIds.has(phrase.phrase_id))
+    .map((phrase) => {
+      for (const field of fieldNames) {
+        const value = asText(phrase[field])
+        if (value) return value
+      }
+      return ''
+    })
+    .filter(Boolean)
+  return parts.join(' ').trim() || fallback
+}
+
+function deriveRoleLabels(scene, phrases) {
+  const explicit = asArray(scene?.roleLabels || scene?.role_labels)
+    .map((item) => asText(item))
+    .filter(Boolean)
+  if (explicit.length) return Array.from(new Set(explicit))
+
+  const phraseIds = new Set(getScenePhraseIds(scene, phrases))
+  const labels = phrases
+    .filter((phrase) => phraseIds.has(phrase.phrase_id))
+    .map((phrase) => asText(phrase.label || phrase.role_label || phrase.roleLabel))
+    .filter(Boolean)
+  return Array.from(new Set(labels))
+}
+
+function storyboardRouteLabel(route) {
+  const value = String(route || 'i2v')
+  const map = {
+    ia2v: 'ia2v lip-sync',
+    i2v: 'i2v',
+    i2v_sound: 'i2v sound',
+    i2v_text: 'i2v text',
+    first_last: 'first-last',
+    first_last_sound: 'first-last sound',
+  }
+  return map[value] || value
+}
+
+function storyboardStableHueFromText(value, fallbackIndex = 0) {
+  const text = String(value || '').trim()
+  if (!text) return 185 + ((Number(fallbackIndex || 0) * 47) % 150)
+  let hash = 0
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i)
+    hash |= 0
+  }
+  return 185 + (Math.abs(hash) % 150)
+}
+
+function storyboardSceneColor(scene, index = 0) {
+  const blockKey = String(
+    scene?.blockId ??
+    scene?.block_id ??
+    scene?.semanticBlockId ??
+    scene?.semantic_block_id ??
+    scene?.blockTitle ??
+    scene?.block_title ??
+    ''
+  ).trim()
+
+  const blockNumber = Number(
+    scene?.blockIndex ??
+    scene?.block_index ??
+    scene?.blockNumber ??
+    scene?.block_number
+  )
+
+  if (blockKey) {
+    if (Number.isFinite(blockNumber)) {
+      return 185 + ((blockNumber * 47) % 150)
+    }
+    return storyboardStableHueFromText(`block:${blockKey}`, index)
+  }
+
+  const direct = Number(
+    scene?.blockColor ??
+    scene?.block_color ??
+    scene?.blockHue ??
+    scene?.block_hue ??
+    scene?.color ??
+    scene?.sceneColor ??
+    scene?.scene_color ??
+    scene?.hue
+  )
+  if (Number.isFinite(direct)) return direct
+
+  return 185 + ((Number(index || 0) * 47) % 150)
+}
+
+function normalizeAudioSliceStatus(rawScene = {}, savedScene = {}) {
+  const status = asText(savedScene?.audio_slice_status || rawScene?.audio_slice_status || 'not_extracted')
+  const hasServerSlice = Boolean(
+    savedScene?.audio_slice_url ||
+    savedScene?.audioSliceUrl ||
+    savedScene?.audio_slice_api_path ||
+    savedScene?.audioSliceApiPath ||
+    rawScene?.audio_slice_url ||
+    rawScene?.audioSliceUrl ||
+    rawScene?.audio_slice_api_path ||
+    rawScene?.audioSliceApiPath
+  )
+
+  if (status === 'ready' && !hasServerSlice) return 'not_extracted'
+  return status || 'not_extracted'
+}
+
+function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
+  const start = toNumber(rawScene?.start_sec ?? rawScene?.start, 0)
+  const end = toNumber(rawScene?.end_sec ?? rawScene?.end, start)
+  const id = asText(rawScene?.scene_id || rawScene?.id || savedScene?.scene_id || savedScene?.id || `seg_${String(index + 1).padStart(2, '0')}`)
+
+  const phraseIds = getScenePhraseIds(rawScene, phrases)
+  const sceneText = collectSceneText(rawScene, phrases)
+  const translated = asText(rawScene?.translated_text_ru) || collectByField(rawScene, phrases, ['translation_ru', 'text_ru', 'ruText'])
+  const meaning = asText(rawScene?.meaning_hint_ru || rawScene?.meaningText) || collectByField(rawScene, phrases, ['meaning_hint_ru', 'meaningText', 'meaning_ru'])
+  const route = asText(savedScene?.route || rawScene?.route) || 'i2v'
+  const sceneHueValue = storyboardSceneColor({ ...(rawScene || {}), ...(savedScene || {}) }, index)
+
+  const timingNote = asText(rawScene?.note || rawScene?.scene_note || rawScene?.memo || rawScene?.comment)
+  const savedNote = asText(savedScene?.note)
+  const blockId = asText(rawScene?.blockId || rawScene?.block_id || savedScene?.blockId || savedScene?.block_id)
+  const blockTitle = asText(rawScene?.blockTitle || rawScene?.block_title || savedScene?.blockTitle || savedScene?.block_title)
+
+  const imageDataUrl = asText(savedScene?.image_data_url || savedScene?.imageDataUrl || rawScene?.image_data_url || rawScene?.imageDataUrl)
+  const startImageDataUrl = asText(savedScene?.start_image_data_url || savedScene?.startImageDataUrl || rawScene?.start_image_data_url || rawScene?.startImageDataUrl || imageDataUrl)
+  const endImageDataUrl = asText(savedScene?.end_image_data_url || savedScene?.endImageDataUrl || rawScene?.end_image_data_url || rawScene?.endImageDataUrl)
+
+  const rawImageUrl = asText(savedScene?.image_url || rawScene?.image_url)
+  const rawFirstFrameUrl = asText(savedScene?.first_frame_url || rawScene?.first_frame_url)
+  const rawLastFrameUrl = asText(savedScene?.last_frame_url || rawScene?.last_frame_url)
+
+  const imageUrl = rawImageUrl.startsWith('blob:') && imageDataUrl ? imageDataUrl : rawImageUrl
+  const firstFrameUrl = rawFirstFrameUrl.startsWith('blob:') && startImageDataUrl ? startImageDataUrl : rawFirstFrameUrl
+  const lastFrameUrl = rawLastFrameUrl.startsWith('blob:') && endImageDataUrl ? endImageDataUrl : rawLastFrameUrl
+  const sceneFormat = asText(
+    savedScene?.format ||
+    savedScene?.aspect_ratio ||
+    savedScene?.aspectRatio ||
+    rawScene?.format ||
+    rawScene?.aspect_ratio ||
+    rawScene?.aspectRatio
+  ) || '16:9'
+
+  return {
+    ...savedScene,
+    ...rawScene,
+    id,
+    scene_id: id,
+    title: asText(savedScene?.title || rawScene?.title) || id,
+    index,
+    start,
+    end,
+    start_sec: start,
+    end_sec: end,
+    duration_sec: toNumber(rawScene?.duration_sec, Math.max(0, end - start)),
+    route,
+    format: sceneFormat,
+    aspect_ratio: sceneFormat,
+    blockId,
+    block_id: blockId,
+    blockTitle,
+    block_title: blockTitle,
+    blockColor: sceneHueValue,
+    block_color: sceneHueValue,
+    color: sceneHueValue,
+    sceneColor: sceneHueValue,
+    roleLabels: deriveRoleLabels(rawScene, phrases),
+    source_phrase_ids: phraseIds,
+    scene_word_text: sceneText,
+    lyrics_text: asText(rawScene?.lyrics_text) || sceneText,
+    translated_text_ru: translated,
+    meaning_hint_ru: meaning,
+    phrase_cut_warning: Boolean(rawScene?.phrase_cut_warning || rawScene?.phraseCutWarning),
+    note: savedNote || timingNote,
+    // AVA_STAGE78_STRICT_VISIBLE_VIDEO_PROMPT: Board visible textarea is the source of truth.
+    // positive_prompt is only a legacy alias and must not override video_prompt.
+    video_prompt: asText(savedScene?.video_prompt || rawScene?.video_prompt || savedScene?.positive_prompt || rawScene?.positive_prompt || meaning),
+    positive_prompt: asText(savedScene?.video_prompt || rawScene?.video_prompt || savedScene?.positive_prompt || rawScene?.positive_prompt || meaning),
+    negative_prompt: asText(savedScene?.negative_prompt || rawScene?.negative_prompt || 'text, watermark, logo, distorted face, extra limbs, low quality'),
+    sound_prompt: asText(savedScene?.sound_prompt || rawScene?.sound_prompt),
+    image_status: savedScene?.image_status || rawScene?.image_status || 'empty',
+    video_status: savedScene?.video_status || rawScene?.video_status || 'empty',
+    image_url: imageUrl,
+    image_data_url: imageDataUrl,
+    image_name: savedScene?.image_name || rawScene?.image_name || '',
+    first_frame_url: firstFrameUrl,
+    start_image_data_url: startImageDataUrl,
+    first_frame_name: savedScene?.first_frame_name || rawScene?.first_frame_name || '',
+    last_frame_url: lastFrameUrl,
+    end_image_data_url: endImageDataUrl,
+    last_frame_name: savedScene?.last_frame_name || rawScene?.last_frame_name || '',
+    video_url: savedScene?.video_url || savedScene?.videoUrl || rawScene?.video_url || rawScene?.videoUrl || '',
+    video_api_path: savedScene?.video_api_path || savedScene?.videoApiPath || rawScene?.video_api_path || rawScene?.videoApiPath || '',
+    video_name: savedScene?.video_name || savedScene?.videoName || rawScene?.video_name || rawScene?.videoName || '',
+    original_video_url: savedScene?.original_video_url || savedScene?.originalVideoUrl || rawScene?.original_video_url || rawScene?.originalVideoUrl || '',
+    video_result: savedScene?.video_result || savedScene?.videoResult || rawScene?.video_result || rawScene?.videoResult || null,
+    audio_slice_url: savedScene?.audio_slice_url || rawScene?.audio_slice_url || '',
+    audio_slice_status: normalizeAudioSliceStatus(rawScene, savedScene),
+    previous_frame_status: savedScene?.previous_frame_status || rawScene?.previous_frame_status || 'empty',
+  }
+}
+
+function buildBoardFromTiming(timingData = {}, boardData = {}) {
+  const timing = timingData?.manualTiming || timingData?.manual_timing || timingData || {}
+  const existing = boardData?.board || boardData || {}
+  const phrases = buildPhraseList(timing)
+  const savedScenes = new Map(asArray(existing.scenes).map((scene) => [asText(scene.scene_id || scene.id), scene]))
+  const sourceScenes = asArray(timing.scenes)
+  const scenes = sourceScenes.map((scene, index) => {
+    const id = asText(scene.scene_id || scene.id || `seg_${String(index + 1).padStart(2, '0')}`)
+    return normalizeBoardScene(scene, index, phrases, savedScenes.get(id) || {})
+  })
+
+  const fallbackScenes = asArray(existing.scenes).map((scene, index) => normalizeBoardScene(scene, index, phrases, scene))
+  const finalScenes = scenes.length ? scenes : fallbackScenes
+  const audio = timing.audio || existing.audio || {
+    name: timing.audioName || timing.audio_name || '',
+    assetId: timing.audioAssetId || timing.audio_asset_id || '',
+    assetApiPath: timing.audioApiPath || timing.asset_api_path || '',
+    durationSec: timing.audioDurationSec || timing.audio_duration_sec || 0,
+  }
+
+  const pendingOpenSceneIdForBuild = typeof sessionStorage !== 'undefined'
+    ? asText(sessionStorage.getItem(AVA_OPEN_BOARD_SCENE_KEY))
+    : ''
+  const selectedId = pendingOpenSceneIdForBuild || asText(existing.selectedSceneId) || finalScenes[0]?.id || ''
+  return {
+    ...emptyBoard,
+    ...existing,
+    boardVersion: BOARD_VERSION,
+    importedFrom: sourceScenes.length ? 'manual_timing' : existing.importedFrom || '',
+    audio,
+    roles: asArray(timing.roles || existing.roles),
+    speechSegments: asArray(timing.speechSegments || timing.speech_segments || existing.speechSegments),
+    audioPhrases: phrases,
+    missingSpeechHints: asArray(timing.missingSpeechHints || timing.missing_speech_hints || existing.missingSpeechHints),
+    storyBlocks: asArray(timing.storyBlocks || timing.story_blocks || existing.storyBlocks),
+    scenes: finalScenes,
+    selectedSceneId: finalScenes.some((scene) => scene.id === selectedId) ? selectedId : finalScenes[0]?.id || '',
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+
+function isVideoBusyStatus(status) {
+  return ['starting', 'queued', 'preparing', 'submitting', 'running'].includes(String(status || '').toLowerCase())
+}
+
+function scenePreviewVideoUrl(scene) {
+  if (!scene || isVideoBusyStatus(scene.video_status)) return ''
+  return (
+    scene.mmaudio_video_url ||
+    scene.mmaudioVideoUrl ||
+    scene.video_url ||
+    scene.videoUrl ||
+    scene.resultVideoUrl ||
+    scene.result_video_url ||
+    ''
+  )
+}
+
+function scenePreviewVideoLabel(scene) {
+  if (!scene) return 'empty'
+  const status = String(scene.video_status || '').toLowerCase()
+  if (isVideoBusyStatus(status)) {
+    if (status === 'starting') return 'отправляется'
+    if (status === 'queued') return 'в очереди'
+    if (status === 'preparing' || status === 'submitting') return 'подготовка'
+    return 'видео делается'
+  }
+  if (scene.mmaudio_video_url || scene.mmaudioVideoUrl) return 'mmaudio ready'
+  return scene.video_status || 'empty'
+}
+
+function normalizeLoadedBoardVideoStatuses(boardData = {}) {
+  const scenes = asArray(boardData.scenes)
+  if (!scenes.length) return boardData
+
+  const resetWhenNoServerJob = new Set(['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'])
+  let changed = false
+
+  const nextScenes = scenes.map((scene) => {
+    const status = String(scene?.video_status || '').toLowerCase()
+    const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
+    const hasVideo = Boolean(scene?.video_url || scene?.videoUrl || scene?.video_name || scene?.videoName)
+
+    if (hasVideo && isVideoBusyStatus(status)) {
+      changed = true
+      return {
+        ...scene,
+        video_status: 'ready',
+        video_job_id: '',
+        video_status_endpoint: '',
+        video_error: '',
+        video_queue_position: 0,
+      }
+    }
+
+    if (status === 'queued' && !hasServerJob) {
+      changed = true
+      return {
+        ...scene,
+        video_status: '',
+        video_error: '',
+        video_queue_position: 0,
+      }
+    }
+
+    if (resetWhenNoServerJob.has(status) && !hasServerJob) {
+      changed = true
+      return {
+        ...scene,
+        video_status: '',
+        video_job_id: '',
+        video_status_endpoint: '',
+        video_error: '',
+        video_queue_position: 0,
+      }
+    }
+
+    return scene
+  })
+
+  if (!changed) return boardData
+  return {
+    ...boardData,
+    scenes: nextScenes,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+
+
+function sceneStatus(scene) {
+  const status = String(scene?.video_status || '').toLowerCase()
+  const hasPrompt = Boolean(asText(scene?.video_prompt))
+  const hasImage = Boolean(
+    scene?.image_url || scene?.first_frame_url || scene?.last_frame_url ||
+    scene?.image_data_url || scene?.start_image_data_url || scene?.end_image_data_url ||
+    scene?.image_name || scene?.first_frame_name || scene?.last_frame_name
+  )
+  const hasVideo = Boolean(scene?.video_url || scene?.video_name)
+
+  if (status === 'starting') return { label: 'отправляется', className: 'isRunning' }
+  if (status === 'queued') return { label: 'в очереди', className: 'isRunning' }
+  if (status === 'preparing' || status === 'submitting') return { label: 'подготовка', className: 'isRunning' }
+  if (status === 'running') return { label: 'видео делается', className: 'isRunning' }
+  if (status === 'error') return { label: 'ошибка видео', className: 'isError' }
+  if (hasVideo || status === 'ready') return { label: 'видео готово', className: 'isReady' }
+  if (hasImage) return { label: 'кадр готов', className: 'isImage' }
+  if (hasPrompt) return { label: 'промт готов', className: 'isPrompt' }
+  return { label: 'черновик', className: 'isDraft' }
+}
+
+function videoButtonState(scene) {
+  const status = String(scene?.video_status || '').toLowerCase()
+  const hasVideo = Boolean(scene?.video_url || scene?.video_name)
+
+  if (status === 'starting') {
+    return { className: 'isBusy', label: 'Отправляем видео', sublabel: 'создаём job…' }
+  }
+  if (status === 'queued' || status === 'preparing') {
+    return { className: 'isBusy', label: 'В очереди', sublabel: scene?.video_job_id ? `job · ${scene.video_job_id}` : 'ожидает генерацию' }
+  }
+  if (status === 'running') {
+    return { className: 'isBusy', label: 'Видео делается', sublabel: scene?.video_job_id ? `job · ${scene.video_job_id}` : 'Comfy генерирует…' }
+  }
+  if (status === 'error') {
+    return { className: 'isError', label: 'Ошибка видео', sublabel: scene?.video_error || 'можно попробовать снова' }
+  }
+  if (status === 'blocked_missing_comfy_base_url') {
+    return { className: 'isBlocked', label: 'Видео заблокировано', sublabel: 'нужен COMFY_BASE_URL' }
+  }
+  if (hasVideo || status === 'ready') {
+    return { className: 'isReady', label: 'Сделать заново', sublabel: 'готово · можно перегенерить' }
+  }
+  return { className: '', label: 'Сделать видео', sublabel: 'POST video/start' }
+}
+
+
+function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
+  return (
+    <div className="avaBoardImageSlot">
+      <div className="avaBoardImageSlotHeader">
+        <div>
+          <strong>{title}</strong>
+          <span>{subtitle}</span>
+        </div>
+        {name && <small>{name}</small>}
+      </div>
+      <div className="avaBoardImagePreview">
+        {value ? <img src={value} alt={title} /> : <div><ImageIcon size={30} /><span>Нет изображения</span></div>}
+      </div>
+      <div className="avaBoardSlotActions">
+        <label className="avaBoardSmallButton">
+          <UploadCloud size={14} /> Загрузить
+          <input type="file" accept="image/*" onChange={onSelect} />
+        </label>
+        <button type="button" onClick={onClear}>Удалить</button>
+      </div>
+    </div>
+  )
+}
+
+export default function BoardPage() {
+  const { projectId } = useParams()
+  const workspaceMode = !projectId
+  const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
+  const [board, setBoard] = useState(emptyBoard)
+
+
+  function isBoardVideoDoneStatus(status) {
+    return ['completed', 'done', 'ready', 'success'].includes(String(status || '').toLowerCase())
+  }
+
+  function isBoardVideoErrorStatus(status) {
+    return ['error', 'failed', 'queued_no_prompt_id', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(String(status || '').toLowerCase())
+  }
+
+  function isBoardVideoBlockedStatus(status) {
+    return String(status || '').toLowerCase().startsWith('blocked_')
+  }
+
+  function isBoardVideoStaleJobStatus(status, data = {}) {
+    const normalized = String(status || '').toLowerCase()
+    const code = String(data?.code || data?.error?.code || '').toUpperCase()
+    return normalized === 'not_found' || code === 'BOARD_VIDEO_JOB_NOT_FOUND'
+  }
+
+  function resetStaleVideoJobPatch(data = {}) {
+    return {
+      video_status: '',
+      video_job_id: '',
+      video_status_endpoint: '',
+      video_error: '',
+      video_queue_position: 0,
+      video_result: data || null,
+    }
+  }
+
+  function boardVideoUrlFromStatus(data) {
+    return data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
+  }
+
+  function sceneVideoInputProblems(scene) {
+    const route = String(scene?.route || 'i2v')
+    const isFirstLast = isFirstLastRoute(route)
+    const isLipSync = ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(route)
+
+    const startImage = isFirstLast
+      ? (scene?.first_frame_url || scene?.start_image_url || scene?.image_url || scene?.start_image_data_url || scene?.startImageDataUrl || scene?.image_data_url || scene?.imageDataUrl || '')
+      : (scene?.image_url || scene?.first_frame_url || scene?.start_image_url || scene?.image_data_url || scene?.imageDataUrl || scene?.start_image_data_url || scene?.startImageDataUrl || '')
+
+    const endImage = isFirstLast
+      ? (scene?.last_frame_url || scene?.end_image_url || scene?.end_image_data_url || scene?.endImageDataUrl || '')
+      : ''
+
+    const audioSlice = scene?.audio_slice_url || scene?.audioSliceUrl || ''
+
+    const problems = []
+    if (!startImage) problems.push('нет первого/основного кадра')
+    if (isFirstLast && !endImage) problems.push('нет последнего кадра')
+    if (isLipSync && !audioSlice) problems.push('нет audio slice для lip-sync')
+    return problems
+  }
+
+  function showSceneVideoInputError(scene, problems) {
+    const message = problems.length ? problems.join(', ') : 'недостаточно данных для генерации'
+    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== scene.id)
+    updateScene(scene.id, {
+      video_status: 'error',
+      video_error: message,
+      video_queue_position: 0,
+    })
+    setStatus(`Сцена ${scene.id} не отправлена: ${message}`)
+  }
+
+  function removeInvalidScenesFromLocalQueue() {
+    const invalidIds = []
+    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => {
+      const scene = asArray(boardRef.current?.scenes).find((item) => item.id === sceneId)
+      if (!scene) return false
+      const problems = sceneVideoInputProblems(scene)
+      if (problems.length) {
+        invalidIds.push({ scene, problems })
+        return false
+      }
+      return true
+    })
+    invalidIds.forEach(({ scene, problems }) => showSceneVideoInputError(scene, problems))
+    return invalidIds.length
+  }
+
+  function sceneVideoActionState(scene) {
+    const videoStatus = String(scene?.video_status || '').toLowerCase()
+    const hasVideo = Boolean(scene?.video_url || scene?.video_name)
+    const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
+    const problems = sceneVideoInputProblems(scene)
+    const hasInputProblems = problems.length > 0
+    const isLocalQueued = videoStatus === 'queued' && !hasServerJob && !hasInputProblems
+    const isBusy = !hasVideo && (
+      ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(videoStatus) ||
+      (videoStatus === 'queued' && hasServerJob)
+    )
+
+    return {
+      className: `avaBoardWorkflowButton isVideo ${isBusy ? 'isBusy' : isLocalQueued ? 'isQueued' : videoStatus === 'blocked_missing_comfy_base_url' ? 'isBlocked' : videoStatus === 'error' ? 'isError' : ''}`.trim(),
+      label: isLocalQueued ? 'В очереди' : isBusy ? 'Видео делается' : 'Сделать видео',
+      hint: isLocalQueued
+        ? `ждёт очередь${scene?.video_queue_position ? ` · #${scene.video_queue_position}` : ''}`
+        : isBusy
+          ? 'job выполняется…'
+          : videoStatus === 'blocked_missing_comfy_base_url'
+            ? 'нужен COMFY_BASE_URL'
+            : videoStatus === 'error'
+              ? (scene?.video_error || 'ошибка')
+              : hasInputProblems
+                ? `нужно: ${problems.join(', ')}`
+                : hasVideo
+                  ? 'готово · можно заново'
+                  : (scene?.workflow_key || 'workflow будет выбран автоматически'),
+      disabled: isBusy || isLocalQueued,
+    }
+  }
+
+  function isBoardVideoActiveWorkerStatus(scene) {
+    const status = String(scene?.video_status || '').toLowerCase()
+    return ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status) || (status === 'queued' && Boolean(scene?.video_job_id || scene?.video_status_endpoint))
+  }
+
+  function activeBoardVideoScene(currentBoard) {
+    return asArray(currentBoard?.scenes).find((scene) => {
+      const status = String(scene?.video_status || '').toLowerCase()
+      const hasVideoResult = Boolean(scene?.video_url || scene?.video_name)
+      const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
+
+      if (hasVideoResult) return false
+      if (['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status)) return true
+      if (status === 'queued' && hasServerJob) return true
+      return false
+    }) || null
+  }
+
+  function syncQueuedSceneBadges() {
+    const queuedIds = [...localVideoQueueRef.current]
+    setBoard((current) => {
+      let changed = false
+      const scenes = current.scenes.map((scene) => {
+        if (!queuedIds.includes(scene.id)) return scene
+        if (scene.video_job_id) return scene
+
+        const nextPosition = queuedIds.indexOf(scene.id) + 1
+        if (scene.video_status === 'queued' && scene.video_queue_position === nextPosition) return scene
+
+        changed = true
+        return {
+          ...scene,
+          video_status: 'queued',
+          video_queue_position: nextPosition,
+        }
+      })
+
+      if (!changed) return current
+
+      return {
+        ...current,
+        scenes,
+        updatedAt: new Date().toISOString(),
+      }
+    })
+  }
+
+  function processNextQueuedBoardVideo() {
+    const currentBoard = boardRef.current
+    if (activeBoardVideoScene(currentBoard)) return
+
+    while (localVideoQueueRef.current.length) {
+      const nextId = localVideoQueueRef.current.shift()
+      const scene = asArray(boardRef.current?.scenes || currentBoard?.scenes).find((item) => item.id === nextId)
+      if (!scene) continue
+
+      const inputProblems = sceneVideoInputProblems(scene)
+      if (inputProblems.length) {
+        showSceneVideoInputError(scene, inputProblems)
+        continue
+      }
+
+      syncQueuedSceneBadges()
+      setBoard((current) => ({ ...current, selectedSceneId: nextId }))
+      setStatus(`Запускаем из очереди: ${nextId}`)
+      window.setTimeout(() => {
+        markVideoPlanned(scene)
+      }, 120)
+      return
+    }
+  }
+
+  function requestSceneVideoQueue() {
+    if (!selectedScene) return
+
+    const selectedStatus = String(selectedScene.video_status || '').toLowerCase()
+    const selectedHasServerJob = Boolean(selectedScene.video_job_id || selectedScene.video_status_endpoint)
+    const selectedIsLocalQueued = (selectedStatus === 'queued' && !selectedHasServerJob) || localVideoQueueRef.current.includes(selectedScene.id)
+    const selectedIsBusy = ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(selectedStatus) || (selectedStatus === 'queued' && selectedHasServerJob)
+
+    if (selectedIsBusy || selectedIsLocalQueued) {
+      setStatus(selectedIsLocalQueued ? `Сцена ${selectedScene.id} уже в очереди` : `Сцена ${selectedScene.id} уже генерируется`)
+      return
+    }
+
+    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== selectedScene.id)
+
+    const inputProblems = sceneVideoInputProblems(selectedScene)
+    if (inputProblems.length) {
+      showSceneVideoInputError(selectedScene, inputProblems)
+      return
+    }
+
+    const currentBoard = boardRef.current
+    const activeScene = activeBoardVideoScene(currentBoard)
+    const sceneId = selectedScene.id
+
+    if (activeScene && activeScene.id !== sceneId) {
+      if (!localVideoQueueRef.current.includes(sceneId)) {
+        localVideoQueueRef.current.push(sceneId)
+        syncQueuedSceneBadges()
+      }
+      updateScene(sceneId, {
+        video_status: 'queued',
+        video_error: '',
+        video_queue_position: localVideoQueueRef.current.indexOf(sceneId) + 1,
+      })
+      setStatus(`Сцена ${sceneId} поставлена в очередь`)
+      pushBoardToast({ type: 'info', title: 'Сцена в очереди', message: `Сцена ${sceneId} ждёт генерацию`, sceneId })
+      return
+    }
+
+    markVideoPlanned(selectedScene)
+  }
+
+  function boardVideoPatchFromStatus(data, endpoint, jobId) {
+    const videoUrl = boardVideoUrlFromStatus(data)
+    return {
+      video_url: videoUrl,
+      video_api_path: data?.videoApiPath || data?.video_api_path || '',
+      video_name: data?.videoName || data?.video_name || (videoUrl ? 'video.mp4' : ''),
+      original_video_url: data?.originalVideoUrl || data?.original_video_url || '',
+      video_status: 'ready',
+      video_job_id: data?.jobId || data?.job_id || jobId || '',
+      video_status_endpoint: endpoint,
+      video_error: '',
+      video_result: data || null,
+      video_ready_at: new Date().toISOString(),
+    }
+  }
+
+  function pollBoardVideoJob(sceneId, statusEndpoint, jobId) {
+    const endpoint = statusEndpoint || (jobId ? `/clip/video/status/${jobId}` : '')
+    if (!sceneId || !endpoint) return
+
+    const normalizedEndpoint = endpoint.startsWith('/api/')
+      ? endpoint.slice(4)
+      : endpoint
+
+    const pollKey = `${sceneId}:${normalizedEndpoint}:${jobId || ''}`
+    if (activeVideoPollsRef.current.has(pollKey)) return
+    activeVideoPollsRef.current.add(pollKey)
+
+    const finishPoll = () => {
+      activeVideoPollsRef.current.delete(pollKey)
+    }
+
+    let attempt = 0
+    const maxAttempts = 240
+
+    const tick = async () => {
+      attempt += 1
+      try {
+        const data = await apiRequest(normalizedEndpoint)
+        const status = data?.status || data?.video_status || 'running'
+        const videoUrl = boardVideoUrlFromStatus(data)
+
+        if (isBoardVideoStaleJobStatus(status, data)) {
+          finishPoll()
+          updateSceneForVideoJob(sceneId, jobId, resetStaleVideoJobPatch(data))
+          setStatus(`Старый video job не найден: ${sceneId}. Статус сброшен.`)
+          pushBoardToast({
+            type: 'info',
+            title: 'Статус видео сброшен',
+            message: `Сцена ${sceneId}: старый job не найден на backend`,
+            sceneId,
+            dedupeKey: `video:${jobId || sceneId}:not_found_reset`,
+          })
+          window.setTimeout(processNextQueuedBoardVideo, 80)
+          return
+        }
+
+        if (isBoardVideoBlockedStatus(status)) {
+          finishPoll()
+          const blockedError = typeof data?.error === 'string' ? data.error : (data?.detail || status)
+          updateSceneForVideoJob(sceneId, jobId, {
+            video_status: status,
+            video_error: blockedError,
+            video_job_id: '',
+            video_status_endpoint: '',
+            video_queue_position: 0,
+            video_result: data || null,
+          })
+          setStatus(`Видео заблокировано: ${blockedError}`)
+          pushBoardToast({ type: 'warning', title: 'Видео заблокировано', message: `Сцена ${sceneId}: ${blockedError}`, sceneId })
+          window.setTimeout(processNextQueuedBoardVideo, 80)
+          return
+        }
+
+        if (videoUrl) {
+          finishPoll()
+          updateScene(sceneId, boardVideoPatchFromStatus(data, endpoint, jobId))
+          setStatus(`Видео готово: ${sceneId}`)
+          pushBoardToast({ type: 'success', title: 'Видео готово', message: `Сцена ${sceneId}`, sceneId })
+          window.setTimeout(processNextQueuedBoardVideo, 80)
+          return
+        }
+
+        if (isBoardVideoDoneStatus(status)) {
+          finishPoll()
+          updateScene(sceneId, {
+            video_status: 'error',
+            video_error: 'completed_without_video_url',
+            video_job_id: data?.jobId || data?.job_id || jobId || '',
+            video_status_endpoint: endpoint,
+            video_result: data || null,
+          })
+          setStatus('Comfy завершил job, но backend не вернул video_url')
+          pushBoardToast({ type: 'error', title: 'Видео без результата', message: `Сцена ${sceneId}: backend не вернул video_url`, sceneId })
+          window.setTimeout(processNextQueuedBoardVideo, 80)
+          return
+        }
+
+        if (isBoardVideoErrorStatus(status)) {
+          finishPoll()
+          updateScene(sceneId, {
+            video_status: 'error',
+            video_error: data?.error || data?.detail || status,
+            video_job_id: data?.jobId || data?.job_id || jobId || '',
+            video_status_endpoint: endpoint,
+            video_queue_position: 0,
+          })
+          setStatus(`Видео не собрано: ${data?.error || data?.detail || status}`)
+          pushBoardToast({ type: 'error', title: 'Видео не собрано', message: `Сцена ${sceneId}: ${data?.error || data?.detail || status}`, sceneId })
+          window.setTimeout(processNextQueuedBoardVideo, 80)
+          return
+        }
+
+        const normalizedRunningStatus = ['queued', 'preparing', 'submitting', 'running', 'starting'].includes(String(status || '').toLowerCase())
+          ? String(status || '').toLowerCase()
+          : 'running'
+
+        updateSceneForVideoJob(sceneId, jobId, {
+          video_status: normalizedRunningStatus,
+          video_job_id: data?.jobId || data?.job_id || jobId || '',
+          video_status_endpoint: endpoint,
+          video_url: '',
+          video_name: '',
+          video_result: null,
+        })
+
+        if (attempt < maxAttempts) {
+          window.setTimeout(tick, 2500)
+        } else {
+          finishPoll()
+          updateSceneForVideoJob(sceneId, jobId, {
+            video_status: 'error',
+            video_error: 'poll_timeout',
+          })
+          setStatus('Видео слишком долго не отвечает: poll_timeout')
+          pushBoardToast({ type: 'error', title: 'Видео зависло', message: `Сцена ${sceneId}: poll_timeout`, sceneId })
+          window.setTimeout(processNextQueuedBoardVideo, 80)
+        }
+      } catch (error) {
+        console.error('[Board] video status polling failed', error)
+        if (attempt < maxAttempts) {
+          window.setTimeout(tick, 4000)
+        } else {
+          finishPoll()
+          updateSceneForVideoJob(sceneId, jobId, {
+            video_status: 'error',
+            video_error: error?.message || 'poll_failed',
+          })
+          setStatus(`Ошибка проверки видео: ${error?.message || 'poll_failed'}`)
+          pushBoardToast({ type: 'error', title: 'Ошибка проверки видео', message: `Сцена ${sceneId}: ${error?.message || 'poll_failed'}`, sceneId })
+          window.setTimeout(processNextQueuedBoardVideo, 80)
+        }
+      }
+    }
+
+    window.setTimeout(tick, 1200)
+  }
+
+  const [loading, setLoading] = useState(true)
+  const [status, setStatus] = useState('')
+  const [boardToasts, setBoardToasts] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [playback, setPlayback] = useState(null)
+  const [collapsedPanels, setCollapsedPanels] = useState({ translation: false })
+  const [audioSrc, setAudioSrc] = useState('')
+  const [mmaudioOpen, setMmaudioOpen] = useState(false)
+  const audioRef = useRef(null)
+  const importRef = useRef(null)
+  const boardRef = useRef(board)
+  const localVideoQueueRef = useRef([])
+  const activeVideoPollsRef = useRef(new Set())
+
+  const selectedScene = useMemo(() => {
+    return board.scenes.find((scene) => scene.id === board.selectedSceneId) || board.scenes[0] || null
+  }, [board.scenes, board.selectedSceneId])
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedScene) return -1
+    return board.scenes.findIndex((scene) => scene.id === selectedScene.id)
+  }, [board.scenes, selectedScene])
+
+  const previousScene = useMemo(() => {
+    if (selectedIndex <= 0) return null
+    return board.scenes[selectedIndex - 1] || null
+  }, [board.scenes, selectedIndex])
+
+  const blockScenes = useMemo(() => {
+    if (!selectedScene?.blockId) return selectedScene ? [selectedScene] : []
+    return board.scenes.filter((scene) => scene.blockId && scene.blockId === selectedScene.blockId)
+  }, [board.scenes, selectedScene])
+
+  useEffect(() => {
+    boardRef.current = board
+  }, [board])
+
+  // cleanup stale queued scenes without local queue
+  useEffect(() => {
+    if (loading) return
+    const queuedIds = new Set(localVideoQueueRef.current)
+    const staleQueued = asArray(board.scenes).filter((scene) => (
+      scene.video_status === 'queued' &&
+      !scene.video_job_id &&
+      !queuedIds.has(scene.id)
+    ))
+    if (!staleQueued.length) return
+    setBoard((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (!staleQueued.some((item) => item.id === scene.id)) return scene
+        const problems = sceneVideoInputProblems(scene)
+        if (problems.length) {
+          return {
+            ...scene,
+            video_status: 'error',
+            video_error: problems.join(', '),
+            video_queue_position: 0,
+          }
+        }
+        return {
+          ...scene,
+          video_status: '',
+          video_queue_position: 0,
+        }
+      }),
+      updatedAt: new Date().toISOString(),
+    }))
+  }, [loading, board.scenes])
+
+  useEffect(() => {
+    let active = true
+    async function load() {
+      setLoading(true)
+      setStatus('Загружаем Storyboard и данные Manual Timing…')
+      try {
+        const boardData = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
+        const timingData = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
+        if (!active) return
+        let nextBoard = buildBoardFromTiming(timingData, boardData)
+        const hydratedCompleted = applyCompletedJobsToBoard(nextBoard, { projectId: projectId || '', workspaceMode })
+        nextBoard = normalizeLoadedBoardVideoStatuses(hydratedCompleted.board)
+        if (hydratedCompleted.usedKeys.length) {
+          const used = new Set(hydratedCompleted.usedKeys)
+          writeAvaCompletedJobs(readAvaCompletedJobs().filter((job) => !used.has(job.key)))
+          setStatus(`Подтянуты готовые job: ${hydratedCompleted.usedKeys.length}`)
+        }
+        const pendingOpenSceneId = sessionStorage.getItem(AVA_OPEN_BOARD_SCENE_KEY) || ''
+        if (pendingOpenSceneId && nextBoard.scenes.some((scene) => scene.id === pendingOpenSceneId || scene.scene_id === pendingOpenSceneId)) {
+          nextBoard = { ...nextBoard, selectedSceneId: pendingOpenSceneId }
+          sessionStorage.removeItem(AVA_OPEN_BOARD_SCENE_KEY)
+        }
+        setBoard(nextBoard)
+        setStatus(nextBoard.scenes.length ? 'Storyboard собран из Manual Timing' : 'Сцен пока нет — импортируй JSON или вернись в Тайминг')
+      } catch (err) {
+        if (!active) return
+        setStatus(`Ошибка загрузки Storyboard: ${err.message}`)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [projectId, workspaceMode])
+
+  useEffect(() => {
+    let cancelled = false
+    let objectUrl = ''
+    async function loadAudio() {
+      setAudioSrc('')
+      const apiPath = board.audio?.assetApiPath || board.audio?.asset_api_path || board.audioApiPath || ''
+      if (!apiPath) return
+      try {
+        objectUrl = await fetchProtectedBlobUrl(apiPath)
+        if (!cancelled) setAudioSrc(objectUrl)
+      } catch (err) {
+        if (!cancelled) setStatus(`Аудио preview недоступен: ${err.message}`)
+      }
+    }
+    loadAudio()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [board.audio?.assetApiPath, board.audio?.asset_api_path, board.audioApiPath])
+
+  useEffect(() => {
+    if (loading) return undefined
+    const timer = window.setTimeout(() => saveBoard(board, true), 900)
+    return () => window.clearTimeout(timer)
+  }, [loading, board])
+
+  useEffect(() => {
+    if (loading) return undefined
+    board.scenes.forEach((scene) => {
+      const status = String(scene.video_status || '').toLowerCase()
+      if (!['queued', 'preparing', 'submitting', 'running', 'starting', 'queued_no_prompt_id'].includes(status)) return
+      const endpoint = scene.video_status_endpoint || (scene.video_job_id ? `/api/clip/video/status/${scene.video_job_id}` : '')
+      if (!endpoint) return
+      pollBoardVideoJob(scene.id, endpoint, scene.video_job_id)
+    })
+    return undefined
+    // run only after initial load or project switch; polling updates scene statuses itself
+  }, [loading, projectId, workspaceMode])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return undefined
+    function handleTimeUpdate() {
+      if (!playback) return
+      if (audio.currentTime >= playback.end) {
+        audio.pause()
+        setPlayback(null)
+      }
+    }
+    function handleEnded() {
+      setPlayback(null)
+    }
+    audio.addEventListener('timeupdate', handleTimeUpdate)
+    audio.addEventListener('ended', handleEnded)
+    return () => {
+      audio.removeEventListener('timeupdate', handleTimeUpdate)
+      audio.removeEventListener('ended', handleEnded)
+    }
+  }, [playback])
+
+  async function saveBoard(nextBoard = board, quiet = false) {
+    const payload = { ...nextBoard, boardVersion: BOARD_VERSION, updatedAt: new Date().toISOString() }
+    try {
+      if (!quiet) {
+        setSaving(true)
+        setStatus('Сохраняем Storyboard…')
+      }
+      if (workspaceMode) await saveWorkspaceStage(STAGE, payload)
+      else await saveStage(projectId, STAGE, payload, 'safe_merge')
+      if (!quiet) setStatus('Storyboard сохранён')
+    } catch (err) {
+      setStatus(`Ошибка сохранения Доски: ${err.message}`)
+    } finally {
+      if (!quiet) setSaving(false)
+    }
+  }
+
+  function updateScene(sceneId, patch) {
+    setBoard((current) => {
+      let changed = false
+      const entries = Object.entries(patch || {})
+
+      const scenes = current.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene
+
+        const hasFieldChange = entries.some(([key, value]) => !Object.is(scene?.[key], value))
+        if (!hasFieldChange) return scene
+
+        changed = true
+        return { ...scene, ...patch }
+      })
+
+      if (!changed) return current
+
+      return {
+        ...current,
+        scenes,
+        updatedAt: new Date().toISOString(),
+      }
+    })
+  }
+
+  function updateSceneForVideoJob(sceneId, jobId, patch) {
+    setBoard((current) => ({
+      ...current,
+      scenes: current.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene
+        const currentJobId = scene.video_job_id || ''
+        if (jobId && currentJobId && currentJobId !== jobId) {
+          return scene
+        }
+        return { ...scene, ...patch }
+      }),
+      updatedAt: new Date().toISOString(),
+    }))
+  }
+
+
+
+  function pushBoardToast({ type = 'info', title = '', message = '', sceneId = '', dedupeKey = '' } = {}) {
+    window.dispatchEvent(new CustomEvent('ava:notify', {
+      detail: {
+        type,
+        title,
+        message,
+        sceneId,
+        to: window.location.pathname,
+        dedupeKey,
+        source: 'board-page',
+      },
+    }))
+  }
+
+  function dismissBoardToast(toastId) {
+    setBoardToasts((current) => current.filter((toast) => toast.id !== toastId))
+  }
+
+
+  function registerAvaGlobalJob({ kind = 'video', sceneId = '', jobId = '', statusEndpoint = '' } = {}) {
+    if (!jobId || !statusEndpoint) return
+
+    const key = `${kind}:${jobId}`
+    const nextJob = {
+      key,
+      kind,
+      sceneId,
+      jobId,
+      statusEndpoint,
+      projectId: projectId || '',
+      workspaceMode,
+      to: window.location.pathname,
+      createdAt: new Date().toISOString(),
+    }
+
+    const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
+    writeAvaGlobalJobs([...jobs, nextJob].slice(-12))
+  }
+
+  async function refreshFromTiming() {
+    setStatus('Обновляем сцены из Manual Timing…')
+    try {
+      const timingData = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
+      setBoard((current) => buildBoardFromTiming(timingData, current))
+      setStatus('Сцены обновлены из Manual Timing')
+    } catch (err) {
+      setStatus(`Не удалось обновить из Timing: ${err.message}`)
+    }
+  }
+
+  function selectScene(sceneId) {
+    setBoard((current) => ({ ...current, selectedSceneId: sceneId }))
+  }
+
+  function togglePanel(panelKey) {
+    setCollapsedPanels((current) => ({
+      ...current,
+      [panelKey]: !current?.[panelKey],
+    }))
+  }
+
+  function playRange(start, end, label) {
+    const audio = audioRef.current
+    if (!audio || !audioSrc) {
+      setStatus('Аудио preview пока недоступен')
+      return
+    }
+    const safeStart = Math.max(0, toNumber(start, 0))
+    const safeEnd = Math.max(safeStart + 0.05, toNumber(end, safeStart + 0.05))
+    audio.pause()
+    audio.currentTime = safeStart
+    setPlayback({ start: safeStart, end: safeEnd, label })
+    audio.play().catch((err) => setStatus(`Не удалось проиграть аудио: ${err.message}`))
+  }
+
+  function togglePause() {
+    const audio = audioRef.current
+    if (!audio) return
+    if (audio.paused) audio.play().catch((err) => setStatus(err.message))
+    else audio.pause()
+  }
+
+  function playSelectedScene() {
+    if (!selectedScene) return
+    playRange(selectedScene.start, selectedScene.end, selectedScene.id)
+  }
+
+  function playSelectedBlock() {
+    if (!blockScenes.length) return playSelectedScene()
+    const start = Math.min(...blockScenes.map((scene) => scene.start))
+    const end = Math.max(...blockScenes.map((scene) => scene.end))
+    playRange(start, end, selectedScene?.blockTitle || selectedScene?.blockId || 'block')
+  }
+
+  function playAllAudio() {
+    const duration = toNumber(board.audio?.durationSec || board.audioDurationSec, Math.max(...board.scenes.map((scene) => scene.end), 0))
+    playRange(0, duration, 'all')
+  }
+
+  function speak(text) {
+    const clean = asText(text)
+    if (!clean) {
+      setStatus('Нет русского текста для озвучки')
+      return
+    }
+    if (!window.speechSynthesis) {
+      setStatus('Browser TTS недоступен')
+      return
+    }
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(clean)
+    utterance.lang = 'ru-RU'
+    utterance.rate = 0.92
+    const voices = window.speechSynthesis.getVoices?.() || []
+    const voice = voices.find((item) => /Google.*Russian|ru-RU|Russian/i.test(`${item.name} ${item.lang}`))
+    if (voice) utterance.voice = voice
+    window.speechSynthesis.speak(utterance)
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.onerror = () => reject(reader.error || new Error('file_reader_failed'))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  function sceneDataFieldByUrlField(fieldUrl) {
+    const map = {
+      image_url: 'image_data_url',
+      first_frame_url: 'start_image_data_url',
+      last_frame_url: 'end_image_data_url',
+    }
+    return map[String(fieldUrl || '')] || ''
+  }
+
+  function staleVideoPatch(reason = 'source_media_changed') {
+    return {
+      video_url: '',
+      video_api_path: '',
+      video_name: '',
+      original_video_url: '',
+      video_result: null,
+      video_ready_at: '',
+      video_job_id: '',
+      video_status_endpoint: '',
+      video_status: reason,
+      video_error: '',
+    }
+  }
+
+  async function setSceneFile(scene, fieldUrl, fieldName, statusField, event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      const dataField = sceneDataFieldByUrlField(fieldUrl)
+      const patch = {
+        ...staleVideoPatch('source_image_changed'),
+        [fieldUrl]: dataUrl,
+        [fieldName]: file.name,
+        [statusField]: 'local_preview',
+      }
+      if (dataField) patch[dataField] = dataUrl
+
+      // AVA_STAGE515_CLEAR_STALE_VIDEO_ON_IMAGE_CHANGE
+      // Keep image_url and first_frame_url synchronized for ia2v.
+      // Otherwise a stale start_image_data_url can override the newly uploaded image.
+      if (fieldUrl === 'image_url') {
+        patch.first_frame_url = dataUrl
+        patch.first_frame_name = file.name
+        patch.start_image_url = ''
+        patch.startImageUrl = ''
+        patch.start_image_data_url = dataUrl
+        patch.startImageDataUrl = dataUrl
+      }
+      if (fieldUrl === 'first_frame_url') {
+        patch.image_url = dataUrl
+        patch.image_name = file.name
+        patch.image_data_url = dataUrl
+        patch.imageDataUrl = dataUrl
+      }
+
+      Object.assign(patch, {
+        video_url: '',
+        video_api_path: '',
+        video_name: '',
+        original_video_url: '',
+        video_result: null,
+        video_ready_at: '',
+        video_job_id: '',
+        video_status_endpoint: '',
+        video_error: '',
+        video_status: '',
+        video_source_image_debug: {
+          reason: `image_changed_${fieldUrl}`,
+          fileName: file.name,
+          at: new Date().toISOString(),
+        },
+      })
+
+      updateScene(scene.id, patch)
+      setStatus(`Фото сцены сохранено: ${file.name}; старое видео очищено`)
+    } catch (error) {
+      console.error('[Board] setSceneFile failed', error)
+      setStatus(`Не удалось прочитать изображение: ${error?.message || 'unknown error'}`)
+    }
+  }
+
+  function clearSceneFile(scene, fields) {
+    const patch = staleVideoPatch('source_image_removed')
+    fields.forEach((field) => {
+      patch[field] = ''
+      const dataField = sceneDataFieldByUrlField(field)
+      if (dataField) patch[dataField] = ''
+    })
+    // AVA_STAGE515_CLEAR_STALE_VIDEO_ON_IMAGE_CLEAR
+    if (fields.includes('image_url') || fields.includes('first_frame_url') || fields.includes('last_frame_url')) {
+      Object.assign(patch, {
+        video_url: '',
+        video_api_path: '',
+        video_name: '',
+        original_video_url: '',
+        video_result: null,
+        video_ready_at: '',
+        video_job_id: '',
+        video_status_endpoint: '',
+        video_error: '',
+        video_status: '',
+      })
+    }
+    updateScene(scene.id, patch)
+  }
+
+function boardAudioSourcePayloadForBackend() {
+    return {
+      audio_url: board.audio?.url || board.audio?.src || board.audioUrl || board.audio_url || '',
+      audio_asset_id: board.audio?.assetId || board.audio?.asset_id || board.audioAssetId || board.audio_asset_id || '',
+      audio_asset_api_path: board.audio?.assetApiPath || board.audio?.asset_api_path || board.audioApiPath || board.audio_api_path || '',
+    }
+  }
+
+  function isIa2vRoute(route) {
+    return ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(String(route || ''))
+  }
+
+  
+  async function markAudioSlicePlanned() {
+    if (!selectedScene) return
+
+    if (!isIa2vRoute(selectedScene.route)) {
+      setStatus('Audio slice нужен только для ia2v / lip-sync режима.')
+      return
+    }
+
+    const start = toNumber(selectedScene.start, 0)
+    const end = toNumber(selectedScene.end, start)
+    if (!(end > start)) {
+      setStatus('У сцены нет корректных ручных границ start/end.')
+      return
+    }
+
+    const sourcePayload = boardAudioSourcePayloadForBackend()
+    if (!sourcePayload.audio_url && !sourcePayload.audio_asset_id && !sourcePayload.audio_asset_api_path) {
+      updateScene(selectedScene.id, {
+        audio_slice_status: 'error',
+        audio_slice_error: 'missing_board_audio_source',
+      })
+      setStatus('В Board нет исходного audio asset. Нажми “Обновить из Timing” или проверь audio.assetApiPath.')
+      return
+    }
+
+    updateScene(selectedScene.id, {
+      audio_slice_status: 'extracting',
+      audio_slice_error: '',
+    })
+
+    try {
+      setStatus(`POST /api/manual-clip/slice-audio · ${selectedScene.id}`)
+
+      const data = await apiRequest('/manual-clip/slice-audio', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...sourcePayload,
+          scene_id: selectedScene.id,
+          start_sec: start,
+          end_sec: end,
+          duration_sec: Math.max(0, end - start),
+          format: 'mp3',
+        }),
+      })
+
+      const audioSliceUrl = data.audio_slice_url || data.audioSliceUrl || ''
+      const audioSliceName = data.audio_slice_name || data.audioSliceName || ''
+
+      updateScene(selectedScene.id, {
+        audio_slice_status: 'ready',
+        audio_slice_url: audioSliceUrl,
+        audio_slice_api_path: data.audio_slice_api_path || data.audioSliceApiPath || '',
+        audio_slice_name: audioSliceName,
+        audio_slice_mime: data.mimeType || 'audio/mpeg',
+        audio_slice_start: data.startSec ?? start,
+        audio_slice_end: data.endSec ?? end,
+        audio_slice_duration: data.durationSec ?? Math.max(0, end - start),
+        audio_slice_source: data.source || 'manual_scene_range_server_mp3',
+        audio_slice_source_asset_api_path: sourcePayload.audio_asset_api_path,
+        audio_slice_error: '',
+      })
+
+      setStatus(`Audio slice готов: ${audioSliceName || audioSliceUrl || selectedScene.id}`)
+    } catch (error) {
+      console.error('[Board] backend audio slice failed', error)
+      updateScene(selectedScene.id, {
+        audio_slice_status: 'error',
+        audio_slice_error: error?.message || 'slice_audio_failed',
+      })
+      setStatus(`Не удалось изъять аудио: ${error?.message || 'unknown error'}`)
+    }
+  }
+
+async function takePreviousLastFrame() {
+    if (!selectedScene || !previousScene) return
+
+    const sourceLabel = previousScene.title || previousScene.id
+    const videoUrl = previousScene.video_url || previousScene.videoUrl || ''
+    const videoApiPath = previousScene.video_api_path || previousScene.videoApiPath || ''
+    const hasPreviousVideo = Boolean(videoUrl || videoApiPath)
+
+    if (hasPreviousVideo) {
+      updateScene(selectedScene.id, {
+        ...staleVideoPatch('source_frame_changed'),
+        first_frame_status: 'extracting_from_previous_video',
+        first_frame_source_scene_id: previousScene.id,
+        first_frame_source: 'previous_video_last_frame',
+        first_frame_error: '',
+      })
+
+      try {
+        setStatus(`Извлекаем последний кадр из ВИДЕО предыдущей сцены: ${sourceLabel}`)
+        const data = await apiRequest('/clip/video/extract-last-frame', {
+          method: 'POST',
+          body: JSON.stringify({
+            scene_id: `${selectedScene.id}_from_${previousScene.id}`,
+            sceneId: `${selectedScene.id}_from_${previousScene.id}`,
+            source_scene_id: previousScene.id,
+            sourceSceneId: previousScene.id,
+            video_url: videoUrl,
+            videoUrl,
+            video_api_path: videoApiPath,
+            videoApiPath,
+          }),
+        })
+
+        const imageUrl = data.imageUrl || data.image_url || ''
+        const imageName = data.imageName || data.image_name || `last-frame-from-${previousScene.id}.jpg`
+        if (!imageUrl) throw new Error('extract_last_frame_returned_no_image_url')
+
+        updateScene(selectedScene.id, {
+          ...staleVideoPatch('source_frame_changed'),
+          first_frame_url: imageUrl,
+          first_frame_api_path: data.imageApiPath || data.image_api_path || '',
+          start_image_data_url: '',
+          first_frame_name: imageName,
+          first_frame_status: 'extracted_from_previous_video',
+          first_frame_source_scene_id: previousScene.id,
+          first_frame_source: 'previous_video_last_frame',
+          first_frame_error: '',
+          image_status: 'server_frame_ready',
+        })
+        setStatus(`Последний кадр из видео поставлен как первый кадр: ${selectedScene.id}`)
+      } catch (error) {
+        console.error('[Board] extract previous last frame failed', error)
+        updateScene(selectedScene.id, {
+          first_frame_status: 'error',
+          first_frame_source_scene_id: previousScene.id,
+          first_frame_source: 'previous_video_last_frame',
+          first_frame_error: error?.message || 'extract_last_frame_failed',
+        })
+        setStatus(`Не удалось взять последний кадр из видео: ${error?.message || 'extract_last_frame_failed'}`)
+      }
+      return
+    }
+
+    const url = previousScene.last_frame_url || previousScene.image_url || previousScene.first_frame_url || ''
+    const dataUrl = previousScene.end_image_data_url || previousScene.image_data_url || previousScene.start_image_data_url || ''
+    const previewUrl = url || dataUrl
+    const name = previousScene.last_frame_name || previousScene.image_name || previousScene.first_frame_name || ''
+
+    if (previewUrl) {
+      updateScene(selectedScene.id, {
+        ...staleVideoPatch('source_frame_changed'),
+        first_frame_url: previewUrl,
+        start_image_data_url: dataUrl || (String(previewUrl).startsWith('data:') ? previewUrl : selectedScene.start_image_data_url || ''),
+        first_frame_name: name || `frame-from-${previousScene.id}`,
+        first_frame_status: 'copied_from_previous_frame_fallback',
+        first_frame_source_scene_id: previousScene.id,
+        first_frame_source: 'previous_scene_frame_fallback_no_video',
+        image_status: 'local_preview',
+      })
+      setStatus(`У предыдущей сцены нет видео, поэтому взят доступный кадр: ${sourceLabel}`)
+      return
+    }
+
+    updateScene(selectedScene.id, {
+      first_frame_status: 'waiting_previous_media',
+      first_frame_source_scene_id: previousScene.id,
+      first_frame_source: 'previous_scene_missing_media',
+    })
+    setStatus('В предыдущей сцене пока нет видео/кадра, поэтому взять последний кадр нельзя.')
+  }
+
+
+    function readBlobAsDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.onerror = () => reject(reader.error || new Error('file_reader_failed'))
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  async function boardMediaRefForBackend(url, fallbackDataUrl = '') {
+    const value = String(url || '')
+    const storedDataUrl = String(fallbackDataUrl || '')
+
+    if (storedDataUrl.startsWith('data:')) {
+      return { url: '', dataUrl: storedDataUrl }
+    }
+
+    if (!value) return { url: '', dataUrl: '' }
+
+    if (value.startsWith('data:')) {
+      return { url: '', dataUrl: value }
+    }
+
+    if (value.startsWith('blob:')) {
+      try {
+        const response = await fetch(value)
+        if (!response.ok) {
+          throw new Error(`blob_fetch_${response.status}`)
+        }
+        const blob = await response.blob()
+        const dataUrl = await readBlobAsDataUrl(blob)
+        return { url: '', dataUrl }
+      } catch (error) {
+        throw new Error(
+          'Фото этой сцены было сохранено как временный blob и уже потеряно браузером. Нажми “Заменить фото” для этой сцены и выбери изображение заново, потом снова “Сделать видео”.'
+        )
+      }
+    }
+
+    return { url: value, dataUrl: '' }
+  }
+
+async function markVideoPlanned(sceneOverride = null) {
+    const sceneToStart = sceneOverride || selectedScene
+    if (!sceneToStart) return
+    const inputProblems = sceneVideoInputProblems(sceneToStart)
+    if (inputProblems.length) {
+      showSceneVideoInputError(sceneToStart, inputProblems)
+      window.setTimeout(processNextQueuedBoardVideo, 80)
+      return
+    }
+
+    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== sceneToStart.id)
+    window.setTimeout(() => syncQueuedSceneBadges(), 0)
+
+    const route = String(sceneToStart.route || 'i2v')
+    const isFirstLast = isFirstLastRoute(route)
+    const isLipSync = ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(route)
+
+    const targetDuration = Math.max(
+      0.1,
+      Number(durationOf(sceneToStart) || sceneToStart.duration_sec || sceneToStart.duration || 0)
+    )
+
+    const formatValue = String(sceneToStart.format || sceneToStart.aspect_ratio || board.format || '16:9')
+    const size = formatValue === '9:16'
+      ? { width: 720, height: 1280 }
+      : formatValue === '1:1'
+        ? { width: 1024, height: 1024 }
+        : formatValue === '4:5'
+          ? { width: 1024, height: 1280 }
+          : { width: 1280, height: 720 }
+    const workflowMap = BOARD_ROUTE_WORKFLOW_MAP
+
+    const imageUrl = isFirstLast
+      ? (sceneToStart.first_frame_url || sceneToStart.start_image_url || sceneToStart.image_url || '')
+      : (sceneToStart.image_url || sceneToStart.first_frame_url || sceneToStart.start_image_url || '')
+
+    const endImageUrl = isFirstLast
+      ? (sceneToStart.last_frame_url || sceneToStart.end_image_url || '')
+      : ''
+
+    const audioSliceUrl = sceneToStart.audio_slice_url || sceneToStart.audioSliceUrl || ''
+
+    const warnings = []
+    if (!imageUrl) warnings.push('missing_start_image')
+    if (isFirstLast && !endImageUrl) warnings.push('missing_last_frame')
+    if (isLipSync && !audioSliceUrl) warnings.push('missing_audio_slice')
+
+    updateScene(sceneToStart.id, {
+      ...staleVideoPatch('video_restarting'),
+      video_status: 'starting',
+      video_error: '',
+      video_start_warnings: warnings,
+      video_url: '',
+      video_api_path: '',
+      video_name: '',
+      original_video_url: '',
+      mmaudioVideoUrl: '',
+      mmaudioVideoName: '',
+      resultVideoUrl: '',
+      result_video_url: '',
+      videoUrl: '',
+      videoName: '',
+      video_result: null,
+      video_ready_at: '',
+      video_queue_position: 0,
+      mmaudio_status: '',
+      mmaudio_error: '',
+      mmaudio_video_url: '',
+      mmaudio_video_name: '',
+      mmaudio_result: null,
+      mmaudio_ready_at: '',
+      mmaudio_source_video_url: '',
+      mmaudio_source_video_api_path: '',
+      mmaudio_reset_reason: 'base_video_restarting',
+    })
+
+    try {
+      setStatus(`POST /api/clip/video/start · ${sceneToStart.id}`)
+
+      // AVA_STAGE515_IMAGE_START_SYNC
+      // Important: ia2v exact node 269 uses start_image_* when it exists.
+      // After replacing the visible image, old start_image_data_url could remain in state,
+      // so Comfy received the previous photo while the UI showed the new one.
+      const imageDataUrlForBackend = sceneToStart.image_data_url || sceneToStart.imageDataUrl || ''
+      const startDataUrlForBackend = sceneToStart.start_image_data_url || sceneToStart.startImageDataUrl || ''
+      const selectedImageIsFirstFrame = Boolean(
+        imageUrl
+        && (imageUrl === sceneToStart.first_frame_url || imageUrl === sceneToStart.start_image_url || imageUrl === sceneToStart.startImageUrl)
+      )
+      const chosenImageDataUrlForBackend = selectedImageIsFirstFrame
+        ? (startDataUrlForBackend || imageDataUrlForBackend)
+        : imageDataUrlForBackend
+
+      const imageMediaForBackend = await boardMediaRefForBackend(imageUrl, chosenImageDataUrlForBackend)
+      const startMediaForBackend = isFirstLast
+        ? await boardMediaRefForBackend(imageUrl, startDataUrlForBackend || chosenImageDataUrlForBackend)
+        : imageMediaForBackend
+      const endMediaForBackend = await boardMediaRefForBackend(endImageUrl, sceneToStart.end_image_data_url || sceneToStart.endImageDataUrl || '')
+
+
+      // AVA_STAGE78_STRICT_VISIBLE_VIDEO_PROMPT: send ONLY what is currently in the visible Board prompt fields.
+      // Do not fallback to old Manual Timing / translation prompts.
+      const finalVisibleVideoPromptForBackend = asText(sceneToStart.video_prompt)
+      const finalVisibleNegativePromptForBackend = asText(sceneToStart.negative_prompt)
+
+      console.log('[BOARD VIDEO PAYLOAD STRICT]', {
+        sceneId: sceneToStart.id,
+        route,
+        finalVisibleVideoPromptForBackend,
+        finalVisibleNegativePromptForBackend,
+        ignoredLegacyPositivePrompt: asText(sceneToStart.positive_prompt),
+        ignoredMeaningHint: asText(sceneToStart.meaning_hint_ru),
+      })
+
+      const data = await apiRequest('/clip/video/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          scene_id: sceneToStart.id,
+          route,
+          workflow_key: boardWorkflowKeyForRoute(route, sceneToStart.workflow_key),
+          image_url: imageMediaForBackend.url,
+          image_data_url: imageMediaForBackend.dataUrl,
+          start_image_url: startMediaForBackend.url || imageMediaForBackend.url,
+          start_image_data_url: startMediaForBackend.dataUrl || imageMediaForBackend.dataUrl,
+          end_image_url: endMediaForBackend.url,
+          end_image_data_url: endMediaForBackend.dataUrl,
+          audio_slice_url: audioSliceUrl,
+          video_prompt: finalVisibleVideoPromptForBackend,
+          videoPrompt: finalVisibleVideoPromptForBackend,
+          positive_prompt: finalVisibleVideoPromptForBackend,
+          positivePrompt: finalVisibleVideoPromptForBackend,
+          prompt: finalVisibleVideoPromptForBackend,
+          negative_prompt: finalVisibleNegativePromptForBackend,
+          negativePrompt: finalVisibleNegativePromptForBackend,
+          width: size.width,
+          height: size.height,
+          format: formatValue,
+          duration_sec: targetDuration,
+          target_duration_sec: targetDuration,
+          scene_start_sec: sceneToStart.start,
+          scene_end_sec: sceneToStart.end,
+          warnings,
+          source: 'ava_board_stage_510g2',
+        }),
+      })
+
+      const jobId = data.jobId || data.job_id || ''
+      const status = data.status || 'queued'
+
+      updateScene(sceneToStart.id, {
+        video_status: status,
+        video_job_id: jobId,
+        video_status_endpoint: data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : ''),
+        workflow_key: data.workflowKey || boardWorkflowKeyForRoute(route, sceneToStart.workflow_key),
+        workflow_exists: data.workflowExists,
+        target_duration_sec: data.targetDurationSec,
+        generation_duration_sec: data.generationDurationSec,
+        trim_to_duration_sec: data.trimToDurationSec,
+        plus_one_second_applied: Boolean(data.plusOneSecondApplied),
+        video_start_warnings: warnings,
+        video_error: '',
+      })
+
+      const videoStatusEndpoint = data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : '')
+      setStatus(`Video job: ${status} · ${jobId || 'no job id'}`)
+      registerAvaGlobalJob({ kind: 'video', sceneId: sceneToStart.id, jobId, statusEndpoint: videoStatusEndpoint })
+      pollBoardVideoJob(sceneToStart.id, videoStatusEndpoint, jobId)
+    } catch (error) {
+      console.error('[Board] /clip/video/start failed', error)
+      updateScene(sceneToStart.id, {
+        video_status: 'error',
+        video_error: error?.message || 'video_start_failed',
+      })
+      setStatus(error?.message || 'Не удалось отправить видео')
+      pushBoardToast({ type: 'error', title: 'Видео не отправлено', message: `Сцена ${sceneToStart.id}: ${error?.message || 'video_start_failed'}`, sceneId: sceneToStart.id })
+    }
+  }
+
+
+  function mmaudioVideoUrlFromStatus(data) {
+    return data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
+  }
+
+  function sceneMainPreviewVideoUrl(scene) {
+    const baseVideo = scene?.video_url || scene?.videoUrl || ''
+    const mmaudioVideo = scene?.mmaudio_video_url || scene?.mmaudioVideoUrl || ''
+
+    if (!mmaudioVideo) return baseVideo
+    if (!baseVideo) return mmaudioVideo
+
+    const baseReadyAt = Date.parse(scene?.video_ready_at || scene?.videoReadyAt || '')
+    const mmaudioReadyAt = Date.parse(scene?.mmaudio_ready_at || scene?.mmaudioReadyAt || '')
+
+    if (Number.isFinite(baseReadyAt) && Number.isFinite(mmaudioReadyAt)) {
+      return mmaudioReadyAt >= baseReadyAt ? mmaudioVideo : baseVideo
+    }
+
+    return scene?.mmaudio_status === 'ready' ? mmaudioVideo : baseVideo
+  }
+
+  function sceneMainPreviewStatus(scene) {
+    const shownUrl = sceneMainPreviewVideoUrl(scene)
+    const baseVideo = scene?.video_url || scene?.videoUrl || ''
+    const mmaudioVideo = scene?.mmaudio_video_url || scene?.mmaudioVideoUrl || ''
+
+    if (shownUrl && mmaudioVideo && shownUrl === mmaudioVideo) return 'mmaudio ready'
+    return scene?.video_status || (baseVideo ? 'ready' : 'empty')
+  }
+
+  function pollMmaudioJob(sceneId, statusEndpoint, jobId) {
+    const endpoint = statusEndpoint || (jobId ? `/clip/mmaudio/status/${jobId}` : '')
+    if (!sceneId || !endpoint) return
+
+    const normalizedEndpoint = endpoint.startsWith('/api/')
+      ? endpoint.slice(4)
+      : endpoint
+
+    let attempt = 0
+    const maxAttempts = 240
+
+    const tick = async () => {
+      attempt += 1
+      try {
+        const data = await apiRequest(normalizedEndpoint)
+        const status = data?.status || data?.mmaudio_status || 'running'
+        const videoUrl = mmaudioVideoUrlFromStatus(data)
+
+        if (videoUrl) {
+          updateScene(sceneId, {
+            mmaudio_status: 'ready',
+            mmaudio_video_url: videoUrl,
+            mmaudio_video_name: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
+            mmaudio_job_id: data?.jobId || data?.job_id || jobId || '',
+            mmaudio_status_endpoint: endpoint,
+            mmaudio_error: '',
+            mmaudio_result: data,
+            mmaudio_ready_at: new Date().toISOString(),
+          })
+          setStatus(`MMAudio готово: ${sceneId}`)
+          pushBoardToast({ type: 'success', title: 'MMAudio готово', message: `Сцена ${sceneId}: звук добавлен`, sceneId })
+          return
+        }
+
+        if (['error', 'failed', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(String(status).toLowerCase())) {
+          updateScene(sceneId, {
+            mmaudio_status: 'error',
+            mmaudio_error: data?.error || data?.detail || status,
+            mmaudio_job_id: data?.jobId || data?.job_id || jobId || '',
+            mmaudio_status_endpoint: endpoint,
+          })
+          setStatus(`MMAudio не собрано: ${data?.error || data?.detail || status}`)
+          pushBoardToast({ type: 'error', title: 'MMAudio не собрано', message: `Сцена ${sceneId}: ${data?.error || data?.detail || status}`, sceneId })
+          return
+        }
+
+        updateScene(sceneId, {
+          mmaudio_status: status === 'queued' ? 'queued' : 'running',
+          mmaudio_job_id: data?.jobId || data?.job_id || jobId || '',
+          mmaudio_status_endpoint: endpoint,
+        })
+
+        if (attempt < maxAttempts) window.setTimeout(tick, 2500)
+        else {
+          updateScene(sceneId, { mmaudio_status: 'error', mmaudio_error: 'poll_timeout' })
+          setStatus('MMAudio слишком долго не отвечает: poll_timeout')
+          pushBoardToast({ type: 'error', title: 'MMAudio зависло', message: `Сцена ${sceneId}: poll_timeout`, sceneId })
+        }
+      } catch (error) {
+        console.error('[Board] MMAudio status polling failed', error)
+        if (attempt < maxAttempts) window.setTimeout(tick, 4000)
+        else {
+          updateScene(sceneId, { mmaudio_status: 'error', mmaudio_error: error?.message || 'mmaudio_poll_failed' })
+          setStatus(`Ошибка проверки MMAudio: ${error?.message || 'mmaudio_poll_failed'}`)
+          pushBoardToast({ type: 'error', title: 'Ошибка проверки MMAudio', message: `Сцена ${sceneId}: ${error?.message || 'mmaudio_poll_failed'}`, sceneId })
+        }
+      }
+    }
+
+    window.setTimeout(tick, 1200)
+  }
+
+  async function startMmaudioForSelectedScene() {
+    if (!selectedScene) return
+    const sourceVideoApiPath = selectedScene.video_api_path || selectedScene.videoApiPath || ''
+    const sourceVideo = sourceVideoApiPath ? '' : (selectedScene.video_url || selectedScene.videoUrl || '')
+    if (!sourceVideo && !sourceVideoApiPath) {
+      updateScene(selectedScene.id, { mmaudio_status: 'error', mmaudio_error: 'Сначала нужно готовое видео' })
+      setStatus('MMAudio: сначала нужно готовое видео')
+      pushBoardToast({ type: 'warning', title: 'MMAudio недоступно', message: 'Сначала нужно готовое видео', sceneId: selectedScene.id })
+      return
+    }
+
+    updateScene(selectedScene.id, {
+      mmaudio_status: 'starting',
+      mmaudio_error: '',
+      mmaudio_video_url: '',
+      mmaudio_video_name: '',
+      mmaudio_source_video_url: sourceVideo,
+      mmaudio_source_video_api_path: sourceVideoApiPath,
+      mmaudio_source_preferred: sourceVideoApiPath ? 'video_api_path' : 'video_url',
+      mmaudio_result: null,
+    })
+
+    try {
+      setStatus(`POST /api/clip/mmaudio/start · ${selectedScene.id}`)
+      const data = await apiRequest('/clip/mmaudio/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          scene_id: selectedScene.id,
+          project_id: projectId || '',
+          video_url: sourceVideo,
+          video_api_path: sourceVideoApiPath,
+          prompt: selectedScene.mmaudio_prompt || selectedScene.sound_prompt || selectedScene.video_prompt || '',
+          negative_prompt: selectedScene.mmaudio_negative_prompt || 'music, soundtrack, narration, speech, human voice, distorted audio, clipping, harsh noise, unrelated sounds, repeated loop',
+          duration_sec: durationOf(selectedScene),
+          workflow_key: selectedScene.mmaudio_workflow_key || 'mmaudio-sound-design.json',
+        }),
+      })
+
+      const jobId = data.jobId || data.job_id || ''
+      const nextStatus = data.status || 'queued'
+      updateScene(selectedScene.id, {
+        mmaudio_status: nextStatus,
+        mmaudio_job_id: jobId,
+        mmaudio_status_endpoint: data.statusEndpoint || (jobId ? `/api/clip/mmaudio/status/${jobId}` : ''),
+        mmaudio_workflow_key: data.workflowKey || 'mmaudio-sound-design.json',
+        mmaudio_error: '',
+      })
+      const mmaudioStatusEndpoint = data.statusEndpoint || (jobId ? `/api/clip/mmaudio/status/${jobId}` : '')
+      setStatus(`MMAudio job: ${nextStatus} · ${jobId || 'no job id'}`)
+      registerAvaGlobalJob({ kind: 'mmaudio', sceneId: selectedScene.id, jobId, statusEndpoint: mmaudioStatusEndpoint })
+      pollMmaudioJob(selectedScene.id, mmaudioStatusEndpoint, jobId)
+    } catch (error) {
+      console.error('[Board] /clip/mmaudio/start failed', error)
+      updateScene(selectedScene.id, { mmaudio_status: 'error', mmaudio_error: error?.message || 'mmaudio_start_failed' })
+      setStatus(error?.message || 'Не удалось отправить MMAudio')
+      pushBoardToast({ type: 'error', title: 'MMAudio не отправлен', message: `Сцена ${selectedScene.id}: ${error?.message || 'mmaudio_start_failed'}`, sceneId: selectedScene.id })
+    }
+  }
+
+
+async function importTimingJson(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const json = JSON.parse(await file.text())
+      const nextBoard = buildBoardFromTiming(json, board)
+      setBoard(nextBoard)
+      setStatus(`Импортировано сцен: ${nextBoard.scenes.length}`)
+    } catch (err) {
+      setStatus(`Ошибка импорта JSON: ${err.message}`)
+    }
+  }
+
+  function exportBoardJson() {
+    const payload = { ...board, exportedAt: new Date().toISOString() }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ava_board_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const firstLastMode = isFirstLastRoute(selectedScene?.route)
+  const selectedEffectiveFormat = selectedScene?.format || selectedScene?.aspect_ratio || board.format || '16:9'
+  const readiness = useMemo(() => {
+    const total = board.scenes.length
+    const prompts = board.scenes.filter((scene) => asText(scene.video_prompt)).length
+    const images = board.scenes.filter((scene) => scene.image_url || scene.first_frame_url || scene.last_frame_url || scene.image_name || scene.first_frame_name || scene.last_frame_name).length
+    const videos = board.scenes.filter((scene) => scene.video_url || scene.video_name).length
+    return { total, prompts, images, videos }
+  }, [board.scenes])
+
+  if (loading) {
+    return (
+      <div className="avaPage avaStoryboardLoadingPage">
+        <section className="avaLoadingHero">
+          <div className="avaLoadingCard">
+            <div className="avaLoadingOrb"><Film size={28} /></div>
+            <p className="avaEyebrow"><Sparkles size={14} /> Ava Studio pipeline</p>
+            <h2>Загрузка Storyboard...</h2>
+            <p>Проверяем сцены, промты, видео, звук, блоки и готовим доску к работе.</p>
+            <div className="avaLoadingPipeline" aria-hidden="true">
+              <span className="isDone">Timing</span>
+              <i />
+              <span className="isActive">Storyboard</span>
+              <i />
+              <span>Media</span>
+              <i />
+              <span>Queue</span>
+            </div>
+          </div>
+          <div className="avaLoadingStatusPanel" aria-hidden="true">
+            <div className="avaLoadingStatusCard isDone">
+              <span>01</span>
+              <strong>Timing</strong>
+              <small>таймкоды и блоки получены</small>
+            </div>
+            <div className="avaLoadingStatusCard isActive">
+              <span>02</span>
+              <strong>Storyboard</strong>
+              <small>сцены и промты загружаются</small>
+            </div>
+            <div className="avaLoadingStatusCard">
+              <span>03</span>
+              <strong>Media</strong>
+              <small>проверяем видео и звук</small>
+            </div>
+            <div className="avaLoadingStatusCard">
+              <span>04</span>
+              <strong>Ready</strong>
+              <small>готовим доску к работе</small>
+            </div>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  return (
+    <div className="avaPage avaBoardPage">
+      <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" />
+
+      {boardToasts.length > 0 && (
+        <div className="avaBoardToastStack" role="status" aria-live="polite">
+          {boardToasts.map((toast) => (
+            <div key={toast.id} className={`avaBoardToast is-${toast.type || 'info'}`}>
+              <div className="avaBoardToastBody">
+                <strong>{toast.title}</strong>
+                {toast.message && <span>{toast.message}</span>}
+              </div>
+              {toast.sceneId && (
+                <button type="button" onClick={() => selectScene(toast.sceneId)}>
+                  Открыть
+                </button>
+              )}
+              <button type="button" className="avaBoardToastClose" onClick={() => dismissBoardToast(toast.id)}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <section className="avaBoardHeader">
+        <div>
+          <p className="avaEyebrow"><Sparkles size={15} /> Stage 5.1 storyboard foundation</p>
+          <h2>Storyboard</h2>
+          <p>Горизонтальная лента сцен, смысл, video prompts и медиа. Генерацию подключим следующим этапом.</p>
+        </div>
+        <div className="avaBoardHeaderActions">
+          <Link className="avaBoardHeaderLink avaBoardBackTimingLink" to={projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing'}><Clock3 size={15} /> Назад в Timing</Link>
+          <button type="button" onClick={refreshFromTiming}><RefreshCcw size={15} /> Обновить из Timing</button>
+          <Link className="avaBoardHeaderLink" to={projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'}><Film size={15} /> Перейти в видео монтаж</Link>
+          <button type="button" onClick={() => importRef.current?.click()}><FileJson size={15} /> Импорт JSON</button>
+          <button type="button" onClick={exportBoardJson}><FileJson size={15} /> Экспорт Storyboard</button>
+          <button className="avaBoardPrimary" type="button" onClick={() => saveBoard(board, false)} disabled={saving}><Save size={15} /> Сохранить</button>
+        </div>
+      </section>
+
+      <input ref={importRef} className="avaHiddenInput" type="file" accept="application/json,.json" onChange={importTimingJson} />
+
+      <section className="avaBoardSceneStrip" aria-label="Сцены">
+        {board.scenes.map((scene, index) => {
+          const statusInfo = sceneStatus(scene)
+          const active = selectedScene?.id === scene.id
+          return (
+            <button
+              key={scene.id}
+              type="button"
+              className={`avaBoardSceneCard ${active ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''}`}
+              style={{ '--scene-hue': storyboardSceneColor(scene, index) }}
+              onClick={() => selectScene(scene.id)}
+            >
+              <div className="avaBoardSceneCardTop">
+                <strong>{scene.title || scene.id}</strong>
+                <span className={`avaBoardStatusBadge ${statusInfo.className}`}>{statusInfo.label}</span>
+              </div>
+              <span>{formatRange(scene)}</span>
+              <small>{(typeof routeLabel === 'function' ? routeLabel(scene.route) : scene.route) || 'i2v'} · {durationOf(scene).toFixed(2)} c</small>
+              <div className="avaBoardSceneBadges">
+                {scene.roleLabels?.map((label) => <em key={label}>{label}</em>)}
+                {scene.phrase_cut_warning && <em className="isWarn">срез</em>}
+                {scene.blockTitle && <em>{scene.blockTitle}</em>}
+              </div>
+            </button>
+          )
+        })}
+        {board.scenes.length === 0 && (
+          <div className="avaBoardEmptyStrip">
+            Нет сцен. Вернись в Manual Timing или импортируй JSON.
+          </div>
+        )}
+      </section>
+
+      <div className="avaBoardReadiness">
+        <span>Сцен: <strong>{readiness.total}</strong></span>
+        <span>Видео prompt: <strong>{readiness.prompts}</strong></span>
+        <span>Фото: <strong>{readiness.images}</strong></span>
+        <span>Видео: <strong>{readiness.videos}</strong></span>
+        {status && <span className="avaBoardStatusText">{status}</span>}
+      </div>
+
+      {selectedScene ? (
+        <section className="avaBoardWorkspace">
+          <div className="avaBoardBrainPanel">
+            <div className="avaBoardSceneTitleRow">
+              <div>
+                <p className="avaEyebrow">scene brain</p>
+                <h3>{selectedScene.title || selectedScene.id}</h3>
+                <span><Clock3 size={14} /> {formatRange(selectedScene)} · {durationOf(selectedScene).toFixed(2)} c</span>
+              </div>
+              <div className="avaBoardSceneMiniMeta">
+                <span>#{selectedIndex + 1} из {board.scenes.length}</span>
+                <span>{selectedScene.source_phrase_ids?.join(', ') || 'phrases: —'}</span>
+              </div>
+            </div>
+
+            <section className={`avaBoardTranslationPanel ${collapsedPanels.translation ? 'isCollapsed' : ''}`}>
+              <div className="avaBoardSectionHead">
+                <div>
+                  <p className="avaEyebrow">translation / sense</p>
+                  <h3>Текст сцены</h3>
+                </div>
+                <div className="avaBoardSectionHeadActions">
+                  <span>к этому блоку вернёмся позже</span>
+                  <button
+                    type="button"
+                    className="avaBoardSectionToggle"
+                    onClick={() => togglePanel('translation')}
+                    aria-expanded={!collapsedPanels.translation}
+                  >
+                    {collapsedPanels.translation ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+                    {collapsedPanels.translation ? 'Развернуть' : 'Свернуть'}
+                  </button>
+                </div>
+              </div>
+
+              {!collapsedPanels.translation && (
+                <>
+                  <div className="avaBoardTextGrid">
+                    <div className="avaBoardTextCard">
+                      <strong>Оригинал</strong>
+                      <p>{selectedScene.scene_word_text || 'Оригинального текста пока нет'}</p>
+                    </div>
+                    <div className="avaBoardTextCard">
+                      <strong>Перевод</strong>
+                      <p>{selectedScene.translated_text_ru || 'Перевода пока нет'}</p>
+                    </div>
+                    <div className="avaBoardTextCard isMeaning">
+                      <strong>Смысл для кадра</strong>
+                      <p>{selectedScene.meaning_hint_ru || 'Смысловой подсказки пока нет'}</p>
+                    </div>
+                  </div>
+
+                  <div className="avaBoardListenPanel">
+                    <div className="avaBoardListenGroup isOriginalAudio">
+                      <span>Оригинальное аудио</span>
+                      <button type="button" onClick={playSelectedScene}><Play size={15} /> сцена</button>
+                      <button type="button" onClick={playSelectedBlock}><AudioLines size={15} /> блок</button>
+                      <button type="button" onClick={playAllAudio}><Play size={15} /> всё аудио</button>
+                      {playback && <em>plays: {playback.label}</em>}
+                    </div>
+
+                    <div className="avaBoardListenGroup isRussianTts">
+                      <span>Русская озвучка браузером</span>
+                      <button
+                        type="button"
+                        className="isTranslation"
+                        onClick={() => speak(selectedScene.translated_text_ru)}
+                        disabled={!selectedScene.translated_text_ru}
+                      >
+                        <Volume2 size={15} /> перевод
+                      </button>
+                      <button
+                        type="button"
+                        className="isSense"
+                        onClick={() => speak(selectedScene.meaning_hint_ru)}
+                        disabled={!selectedScene.meaning_hint_ru}
+                      >
+                        <Volume2 size={15} /> смысл кадра
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </section>
+
+            <section className="avaBoardGenerationPanel">
+              <div className="avaBoardSectionHead">
+                <div>
+                  <p className="avaEyebrow">video setup</p>
+                  <h3>Настройки видео</h3>
+                </div>
+                <span>{selectedScene.route || 'i2v'} · {selectedEffectiveFormat}</span>
+              </div>
+
+              <div className="avaBoardSetupGrid">
+                <label className="avaBoardSelectField">
+                  <span>Режим видео</span>
+                  <select
+                    value={selectedScene.route || 'i2v'}
+                    onChange={(event) => {
+                      const nextRoute = event.target.value
+                      updateScene(selectedScene.id, {
+                        route: nextRoute,
+                        workflow_key: boardWorkflowKeyForRoute(nextRoute),
+                      })
+                    }}
+                  >
+                    {ROUTE_OPTIONS.map((route) => (
+                      <option key={route.value} value={route.value}>{route.label}</option>
+                    ))}
+                  </select>
+                  <small>{ROUTE_OPTIONS.find((route) => route.value === selectedScene.route)?.hint || 'Выбери режим генерации видео'}</small>
+                </label>
+
+                <label className="avaBoardSelectField">
+                  <span>Разрешение / формат</span>
+                  <select
+                    value={selectedEffectiveFormat}
+                    onChange={(event) => updateScene(selectedScene.id, {
+                      format: event.target.value,
+                      aspect_ratio: event.target.value,
+                    })}
+                  >
+                    {FORMAT_OPTIONS.map((format) => (
+                      <option key={format.value} value={format.value}>{format.label}</option>
+                    ))}
+                  </select>
+                  <small>Формат применяется к выбранной сцене. Формат проекта не меняется автоматически.</small>
+                </label>
+              </div>
+
+              <div className="avaBoardVideoPromptGrid">
+                <label className="avaBoardWideField">
+                  Positive video prompt
+                  <textarea
+                    value={selectedScene.video_prompt || ''}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      updateScene(selectedScene.id, {
+                        video_prompt: value,
+                        videoPrompt: value,
+                        positive_prompt: value,
+                        positivePrompt: value,
+                        prompt: value,
+                      })
+                    }}
+                    placeholder="Визуал, движение камеры, действие, звук, реплика и кто говорит — всё сюда"
+                  />
+                </label>
+
+                <label className="avaBoardWideField">
+                  Negative prompt
+                  <textarea
+                    value={selectedScene.negative_prompt || ''}
+                    onChange={(event) => updateScene(selectedScene.id, { negative_prompt: event.target.value })}
+                    placeholder="Запреты: text, watermark, logo, плохие лица, лишние конечности..."
+                  />
+                </label>
+              </div>
+
+              <label className="avaBoardNoteField">
+                Заметка сцены
+                <textarea
+                  value={selectedScene.note || ''}
+                  onChange={(event) => updateScene(selectedScene.id, { note: event.target.value })}
+                  placeholder="Ручная заметка для себя / следующего этапа"
+                />
+              </label>
+            </section>
+          </div>
+
+          <aside className="avaBoardMediaPanel">
+            <div className="avaBoardMediaHeader">
+              <div>
+                <p className="avaEyebrow">media studio</p>
+                <h3>{firstLastMode ? 'First / Last кадры' : 'Фото и видео'}</h3>
+              </div>
+              <span>{selectedScene.route} · {selectedEffectiveFormat}</span>
+            </div>
+
+            {firstLastMode ? (
+              <div className="avaBoardFirstLastGrid">
+                <ImageSlot
+                  title="Первый кадр"
+                  subtitle="start frame"
+                  value={selectedScene.first_frame_url}
+                  name={selectedScene.first_frame_name}
+                  onSelect={(event) => setSceneFile(selectedScene, 'first_frame_url', 'first_frame_name', 'image_status', event)}
+                  onClear={() => clearSceneFile(selectedScene, ['first_frame_url', 'first_frame_name'])}
+                />
+                <ImageSlot
+                  title="Последний кадр"
+                  subtitle="end frame"
+                  value={selectedScene.last_frame_url}
+                  name={selectedScene.last_frame_name}
+                  onSelect={(event) => setSceneFile(selectedScene, 'last_frame_url', 'last_frame_name', 'image_status', event)}
+                  onClear={() => clearSceneFile(selectedScene, ['last_frame_url', 'last_frame_name'])}
+                />
+              </div>
+            ) : (
+              <ImageSlot
+                title="Фото / Start image"
+                subtitle="основной кадр для i2v / ia2v"
+                value={selectedScene.image_url}
+                name={selectedScene.image_name}
+                onSelect={(event) => setSceneFile(selectedScene, 'image_url', 'image_name', 'image_status', event)}
+                onClear={() => clearSceneFile(selectedScene, ['image_url', 'image_name'])}
+              />
+            )}
+
+            <div className="avaBoardVideoPreview">
+              <div className="avaBoardVideoHeader">
+                <strong><Film size={16} /> Видео preview</strong>
+                <span>{scenePreviewVideoLabel(selectedScene)}</span>
+              </div>
+              {scenePreviewVideoUrl(selectedScene) ? (
+                <video key={scenePreviewVideoUrl(selectedScene)} src={scenePreviewVideoUrl(selectedScene)} controls />
+              ) : (
+                <div className={`avaBoardVideoEmpty ${isVideoBusyStatus(selectedScene.video_status) ? 'isBusy' : ''}`}>
+                  <Film size={34} />
+                  <span>{isVideoBusyStatus(selectedScene.video_status) ? sceneStatus(selectedScene).label : 'Видео ещё не создано'}</span>
+                  {isVideoBusyStatus(selectedScene.video_status) && (
+                    <small>Старый preview скрыт, ждём новый результат.</small>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="avaBoardSceneWorkflowPanel">
+              <div className="avaBoardWorkflowHead">
+                <strong>Действия сцены</strong>
+                <span>{selectedScene.route} · {selectedEffectiveFormat}</span>
+              </div>
+
+              <div className="avaBoardWorkflowButtons">
+                {selectedIndex > 0 && (
+                  <button
+                    type="button"
+                    className={`avaBoardWorkflowButton isFrame ${selectedScene.first_frame_url ? 'isReady' : selectedScene.first_frame_status ? 'isPlanned' : ''}`}
+                    onClick={takePreviousLastFrame}
+                  >
+                    <ImageIcon size={16} />
+                    <span>Взять последний кадр</span>
+                    <small>{selectedScene.first_frame_url ? 'кадр в первом окне' : selectedScene.first_frame_status === 'extracting_from_previous_video' ? 'извлекаем…' : selectedScene.first_frame_status === 'error' ? (selectedScene.first_frame_error || 'ошибка кадра') : selectedScene.first_frame_status === 'extracted_from_previous_video' ? 'из видео предыдущей сцены' : 'из предыдущей сцены'}</small>
+                  </button>
+                )}
+
+                {isIa2vRoute(selectedScene.route) && (
+                  <button
+                    type="button"
+                    className={`avaBoardWorkflowButton isAudio ${selectedScene.audio_slice_status === 'ready' ? 'isReady' : selectedScene.audio_slice_status === 'extracting' ? 'isBusy' : selectedScene.audio_slice_status === 'error' ? 'isError' : ''}`}
+                  title={selectedScene.audio_slice_name || selectedScene.audio_slice_url || "audio slice"}
+                    onClick={markAudioSlicePlanned}
+                  >
+                    <Scissors size={16} />
+                    <span>Изъять аудио</span>
+                    <small>{selectedScene.audio_slice_status === 'ready' ? ((Number(selectedScene.audio_slice_duration || 0) > 0) ? `MP3 готов · ${Number(selectedScene.audio_slice_duration || 0).toFixed(2)}с` : 'MP3 готов') : selectedScene.audio_slice_status === 'extracting' ? 'режем через backend…' : selectedScene.audio_slice_status === 'error' ? 'ошибка slice' : 'POST slice-audio'}</small>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className={sceneVideoActionState(selectedScene).className}
+                  onClick={requestSceneVideoQueue}
+                  disabled={sceneVideoActionState(selectedScene).disabled}
+                >
+                  <Film size={16} />
+                  <span>{sceneVideoActionState(selectedScene).label}</span>
+                  <small>{sceneVideoActionState(selectedScene).hint}</small>
+                </button>
+              </div>
+
+                {/* Stage 76 — MMAudio prompt drawer */}
+                {['i2v', 'first_last'].includes(selectedScene.route) && (() => {
+                  const mmaudioStatus = String(selectedScene.mmaudio_status || selectedScene.mmaudioStatus || '').toLowerCase()
+                  const mmaudioBusy = ['starting', 'queued', 'preparing', 'running'].includes(mmaudioStatus)
+                  const mmaudioReady = mmaudioStatus === 'ready' || Boolean(selectedScene.mmaudio_video_url || selectedScene.mmaudioVideoUrl)
+                  const mmaudioError = mmaudioStatus === 'error'
+                  const hasSourceVideo = Boolean(
+                    selectedScene.video_api_path ||
+                    selectedScene.videoApiPath ||
+                    selectedScene.video_url ||
+                    selectedScene.videoUrl
+                  )
+                  const title = mmaudioBusy ? 'MMAudio делается' : mmaudioReady ? 'MMAudio готово' : 'MMAudio'
+                  const hint = mmaudioBusy
+                    ? (mmaudioStatus === 'queued' ? 'в очереди ComfyLab…' : 'ComfyLab выполняет job…')
+                    : mmaudioReady
+                      ? 'звуковая версия готова'
+                      : hasSourceVideo
+                        ? 'открыть sound prompt'
+                        : 'сначала сделай видео'
+                  const panelClassName = `avaBoardMmaudioPanel ${mmaudioOpen ? 'isOpen' : ''} ${mmaudioBusy ? 'isBusy' : ''} ${mmaudioReady ? 'isReady' : ''} ${mmaudioError ? 'isError' : ''}`.trim()
+
+                  return (
+                    <div className={panelClassName}>
+                      <button
+                        type="button"
+                        className="avaBoardMmaudioToggle isMagic"
+                        onClick={() => setMmaudioOpen((value) => !value)}
+                        title="MMAudio sound design через ComfyLab"
+                      >
+                        <Sparkles size={16} />
+                        <span>{title}</span>
+                        <small>{hint}</small>
+                        {mmaudioOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                      </button>
+
+                      {mmaudioOpen && (
+                        <div className="avaBoardMmaudioBox">
+                          <label className="avaBoardWideField">
+                            Positive sound prompt
+                            <textarea
+                              value={selectedScene.mmaudio_prompt || ''}
+                              onChange={(event) => updateScene(selectedScene.id, { mmaudio_prompt: event.target.value })}
+                              placeholder="Например: quiet African savannah ambience, warm wind through dry grass, distant insects, soft natural wildlife documentary sound"
+                            />
+                          </label>
+
+                          <label className="avaBoardWideField">
+                            Negative sound prompt
+                            <textarea
+                              value={selectedScene.mmaudio_negative_prompt || ''}
+                              onChange={(event) => updateScene(selectedScene.id, { mmaudio_negative_prompt: event.target.value })}
+                              placeholder="music, soundtrack, narration, speech, human voice, distorted audio, clipping, harsh noise, repeated loop"
+                            />
+                          </label>
+
+                          <div className="avaBoardMmaudioActions">
+                            <button
+                              type="button"
+                              onClick={startMmaudioForSelectedScene}
+                              disabled={mmaudioBusy || !hasSourceVideo}
+                            >
+                              <Volume2 size={15} />
+                              {mmaudioBusy ? 'Отправлено…' : 'Отправить MMAudio'}
+                            </button>
+                            <span>{hasSourceVideo ? 'ComfyLab · mmaudio-sound-design.json · 1 кредит после успеха' : 'Сначала сделай базовое видео для этой сцены'}</span>
+                          </div>
+
+                          {mmaudioError && (
+                            <p className="avaBoardMmaudioError">{selectedScene.mmaudio_error || selectedScene.mmaudioError || 'MMAudio ошибка'}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+            </div>
+
+            <div className="avaBoardHintBox">
+              {firstLastMode ? (
+                <><CheckCircle2 size={16} /> Для first-last нужны первый и последний кадр. Первый можно взять из предыдущей сцены.</>
+              ) : selectedScene.route === 'ia2v' ? (
+                <><AlertTriangle size={16} /> Для lip-sync используем ручной отрезок сцены; ASR не управляет таймингом.</>
+              ) : (
+                <><CheckCircle2 size={16} /> Генерация будет подключена после foundation UI.</>
+              )}
+            </div>
+          </aside>
+        </section>
+      ) : (
+        <section className="avaBoardNoScene">
+          <h3>Сцен пока нет</h3>
+          <p>Открой Manual Timing, сделай экспорт/сохранение сцен или импортируй JSON вручную.</p>
+          <Link className="avaPrimaryButton" to={workspaceMode ? '/app/workspace/timing' : `/app/projects/${projectId}/timing`}>Открыть Тайминг</Link>
+        </section>
+      )}
+    </div>
+  )
+}
+
+
+
