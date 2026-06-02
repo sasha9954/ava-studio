@@ -105,6 +105,7 @@ function createLightGeneratorDraft(draft = {}) {
     aspect: draft.aspect || '16:9',
     prompt: draft.prompt || '',
     negativePrompt: draft.negativePrompt || '',
+    imageQuality: draft.imageQuality || TXT2IMG_DEFAULT_QUALITY,
     durationSec: draft.durationSec || 5,
 
     resultUrl: draft.resultUrl || '',
@@ -169,8 +170,22 @@ const ASPECTS = [
   { value: '1:1', label: '1:1', width: 1024, height: 1024 },
 ]
 
+function generatorRenderSize(routeInfo, aspectInfo) {
+  if (routeInfo?.kind !== 'image') {
+    return {
+      width: Number(aspectInfo?.width) || 1280,
+      height: Number(aspectInfo?.height) || 720,
+    }
+  }
+
+  const aspectValue = String(aspectInfo?.value || '16:9')
+  if (aspectValue === '9:16') return { width: 1296, height: 2304 }
+  if (aspectValue === '1:1') return { width: 2048, height: 2048 }
+  return { width: 2304, height: 1296 }
+}
+
 const ROUTES = [
-  { value: 'txt2img', label: 'Фото по описанию', shortLabel: 'фото', kind: 'image', needsStart: false, needsEnd: false, needsAudio: false, maxDuration: null, endpoint: null, statusBase: null, notReady: true, help: 'UI готов. Модель изображения подключим позже.' },
+  { value: 'txt2img', label: 'Фото по описанию', shortLabel: 'фото', kind: 'image', needsStart: false, needsEnd: false, needsAudio: false, maxDuration: null, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Генерация картинки по описанию через text to image.json. Для 16:9 отправляем 2304×1296.' },
   { value: 'i2v', label: 'Фото → видео', shortLabel: 'фото→видео', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Обычное видео: итог до 8 секунд. Генерация идёт с +1 сек запаса.' },
   { value: 'ia2v', label: 'Липсинк', shortLabel: 'липсинк', kind: 'video', needsStart: true, needsEnd: false, needsAudio: true, maxDuration: 10, maxAudioDuration: 15, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Lip-sync: итог до 10 сек, аудио до 15 сек. Видео идёт с +1 сек запаса.' },
   { value: 'i2v_sound', label: 'Видео со звуком', shortLabel: 'звук', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Звук/речь описываем в prompt. Аудио-файл не нужен.' },
@@ -299,7 +314,7 @@ function formatCreditCost(value) {
 
 function extractCreditBalance(summary) {
   if (!summary || typeof summary !== 'object') return null
-  for (const key of ['balance', 'creditBalance', 'credits', 'amount']) {
+  for (const key of ['balance', 'creditBalance', 'credit_balance', 'credits', 'credits_balance', 'amount']) {
     if (Number.isFinite(Number(summary[key]))) return Number(summary[key])
   }
   if (summary.wallet && typeof summary.wallet === 'object') return extractCreditBalance(summary.wallet)
@@ -450,11 +465,48 @@ function readImageFileAsPersistedDataUrl(file, maxSide = 960, quality = 0.72) {
 
 
 function pickVideoUrl(data = {}) {
+  // Important:
+  // - For images, imageUrl is the final asset.
+  // - For videos, videoUrl/video_url is usually the trimmed final asset.
+  // - resultUrl can point to the raw Comfy output before trim, so keep it as fallback.
   return (
+    data.imageUrl || data.image_url || data.outputImageUrl || data.output_image_url ||
+    data.resultImageUrl || data.result_image_url || data.imageApiPath || data.image_api_path ||
     data.videoUrl || data.video_url || data.outputVideoUrl || data.output_video_url ||
-    data.resultVideoUrl || data.result_video_url || data.videoApiPath || data.video_api_path || ''
+    data.resultVideoUrl || data.result_video_url || data.videoApiPath || data.video_api_path ||
+    data.resultUrl || data.result_url || ''
   )
 }
+
+function pickMmaudioOutputUrl(data) {
+  if (!data || typeof data !== 'object') return ''
+
+  const sourceCandidates = [
+    data.sourceVideoUrl,
+    data.source_video_url,
+    data.inputVideoUrl,
+    data.input_video_url,
+    data.videoSourceUrl,
+    data.video_source_url,
+  ].map((value) => normalizeUrl(value || '')).filter(Boolean)
+
+  const candidates = [
+    data.mmaudioVideoUrl,
+    data.mmaudio_video_url,
+    data.mmaudioResultUrl,
+    data.mmaudio_result_url,
+    data.resultUrl,
+    data.result_url,
+    data.videoUrl,
+    data.video_url,
+    data.outputVideoUrl,
+    data.output_video_url,
+  ].map((value) => normalizeUrl(value || '')).filter(Boolean)
+
+  const picked = candidates.find((url) => !sourceCandidates.includes(url))
+  return picked || ''
+}
+
 
 function normalizeUrl(value) {
   const s = String(value || '').trim()
@@ -462,6 +514,117 @@ function normalizeUrl(value) {
   if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('blob:') || s.startsWith('data:')) return s
   if (s.startsWith('/')) return `${API_BASE}${s}`
   return s
+}
+
+function isGeneratorImageUrl(url) {
+  const value = String(url || '').trim()
+  if (!value) return false
+  if (/^data:image\//i.test(value)) return true
+  return /\.(png|jpe?g|webp)(\?|#|$)/i.test(value)
+}
+
+function normalizeGeneratorGalleryItem(item) {
+  if (!item || typeof item !== 'object') return null
+  const url = normalizeUrl(item.url || item.videoUrl || item.imageUrl || item.resultUrl || '')
+  if (!url) return null
+  const isImage = isGeneratorImageUrl(url)
+  return {
+    ...item,
+    url,
+    kind: isImage ? 'image' : (item.kind || 'video'),
+  }
+}
+
+function pickGeneratorCreditBalance(value) {
+  if (!value || typeof value !== 'object') return null
+
+  for (const key of ['balance', 'creditBalance', 'credit_balance', 'credits_balance', 'credits', 'amount']) {
+    const raw = value?.[key]
+    if (raw === 0 || raw) {
+      const numberValue = Number(raw)
+      if (Number.isFinite(numberValue)) return numberValue
+    }
+  }
+
+  if (value.user && typeof value.user === 'object') {
+    const fromUser = pickGeneratorCreditBalance(value.user)
+    if (fromUser !== null) return fromUser
+  }
+
+  if (value.creditChargeResult && typeof value.creditChargeResult === 'object') {
+    const fromCharge = pickGeneratorCreditBalance(value.creditChargeResult)
+    if (fromCharge !== null) return fromCharge
+  }
+
+  return null
+}
+
+function notifyGeneratorCreditBalance(payload, source = 'generator') {
+  if (typeof window === 'undefined') return
+
+  const balance = pickGeneratorCreditBalance(payload)
+  if (balance === null) return
+
+  const detail = {
+    balance,
+    credits_balance: balance,
+    creditBalance: balance,
+    source,
+    summary: payload,
+  }
+
+  window.dispatchEvent(new CustomEvent('ava:credits-updated', { detail }))
+  window.dispatchEvent(new CustomEvent('ava:credits-changed', { detail }))
+}
+
+function guessGeneratorDownloadName(url, kind = 'image') {
+  const fallbackExt = kind === 'image' ? '.png' : '.mp4'
+  try {
+    if (String(url || '').startsWith('data:image/jpeg')) return `ava_image_${Date.now()}.jpg`
+    if (String(url || '').startsWith('data:image/webp')) return `ava_image_${Date.now()}.webp`
+    if (String(url || '').startsWith('data:image/')) return `ava_image_${Date.now()}.png`
+
+    const parsed = new URL(String(url || ''), window.location.href)
+    const rawName = decodeURIComponent((parsed.pathname.split('/').pop() || '').trim())
+    if (rawName && rawName.includes('.')) return rawName
+  } catch {
+    // ignore
+  }
+  return `${kind === 'image' ? 'ava_image' : 'ava_video'}_${Date.now()}${fallbackExt}`
+}
+
+async function downloadGeneratorAsset(url, kind = 'image') {
+  const cleanUrl = normalizeUrl(url)
+  if (!cleanUrl) throw new Error('empty asset url')
+
+  const filename = guessGeneratorDownloadName(cleanUrl, kind)
+  let objectUrl = ''
+
+  try {
+    if (cleanUrl.startsWith('data:')) {
+      objectUrl = cleanUrl
+    } else {
+      const response = await fetch(cleanUrl)
+      if (!response.ok) throw new Error(`download failed: ${response.status}`)
+      const blob = await response.blob()
+      objectUrl = URL.createObjectURL(blob)
+    }
+
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = filename
+    link.rel = 'noopener'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+
+    if (objectUrl && objectUrl !== cleanUrl && objectUrl.startsWith('blob:')) {
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500)
+    }
+  } catch (error) {
+    window.open(cleanUrl, '_blank', 'noopener,noreferrer')
+    throw error
+  }
 }
 
 function statusLooksDone(status = '') {
@@ -510,12 +673,20 @@ function formatSec(sec) {
 
 const GENERATOR_GALLERY_KEY = 'ava:standalone_generator:gallery:v1'
 const GENERATOR_GALLERY_LIMIT = 10
+const GENERATOR_GALLERY_HARD_LIMIT = 30
+const TXT2IMG_DEFAULT_QUALITY = 'ultra'
+const TXT2IMG_QUALITY_OPTIONS = [
+  { value: 'high', payloadValue: 'high', label: 'Высокое', hint: 'быстрее · 1 кред.' },
+  { value: 'ultra', payloadValue: 'max', label: 'Ультра', hint: 'лучшее · 2 кред.' },
+]
 
 function readGeneratorGalleryDraft() {
   if (typeof window === 'undefined') return []
   try {
     const parsed = JSON.parse(window.localStorage.getItem(GENERATOR_GALLERY_KEY) || '[]')
-    return Array.isArray(parsed) ? parsed.filter((item) => item?.url).slice(0, GENERATOR_GALLERY_LIMIT) : []
+    return Array.isArray(parsed)
+      ? parsed.map(normalizeGeneratorGalleryItem).filter(Boolean).slice(0, GENERATOR_GALLERY_HARD_LIMIT)
+      : []
   } catch {
     return []
   }
@@ -524,7 +695,7 @@ function readGeneratorGalleryDraft() {
 function writeGeneratorGalleryDraft(items) {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(GENERATOR_GALLERY_KEY, JSON.stringify(Array.isArray(items) ? items.slice(0, GENERATOR_GALLERY_LIMIT) : []))
+    window.localStorage.setItem(GENERATOR_GALLERY_KEY, JSON.stringify(Array.isArray(items) ? items.map(normalizeGeneratorGalleryItem).filter(Boolean).slice(0, GENERATOR_GALLERY_HARD_LIMIT) : []))
   } catch (error) {
     console.warn('[GENERATOR GALLERY SAVE FAILED]', error)
   }
@@ -858,6 +1029,7 @@ export default function StandaloneGeneratorPage() {
   const [durationSec, setDurationSec] = useState(() => Number(readGeneratorSettingsDraft().durationSec || readAnyGeneratorDraft().durationSec || 5))
   const [prompt, setPrompt] = useState(() => readGeneratorSettingsDraft().prompt || readAnyGeneratorDraft().prompt || 'Slow cinematic push-in, natural grounded motion, preserve identity and environment, realistic lighting.')
   const [negativePrompt, setNegativePrompt] = useState(() => readGeneratorSettingsDraft().negativePrompt || readAnyGeneratorDraft().negativePrompt || DEFAULT_NEGATIVE)
+  const [imageQuality, setImageQuality] = useState(() => readGeneratorSettingsDraft().imageQuality || readAnyGeneratorDraft().imageQuality || TXT2IMG_DEFAULT_QUALITY)
   const [startFile, setStartFile] = useState(null)
   const [endFile, setEndFile] = useState(null)
   const [audioFile, setAudioFile] = useState(null)
@@ -878,7 +1050,36 @@ export default function StandaloneGeneratorPage() {
   const [busy, setBusy] = useState(false)
   const [rawResponse, setRawResponse] = useState(null)
   const [generatedVideos, setGeneratedVideos] = useState(() => readGeneratorGalleryDraft())
+
+  const visibleHistoryItems = useMemo(() => (generatedVideos || []).map(normalizeGeneratorGalleryItem).filter(Boolean), [generatedVideos])
+  const historyImageCount = useMemo(() => visibleHistoryItems.filter((item) => normalizeGeneratorGalleryItem(item)?.kind === 'image').length, [visibleHistoryItems])
+  const historyVideoCount = useMemo(() => visibleHistoryItems.filter((item) => normalizeGeneratorGalleryItem(item)?.kind !== 'image').length, [visibleHistoryItems])
+  const historyLimit = GENERATOR_GALLERY_LIMIT
+  const historyOverflowCount = Math.max(0, visibleHistoryItems.length - historyLimit)
+  const historyIsOverLimit = historyOverflowCount > 0
+
+  const chargeAudit = useMemo(() => {
+    const status = rawResponse?.status || job?.status || ''
+    return {
+      cost: rawResponse?.creditCost ?? null,
+      charged: rawResponse?.creditCharged,
+      mode: rawResponse?.creditChargeMode || '',
+      balance: rawResponse?.creditBalance,
+      status,
+    }
+  }, [rawResponse, job?.status])
+
+  useEffect(() => {
+    if (!Array.isArray(generatedVideos) || !generatedVideos.length) return
+    const cleaned = generatedVideos.map(normalizeGeneratorGalleryItem).filter(Boolean)
+    const before = JSON.stringify(generatedVideos)
+    const after = JSON.stringify(cleaned)
+    if (before === after) return
+    setGeneratedVideos(cleaned)
+  }, [generatedVideos])
+
   const [selectedGalleryVideoUrl, setSelectedGalleryVideoUrl] = useState('')
+  const [imageActionMenuId, setImageActionMenuId] = useState('')
   const [frameExtractBusy, setFrameExtractBusy] = useState(false)
   const [montageConfirmOpen, setMontageConfirmOpen] = useState(false)
   const [montageConfirmBusy, setMontageConfirmBusy] = useState(false)
@@ -899,7 +1100,6 @@ export default function StandaloneGeneratorPage() {
   const mmaudioPollingRef = useRef(null)
   const audioRef = useRef(null)
   const rememberedGalleryUrlsRef = useRef(new Set())
-
   useEffect(() => {
     let cancelled = false
 
@@ -933,13 +1133,78 @@ export default function StandaloneGeneratorPage() {
   }, [])
 
   const routeInfo = useMemo(() => ROUTES.find((item) => item.value === route) || ROUTES[0], [route])
-  const currentCreditCost = useMemo(() => extractRouteCreditCostFromTariffs(ltxTariffs, routeInfo.value), [ltxTariffs, routeInfo.value])
+  const generatedVideoItems = useMemo(() => (
+    (Array.isArray(generatedVideos) ? generatedVideos : [])
+      .filter((item) => item?.url && item.kind !== 'image')
+      .slice(0, GENERATOR_GALLERY_LIMIT)
+  ), [generatedVideos])
+  const currentCreditCost = useMemo(() => {
+    const baseCost = extractRouteCreditCostFromTariffs(ltxTariffs, routeInfo.value)
+    if (routeInfo.kind === 'image') {
+      return imageQuality === 'ultra' ? Math.max(baseCost, 2) : Math.max(1, Math.min(baseCost, 1))
+    }
+    return baseCost
+  }, [ltxTariffs, routeInfo.value, routeInfo.kind, imageQuality])
   const mmaudioCreditCost = useMemo(() => extractRouteCreditCostFromTariffs(ltxTariffs, 'mmaudio'), [ltxTariffs])
   const creditBalance = useMemo(() => extractCreditBalance(creditSummary), [creditSummary])
+  const updateCreditSummaryFromJobResponse = useCallback((data) => {
+    if (!data || typeof data !== 'object') return false
+
+    const directBalance = extractCreditBalance(data)
+    const chargeBalance = extractCreditBalance(data.creditChargeResult)
+    const userBalance = extractCreditBalance(data.user)
+    const nextBalance = directBalance ?? chargeBalance ?? userBalance
+
+    if (nextBalance == null) return false
+
+    setCreditSummary((old) => ({
+      ...(old && typeof old === 'object' ? old : {}),
+      ...(data && typeof data === 'object' ? data : {}),
+      balance: nextBalance,
+      creditBalance: nextBalance,
+      credits_balance: nextBalance,
+      updatedAt: new Date().toISOString(),
+    }))
+    notifyGeneratorCreditBalance({ ...data, balance: nextBalance, creditBalance: nextBalance, credits_balance: nextBalance }, 'job_response')
+    return true
+  }, [])
+
+  const refreshCreditSummaryNow = useCallback(async (reason = '') => {
+    try {
+      const latest = await fetchJson('/api/credits/summary')
+      setCreditSummary(latest)
+      notifyGeneratorCreditBalance(latest, 'credits_summary')
+      return latest
+    } catch (error) {
+      console.warn('[GENERATOR CREDIT REFRESH FAILED]', reason, error)
+      return null
+    }
+  }, [])
+
   const aspectInfo = useMemo(() => ASPECTS.find((item) => item.value === aspect) || ASPECTS[1], [aspect])
+  const renderSize = useMemo(() => generatorRenderSize(routeInfo, aspectInfo), [routeInfo, aspectInfo])
+  const selectedImageQuality = useMemo(
+    () => TXT2IMG_QUALITY_OPTIONS.find((item) => item.value === imageQuality) || TXT2IMG_QUALITY_OPTIONS[TXT2IMG_QUALITY_OPTIONS.length - 1],
+    [imageQuality]
+  )
+  const imageQualityPayloadValue = selectedImageQuality?.payloadValue || selectedImageQuality?.value || TXT2IMG_DEFAULT_QUALITY
   const hasEndThumb = !!(endPreview || routeInfo.needsEnd)
   const displayedResultUrl = selectedGalleryVideoUrl || mmaudioResultUrl || resultUrl
-  const previousVideoForFrame = normalizeUrl(selectedGalleryVideoUrl || generatedVideos[0]?.url || resultUrl || mmaudioResultUrl || displayedResultUrl || '')
+  const displayedGalleryItem = useMemo(() => {
+    const selected = normalizeUrl(selectedGalleryVideoUrl || '')
+    const current = normalizeUrl(resultUrl || '')
+    const mmaudio = normalizeUrl(mmaudioResultUrl || '')
+    return (Array.isArray(generatedVideos) ? generatedVideos : []).find((item) => {
+      const url = normalizeUrl(item?.url || '')
+      return url && (url === selected || url === current || url === mmaudio)
+    }) || null
+  }, [generatedVideos, selectedGalleryVideoUrl, resultUrl, mmaudioResultUrl])
+  const displayedResultIsImage = !!displayedResultUrl && (
+    displayedGalleryItem?.kind === 'image'
+    || (routeInfo.kind === 'image' && !mmaudioResultUrl)
+    || /\.(png|jpe?g|webp)(\?|$)/i.test(String(displayedResultUrl || ''))
+  )
+  const previousVideoForFrame = normalizeUrl(generatedVideoItems[0]?.url || (!displayedResultIsImage ? (selectedGalleryVideoUrl || resultUrl || mmaudioResultUrl || displayedResultUrl) : '') || '')
   const canUseMmaudio = !!resultUrl && ['i2v', 'first_last'].includes(route)
   const targetDurationSec = Number(durationSec) || 1
   const generationDurationSec = routeInfo.kind === 'video' ? targetDurationSec + EXTRA_TAIL_SEC : targetDurationSec
@@ -972,7 +1237,7 @@ export default function StandaloneGeneratorPage() {
       return [
         createGeneratorGalleryItem(cleanUrl, meta),
         ...withoutDuplicate,
-      ].slice(0, GENERATOR_GALLERY_LIMIT)
+      ].slice(0, GENERATOR_GALLERY_HARD_LIMIT)
     })
   }, [])
 
@@ -983,16 +1248,17 @@ export default function StandaloneGeneratorPage() {
   useEffect(() => {
     const cleanUrl = normalizeUrl(resultUrl)
     if (!cleanUrl) return
-    const key = `video:${cleanUrl}`
+    const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
+    const key = `${resultKind}:${cleanUrl}`
     if (rememberedGalleryUrlsRef.current.has(key)) return
     rememberedGalleryUrlsRef.current.add(key)
     rememberGeneratedVideo(cleanUrl, {
-      kind: 'video',
-      label: routeInfo?.label || 'Видео',
+      kind: resultKind,
+      label: routeInfo?.label || (resultKind === 'image' ? 'Фото' : 'Видео'),
       route,
-      durationSec: targetDurationSec,
+      durationSec: resultKind === 'image' ? 0 : targetDurationSec,
     })
-  }, [resultUrl, rememberGeneratedVideo, route, routeInfo?.label])
+  }, [resultUrl, rememberGeneratedVideo, route, routeInfo?.kind, routeInfo?.label, targetDurationSec])
 
   useEffect(() => {
     const cleanUrl = normalizeUrl(mmaudioResultUrl)
@@ -1010,6 +1276,7 @@ export default function StandaloneGeneratorPage() {
 
   const openGeneratedVideo = useCallback((item) => {
     if (!item?.url) return
+    setImageActionMenuId('')
     setSelectedGalleryVideoUrl(item.url)
     setStatusText('просмотр из ленты')
   }, [])
@@ -1022,6 +1289,60 @@ export default function StandaloneGeneratorPage() {
       setSelectedGalleryVideoUrl('')
     }
   }, [selectedGalleryVideoUrl])
+
+  const useImageResultAsFrame = useCallback(async (event, item, target = 'start') => {
+    event?.stopPropagation?.()
+    event?.preventDefault?.()
+
+    const cleanUrl = normalizeUrl(item?.url || '')
+    if (!cleanUrl) {
+      setError('Не нашёл URL картинки в ленте.')
+      return
+    }
+
+    setError('')
+    setImageActionMenuId('')
+    setSelectedGalleryVideoUrl('')
+    setResultUrl('')
+    setStatusText(target === 'end' ? 'ставлю картинку во 2-й кадр...' : 'ставлю картинку в 1-й кадр...')
+
+    try {
+      const imageDataUrl = await readUrlAsDataUrl(cleanUrl)
+      if (!imageDataUrl) throw new Error('image data is empty')
+
+      const mediaDraft = readGeneratorMediaDraft()
+
+      if (target === 'end') {
+        setRoute('first_last')
+        setEndFile(null)
+        setEndPersistedDataUrl(imageDataUrl)
+        setEndPreview(imageDataUrl)
+        await writeGeneratorMediaToDb({
+          ...mediaDraft,
+          endPersistedDataUrl: imageDataUrl,
+          endFrameSource: 'generator_history_image',
+          endFrameImageUrl: cleanUrl,
+        })
+        setStatusText('картинка из ленты поставлена как End / 2-й кадр')
+        return
+      }
+
+      if (route === 'txt2img') setRoute('i2v')
+      setStartFile(null)
+      setStartPersistedDataUrl(imageDataUrl)
+      setStartPreview(imageDataUrl)
+      await writeGeneratorMediaToDb({
+        ...mediaDraft,
+        startPersistedDataUrl: imageDataUrl,
+        startFrameSource: 'generator_history_image',
+        startFrameImageUrl: cleanUrl,
+      })
+      setStatusText('картинка из ленты поставлена как Start / 1-й кадр')
+    } catch (exc) {
+      setError(`Не удалось поставить картинку в кадр: ${String(exc?.message || exc)}`)
+      setStatusText('ошибка установки картинки в кадр')
+    }
+  }, [route])
 
   const takeLastFrameFromPreviousVideo = useCallback(async (eventOrUrl = '') => {
     eventOrUrl?.stopPropagation?.()
@@ -1097,7 +1418,7 @@ export default function StandaloneGeneratorPage() {
   }, [previousVideoForFrame])
 
   const goToVideoMontageFromGenerator = useCallback(() => {
-    const clips = (Array.isArray(generatedVideos) ? generatedVideos : [])
+    const clips = (Array.isArray(generatedVideoItems) ? generatedVideoItems : [])
       .filter((item) => item?.url)
       .slice(0, 10)
 
@@ -1118,7 +1439,7 @@ export default function StandaloneGeneratorPage() {
   }, [montageConfirmBusy])
 
   const confirmVideoMontageHandoff = useCallback(async () => {
-    const clips = (Array.isArray(generatedVideos) ? generatedVideos : [])
+    const clips = (Array.isArray(generatedVideoItems) ? generatedVideoItems : [])
       .filter((item) => item?.url)
       .slice(0, 10)
 
@@ -1159,7 +1480,7 @@ export default function StandaloneGeneratorPage() {
     } finally {
       setMontageConfirmBusy(false)
     }
-  }, [generatedVideos, navigate])
+  }, [generatedVideoItems, navigate])
 
 
 
@@ -1182,6 +1503,7 @@ export default function StandaloneGeneratorPage() {
       if (data.aspect) setAspect(data.aspect)
       if (data.prompt) setPrompt(data.prompt)
       if (data.negativePrompt) setNegativePrompt(data.negativePrompt)
+      if (data.imageQuality) setImageQuality(data.imageQuality)
       if (data.durationSec) setDurationSec(Number(data.durationSec) || 5)
 
       if (data.resultUrl) setResultUrl(data.resultUrl)
@@ -1225,6 +1547,7 @@ export default function StandaloneGeneratorPage() {
       aspect,
       prompt,
       negativePrompt,
+      imageQuality,
       durationSec,
 
       startPersistedDataUrl,
@@ -1249,6 +1572,7 @@ export default function StandaloneGeneratorPage() {
     aspect,
     prompt,
     negativePrompt,
+    imageQuality,
     durationSec,
     startPersistedDataUrl,
     endPersistedDataUrl,
@@ -1329,6 +1653,8 @@ export default function StandaloneGeneratorPage() {
     setStatusText('готов к тесту')
     setJob(null)
     setResultUrl('')
+    setSelectedGalleryVideoUrl('')
+    setImageActionMenuId('')
     setRawResponse(null)
     setMmaudioOpen(false)
     setMmaudioBusy(false)
@@ -1421,39 +1747,67 @@ export default function StandaloneGeneratorPage() {
 
   const closeZoom = useCallback(() => setZoomImage(null), [])
 
+  const downloadGeneratedImage = useCallback(async (event, url = displayedResultUrl) => {
+    event?.stopPropagation?.()
+    event?.preventDefault?.()
+
+    const cleanUrl = normalizeUrl(url || '')
+    if (!cleanUrl) {
+      setError('Нет картинки для скачивания.')
+      return
+    }
+
+    try {
+      setStatusText('скачиваю изображение...')
+      await downloadGeneratorAsset(cleanUrl, 'image')
+      setStatusText('изображение отправлено на скачивание')
+    } catch (error) {
+      setError(`Не удалось скачать изображение: ${String(error?.message || error)}`)
+    }
+  }, [displayedResultUrl])
+
   const pollStatus = useCallback((jobId, statusBase) => {
     if (!jobId || !statusBase) return
     if (pollingRef.current) clearInterval(pollingRef.current)
     const tick = async () => {
       try {
         const data = await fetchJson(`${statusBase}${jobId}`)
+        updateCreditSummaryFromJobResponse(data)
         setRawResponse(data)
         setJob((old) => ({ ...(old || {}), ...data }))
         setStatusText(data.status || data.video_status || 'running')
-        const video = normalizeUrl(pickVideoUrl(data))
-        if (video) setResultUrl(video)
+        const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
+        const resultAssetUrl = normalizeUrl(pickVideoUrl(data))
+        if (resultAssetUrl) {
+          setSelectedGalleryVideoUrl('')
+          setImageActionMenuId('')
+          setResultUrl(resultAssetUrl)
+        }
         if (jobId) {
           upsertGlobalJob({
             id: `generator:${jobId}`,
             source: 'standalone_generator',
-        credit_cost_hint: currentCreditCost,
-        creditCostHint: currentCreditCost,
-        client_credit_cost: currentCreditCost,
-            kind: 'video',
-            title: 'Видео',
-            toastTitle: 'Видео готово',
+            credit_cost_hint: currentCreditCost,
+            creditCostHint: currentCreditCost,
+            client_credit_cost: currentCreditCost,
+            kind: resultKind,
+            title: resultKind === 'image' ? 'Фото' : 'Видео',
+            toastTitle: resultKind === 'image' ? 'Фото готово' : 'Видео готово',
             toastMessage: 'Генерация завершена. Перейти в генератор?',
             pagePath: '/app/workspace/generator',
             jobId,
-            status: (statusLooksDone(data.status || data.video_status) || video) ? 'done' : (data.status || data.video_status || 'running'),
+            status: (statusLooksDone(data.status || data.video_status) || resultAssetUrl) ? 'done' : (data.status || data.video_status || 'running'),
             rawStatus: data.status || data.video_status || 'running',
             statusBase,
             statusEndpoint: `${statusBase}${jobId}`,
-            resultUrl: video || '',
+            resultUrl: resultAssetUrl || '',
             response: data,
           })
         }
-        if (statusLooksDone(data.status || data.video_status) || video) {
+        if (statusLooksDone(data.status || data.video_status) || resultAssetUrl) {
+          updateCreditSummaryFromJobResponse(data)
+          refreshCreditSummaryNow('generator_completed')
+          try { window.dispatchEvent(new CustomEvent('ava:credits-changed', { detail: data })) } catch {}
           if (pollingRef.current) clearInterval(pollingRef.current)
           pollingRef.current = null
           setBusy(false)
@@ -1472,7 +1826,7 @@ export default function StandaloneGeneratorPage() {
     }
     tick()
     pollingRef.current = setInterval(tick, 2200)
-  }, [])
+  }, [refreshCreditSummaryNow, updateCreditSummaryFromJobResponse, currentCreditCost, routeInfo?.kind])
 
   useEffect(() => {
     const latest = pickLatestGeneratorJob()
@@ -1496,14 +1850,25 @@ export default function StandaloneGeneratorPage() {
     const tick = async () => {
       try {
         const data = await fetchJson(`/api/clip/mmaudio/status/${jobId}`)
+        updateCreditSummaryFromJobResponse(data)
         setMmaudioRawResponse(data)
         setMmaudioJob((old) => ({ ...(old || {}), ...data }))
         setMmaudioStatus(data.status || data.audio_status || data.video_status || 'running')
-        const video = normalizeUrl(pickVideoUrl(data))
-        if (video) setMmaudioResultUrl(video)
+        const video = pickMmaudioOutputUrl(data)
+        if (video) {
+          setSelectedGalleryVideoUrl('')
+          setImageActionMenuId('')
+          setMmaudioResultUrl(video)
+        }
         if (statusLooksDone(data.status || data.audio_status || data.video_status) || video) {
+          updateCreditSummaryFromJobResponse(data)
+          refreshCreditSummaryNow('mmaudio_completed')
+          try { window.dispatchEvent(new CustomEvent('ava:credits-changed', { detail: data })) } catch {}
           if (mmaudioPollingRef.current) clearInterval(mmaudioPollingRef.current)
           mmaudioPollingRef.current = null
+          setMmaudioBusy(false)
+        }
+        if (statusLooksDone(data.status || data.audio_status || data.video_status)) {
           setMmaudioBusy(false)
         }
         if (statusLooksFailed(data.status || data.audio_status || data.video_status)) {
@@ -1520,11 +1885,14 @@ export default function StandaloneGeneratorPage() {
     }
     tick()
     mmaudioPollingRef.current = setInterval(tick, 2200)
-  }, [])
+  }, [refreshCreditSummaryNow, updateCreditSummaryFromJobResponse])
 
   const submitMmaudio = useCallback(async () => {
     setMmaudioError('')
     setMmaudioRawResponse(null)
+    setMmaudioResultUrl('')
+    setMmaudioStatus('')
+    setMmaudioJob(null)
     if (!resultUrl) {
       setMmaudioError('Сначала нужно получить видео без звука через i2v или first-last.')
       return
@@ -1571,8 +1939,14 @@ export default function StandaloneGeneratorPage() {
       const jobId = data.jobId || data.job_id || data.id
       setMmaudioJob({ ...data, jobId })
       setMmaudioStatus(data.status || 'queued')
-      const video = normalizeUrl(pickVideoUrl(data))
-      if (video) setMmaudioResultUrl(video)
+      const video = pickMmaudioOutputUrl(data)
+      if (video) {
+        setSelectedGalleryVideoUrl('')
+        setImageActionMenuId('')
+        setMmaudioResultUrl(video)
+        setMmaudioBusy(false)
+        setMmaudioStatus(data.status || 'ready')
+      }
       if (jobId) pollMmaudioStatus(jobId)
       else setMmaudioBusy(false)
     } catch (exc) {
@@ -1583,6 +1957,8 @@ export default function StandaloneGeneratorPage() {
 
   const submitGeneration = useCallback(async () => {
     setError('')
+    setSelectedGalleryVideoUrl('')
+    setImageActionMenuId('')
     setResultUrl('')
     setMmaudioResultUrl('')
     setMmaudioRawResponse(null)
@@ -1590,10 +1966,6 @@ export default function StandaloneGeneratorPage() {
     setMmaudioError('')
     setRawResponse(null)
 
-    if (routeInfo.notReady) {
-      setError('Режим картинки по описанию пока только в UI. Подключим модель позже.')
-      return
-    }
     if (routeInfo.needsStart && !startFile && !startPersistedDataUrl && !startPreview) {
       setError('Нужно загрузить стартовое изображение.')
       return
@@ -1658,6 +2030,11 @@ export default function StandaloneGeneratorPage() {
         scene_id: sceneId,
         sceneId,
         route,
+        image_quality: routeInfo.kind === 'image' ? imageQualityPayloadValue : undefined,
+        imageQuality: routeInfo.kind === 'image' ? imageQualityPayloadValue : undefined,
+        txt2img_quality: routeInfo.kind === 'image' ? imageQualityPayloadValue : undefined,
+        txt2imgQuality: routeInfo.kind === 'image' ? imageQualityPayloadValue : undefined,
+        quality: routeInfo.kind === 'image' ? imageQualityPayloadValue : undefined,
         image_url: startImageUrlForBackend,
         imageUrl: startImageUrlForBackend,
         image_data_url: startImageDataUrlForBackend,
@@ -1678,8 +2055,8 @@ export default function StandaloneGeneratorPage() {
         positivePrompt: prompt,
         negative_prompt: negativePrompt,
         negativePrompt: negativePrompt,
-        width: Number(aspectInfo.width) || 1280,
-        height: Number(aspectInfo.height) || 720,
+        width: Number(renderSize.width) || 1280,
+        height: Number(renderSize.height) || 720,
 
         // Visible duration contract: generate target+1s, then backend should trim to target.
         duration_sec: generationDurationSec,
@@ -1700,7 +2077,7 @@ export default function StandaloneGeneratorPage() {
         aspect_ratio: aspectInfo.value,
         aspectRatio: aspectInfo.value,
       }
-      setStatusText(`отправляю в backend: ${generationDurationSec.toFixed(1)} сек → итог ${targetDurationSec.toFixed(1)} сек`)
+      setStatusText(routeInfo.kind === 'image' ? `отправляю картинку ${renderSize.width}×${renderSize.height}` : `отправляю в backend: ${generationDurationSec.toFixed(1)} сек → итог ${targetDurationSec.toFixed(1)} сек`)
       const data = await fetchJson(routeInfo.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1711,14 +2088,18 @@ export default function StandaloneGeneratorPage() {
       setJob({ ...data, jobId })
       setStatusText(data.status || 'queued')
       const video = normalizeUrl(pickVideoUrl(data))
-      if (video) setResultUrl(video)
+      if (video) {
+        setSelectedGalleryVideoUrl('')
+        setImageActionMenuId('')
+        setResultUrl(video)
+      }
       if (jobId) {
         upsertGlobalJob({
           id: `generator:${jobId}`,
           source: 'standalone_generator',
-          kind: 'video',
+          kind: routeInfo.kind === 'image' ? 'image' : 'video',
           title: routeInfo.label,
-          toastTitle: 'Видео готово',
+          toastTitle: routeInfo.kind === 'image' ? 'Фото готово' : 'Видео готово',
           toastMessage: 'Генерация завершена. Перейти в генератор?',
           pagePath: '/app/workspace/generator',
           jobId,
@@ -1739,7 +2120,7 @@ export default function StandaloneGeneratorPage() {
       setError(String(exc?.message || exc))
       setBusy(false)
     }
-  }, [audioDurationSec, audioFile, audioPersistedDataUrl, audioPreviewUrl, aspectInfo.height, aspectInfo.value, aspectInfo.width, currentCreditCost, endFile, endPersistedDataUrl, endPreview, generationDurationSec, negativePrompt, pollStatus, prompt, route, routeInfo, startFile, startPersistedDataUrl, startPreview, targetDurationSec])
+  }, [audioDurationSec, audioFile, audioPersistedDataUrl, audioPreviewUrl, aspectInfo.value, currentCreditCost, renderSize.height, renderSize.width, endFile, endPersistedDataUrl, endPreview, generationDurationSec, negativePrompt, pollStatus, prompt, route, routeInfo, startFile, startPersistedDataUrl, startPreview, targetDurationSec])
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current)
@@ -1756,6 +2137,8 @@ export default function StandaloneGeneratorPage() {
     clearGeneratorDraft()
     setJob(null)
     setResultUrl('')
+    setSelectedGalleryVideoUrl('')
+    setImageActionMenuId('')
     setRawResponse(null)
     setError('')
     setStatusText('очищено')
@@ -1837,9 +2220,7 @@ export default function StandaloneGeneratorPage() {
                 <div className="avaGeneratorTrimHint"><strong>Контракт:</strong> генерация {generationDurationSec.toFixed(1)} сек → обрезка до {targetDurationSec.toFixed(1)} сек</div>
                 <div className="avaGeneratorHint">{routeInfo.help}</div>
               </div>
-            ) : (
-              <div className="avaGeneratorHint isPlaceholder">{routeInfo.help}</div>
-            )}
+            ) : null}
           </div>
 
           <div className="avaGeneratorCostBox">
@@ -1851,7 +2232,26 @@ export default function StandaloneGeneratorPage() {
               <span>Баланс</span>
               <strong>{creditBalance == null ? '—' : `${creditBalance} кр.`}</strong>
             </div>
-            {tariffError ? <em title={tariffError}>тариф fallback</em> : <em>тариф доски</em>}
+            {routeInfo.kind === 'image' ? (
+              <div className="avaGeneratorQualityBox">
+                <span>Качество фото</span>
+                <div className="avaGeneratorQualityTabs">
+                  {TXT2IMG_QUALITY_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`avaGeneratorQualityBtn ${imageQuality === option.value ? 'isActive' : ''}`}
+                      onClick={() => setImageQuality(option.value)}
+                    >
+                      <strong>{option.label}</strong>
+                      <small>{option.hint}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              tariffError ? <em title={tariffError}>тариф fallback</em> : <em>тариф доски</em>
+            )}
           </div>
 
           {montageConfirmOpen ? (
@@ -1867,7 +2267,7 @@ export default function StandaloneGeneratorPage() {
             <p className="avaGeneratorConfirmEyebrow">VIDEO MONTAGE</p>
             <h2>Передать видео в монтажник?</h2>
             <p className="avaGeneratorConfirmText">
-              Будет передано <strong>{Math.min(10, generatedVideos.length)}</strong> видео из нижней ленты.
+              Будет передано <strong>{Math.min(10, generatedVideoItems.length)}</strong> видео из нижней ленты.
               Текущий монтажник и Board snapshot будут очищены и заменены этими видео.
             </p>
 
@@ -1897,12 +2297,12 @@ export default function StandaloneGeneratorPage() {
         </div>
       ) : null}
 
-      {generatedVideos.length ? (
+      {routeInfo.kind !== 'image' && generatedVideoItems.length ? (
             <div className="avaGeneratorToMontageBox">
               <div>
                 <span>VIDEO MONTAGE</span>
                 <strong>Собрать монтаж из ленты</strong>
-                <p>Передаст {generatedVideos.length} видео в монтажник в порядке ленты.</p>
+                <p>Передаст {generatedVideoItems.length} видео в монтажник в порядке ленты.</p>
               </div>
               <button type="button" onClick={goToVideoMontageFromGenerator}>
                 Перейти в видео монтаж
@@ -1911,8 +2311,8 @@ export default function StandaloneGeneratorPage() {
           ) : null}
 
           <div className="avaGeneratorActions">
-            <button className="avaGeneratorPrimary" onClick={submitGeneration} disabled={busy || routeInfo.notReady}>
-              {busy ? 'Генерация...' : routeInfo.notReady ? 'Модель позже' : '▶ Сгенерировать'}
+            <button className="avaGeneratorPrimary" onClick={submitGeneration} disabled={busy || !routeInfo.endpoint}>
+              {busy ? 'Генерация...' : '▶ Сгенерировать'}
             </button>
             {routeInfo.needsStart ? (
               <button
@@ -1933,7 +2333,7 @@ export default function StandaloneGeneratorPage() {
           <div className="avaGeneratorStatus">Статус: <strong>{statusText}</strong></div>
         </div>
 
-        <div className="avaGeneratorPanel avaGeneratorMediaPanel">
+        <div className={`avaGeneratorPanel avaGeneratorMediaPanel ${routeInfo.kind === 'image' ? 'isImageMode' : ''}`}>
           <h2>2. Медиа / Результат</h2>
 
           <div className="avaGeneratorUploadGrid" data-count={mediaColumnCount}>
@@ -1961,11 +2361,7 @@ export default function StandaloneGeneratorPage() {
                 {audioDurationSec > 0 ? <em>{formatSec(audioDurationSec)}</em> : null}
               </label>
             ) : null}
-
-            {routeInfo.kind === 'image' ? (
-              <div className="avaGeneratorMediaNotice">Для картинки по описанию сейчас нужен только prompt. Upload подключим позже, если понадобится.</div>
-            ) : null}
-          </div>
+</div>
 
           <div className="avaGeneratorStageGrid">
             <div className="avaGeneratorThumbsCol">
@@ -1980,7 +2376,7 @@ export default function StandaloneGeneratorPage() {
                 </div>
                 <div className="avaGeneratorThumbMeta">
                   <strong>Start</strong>
-                  <span title={startFile?.name || ''}>{startFile?.name || 'Нет изображения'}</span>
+                  <span title={startFile?.name || ''}>{startFile?.name || (startPreview ? 'кадр из ленты' : 'Нет изображения')}</span>
                 </div>
               </button>
 
@@ -1996,7 +2392,7 @@ export default function StandaloneGeneratorPage() {
                   </div>
                   <div className="avaGeneratorThumbMeta">
                     <strong>End</strong>
-                    <span title={endFile?.name || ''}>{endFile?.name || 'Нет финального кадра'}</span>
+                    <span title={endFile?.name || ''}>{endFile?.name || (endPreview ? 'кадр из ленты' : 'Нет финального кадра')}</span>
                   </div>
                 </button>
               ) : null}
@@ -2021,10 +2417,20 @@ export default function StandaloneGeneratorPage() {
 
             <div className="avaGeneratorResultCol">
               <div className="avaGeneratorCanvas">
-                {routeInfo.kind === 'image' ? (
-                  <div className="avaGeneratorCanvasState isPlaceholder">
-                    <strong>Режим картинки по описанию</strong>
-                    <span>UI готов. Подключим модель позже.</span>
+                {displayedResultUrl && displayedResultIsImage ? (
+                  <div className="avaGeneratorImageResultWrap">
+                    <button type="button" className="avaGeneratorImageResultButton" onClick={() => openZoom(displayedResultUrl, 'Generated image')}>
+                      <img className="avaGeneratorResultImage" src={displayedResultUrl} alt="generated result" />
+                      <div className="avaGeneratorZoomOverlay"><span>⌕</span><em>Увеличить</em></div>
+                    </button>
+                    <button
+                      type="button"
+                      className="avaGeneratorImageDownloadBtn"
+                      onClick={(event) => downloadGeneratedImage(event, displayedResultUrl)}
+                      title="Скачать изображение"
+                    >
+                      ⇩
+                    </button>
                   </div>
                 ) : displayedResultUrl ? (
                   <video className="avaGeneratorVideo" src={displayedResultUrl} controls playsInline />
@@ -2034,19 +2440,34 @@ export default function StandaloneGeneratorPage() {
                     <strong>Идёт генерация</strong>
                     <span>{statusText}</span>
                   </div>
+                ) : routeInfo.kind === 'image' ? (
+                  <div className="avaGeneratorCanvasState isPlaceholder">
+                    <strong>Картинка по описанию</strong>
+                    <span>Напиши prompt и отправь. Стандарт 16:9 — 2304×1296.</span>
+                  </div>
                 ) : (
                   <div className="avaGeneratorCanvasState">
                     <strong>Результат появится здесь</strong>
                     <span>Когда генерация запустится, процесс и итог будут видны в этом поле.</span>
                   </div>
                 )}
+                  {mmaudioBusy ? (
+                    <div className="avaGeneratorMmaudioCanvasOverlay" role="status" aria-live="polite">
+                      <div className="avaGeneratorMmaudioCanvasSpinner" />
+                      <strong>Генерация звука</strong>
+                      <span>{mmaudioStatus || 'preparing'}</span>
+                    </div>
+                  ) : null}
               </div>
 
               {canUseMmaudio ? (
                 <div className={`avaGeneratorMmaudioPanel ${mmaudioOpen ? 'isOpen' : ''}`}>
                   <button type="button" className="avaGeneratorMmaudioToggle" onClick={() => setMmaudioOpen((value) => !value)}>
                     <span>✨ MMAudio / добавить звук · {formatCreditCost(mmaudioCreditCost)}</span>
-                    <em>{mmaudioResultUrl ? 'звук готов' : mmaudioBusy ? 'генерация звука...' : 'открыть настройки'}</em>
+                    <em className={mmaudioBusy ? 'isBusy' : ''}>
+                      {mmaudioBusy ? <i className="avaGeneratorMmaudioHeaderSpinner" aria-hidden="true" /> : null}
+                      {mmaudioBusy ? `генерация звука идёт... ${mmaudioStatus || ''}` : mmaudioResultUrl ? 'звук готов' : 'открыть настройки'}
+                    </em>
                   </button>
 
                   {mmaudioOpen ? (
@@ -2060,11 +2481,20 @@ export default function StandaloneGeneratorPage() {
                         onChange={(event) => setMmaudioNegativePrompt(event.target.value)}
                       />
                       <div className="avaGeneratorMmaudioActions">
-                        <button type="button" className="avaGeneratorMmaudioSend" onClick={submitMmaudio} disabled={mmaudioBusy}>
-                          {mmaudioBusy ? 'Отправлено...' : '⚡ Отправить в MMAudio'}
+                        <button type="button" className="avaGeneratorMmaudioSend" onClick={submitMmaudio} disabled={mmaudioBusy || !resultUrl}>
+                          {mmaudioBusy ? `Ждём: ${mmaudioStatus || 'preparing'}` : mmaudioResultUrl ? '⚡ Перегенерировать звук' : '⚡ Отправить в MMAudio'}
                         </button>
                         {mmaudioResultUrl ? <span className="avaGeneratorMmaudioReady">результат вернулся в preview</span> : null}
                       </div>
+                       {mmaudioBusy ? (
+                          <div className="avaGeneratorMmaudioProgress" role="status" aria-live="polite">
+                            <span className="avaGeneratorMmaudioSpinner" />
+                            <div>
+                              <strong>Генерация звука идёт...</strong>
+                              <em>{mmaudioStatus || 'preparing'}</em>
+                            </div>
+                          </div>
+                        ) : null}
                       {mmaudioError ? <div className="avaGeneratorError">{mmaudioError}</div> : null}
                       {mmaudioStatus ? <div className="avaGeneratorStatus">MMAudio: <strong>{mmaudioStatus}</strong></div> : null}
                     </div>
@@ -2085,17 +2515,34 @@ export default function StandaloneGeneratorPage() {
       ) : null}
     
       {generatedVideos.length ? (
-        <section className="avaGeneratorHistoryPanel">
+<section className="avaGeneratorHistoryPanel">
           <div className="avaGeneratorHistoryHeader">
             <div>
               <p>RECENT RESULTS</p>
-              <h2>Последние видео</h2>
+              <h2>Последние результаты</h2>
             </div>
-            <span>{generatedVideos.length}/10</span>
+
           </div>
+          {historyIsOverLimit ? (
+            <div className="avaGeneratorHistoryLimitNotice" role="alert">
+              <div className="avaGeneratorHistoryLimitIcon">!</div>
+              <div className="avaGeneratorHistoryLimitBody">
+                <strong>Лимит ленты превышен</strong>
+                <p>
+                  В ленте сейчас <b>{visibleHistoryItems.length}</b> файлов. Лимит — <b>{historyLimit}</b>.
+                  Удалите <b>{historyOverflowCount}</b> лишн. файл{historyOverflowCount === 1 ? '' : 'а'}, чтобы лента снова была чистой.
+                </p>
+                <div className="avaGeneratorHistoryLimitStats">
+                  <span>Фото <b>{historyImageCount}</b></span>
+                  <span>Видео <b>{historyVideoCount}</b></span>
+                  <span>Всего <b>{visibleHistoryItems.length}/{historyLimit}</b></span>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="avaGeneratorHistoryScroller">
-            {generatedVideos.map((item, index) => (
+            {visibleHistoryItems.map((item, index) => (
               <article
                 key={item.id}
                 className={`avaGeneratorHistoryCard ${selectedGalleryVideoUrl === item.url ? 'isActive' : ''}`}
@@ -2116,22 +2563,58 @@ export default function StandaloneGeneratorPage() {
                 </button>
 
                 <div className="avaGeneratorHistoryThumb">
-                  <video src={item.url} muted playsInline preload="metadata" />
-                  <div className="avaGeneratorHistoryPlay">▶</div>
+                  {item.kind === 'image' ? (
+                    <img src={item.url} alt={item.label || 'result'} />
+                  ) : (
+                    <>
+                      <video src={item.url} muted playsInline preload="metadata" />
+                      <div className="avaGeneratorHistoryPlay">▶</div>
+                    </>
+                  )}
                 </div>
 
                 <div className="avaGeneratorHistoryMeta">
-                  <strong>{item.label || 'Видео'} #{generatedVideos.length - index}</strong>
-                  <span>{item.kind === 'mmaudio' ? 'со звуком' : 'result'} · {formatGeneratorGalleryTime(item.createdAt)}</span>
-                  <button
-                    type="button"
-                    className="avaGeneratorHistoryUseFrame"
-                    onClick={(event) => { event.stopPropagation(); takeLastFrameFromPreviousVideo(item.url || '') }}
-                    disabled={frameExtractBusy || busy}
-                    title="Поставить последний кадр этого видео в Start"
-                  >
-                    ↳ кадр в Start
-                  </button>
+                  <strong>{item.label || 'Видео'} #{visibleHistoryItems.length - index}</strong>
+                  <span>{item.kind === 'image' ? 'картинка' : item.kind === 'mmaudio' ? 'со звуком' : 'видео'} · {formatGeneratorGalleryTime(item.createdAt)}</span>
+                  {item.kind === 'image' ? (
+                    <div className="avaGeneratorHistoryImageActions">
+                      <button
+                        type="button"
+                        className="avaGeneratorHistoryImagePlus"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setImageActionMenuId((oldId) => oldId === item.id ? '' : item.id)
+                        }}
+                        title="Использовать картинку как кадр"
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        className="avaGeneratorHistoryImageDownload"
+                        onClick={(event) => downloadGeneratedImage(event, item.url || '')}
+                        title="Скачать картинку"
+                      >
+                        ⇩
+                      </button>
+                      {imageActionMenuId === item.id ? (
+                        <div className="avaGeneratorHistoryImageMenu" onClick={(event) => event.stopPropagation()}>
+                          <button type="button" onClick={(event) => useImageResultAsFrame(event, item, 'start')}>В 1-й кадр</button>
+                          <button type="button" onClick={(event) => useImageResultAsFrame(event, item, 'end')}>Во 2-й кадр</button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="avaGeneratorHistoryUseFrame"
+                      onClick={(event) => { event.stopPropagation(); takeLastFrameFromPreviousVideo(item.url || '') }}
+                      disabled={frameExtractBusy || busy}
+                      title="Поставить последний кадр этого видео в Start"
+                    >
+                      ↳ кадр в Start
+                    </button>
+                  )}
                 </div>
               </article>
             ))}

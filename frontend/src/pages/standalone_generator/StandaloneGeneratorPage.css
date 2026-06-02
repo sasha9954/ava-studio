@@ -1233,3 +1233,562 @@
   opacity: 0.48;
   cursor: not-allowed;
 }
+
+/* PATCH 07AR: text-to-image generator result styles */
+.avaGeneratorImageResultButton {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 470px;
+  padding: 0;
+  border: 0;
+  background: #000b1d;
+  cursor: zoom-in;
+  overflow: hidden;
+}
+
+.avaGeneratorResultImage {
+  display: block;
+  width: 100%;
+  min-height: 470px;
+  max-height: min(74vh, 860px);
+  object-fit: contain;
+  background: #000b1d;
+}
+
+.avaGeneratorImageResultButton:hover .avaGeneratorZoomOverlay {
+  opacity: 1;
+}
+
+.avaGeneratorHistoryThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* PATCH 07AS: txt2img cleanup and image gallery actions */
+.avaGeneratorMediaPanel.isImageMode .avaGeneratorStageGrid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.avaGeneratorMediaPanel.isImageMode .avaGeneratorThumbsCol {
+  display: none;
+}
+
+.avaGeneratorMediaPanel.isImageMode .avaGeneratorUploadGrid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.avaGeneratorMediaPanel.isImageMode .avaGeneratorMediaNotice {
+  max-width: 520px;
+}
+
+.avaGeneratorHistoryImageActions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.avaGeneratorHistoryImagePlus {
+  width: 34px;
+  height: 30px;
+  border: 0;
+  border-radius: 12px;
+  color: #061426;
+  background: linear-gradient(135deg, rgba(127, 255, 218, 0.96), rgba(93, 199, 255, 0.96));
+  box-shadow: 0 10px 22px rgba(69, 218, 255, 0.18);
+  font-size: 20px;
+  font-weight: 950;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.avaGeneratorHistoryImageMenu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 12;
+  min-width: 138px;
+  padding: 7px;
+  border-radius: 14px;
+  border: 1px solid rgba(139, 220, 255, 0.32);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(120, 98, 255, 0.22), transparent 42%),
+    rgba(8, 15, 34, 0.98);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
+}
+
+.avaGeneratorHistoryImageMenu button {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: #f4fbff;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.avaGeneratorHistoryImageMenu button:hover {
+  color: #061426;
+  background: linear-gradient(135deg, rgba(127, 255, 218, 0.96), rgba(93, 199, 255, 0.96));
+}
+
+.avaGeneratorHistoryCard {
+  overflow: visible;
+}
+
+.avaGeneratorHistoryThumb {
+  overflow: hidden;
+}
+
+/* PATCH 07AT: image download buttons */
+.avaGeneratorImageResultWrap {
+  position: relative;
+  min-height: 470px;
+  background: #000b1d;
+}
+
+.avaGeneratorImageDownloadBtn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(143, 225, 255, 0.42);
+  border-radius: 999px;
+  color: #061426;
+  background: linear-gradient(135deg, rgba(127, 255, 218, 0.96), rgba(93, 199, 255, 0.96));
+  box-shadow: 0 14px 32px rgba(39, 202, 255, 0.22);
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.92;
+  transition: transform 0.18s ease, opacity 0.18s ease, filter 0.18s ease;
+}
+
+.avaGeneratorImageDownloadBtn:hover {
+  transform: translateY(-1px) scale(1.04);
+  opacity: 1;
+  filter: brightness(1.05);
+}
+
+.avaGeneratorHistoryImageActions {
+  gap: 7px;
+}
+
+.avaGeneratorHistoryImageDownload {
+  width: 34px;
+  height: 30px;
+  border: 1px solid rgba(132, 180, 255, 0.24);
+  border-radius: 12px;
+  color: #edf7ff;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 18px;
+  font-weight: 950;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.avaGeneratorHistoryImageDownload:hover {
+  color: #061426;
+  border-color: transparent;
+  background: linear-gradient(135deg, rgba(127, 255, 218, 0.96), rgba(93, 199, 255, 0.96));
+}
+
+/* PATCH 07AU: gallery counters + warning + charge audit */
+.avaGeneratorHistoryCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+
+.avaGeneratorHistoryCounts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(137, 187, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: #dbe9ff;
+  font-size: 13px;
+}
+
+.avaGeneratorHistoryWarning {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 176, 96, 0.28);
+  background: linear-gradient(135deg, rgba(255, 168, 82, 0.16), rgba(255, 119, 119, 0.12));
+  color: #ffe6c6;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.avaGeneratorChargeAudit {
+  margin-top: 14px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(128, 170, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: #dbe7ff;
+  font-size: 13px;
+}
+
+.avaGeneratorChargeAudit strong {
+  color: #ffffff;
+  margin-right: 2px;
+}
+
+.avaGeneratorChargeAudit.isOk {
+  border-color: rgba(117, 236, 197, 0.28);
+  background: linear-gradient(135deg, rgba(67, 179, 155, 0.18), rgba(77, 148, 255, 0.10));
+}
+
+.avaGeneratorChargeAudit.isWarn {
+  border-color: rgba(255, 176, 96, 0.28);
+  background: linear-gradient(135deg, rgba(255, 168, 82, 0.16), rgba(255, 119, 119, 0.10));
+}
+
+@media (max-width: 900px) {
+  .avaGeneratorChargeAudit {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+
+/* PATCH 08: generator history limit notice */
+.avaGeneratorHistoryLimitNotice {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  margin: 0 0 14px;
+  padding: 15px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 206, 112, 0.24);
+  background:
+    radial-gradient(circle at 8% 10%, rgba(255, 210, 112, 0.18), transparent 34%),
+    radial-gradient(circle at 96% 10%, rgba(104, 220, 255, 0.11), transparent 30%),
+    linear-gradient(135deg, rgba(41, 31, 20, 0.72), rgba(13, 25, 48, 0.76));
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.avaGeneratorHistoryLimitIcon {
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  color: #091322;
+  background: linear-gradient(135deg, #ffe28a, #74e9ff);
+  font-size: 22px;
+  font-weight: 950;
+  box-shadow: 0 14px 30px rgba(255, 210, 112, 0.16);
+}
+
+.avaGeneratorHistoryLimitBody {
+  min-width: 0;
+}
+
+.avaGeneratorHistoryLimitBody strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.avaGeneratorHistoryLimitBody p {
+  margin: 0;
+  color: rgba(235, 244, 255, 0.78);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.avaGeneratorHistoryLimitBody b {
+  color: #ffffff;
+}
+
+.avaGeneratorHistoryLimitStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.avaGeneratorHistoryLimitStats span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: rgba(232, 244, 255, 0.86);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(132, 166, 255, 0.14);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.avaGeneratorHistoryLimitStats b {
+  margin-left: 4px;
+}
+
+
+/* PATCH 09: txt2img quality selector */
+.avaGeneratorQualityBox {
+  min-height: 58px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(124, 210, 255, 0.22);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(116, 232, 255, 0.12), transparent 42%),
+    linear-gradient(135deg, rgba(73, 146, 255, 0.11), rgba(150, 105, 255, 0.09));
+}
+
+.avaGeneratorQualityBox > span {
+  display: block;
+  margin-bottom: 8px;
+  color: rgba(222, 235, 255, 0.72);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.avaGeneratorQualityTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.avaGeneratorQualityBtn {
+  min-height: 42px;
+  padding: 8px 9px;
+  border-radius: 13px;
+  border: 1px solid rgba(132, 166, 255, 0.18);
+  background: rgba(5, 11, 28, 0.72);
+  color: rgba(237, 246, 255, 0.84);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.16s ease, filter 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.avaGeneratorQualityBtn strong,
+.avaGeneratorQualityBtn small {
+  display: block;
+  line-height: 1.15;
+}
+
+.avaGeneratorQualityBtn strong {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.avaGeneratorQualityBtn small {
+  margin-top: 3px;
+  color: rgba(210, 229, 255, 0.62);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.avaGeneratorQualityBtn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  border-color: rgba(116, 232, 255, 0.38);
+}
+
+.avaGeneratorQualityBtn.isActive {
+  border-color: transparent;
+  background: linear-gradient(135deg, rgba(120, 98, 255, 0.98), rgba(51, 200, 255, 0.98));
+  box-shadow: 0 12px 26px rgba(75, 195, 255, 0.18);
+}
+
+.avaGeneratorQualityBtn.isActive small {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.avaGeneratorImageQualityNotice {
+  margin-top: 10px;
+  padding: 11px 13px;
+  border-radius: 15px;
+  border: 1px solid rgba(117, 219, 255, 0.16);
+  background: rgba(95, 215, 255, 0.07);
+  color: rgba(226, 239, 255, 0.74);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.avaGeneratorImageQualityNotice strong {
+  color: #ffffff;
+}
+
+
+/* PATCH 10B: MMAudio progress spinner */
+.avaGeneratorMmaudioProgress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(112, 230, 255, 0.20);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(104, 235, 255, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(96, 80, 255, 0.16), rgba(32, 180, 255, 0.10));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.avaGeneratorMmaudioSpinner {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(115, 235, 255, 0.98);
+  border-right-color: rgba(160, 120, 255, 0.95);
+  animation: avaMmaudioSpin 0.85s linear infinite;
+  box-shadow: 0 0 18px rgba(92, 214, 255, 0.22);
+}
+
+.avaGeneratorMmaudioProgress strong {
+  display: block;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.avaGeneratorMmaudioProgress em {
+  display: block;
+  margin-top: 3px;
+  color: rgba(220, 238, 255, 0.68);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+@keyframes avaMmaudioSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+/* PATCH 10C: visible inline MMAudio spinner inside the send button */
+.avaGeneratorMmaudioSend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.avaGeneratorMmaudioSend[disabled]::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.24);
+  border-top-color: rgba(255, 255, 255, 0.98);
+  border-right-color: rgba(125, 235, 255, 0.95);
+  animation: avaMmaudioInlineSpin 0.75s linear infinite;
+  box-shadow: 0 0 16px rgba(120, 220, 255, 0.28);
+}
+
+@keyframes avaMmaudioInlineSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+/* PATCH 10D: MMAudio spinner in header and preview overlay */
+.avaGeneratorCanvas {
+  position: relative;
+}
+
+.avaGeneratorMmaudioToggle em.isBusy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.avaGeneratorMmaudioHeaderSpinner {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.26);
+  border-top-color: #ffffff;
+  border-right-color: rgba(121, 236, 255, 0.96);
+  animation: avaMmaudioHeaderSpin 0.75s linear infinite;
+}
+
+.avaGeneratorMmaudioCanvasOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(75, 215, 255, 0.20), transparent 34%),
+    linear-gradient(180deg, rgba(4, 11, 28, 0.72), rgba(4, 11, 28, 0.86));
+  backdrop-filter: blur(2px);
+  text-align: center;
+  pointer-events: none;
+}
+
+.avaGeneratorMmaudioCanvasSpinner {
+  width: 58px;
+  height: 58px;
+  border-radius: 999px;
+  border: 5px solid rgba(255, 255, 255, 0.14);
+  border-top-color: rgba(255, 255, 255, 0.98);
+  border-right-color: rgba(113, 228, 255, 0.98);
+  border-bottom-color: rgba(168, 112, 255, 0.80);
+  animation: avaMmaudioHeaderSpin 0.82s linear infinite;
+  box-shadow:
+    0 0 34px rgba(86, 204, 255, 0.26),
+    inset 0 0 18px rgba(255, 255, 255, 0.05);
+}
+
+.avaGeneratorMmaudioCanvasOverlay strong {
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 950;
+}
+
+.avaGeneratorMmaudioCanvasOverlay span {
+  color: rgba(225, 240, 255, 0.72);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.avaGeneratorMmaudioSend[disabled]::before {
+  display: none !important;
+  content: none !important;
+}
+
+@keyframes avaMmaudioHeaderSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+

@@ -8,6 +8,39 @@ function getToken() {
   return localStorage.getItem('ava_token')
 }
 
+function extractApiCreditBalance(value) {
+  if (!value || typeof value !== 'object') return null
+
+  for (const key of ['balance', 'creditBalance', 'credit_balance', 'credits_balance', 'credits', 'amount']) {
+    const raw = value?.[key]
+    if (raw === 0 || raw) {
+      const numberValue = Number(raw)
+      if (Number.isFinite(numberValue)) return numberValue
+    }
+  }
+
+  if (value.user && typeof value.user === 'object') return extractApiCreditBalance(value.user)
+  if (value.creditChargeResult && typeof value.creditChargeResult === 'object') return extractApiCreditBalance(value.creditChargeResult)
+  return null
+}
+
+function notifyApiCreditBalance(payload, source = '') {
+  if (typeof window === 'undefined') return
+
+  const balance = extractApiCreditBalance(payload)
+  if (balance === null) return
+
+  window.dispatchEvent(new CustomEvent('ava:credits-updated', {
+    detail: {
+      balance,
+      credits_balance: balance,
+      creditBalance: balance,
+      source,
+      summary: payload,
+    },
+  }))
+}
+
 export function getAuthHeaders(extraHeaders = {}) {
   const token = getToken()
   return {
@@ -40,6 +73,20 @@ export async function apiRequest(path, options = {}) {
 
   if (data?.user && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('ava:user-updated', { detail: data.user }))
+  }
+
+  if (
+    typeof window !== 'undefined'
+    && (
+      String(path || '').includes('/credits/summary')
+      || data?.creditBalance !== undefined
+      || data?.credit_balance !== undefined
+      || data?.credits_balance !== undefined
+      || data?.creditCharged !== undefined
+      || data?.creditChargeResult !== undefined
+    )
+  ) {
+    notifyApiCreditBalance(data, path)
   }
 
   return data

@@ -10,6 +10,7 @@ import {
 } from '../services/generatorJobs'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
+const GLOBAL_JOB_TOAST_AUTO_HIDE_MS = 5000
 
 function authHeaders(extra = {}) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('ava_token') : ''
@@ -47,10 +48,21 @@ async function fetchJson(path) {
 export default function GlobalJobNotifier() {
   const [toasts, setToasts] = useState([])
   const pollingRef = useRef(null)
+  const toastTimersRef = useRef(new Map())
 
   const pushToast = useCallback((job) => {
     if (!job?.id) return
     markGlobalJobNotified(job.id)
+
+    if (toastTimersRef.current.has(job.id)) {
+      window.clearTimeout(toastTimersRef.current.get(job.id))
+    }
+    toastTimersRef.current.set(job.id, window.setTimeout(() => {
+      markGlobalJobNotified(job.id)
+      setToasts((old) => old.filter((toast) => toast.id !== job.id))
+      toastTimersRef.current.delete(job.id)
+    }, GLOBAL_JOB_TOAST_AUTO_HIDE_MS))
+
     setToasts((old) => {
       if (old.some((item) => item.id === job.id)) return old
       return [
@@ -116,16 +128,40 @@ export default function GlobalJobNotifier() {
       window.removeEventListener('storage', onStorage)
       window.removeEventListener('ava:global-jobs-changed', onJobsChanged)
       if (pollingRef.current) window.clearInterval(pollingRef.current)
+      toastTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+      toastTimersRef.current.clear()
     }
   }, [pollOnce])
 
+  // PATCH_07AW_AUTO_HIDE_TOASTS: auto close ready notifications after 5 seconds.
+  useEffect(() => {
+    if (!toasts.length) return undefined
+
+    const timers = toasts.map((toast) => window.setTimeout(() => {
+      markGlobalJobNotified(toast.id)
+      setToasts((old) => old.filter((item) => item.id !== toast.id))
+    }, GLOBAL_JOB_TOAST_AUTO_HIDE_MS))
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer))
+    }
+  }, [toasts])
+
   const closeToast = useCallback((id) => {
     markGlobalJobNotified(id)
+    if (toastTimersRef.current.has(id)) {
+      window.clearTimeout(toastTimersRef.current.get(id))
+      toastTimersRef.current.delete(id)
+    }
     setToasts((old) => old.filter((toast) => toast.id !== id))
   }, [])
 
   const goToToast = useCallback((toast) => {
     markGlobalJobNotified(toast.id)
+    if (toastTimersRef.current.has(toast.id)) {
+      window.clearTimeout(toastTimersRef.current.get(toast.id))
+      toastTimersRef.current.delete(toast.id)
+    }
     setToasts((old) => old.filter((item) => item.id !== toast.id))
     const path = toast.pagePath || '/app/workspace/generator'
     if (window.location.pathname !== path) window.location.href = path

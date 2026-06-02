@@ -28,3 +28,29 @@ backend/storage/users/
 ava_*.py 
 storage/
 backend/static/assets/
+
+# Local patch backups
+_backup*/
+.bak_*/
+*_backup*/
+
+# Runtime media and generated files
+static/assets/
+static/uploads/
+static/generated/
+backend/static/uploads/
+backend/static/assets/
+backend/static/generated/
+backend/storage/
+
+# Heavy media/archives
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.wav
+*.mp3
+*.zip
+*.7z
+*.rar
