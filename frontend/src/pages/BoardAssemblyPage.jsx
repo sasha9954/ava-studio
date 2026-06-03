@@ -4,6 +4,8 @@ import { ArrowLeft, Clapperboard, Download, Music, RefreshCcw, SlidersHorizontal
 import { useProjects } from '../context/ProjectContext.jsx'
 import { apiRequest, fetchProtectedBlobUrl, uploadAudioAsset } from '../services/apiClient.js'
 import '../styles/ava-board.css'
+import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
+import { AVA_BOARD_ASSEMBLY_CLEARED_KEY } from '../utils/workflowNavigation.js'
 
 const AUDIO_MODES = [
   {
@@ -32,11 +34,37 @@ const AUDIO_MODES = [
     text: 'Для документалок и историй: master audio + фоновая музыка + scene ambience.',
   },
 ]
-
 function assemblySettingsKey(projectId = '') {
   return projectId
     ? `ava:board-assembly:${projectId}:settings:v1`
     : 'ava:board-assembly:workspace:settings:v1'
+}
+
+function isBoardAssemblyCleared() {
+  try {
+    return Boolean(localStorage.getItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY) || sessionStorage.getItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY))
+  } catch {
+    return false
+  }
+}
+
+function clearBoardAssemblyClearedMarker() {
+  try {
+    localStorage.removeItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY)
+    sessionStorage.removeItem(AVA_BOARD_ASSEMBLY_CLEARED_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+function emptyBoardAssemblySource() {
+  return {
+    source: 'board_assembly_cleared',
+    boardVersion: 'board_assembly_cleared_v1',
+    scenes: [],
+    audio: null,
+    updatedAt: new Date().toISOString(),
+  }
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -119,7 +147,7 @@ function assemblySceneColor(scene, index = 0) {
   if (blockKey) {
     if (Number.isFinite(blockNumber)) return 185 + ((blockNumber * 47) % 150)
     return assemblyStableHueFromText(`block:${blockKey}`, index)
-  }
+}
 
   const direct = Number(
     scene?.blockColor ??
@@ -238,6 +266,16 @@ function normalizeBoard(raw = {}) {
   }
 }
 
+
+function isGeneratorAssemblyBoard(board = {}) {
+  return Boolean(
+    board?.source === 'standalone_generator' ||
+    board?.sourceNodeId === 'standalone_generator' ||
+    board?.generatorHandoff?.source === 'standalone_generator' ||
+    board?.generatorHandoff?.target === 'board_assembly'
+  )
+}
+
 function buildSceneItems(board, preferMmaudio = true) {
   return asArray(board.scenes).map((scene, index) => {
     const videoUrl = sceneVideoUrl(scene, preferMmaudio)
@@ -287,12 +325,12 @@ export default function BoardAssemblyPage() {
   const [musicUploading, setMusicUploading] = useState(false)
   const [musicLoop, setMusicLoop] = useState(true)
   const [musicFadeOut, setMusicFadeOut] = useState(true)
-  const [watermarkEnabled, setWatermarkEnabled] = useState(false)
-  const [watermarkText, setWatermarkText] = useState('Ava Studio')
-  const [watermarkPosition, setWatermarkPosition] = useState('bottom_right')
+  const [watermarkEnabled, setWatermarkEnabled] = useState(true)
+  const [watermarkText, setWatermarkText] = useState('ava studio')
+  const [watermarkPosition, setWatermarkPosition] = useState('top_right')
   const [watermarkOpacity, setWatermarkOpacity] = useState(35)
   const [watermarkSize, setWatermarkSize] = useState(28)
-  const [watermarkMotion, setWatermarkMotion] = useState('static')
+  const [watermarkMotion, setWatermarkMotion] = useState('corners')
   const [musicPanelOpen, setMusicPanelOpen] = useState(true)
   const [watermarkPanelOpen, setWatermarkPanelOpen] = useState(true)
   const [assemblyJob, setAssemblyJob] = useState(null)
@@ -319,13 +357,21 @@ export default function BoardAssemblyPage() {
     setMusicLoop(savedSettings.musicLoop ?? true)
     setMusicFadeOut(savedSettings.musicFadeOut ?? true)
 
-    const watermark = savedSettings.watermark || {}
-    setWatermarkEnabled(Boolean(watermark.enabled))
-    setWatermarkText(watermark.text || 'Ava Studio')
-    setWatermarkPosition(watermark.position || 'bottom_right')
-    setWatermarkOpacity(clampNumber(watermark.opacityPercent, 5, 100, 35))
-    setWatermarkSize(clampNumber(watermark.size, 14, 72, 28))
-    setWatermarkMotion(watermark.motion || 'static')
+    const shouldApplyWatermarkDefaults = savedSettings.watermarkDefaultVersion !== 'wm_defaults_07an_ava_studio_top_right_wander_35_28'
+    const watermark = {
+      enabled: true,
+      text: 'ava studio',
+      position: 'top_right',
+      motion: 'corners',
+      opacityPercent: 35,
+      size: 28,
+    }
+    setWatermarkEnabled(true)
+    setWatermarkText('ava studio')
+    setWatermarkPosition('top_right')
+    setWatermarkOpacity(35)
+    setWatermarkSize(28)
+    setWatermarkMotion('corners')
     setMusicPanelOpen(savedSettings.musicPanelOpen ?? true)
     setWatermarkPanelOpen(savedSettings.watermarkPanelOpen ?? true)
 
@@ -373,9 +419,10 @@ export default function BoardAssemblyPage() {
 
   const warnings = useMemo(() => {
     const list = []
+    const generatorAssemblyBoard = isGeneratorAssemblyBoard(board || {})
     if (!stats.total) list.push('В Board пока нет сцен.')
     if (stats.missing > 0) list.push(`Нет видео у сцен: ${stats.missing}. Вернись в доску и перегенерируй.`)
-    if (!stats.hasOriginalAudio && ['original_only', 'original_plus_scene', 'original_plus_music_scene'].includes(audioMode)) {
+    if (!generatorAssemblyBoard && !stats.hasOriginalAudio && ['original_only', 'original_plus_scene', 'original_plus_music_scene'].includes(audioMode)) {
       list.push('В Board не найдено оригинальное audio. Для этого режима понадобится master audio.')
     }
     if (['scene_only', 'music_plus_scene'].includes(audioMode) && stats.withSound === 0) {
@@ -385,11 +432,24 @@ export default function BoardAssemblyPage() {
       list.push('Фоновая музыка пока не загружена. Можно собрать без неё или загрузить MP3/WAV.')
     }
     return list
-  }, [stats, audioMode, musicFile])
+  }, [stats, audioMode, musicFile, board])
 
   async function loadBoardSnapshot() {
     setLoading(true)
     setStatus('Загружаем Board snapshot…')
+
+    if (isBoardAssemblyCleared()) {
+      setBoard(emptyBoardAssemblySource())
+      setSelectedSceneId('')
+      setFinalVideoUrl('')
+      setFinalDirty(false)
+      setAssemblyJob(null)
+      setAssemblyRunning(false)
+      setStatus('Монтаж очищен. Нажми “Обновить из Board”, чтобы снова подтянуть сцены.')
+      setLoading(false)
+      return
+    }
+
     try {
       const data = workspaceMode
         ? await loadWorkspaceStage('board')
@@ -399,7 +459,27 @@ export default function BoardAssemblyPage() {
       setBoard(nextBoard)
       const firstSceneId = nextBoard.scenes?.[0]?.id || nextBoard.scenes?.[0]?.scene_id || ''
       setSelectedSceneId((current) => current || firstSceneId)
-      setStatus(nextBoard.scenes?.length ? 'Board snapshot загружен' : 'В Board нет сцен')
+
+      if (isGeneratorAssemblyBoard(nextBoard)) {
+        setAudioMode('scene_only')
+        setPreferMmaudio(true)
+        setSkipMissing(false)
+        setOriginalVolume(0)
+        setSceneVolume(100)
+        setMusicVolume(15)
+        setWatermarkEnabled(false)
+        setWatermarkText('')
+        setWatermarkPosition('bottom_right')
+        setWatermarkOpacity(35)
+        setWatermarkSize(28)
+        setWatermarkMotion('static')
+        setFinalVideoUrl('')
+        setFinalDirty(false)
+        setAssemblyJob(null)
+        setStatus(nextBoard.scenes?.length ? 'Генератор → монтажник: watermark отключён' : 'В ленте генератора нет видео')
+      } else {
+        setStatus(nextBoard.scenes?.length ? 'Board snapshot загружен' : 'В Board нет сцен')
+      }
     } catch (error) {
       setStatus(`Не удалось загрузить Board: ${error?.message || 'unknown_error'}`)
       setBoard({ scenes: [] })
@@ -447,6 +527,7 @@ export default function BoardAssemblyPage() {
       musicAsset,
       musicLoop,
       musicFadeOut,
+      watermarkDefaultVersion: 'wm_defaults_07ap_ava_studio_top_right_corners_35_28',
       watermark: {
         enabled: Boolean(watermarkEnabled && String(watermarkText || '').trim()),
         text: watermarkText,
@@ -527,6 +608,7 @@ export default function BoardAssemblyPage() {
       })
 
     const originalAudio = boardOriginalAudio(board || {})
+    const generatorAssemblyBoard = isGeneratorAssemblyBoard(board || {})
 
     return {
       project_id: projectId || '',
@@ -554,7 +636,7 @@ export default function BoardAssemblyPage() {
         duration_sec: musicAsset?.audio_duration_sec || 0,
       },
       watermark: {
-        enabled: Boolean(watermarkEnabled && String(watermarkText || '').trim()),
+        enabled: false, // export safe-mode: backend drawtext/fontconfig пока отключён
         text: watermarkText,
         position: watermarkPosition,
         opacity: watermarkOpacity / 100,
@@ -624,7 +706,7 @@ export default function BoardAssemblyPage() {
     setAssemblyRunning(true)
     setFinalVideoUrl('')
     setFinalDirty(false)
-    setStatus(`Отправляем сборку в FFmpeg… watermark: ${watermarkEnabled && String(watermarkText || '').trim() ? 'ON' : 'OFF'}`)
+    setStatus(`Отправляем сборку в FFmpeg… watermark preview: ${watermarkEnabled && String(watermarkText || '').trim() ? 'ON' : 'OFF'} / export OFF`)
 
     try {
       const payload = buildAssemblyPayload()
@@ -679,8 +761,19 @@ export default function BoardAssemblyPage() {
     return <AvaAssemblyLoading />
   }
 
+
+
   return (
     <div className="avaPage avaAssemblyPage">
+      <WorkflowStageControls
+        stageKey="board_assembly"
+        stageLabel="Монтажник"
+        clearLabel="Очистить монтаж"
+        clearStages={[]}
+        clearStorageMatchers={['board-assembly', 'board_assembly', 'assemblyjob']}
+        clearDescription="Очистит настройки и временный результат монтажника. Сцены и медиа-файлы не удаляются."
+      />
+
       <section className="avaAssemblyHeader">
         <div>
           <p className="avaEyebrow"><Clapperboard size={15} /> Stage 6.1 video montage foundation</p>
@@ -688,8 +781,13 @@ export default function BoardAssemblyPage() {
           <p>Сборка готовых сцен из Board в финальный ролик. Длительность сцен не подгоняем здесь — это делается в Доске при генерации.</p>
         </div>
         <div className="avaAssemblyHeaderActions">
-          <Link className="avaSecondaryButton" to={boardRoute}><ArrowLeft size={16} /> Вернуться в доску</Link>
-          <button type="button" onClick={loadBoardSnapshot}><RefreshCcw size={15} /> Обновить из Board</button>
+          <button
+              type="button"
+              onClick={() => {
+                clearBoardAssemblyClearedMarker()
+                loadBoardSnapshot()
+              }}
+            ><RefreshCcw size={15} /> Обновить из Board</button>
           <button type="button" disabled><Wand2 size={15} /> Собрать preview</button>
         </div>
       </section>
@@ -701,7 +799,7 @@ export default function BoardAssemblyPage() {
         <span>Длина: <strong>{formatTime(stats.duration)}</strong></span>
         <span>Оригинал audio: <strong>{stats.hasOriginalAudio ? 'есть' : 'нет'}</strong></span>
         {status && <span className="avaBoardStatusText">{status}</span>}
-        <span className="avaBoardStatusText">Водный знак: {watermarkEnabled && String(watermarkText || '').trim() ? 'будет в MP4' : 'выключен'}</span>
+        <span className="avaBoardStatusText">Водный знак: {watermarkEnabled && String(watermarkText || '').trim() ? 'preview ON / export OFF' : 'выключен'}</span>
         <span className="avaBoardStatusText">Настройки сохраняются автоматически</span>
       </section>
 
@@ -771,7 +869,7 @@ export default function BoardAssemblyPage() {
                 {assemblyRunning
                   ? 'FFmpeg собирает финальный файл…'
                   : stats.ready
-                    ? 'Сцены, звук, музыка и watermark уйдут в один MP4.'
+                    ? 'Сцены, звук и музыка уйдут в один MP4. Watermark пока показывается как preview-overlay.'
                     : 'Сначала подготовь хотя бы одну сцену с видео.'}
               </span>
             </div>
@@ -796,9 +894,16 @@ export default function BoardAssemblyPage() {
                 </div>
                 <a href={finalVideoUrl} target="_blank" rel="noreferrer">Открыть файл</a>
               </div>
-              <video src={finalVideoUrl} controls />
-              {assemblyJob?.watermarkApplied ? <p>Водный знак запечён в MP4.</p> : null}
-              {watermarkEnabled && !assemblyJob?.watermarkApplied ? <p>Водный знак включён, но этот MP4 собран без него. Пересобери MP4.</p> : null}
+              <div className="avaAssemblyVideoWithWatermark avaAssemblyFinalVideoWithWatermark">
+                <video src={finalVideoUrl} controls />
+                {watermarkEnabled && String(watermarkText || '').trim() && (
+                  <span className={`avaAssemblyLiveWatermark ${watermarkPosition}`} style={watermarkPreviewStyle}>
+                    {watermarkText}
+                  </span>
+                )}
+              </div>
+              {assemblyJob?.watermarkApplied ? <p>Водный знак запечён в MP4.</p> : watermarkEnabled ? <p>Watermark показан как preview-overlay. В MP4 export он временно отключён, чтобы сборка не падала.</p> : null}
+              {false ? <p /> : null}
               {assemblyJob?.draftNote && <p>{assemblyJob.draftNote}</p>}
             </div>
           )}

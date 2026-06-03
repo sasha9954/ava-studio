@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Brain, ChevronLeft, ChevronRight, FolderKanban, GitBranch, Home, LogOut, PlusCircle, Settings, WalletCards, UserRound } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FolderKanban, Home, LogOut, PlusCircle, Settings, UserRound, WalletCards } from 'lucide-react'
+import avaLogoUrl from '../assets/ava_logo.jpg'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { getProjectTheme } from '../utils/projectTheme.js'
 import { apiRequest } from '../services/apiClient.js'
+import GlobalJobNotifier from '../components/GlobalJobNotifier.jsx'
 
 const navItems = [
   { to: '/app/dashboard', label: 'Главная', icon: Home },
@@ -12,7 +14,6 @@ const navItems = [
   { to: '/app/projects/new', label: 'Создать проект', icon: PlusCircle },
   { to: '/app/account', label: 'Кабинет', icon: UserRound },
   { to: '/app/credits', label: 'Пополнить счёт', icon: WalletCards },
-  { to: '/app/workspace/video-node', label: 'Видео нода', icon: GitBranch },
 ]
 
 const SIDEBAR_OPEN_KEY = 'ava_sidebar_open'
@@ -125,6 +126,23 @@ function videoPatchFromJobData(data = {}, job = {}) {
   }
 }
 
+function extractAvaCreditBalance(value) {
+  if (!value || typeof value !== 'object') return null
+
+  for (const key of ['balance', 'creditBalance', 'credit_balance', 'credits_balance', 'credits', 'amount']) {
+    const raw = value?.[key]
+    if (raw === 0 || raw) {
+      const numberValue = Number(raw)
+      if (Number.isFinite(numberValue)) return numberValue
+    }
+  }
+
+  if (value.user && typeof value.user === 'object') return extractAvaCreditBalance(value.user)
+  if (value.creditChargeResult && typeof value.creditChargeResult === 'object') return extractAvaCreditBalance(value.creditChargeResult)
+
+  return null
+}
+
 function mmaudioPatchFromJobData(data = {}, job = {}) {
   const videoUrl = data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
   return {
@@ -144,17 +162,113 @@ export default function AvaShellLayout() {
   const { user, logout } = useAuth()
   const { projects, activeProject, lastSavedAt, exitProject } = useProjects()
   const navigate = useNavigate()
-  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem(SIDEBAR_OPEN_KEY) === '1')
+  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem(SIDEBAR_OPEN_KEY) !== '0')
   const [globalToasts, setGlobalToasts] = useState([])
   const toastDedupeRef = useRef(new Map())
   const pollingJobsRef = useRef(new Set())
+  const [shellCreditBalance, setShellCreditBalance] = useState(null)
+  const [shellCreditsRefreshing, setShellCreditsRefreshing] = useState(false)
   const projectTheme = useMemo(() => getProjectTheme(activeProject, projects), [activeProject, projects])
+
+  const displayCreditBalance = useMemo(() => {
+    const live = Number(shellCreditBalance)
+    if (Number.isFinite(live)) return live
+
+    const fromUser = extractAvaCreditBalance(user)
+    return fromUser
+  }, [shellCreditBalance, user])
+
+  const refreshShellCredits = useCallback(async (reason = '') => {
+    setShellCreditsRefreshing(true)
+    try {
+      const summary = await apiRequest('/credits/summary')
+      const nextBalance = extractAvaCreditBalance(summary)
+      if (nextBalance !== null) {
+        setShellCreditBalance(nextBalance)
+        if (user) {
+          window.dispatchEvent(new CustomEvent('ava:user-updated', {
+            detail: {
+              ...user,
+              credits_balance: nextBalance,
+              creditBalance: nextBalance,
+            },
+          }))
+        }
+      }
+      return summary
+    } catch (error) {
+      console.warn('[AvaShell] credits refresh failed', reason, error)
+      return null
+    } finally {
+      setShellCreditsRefreshing(false)
+    }
+  }, [user])
+
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_OPEN_KEY, sidebarOpen ? '1' : '0')
   }, [sidebarOpen])
 
+  // PATCH_07BA_SYNC_USER_BALANCE: keep topbar balance stable from auth user too.
+  useEffect(() => {
+    const nextBalance = extractAvaCreditBalance(user)
+    if (nextBalance !== null) setShellCreditBalance(nextBalance)
+  }, [user])
+
+
+  // PATCH_07BB_DIRECT_CREDIT_EVENT: update topbar instantly from credits summary/generator.
+  useEffect(() => {
+    function handleDirectCreditUpdate(event) {
+      const nextBalance = extractAvaCreditBalance(event?.detail)
+      if (nextBalance !== null) setShellCreditBalance(nextBalance)
+    }
+
+    window.addEventListener('ava:credits-updated', handleDirectCreditUpdate)
+    return () => window.removeEventListener('ava:credits-updated', handleDirectCreditUpdate)
+  }, [])
+
   function pushGlobalToast(detail = {}) {
+  // PATCH_07BA_LIVE_CREDITS: keep topbar credits fresh without F5.
+  useEffect(() => {
+    let alive = true
+
+    const runRefresh = (reason) => {
+      if (!alive) return
+      refreshShellCredits(reason)
+    }
+
+    runRefresh('shell_mount')
+
+    const onCreditsChanged = () => runRefresh('ava_credits_changed')
+    const onUserUpdated = (event) => {
+      const nextBalance = extractAvaCreditBalance(event?.detail)
+      if (nextBalance !== null) setShellCreditBalance(nextBalance)
+      runRefresh('ava_user_updated')
+    }
+    const onFocus = () => runRefresh('window_focus')
+    const onStorage = (event) => {
+      if (!event?.key || String(event.key).includes('credit') || String(event.key).includes('user')) {
+        runRefresh('storage')
+      }
+    }
+
+    window.addEventListener('ava:credits-changed', onCreditsChanged)
+    window.addEventListener('ava:user-updated', onUserUpdated)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('storage', onStorage)
+
+    const timer = window.setInterval(() => runRefresh('soft_interval'), 15000)
+
+    return () => {
+      alive = false
+      window.removeEventListener('ava:credits-changed', onCreditsChanged)
+      window.removeEventListener('ava:user-updated', onUserUpdated)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('storage', onStorage)
+      window.clearInterval(timer)
+    }
+  }, [refreshShellCredits])
+
     const type = detail.type || 'info'
     const title = detail.title || (type === 'error' ? 'Ошибка' : type === 'success' ? 'Готово' : 'Уведомление')
     const message = detail.message || ''
@@ -340,6 +454,10 @@ export default function AvaShellLayout() {
 
           if (resultUrl) {
             changed = true
+            const nextBalance = extractAvaCreditBalance(data)
+            if (nextBalance !== null) setShellCreditBalance(nextBalance)
+            refreshShellCredits('global_job_done')
+            try { window.dispatchEvent(new CustomEvent('ava:credits-changed', { detail: data })) } catch {}
             rememberCompletedAvaJob(job, data)
             await persistFinishedJobToBoardSnapshot(job, data)
             pushGlobalToast({
@@ -387,7 +505,7 @@ export default function AvaShellLayout() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [])
+  }, [refreshShellCredits])
 
   function handleLogout() {
     logout()
@@ -442,7 +560,7 @@ export default function AvaShellLayout() {
         </button>
 
         <Link to="/app/dashboard" className="avaBrand" title="ava-studio">
-          <span className="avaBrandIcon"><Brain size={24} /></span>
+          <span className="avaBrandIcon avaBrandLogoIcon"><img src={avaLogoUrl} alt="" /></span>
           <span className="avaSidebarText">
             <strong>ava-studio</strong>
             <em>AI video workflow</em>
@@ -479,14 +597,16 @@ export default function AvaShellLayout() {
 
       <main className="avaMain">
         <header className="avaTopbar">
-          <div className="avaTopbarLeft">
-            <p>{activeProject ? `Проект открыт · ${activeProject.format}` : 'Рабочая область'}</p>
+          <div className={`avaTopbarLeft ${activeProject ? '' : 'isWorkspaceOnly'}`}>
+            {activeProject && <p>{`Проект открыт · ${activeProject.format}`}</p>}
             <h1>{activeProject ? activeProject.name : 'ava-studio'}</h1>
           </div>
           <div className="avaTopbarRight">
             <span className="avaModePill">{activeProject ? 'project mode' : 'workspace mode'}</span>
             <span className="avaSavePill">{lastSavedAt ? 'Сохранено' : 'autosave ready'}</span>
-            <span className="avaCreditPill">{user?.credits_balance ?? 0} credits</span>
+            <span className={`avaCreditPill ${shellCreditsRefreshing ? 'isRefreshing' : ''}`} title={shellCreditsRefreshing ? 'Обновляю баланс...' : 'Баланс кредитов'}>
+                {displayCreditBalance !== null && displayCreditBalance !== undefined ? `${displayCreditBalance} credits` : 'credits'}
+              </span>
             {activeProject && (
               <button className="avaExitProjectButton" type="button" onClick={handleExitProject}>
                 Выйти из проекта
@@ -501,6 +621,7 @@ export default function AvaShellLayout() {
           <Outlet />
         </section>
       </main>
-    </div>
+          <GlobalJobNotifier />
+</div>
   )
 }

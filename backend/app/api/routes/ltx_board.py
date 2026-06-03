@@ -5,6 +5,7 @@ import copy
 import json
 import mimetypes
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -46,6 +47,9 @@ WORKFLOW_ROUTE_MAP: dict[str, str] = {
     "lip_sync": "image-lipsink-video-music.json",
     "first_last": "last-first cadr-NO sound.json",
     "first_last_sound": "last-first cadr-sound.json",
+    "txt2img": "text to image.json",
+    "text_to_image": "text to image.json",
+    "image_from_text": "text to image.json",
 }
 
 VIDEO_ROUTE_CREDIT_COSTS: dict[str, int] = {
@@ -54,12 +58,64 @@ VIDEO_ROUTE_CREDIT_COSTS: dict[str, int] = {
     "lip_sync": 2,
     "first_last": 2,
     "first_last_sound": 2,
+    "txt2img": 1,
+    "text_to_image": 1,
+    "image_from_text": 1,
     "i2v": 1,
     "i2v_text": 1,
     "i2v_sound": 1,
 }
 
+TXT2IMG_QUALITY_CREDIT_COSTS: dict[str, int] = {
+    "good": 1,
+    "safe": 1,
+    "standard": 1,
+    "high": 1,
+    "ultra": 2,
+    "max": 2,
+}
+
+
+def _txt2img_quality_from_value(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"ultra", "max"}:
+        return "ultra"
+    return "good"
+
+
+def _txt2img_quality_from_payload(payload: Any) -> str:
+    if isinstance(payload, dict):
+        return _txt2img_quality_from_value(
+            payload.get("image_quality")
+            or payload.get("imageQuality")
+            or payload.get("txt2img_quality")
+            or payload.get("txt2imgQuality")
+            or payload.get("quality")
+        )
+
+    return _txt2img_quality_from_value(
+        getattr(payload, "image_quality", None)
+        or getattr(payload, "imageQuality", None)
+        or getattr(payload, "txt2img_quality", None)
+        or getattr(payload, "txt2imgQuality", None)
+        or getattr(payload, "quality", None)
+    )
+
+
+def _video_credit_cost_for_payload(route: str, payload: Any = None) -> int:
+    route_value = str(route or "").strip()
+    if route_value in {"txt2img", "text_to_image", "image_from_text"}:
+        quality = _txt2img_quality_from_payload(payload)
+        return int(TXT2IMG_QUALITY_CREDIT_COSTS.get(quality, 1))
+    return int(VIDEO_ROUTE_CREDIT_COSTS.get(route_value, 1) or 1)
+
 MMAUDIO_CREDIT_COST = 1
+
+IMAGE_GENERATION_ROUTES = {"txt2img", "text_to_image", "image_from_text"}
+
+
+def _is_image_generation_route(route: str | None) -> bool:
+    return str(route or "").strip() in IMAGE_GENERATION_ROUTES
 
 BOARD_ASSEMBLY_EXPORT_CREDIT_COST = 1
 BOARD_ASSEMBLY_MUSIC_CREDIT_COST = 1
@@ -132,6 +188,10 @@ class VideoStartIn(BaseModel):
     width: int | None = None
     height: int | None = None
     format: str | None = None
+    image_quality: str | None = None
+    imageQuality: str | None = None
+    txt2img_quality: str | None = None
+    txt2imgQuality: str | None = None
     duration_sec: float | None = None
     durationSec: float | None = None
     target_duration_sec: float | None = None
@@ -379,7 +439,7 @@ def _ava_credit_charge_job_actions(job: dict, actions: list[dict[str, Any]]) -> 
 
 def _ava_credit_video_actions(job: dict) -> list[dict[str, Any]]:
     route = str(job.get("route") or "i2v")
-    amount = _video_credit_cost(route)
+    amount = int(job.get("creditCost") or _video_credit_cost_for_payload(route, job.get("payload") if isinstance(job.get("payload"), dict) else job))
     return [{
         "action_type": f"board_video_{route}",
         "amount": amount,
@@ -441,7 +501,7 @@ def _ava_credit_assembly_actions(job: dict) -> list[dict[str, Any]]:
 
 
 def _ava_credit_charge_video_job_if_ready(job: dict) -> None:
-    if job.get("videoUrl") or job.get("video_url"):
+    if job.get("videoUrl") or job.get("video_url") or job.get("imageUrl") or job.get("image_url"):
         _ava_credit_charge_job_actions(job, _ava_credit_video_actions(job))
 
 
@@ -550,6 +610,13 @@ def _resolve_local_file(value: str | None = None, *, asset_id: str | None = None
 
     if raw.startswith("/static/"):
         path = _settings_static_path() / raw[len("/static/") :]
+        if path.exists() and path.is_file():
+            return path
+
+    # AVA_LAST_FRAME_V4_RESOLVE_STATIC_URL
+    parsed_url = urllib.parse.urlparse(raw)
+    if parsed_url.scheme in {"http", "https"} and parsed_url.path.startswith("/static/"):
+        path = _settings_static_path() / parsed_url.path[len("/static/") :]
         if path.exists() and path.is_file():
             return path
 
@@ -909,6 +976,14 @@ def _apply_known_ltx_node_patches(
             "valuePreview": str(value)[:180],
         })
 
+    # Exact text-to-image workflow nodes.
+    patch("57:27", "text", positive_prompt, "exact_txt2img_positive_prompt_57_27")
+    patch("57:62", "text", negative_prompt, "exact_txt2img_negative_prompt_57_62")
+    patch("57:13", "width", int(width), "exact_txt2img_width_57_13")
+    patch("57:13", "height", int(height), "exact_txt2img_height_57_13")
+    patch("57:3", "seed", int(datetime.utcnow().timestamp() * 1000) % 999999999999999, "exact_txt2img_random_seed_57_3")
+    patch("9", "filename_prefix", "ava_text_to_image", "exact_txt2img_output_prefix_9")
+
     # Exact ia2v LTX 2.3 workflow nodes.
     if start_ref or image_ref:
         patch("269", "image", start_ref or image_ref, "exact_load_image_269")
@@ -1026,7 +1101,7 @@ def ping() -> dict[str, Any]:
 
 @router.get("/clip/ltx/tariffs")
 def ltx_tariffs() -> dict[str, Any]:
-    return {"ok": True, "videoRouteCreditCosts": VIDEO_ROUTE_CREDIT_COSTS, "mmaudioCreditCost": MMAUDIO_CREDIT_COST, "boardAssemblyCreditCosts": {"export": BOARD_ASSEMBLY_EXPORT_CREDIT_COST, "music": BOARD_ASSEMBLY_MUSIC_CREDIT_COST, "watermark": BOARD_ASSEMBLY_WATERMARK_CREDIT_COST}, "chargeMode": "preflight_balance_check_then_charge_after_success"}
+    return {"ok": True, "videoRouteCreditCosts": VIDEO_ROUTE_CREDIT_COSTS, "txt2imgQualityCreditCosts": TXT2IMG_QUALITY_CREDIT_COSTS, "mmaudioCreditCost": MMAUDIO_CREDIT_COST, "boardAssemblyCreditCosts": {"export": BOARD_ASSEMBLY_EXPORT_CREDIT_COST, "music": BOARD_ASSEMBLY_MUSIC_CREDIT_COST, "watermark": BOARD_ASSEMBLY_WATERMARK_CREDIT_COST}, "chargeMode": "preflight_balance_check_then_charge_after_success"}
 
 
 @router.get("/clip/ltx/comfy-status")
@@ -1120,7 +1195,7 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     workflow_path = WORKFLOWS_DIR / workflow_key
     target_duration = _target_duration(payload)
     generation_duration = _generation_duration(route, target_duration)
-    credit_cost = _video_credit_cost(route)
+    credit_cost = _video_credit_cost_for_payload(route, payload)
     project_id_for_credit = payload.project_id or payload.projectId
     if project_id_for_credit:
         ensure_project_access(project_id_for_credit, user)
@@ -1130,7 +1205,7 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     main_url = _main_comfy_url()
     if not main_url:
         status = "blocked_missing_comfy_base_url"
-        job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "payload": payload.model_dump()}
+        job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
         _ava_credit_attach_job_user(job, user)
         BOARD_VIDEO_JOBS[job_id] = job
         return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", **job}
@@ -1144,46 +1219,51 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     end_data_url = payload.end_image_data_url or payload.endImageDataUrl
     audio_data_url = payload.audio_data_url or payload.audioDataUrl
 
-    if route.startswith("first_last"):
-        missing_media = []
-        if not (start_url or image_url or start_data_url or image_data_url):
-            missing_media.append("start_image")
-        if not (end_url or end_data_url):
-            missing_media.append("end_image")
-        if missing_media:
-            status = "blocked_missing_first_last_media"
-            job = {
-                "jobId": job_id,
-                "status": status,
-                "createdAt": now,
-                "updatedAt": now,
-                "sceneId": payload.scene_id or payload.sceneId,
-                "projectId": payload.project_id or payload.projectId,
-                "route": route,
-                "workflowKey": workflow_key,
-                "workflowExists": workflow_path.exists(),
-                "targetComfy": "main_ltx",
-                "targetComfyBaseUrl": main_url,
-                "targetDurationSec": target_duration,
-                "generationDurationSec": generation_duration,
-                "trimToDurationSec": target_duration,
-                "plusOneSecondApplied": generation_duration > target_duration,
-                "creditCost": credit_cost,
-                "creditCharged": False,
-                "error": {"code": status, "missing": missing_media},
-                "payload": payload.model_dump(),
-            }
-            _ava_credit_attach_job_user(job, user)
-            BOARD_VIDEO_JOBS[job_id] = job
-            return {
-                "ok": False,
-                "jobId": job_id,
-                "job_id": job_id,
-                "status": status,
-                "statusEndpoint": f"/api/clip/video/status/{job_id}",
-                "missing": missing_media,
-                **job,
-            }
+    # AVA_LAST_FRAME_V4_BLOCK_REQUIRED_MEDIA
+    requires_start_image = (not _is_image_generation_route(route)) and (route in {"i2v", "ia2v", "ia2v_lipsync", "lip_sync", "i2v_sound", "i2v_text", "first_last", "first_last_sound"} or route.startswith("first_last"))
+    requires_end_image = route.startswith("first_last")
+    requires_audio_slice = route in {"ia2v", "ia2v_lipsync", "lip_sync"}
+    missing_media = []
+    if requires_start_image and not (start_url or image_url or start_data_url or image_data_url):
+        missing_media.append("start_image")
+    if requires_end_image and not (end_url or end_data_url):
+        missing_media.append("end_image")
+    if requires_audio_slice and not (audio_url or audio_data_url):
+        missing_media.append("audio_slice")
+    if missing_media:
+        status = "blocked_missing_required_media"
+        job = {
+            "jobId": job_id,
+            "status": status,
+            "createdAt": now,
+            "updatedAt": now,
+            "sceneId": payload.scene_id or payload.sceneId,
+            "projectId": payload.project_id or payload.projectId,
+            "route": route,
+            "workflowKey": workflow_key,
+            "workflowExists": workflow_path.exists(),
+            "targetComfy": "main_ltx",
+            "targetComfyBaseUrl": main_url,
+            "targetDurationSec": target_duration,
+            "generationDurationSec": generation_duration,
+            "trimToDurationSec": target_duration,
+            "plusOneSecondApplied": generation_duration > target_duration,
+            "creditCost": credit_cost,
+            "creditCharged": False,
+            "error": {"code": status, "missing": missing_media},
+            "payload": payload.model_dump(),
+        }
+        _ava_credit_attach_job_user(job, user)
+        BOARD_VIDEO_JOBS[job_id] = job
+        return {
+            "ok": False,
+            "jobId": job_id,
+            "job_id": job_id,
+            "status": status,
+            "statusEndpoint": f"/api/clip/video/status/{job_id}",
+            "missing": missing_media,
+            **job,
+        }
 
     uploaded_image = _comfy_upload_file(main_url, _local_file_or_data_url(image_url, data_url=image_data_url, fallback_ext='.png'), subfolder=f"ava_{job_id}") if (image_url or image_data_url) else None
     uploaded_start = _comfy_upload_file(main_url, _local_file_or_data_url(start_url, data_url=start_data_url, fallback_ext='.png'), subfolder=f"ava_{job_id}") if ((start_url and start_url != image_url) or (start_data_url and start_data_url != image_data_url)) else uploaded_image
@@ -1207,11 +1287,21 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     submit_data = _submit_prompt(main_url, prompt)
     prompt_id = submit_data.get("prompt_id") or submit_data.get("promptId")
     status = "queued" if prompt_id else "queued_no_prompt_id"
-    job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "promptId": prompt_id, "promptSubmit": submit_data, "workflowPatches": patches, "uploadedMedia": {"image": uploaded_image, "start": uploaded_start, "end": uploaded_end, "audio": uploaded_audio}, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "comfyBaseUrlConfigured": True, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "not_charged_until_result_success", "payload": payload.model_dump()}
+    job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "promptId": prompt_id, "promptSubmit": submit_data, "workflowPatches": patches, "uploadedMedia": {"image": uploaded_image, "start": uploaded_start, "end": uploaded_end, "audio": uploaded_audio}, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "comfyBaseUrlConfigured": True, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "not_charged_until_result_success", "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
     _ava_credit_attach_job_user(job, user)
     BOARD_VIDEO_JOBS[job_id] = job
     return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", "promptId": prompt_id, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "preflight_ok_charge_after_success", "workflowPatchCount": len(patches), "uploadedMedia": job["uploadedMedia"], "jobStored": True}
 
+
+
+def _is_image_output(file_info: dict[str, Any]) -> bool:
+    filename = str(file_info.get("filename") or "").lower()
+    group = str(file_info.get("group") or "").lower()
+    return (
+        filename.endswith((".png", ".jpg", ".jpeg", ".webp"))
+        or "image" in group
+        or "images" in group
+    )
 
 
 def _is_video_output(file_info: dict[str, Any]) -> bool:
@@ -1229,12 +1319,16 @@ def _download_comfy_output_to_static(base_url: str, output: dict[str, Any], *, j
     subfolder = output.get("subfolder", "")
     ftype = output.get("type", "output")
     suffix = Path(filename).suffix or ".mp4"
+    suffix_lower = suffix.lower()
+    is_image = suffix_lower in {".png", ".jpg", ".jpeg", ".webp"}
 
-    target_dir = _settings_static_path() / "assets" / "board_videos"
+    asset_folder = "board_images" if is_image else "board_videos"
+    target_dir = _settings_static_path() / "assets" / asset_folder
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_name = f"{job_id}_{_safe_name(filename, 'video.mp4')}"
-    if not raw_name.lower().endswith(suffix.lower()):
+    fallback_name = "image.png" if is_image else "video.mp4"
+    raw_name = f"{job_id}_{_safe_name(filename, fallback_name)}"
+    if not raw_name.lower().endswith(suffix_lower):
         raw_name += suffix
     out_path = target_dir / raw_name
 
@@ -1245,19 +1339,41 @@ def _download_comfy_output_to_static(base_url: str, output: dict[str, Any], *, j
         with urllib.request.urlopen(url, timeout=180) as response:
             out_path.write_bytes(response.read())
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Cannot download Comfy output video: {exc}") from exc
+        kind = "image" if is_image else "video"
+        raise HTTPException(status_code=502, detail=f"Cannot download Comfy output {kind}: {exc}") from exc
 
-    urls = _public_static_url(f"assets/board_videos/{out_path.name}")
-    return {
-        "videoUrl": urls["url"],
-        "video_url": urls["url"],
-        "videoApiPath": urls["apiPath"],
-        "video_api_path": urls["apiPath"],
-        "videoName": out_path.name,
-        "video_name": out_path.name,
+    urls = _public_static_url(f"assets/{asset_folder}/{out_path.name}")
+    result = {
         "localPath": str(out_path),
         "sourceComfyUrl": url,
+        "selectedOutputKind": "image" if is_image else "video",
     }
+
+    if is_image:
+        result.update({
+            "imageUrl": urls["url"],
+            "image_url": urls["url"],
+            "imageApiPath": urls["apiPath"],
+            "image_api_path": urls["apiPath"],
+            "imageName": out_path.name,
+            "image_name": out_path.name,
+            "resultUrl": urls["url"],
+            "result_url": urls["url"],
+        })
+    else:
+        result.update({
+            "videoUrl": urls["url"],
+            "video_url": urls["url"],
+            "videoApiPath": urls["apiPath"],
+            "video_api_path": urls["apiPath"],
+            "videoName": out_path.name,
+            "video_name": out_path.name,
+            "resultUrl": urls["url"],
+            "result_url": urls["url"],
+        })
+
+    return result
+
 
 
 def _trim_video_to_duration(source_path: Path, *, duration_sec: float, job_id: str) -> dict[str, Any] | None:
@@ -1307,26 +1423,36 @@ def _finalize_video_job_from_outputs(job: dict[str, Any], outputs: list[dict[str
     if not base_url or not outputs:
         return None
 
-    video_outputs = [item for item in outputs if _is_video_output(item)] or outputs
+    is_image_job = _is_image_generation_route(job.get("route"))
+    image_outputs = [item for item in outputs if _is_image_output(item)]
+    video_outputs = [item for item in outputs if _is_video_output(item)]
+
+    candidate_outputs = (image_outputs or outputs) if is_image_job else (video_outputs or outputs)
 
     preferred_node_ids = [str(item) for item in (
         job.get("preferredOutputNodeIds")
         or job.get("preferred_output_node_ids")
-        or []
+        or ([] if not is_image_job else ["9"])
     )]
 
     chosen = None
     if preferred_node_ids:
-        for item in video_outputs:
+        for item in candidate_outputs:
             if str(item.get("nodeId")) in preferred_node_ids:
                 chosen = item
                 break
 
     if chosen is None:
-        chosen = video_outputs[0]
+        chosen = candidate_outputs[0]
 
     downloaded = _download_comfy_output_to_static(base_url, chosen, job_id=job.get("jobId", "job"))
     final = downloaded
+
+    if is_image_job or downloaded.get("imageUrl") or downloaded.get("image_url"):
+        final["selectedOutput"] = chosen
+        final["preferredOutputNodeIds"] = preferred_node_ids
+        final["image_status"] = "ready"
+        return final
 
     try:
         trim_duration = float(job.get("trimToDurationSec") or job.get("targetDurationSec") or 0)
@@ -1336,11 +1462,12 @@ def _finalize_video_job_from_outputs(job: dict[str, Any], outputs: list[dict[str
     if trim_duration > 0.1:
         trimmed = _trim_video_to_duration(Path(downloaded["localPath"]), duration_sec=trim_duration, job_id=job.get("jobId", "job"))
         if trimmed:
-            final = {**downloaded, **trimmed, "originalVideoUrl": downloaded["videoUrl"]}
+            final = {**downloaded, **trimmed, "originalVideoUrl": downloaded.get("videoUrl")}
 
     final["selectedOutput"] = chosen
     final["preferredOutputNodeIds"] = preferred_node_ids
     return final
+
 
 
 @router.get("/clip/video/status/{job_id}")
@@ -1351,7 +1478,7 @@ def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[st
 
     _ava_credit_ensure_job_owner(job, user)
 
-    if job.get("videoUrl") or job.get("video_url"):
+    if job.get("videoUrl") or job.get("video_url") or job.get("imageUrl") or job.get("image_url"):
         _ava_credit_charge_video_job_if_ready(job)
 
         return {"ok": True, **job}
@@ -1370,6 +1497,8 @@ def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[st
                     job.update(final_video)
                     job["status"] = "completed"
                     job["video_status"] = "ready"
+                    if job.get("imageUrl") or job.get("image_url"):
+                        job["image_status"] = "ready"
                     _ava_credit_charge_video_job_if_ready(job)
                 else:
                     job["status"] = "completed_without_video_output"
@@ -1397,6 +1526,212 @@ def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[st
 
 
 
+
+def _mmaudio_words(value: Any) -> set[str]:
+    text = str(value or "").lower()
+    return set(re.findall(r"[a-zа-яё0-9_]+", text, flags=re.IGNORECASE))
+
+
+def _mmaudio_seed_from_payload(payload_data: dict[str, Any]) -> int:
+    raw = _payload_get(payload_data, "mmaudio_seed", "mmaudioSeed", "seed", default="")
+    if str(raw or "").strip():
+        try:
+            value = int(float(raw))
+            if value > 0:
+                return value
+        except Exception:
+            pass
+    # MMAudio works better for testing when each run explores a new sample.
+    return random.randint(1, 2_147_483_000)
+
+
+def _mmaudio_append_unique(base: str, extra: str) -> str:
+    base_text = str(base or "").strip()
+    extra_text = str(extra or "").strip()
+    if not extra_text:
+        return base_text
+    lowered = base_text.lower()
+    parts = []
+    for chunk in [item.strip() for item in extra_text.split(",") if item.strip()]:
+        if chunk.lower() not in lowered:
+            parts.append(chunk)
+    if not parts:
+        return base_text
+    return (base_text + ", " if base_text else "") + ", ".join(parts)
+
+
+def _mmaudio_director(payload_data: dict[str, Any], *, video_path: Path | None = None) -> dict[str, Any]:
+    raw_prompt = str(
+        _payload_get(
+            payload_data,
+            "sound_prompt",
+            "soundPrompt",
+            "prompt",
+            "positive_prompt",
+            "positivePrompt",
+            default="",
+        )
+        or ""
+    ).strip()
+    raw_negative = str(
+        _payload_get(
+            payload_data,
+            "negative_sound_prompt",
+            "negativeSoundPrompt",
+            "negative_prompt",
+            "negativePrompt",
+            default="",
+        )
+        or ""
+    ).strip()
+
+    words = _mmaudio_words(raw_prompt)
+    short_prompt = len(raw_prompt) <= 28
+
+    profile = "video_sync_natural"
+    cfg = 3.0
+    steps = 30
+
+    # Hidden backend profiles. UI remains simple.
+    is_wind = bool(words & {"wind", "breeze", "air", "ветер", "воздух", "бриз"})
+    is_rain = bool(words & {"rain", "raining", "rainfall", "shower", "дождь", "ливень"})
+    is_wave = bool(words & {"wave", "waves", "ocean", "sea", "surf", "water", "волна", "волны", "море", "океан", "вода"})
+    is_drone = bool(words & {"drone", "propeller", "aerial", "flight", "flying", "дрон", "коптер", "пропеллер", "полет", "полёт"})
+    is_city = bool(words & {"city", "street", "traffic", "crowd", "город", "улица", "толпа"})
+    is_impact = bool(words & {"hit", "crash", "door", "steps", "footsteps", "engine", "car", "ship", "horn", "удар", "шаги", "машина", "двигатель", "корабль"})
+
+    known_profile_matched = False
+
+    if is_drone:
+        known_profile_matched = True
+        profile = "real_drone_flight"
+        cfg = 3.0
+        steps = 34
+        if short_prompt:
+            raw_prompt = (
+                "Realistic drone flight sound synchronized with the visible aerial camera movement. "
+                "Soft propeller texture and natural airflow, controlled and not harsh, no piercing tone, no alarm, no cinematic music."
+            )
+    elif is_rain:
+        known_profile_matched = True
+        profile = "video_rain_texture"
+        cfg = 3.2
+        steps = 34
+        if short_prompt:
+            raw_prompt = (
+                "Natural rain sound synchronized with the visible rainfall and surfaces in the video. "
+                "Match the rain intensity, distance, and motion shown on screen. Clean realistic rain texture, no music, no voices."
+            )
+    elif is_wave:
+        known_profile_matched = True
+        profile = "video_water_waves"
+        cfg = 3.2
+        steps = 34
+        if short_prompt:
+            raw_prompt = (
+                "Natural ocean wave sound synchronized with the visible water movement. "
+                "Match wave size, distance, foam, surf, and impact intensity shown in the video. Realistic water movement only."
+            )
+    elif is_wind:
+        known_profile_matched = True
+        profile = "video_wind_air"
+        cfg = 2.4
+        steps = 34
+        if short_prompt:
+            raw_prompt = (
+                "Natural wind and airflow synchronized with the visible camera movement and scene scale. "
+                "Soft realistic air movement, no piercing whistle, no beep, no metallic ringing. "
+                "If the video shows aerial movement, add only subtle airflow unless a drone motor is explicitly requested."
+            )
+    elif is_impact:
+        known_profile_matched = True
+        profile = "video_action_foley"
+        cfg = 3.8
+        steps = 34
+    elif is_city:
+        known_profile_matched = True
+        profile = "city_environment"
+        cfg = 2.8
+        steps = 32
+
+    if not raw_prompt:
+        raw_prompt = (
+            "Realistic natural sound design matching the visible action in the video. "
+            "Clean synchronized environmental audio, no music, no narration, no human voice unless explicitly visible and requested."
+        )
+    elif short_prompt and not known_profile_matched:
+        profile = "open_world_requested_sound"
+        cfg = 3.4
+        steps = 34
+        raw_prompt = (
+            f"Requested sound: {raw_prompt}. "
+            "Infer the correct realistic sound source from the visible video content. "
+            "Synchronize timing, distance, loudness, and intensity to what is actually visible. "
+            "If the requested source is visible, make it clear and natural. "
+            "If it is not visible, keep it subtle and offscreen, not dominant. "
+            "No unrelated sounds, no music, no narration."
+        )
+
+    internal_prompt = (
+        "Generate realistic synchronized audio for this exact video. "
+        "Use the visible motion, objects, surfaces, distance, and event intensity as the source of timing and loudness. "
+        "Do not treat the text as a decorative mood; treat it as the requested sound source. "
+        "Follow the user sound request first, but keep it physically believable for the video. "
+        f"{raw_prompt}"
+    )
+
+    guard_negative = (
+        "music, soundtrack, score, melody, narration, speech, human voice, singing, "
+        "distorted audio, clipping, harsh noise, unrelated sound, repeated loop, robotic audio, "
+        "random beeps, camera shutter, accidental clicks, synthetic tone, unrelated mechanical noise"
+    )
+
+    if profile == "video_wind_air":
+        guard_negative += ", camera shutter, click, clicking, bell, chime, alarm, siren, piercing tone, beep, metallic ringing, heavy motor hum"
+    elif profile == "real_drone_flight":
+        guard_negative += ", alarm, siren, bell, chime, camera shutter, click, harsh high pitched whine, broken motor, engine roar"
+    elif profile == "video_rain_texture":
+        guard_negative += ", thunder unless requested, siren, alarm, music, voices, metallic ringing, camera shutter"
+    elif profile == "video_water_waves":
+        guard_negative += ", storm thunder unless requested, siren, alarm, music, voices, metallic ringing, camera shutter"
+
+    internal_negative = _mmaudio_append_unique(raw_negative, guard_negative)
+    seed = _mmaudio_seed_from_payload(payload_data)
+
+    try:
+        cfg = float(_payload_get(payload_data, "mmaudio_cfg", "mmaudioCfg", "cfg", default=cfg))
+    except Exception:
+        pass
+    try:
+        steps = int(float(_payload_get(payload_data, "mmaudio_steps", "mmaudioSteps", "steps", default=steps)))
+    except Exception:
+        pass
+
+    cfg = max(1.0, min(float(cfg), 6.0))
+    steps = max(12, min(int(steps), 50))
+
+    return {
+        "profile": profile,
+        "prompt": internal_prompt,
+        "negativePrompt": internal_negative,
+        "seed": seed,
+        "cfg": cfg,
+        "steps": steps,
+        "rawPrompt": raw_prompt,
+        "rawNegativePrompt": raw_negative,
+        "detected": {
+            "wind": is_wind,
+            "rain": is_rain,
+            "waves": is_wave,
+            "drone": is_drone,
+            "city": is_city,
+            "action": is_impact,
+            "shortPrompt": short_prompt,
+            "knownProfileMatched": known_profile_matched,
+        },
+    }
+
+
 def _inject_mmaudio_workflow(
     workflow: dict[str, Any],
     *,
@@ -1404,12 +1739,18 @@ def _inject_mmaudio_workflow(
     prompt: str,
     negative_prompt: str,
     job_id: str,
+    seed: int | None = None,
+    cfg: float | None = None,
+    steps: int | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     # Exact-only MMAudio workflow patch.
     # mmaudio-sound-design.json:
     #   91.video           = uploaded video
     #   92.prompt          = positive sound prompt
     #   92.negative_prompt = negative sound prompt
+    #   92.seed            = server-randomized seed
+    #   92.cfg             = hidden server profile cfg
+    #   92.steps           = hidden server profile steps
     #   97.filename_prefix = output prefix
     patched = copy.deepcopy(workflow)
     patches: list[dict[str, Any]] = []
@@ -1437,6 +1778,12 @@ def _inject_mmaudio_workflow(
 
     patch("92", "prompt", prompt, "exact_mmaudio_positive_prompt_92")
     patch("92", "negative_prompt", negative_prompt, "exact_mmaudio_negative_prompt_92")
+    if seed is not None:
+        patch("92", "seed", int(seed), "exact_mmaudio_seed_92")
+    if cfg is not None:
+        patch("92", "cfg", float(cfg), "exact_mmaudio_cfg_92")
+    if steps is not None:
+        patch("92", "steps", int(steps), "exact_mmaudio_steps_92")
     patch("97", "filename_prefix", f"MMAudio_sound_design/{job_id}", "exact_mmaudio_output_prefix_97")
 
     return patched, patches
@@ -1487,14 +1834,20 @@ def _run_mmaudio_submit_job(job_id: str) -> None:
         video_path = _resolve_local_file(str(source_value))
         uploaded_video = _comfy_upload_file(lab_url, video_path, subfolder=f"ava_{job_id}")
 
-        prompt = str(_payload_get(payload_data, "prompt", default="") or "")
-        negative_prompt = str(_payload_get(payload_data, "negative_prompt", "negativePrompt", default="") or "")
+        director = _mmaudio_director(payload_data, video_path=video_path)
+        prompt = str(director.get("prompt") or "")
+        negative_prompt = str(director.get("negativePrompt") or "")
+        mmaudio_seed = int(director.get("seed") or random.randint(1, 2_147_483_000))
+        mmaudio_cfg = float(director.get("cfg") or 3.0)
+        mmaudio_steps = int(director.get("steps") or 30)
 
-        if not prompt.strip():
-            prompt = "Realistic natural sound design matching the visible action. Clean synchronized environmental audio, no music, no narration, no human voice unless explicitly visible and requested."
-
-        if not negative_prompt.strip():
-            negative_prompt = "music, soundtrack, score, narration, speech, human voice, singing, distorted audio, clipping, harsh noise, unrelated sounds, repeated loop, robotic audio"
+        job["mmaudioDirector"] = director
+        job["mmaudioProfile"] = director.get("profile")
+        job["mmaudioSeed"] = mmaudio_seed
+        job["mmaudioCfg"] = mmaudio_cfg
+        job["mmaudioSteps"] = mmaudio_steps
+        job["internalPrompt"] = prompt
+        job["internalNegativePrompt"] = negative_prompt
 
         prompt_graph, patches = _inject_mmaudio_workflow(
             workflow,
@@ -1502,6 +1855,9 @@ def _run_mmaudio_submit_job(job_id: str) -> None:
             prompt=prompt,
             negative_prompt=negative_prompt,
             job_id=job_id,
+            seed=mmaudio_seed,
+            cfg=mmaudio_cfg,
+            steps=mmaudio_steps,
         )
 
         job["status"] = "submitting"
@@ -1571,6 +1927,7 @@ def start_mmaudio(payload: dict[str, Any], user: dict = Depends(get_current_user
         "creditCharged": False,
         "creditChargeMode": "not_charged_until_result_success",
         "payload": payload_data,
+        "mmaudioDirectorVersion": "server_director_v1",
     }
     _ava_credit_attach_job_user(job, user)
     BOARD_MMAUDIO_JOBS[job_id] = job

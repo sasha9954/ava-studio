@@ -3018,3 +3018,556 @@
   17%, 100% { transform: translateX(120%); opacity: 0; }
 }
 
+
+
+/* AVA08T compact board header buttons */
+.avaBoardHeader {
+  align-items: center;
+}
+
+.avaBoardHeaderActions {
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  max-width: 820px;
+}
+
+.avaBoardHeaderActions button,
+.avaBoardHeaderActions .avaBoardHeaderLink {
+  min-width: 112px;
+  min-height: 44px;
+  padding: 9px 12px;
+  border-radius: 15px;
+  font-size: 12.5px;
+  line-height: 1.05;
+  white-space: nowrap;
+  gap: 7px;
+}
+
+.avaBoardHeaderActions .avaBoardPrimary {
+  display: none !important;
+}
+
+.avaBoardHeaderActions .avaBoardHeaderLink {
+  border: 1px solid rgba(143, 169, 255, 0.22);
+  background: rgba(18, 28, 50, 0.82);
+  color: #e8eeff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  text-decoration: none;
+  transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.avaBoardHeaderActions .avaBoardHeaderLink:hover {
+  transform: translateY(-1px);
+  border-color: rgba(132, 241, 255, 0.45);
+  background: rgba(25, 42, 75, 0.92);
+}
+
+@media (max-width: 1180px) {
+  .avaBoardHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .avaBoardHeaderActions {
+    justify-content: flex-start;
+    max-width: 100%;
+  }
+
+  .avaBoardHeaderActions button,
+  .avaBoardHeaderActions .avaBoardHeaderLink {
+    min-width: 104px;
+    min-height: 42px;
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+}
+
+/* AVA08U colorful board action row */
+.avaBoardHeader {
+  align-items: center;
+}
+
+.avaBoardHeaderActions {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 9px;
+  max-width: none;
+}
+
+.avaBoardHeaderActions button,
+.avaBoardHeaderActions .avaBoardHeaderLink {
+  min-width: 132px;
+  min-height: 44px;
+  padding: 9px 13px;
+  border-radius: 16px;
+  font-size: 12.5px;
+  line-height: 1.05;
+  white-space: nowrap;
+  gap: 7px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.avaBoardHeaderActions .avaBoardActionRefresh {
+  min-width: 176px;
+  border-color: rgba(108, 244, 217, 0.28) !important;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(115, 255, 222, 0.2), transparent 38%),
+    linear-gradient(135deg, rgba(18, 52, 70, 0.92), rgba(24, 35, 70, 0.82)) !important;
+  color: #eafffb !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionMontage {
+  min-width: 142px;
+  border-color: rgba(133, 238, 255, 0.62) !important;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.25), transparent 22%),
+    linear-gradient(135deg, #6b63ff 0%, #25d7f2 54%, #7bffcc 100%) !important;
+  color: #071321 !important;
+  font-weight: 950 !important;
+  box-shadow:
+    0 16px 36px rgba(38, 204, 242, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.13) inset !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionMontage:hover {
+  transform: translateY(-2px) scale(1.015);
+  filter: brightness(1.06);
+}
+
+.avaBoardHeaderActions .avaBoardActionJson {
+  min-width: 118px;
+  border-color: rgba(181, 144, 255, 0.32) !important;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(207, 156, 255, 0.16), transparent 36%),
+    linear-gradient(135deg, rgba(40, 31, 78, 0.92), rgba(18, 32, 63, 0.84)) !important;
+  color: #f3edff !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionImport {
+  border-color: rgba(117, 184, 255, 0.34) !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionExport {
+  border-color: rgba(255, 206, 124, 0.3) !important;
+}
+
+.avaBoardHeaderActions .avaBoardPrimary {
+  display: none !important;
+}
+
+@media (max-width: 1320px) {
+  .avaBoardHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .avaBoardHeaderActions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    max-width: 100%;
+  }
+
+  .avaBoardHeaderActions button,
+  .avaBoardHeaderActions .avaBoardHeaderLink {
+    min-width: 112px;
+    min-height: 42px;
+    padding-inline: 11px;
+    font-size: 12px;
+  }
+
+  .avaBoardHeaderActions .avaBoardActionRefresh {
+    min-width: 150px;
+  }
+
+  .avaBoardHeaderActions .avaBoardActionMontage {
+    min-width: 124px;
+  }
+}
+
+/* AVA08V force board refresh/montage colors */
+.avaBoardHeaderActions {
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 9px !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionRefresh {
+  min-width: 178px !important;
+  border-color: rgba(108, 244, 217, 0.42) !important;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(115, 255, 222, 0.24), transparent 38%),
+    linear-gradient(135deg, rgba(19, 63, 76, 0.95), rgba(28, 42, 82, 0.86)) !important;
+  color: #eafffb !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionMontage {
+  min-width: 142px !important;
+  border-color: rgba(133, 238, 255, 0.66) !important;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.28), transparent 22%),
+    linear-gradient(135deg, #6b63ff 0%, #25d7f2 54%, #7bffcc 100%) !important;
+  color: #071321 !important;
+  font-weight: 950 !important;
+  box-shadow:
+    0 16px 36px rgba(38, 204, 242, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.13) inset !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionMontage svg,
+.avaBoardHeaderActions .avaBoardActionRefresh svg {
+  stroke-width: 2.4;
+}
+
+@media (max-width: 1320px) {
+  .avaBoardHeaderActions {
+    flex-wrap: wrap !important;
+  }
+}
+
+/* AVA08W exact board header action colors */
+.avaBoardHeaderActions {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  max-width: none !important;
+}
+
+.avaBoardHeaderActions .avaBoardHeaderButton,
+.avaBoardHeaderActions .avaBoardHeaderLink {
+  min-height: 46px !important;
+  padding: 10px 15px !important;
+  border-radius: 17px !important;
+  border: 1px solid rgba(143, 169, 255, 0.24) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  text-decoration: none !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionRefresh {
+  min-width: 190px !important;
+  color: #eafffb !important;
+  border-color: rgba(105, 246, 219, 0.46) !important;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(123, 255, 225, 0.25), transparent 36%),
+    linear-gradient(135deg, rgba(17, 76, 82, 0.98), rgba(33, 43, 91, 0.9)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 14px 30px rgba(57, 223, 210, 0.12) !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionMontage {
+  min-width: 146px !important;
+  color: #061421 !important;
+  border-color: rgba(151, 246, 255, 0.72) !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.35), transparent 22%),
+    linear-gradient(135deg, #7468ff 0%, #27d7ff 52%, #76ffd2 100%) !important;
+  box-shadow:
+    0 18px 42px rgba(38, 204, 242, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+  font-weight: 1000 !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionMontage:hover {
+  transform: translateY(-2px) scale(1.015) !important;
+  filter: brightness(1.06) !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionJson {
+  min-width: 120px !important;
+  color: #f4edff !important;
+  background:
+    radial-gradient(circle at 14% 12%, rgba(222, 169, 255, 0.2), transparent 34%),
+    linear-gradient(135deg, rgba(48, 34, 88, 0.95), rgba(23, 34, 70, 0.88)) !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionImport {
+  border-color: rgba(121, 184, 255, 0.38) !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionExport {
+  border-color: rgba(255, 200, 108, 0.36) !important;
+}
+
+@media (max-width: 1320px) {
+  .avaBoardHeaderActions {
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+  }
+
+  .avaBoardHeaderActions .avaBoardHeaderButton,
+  .avaBoardHeaderActions .avaBoardHeaderLink {
+    min-height: 42px !important;
+    padding: 9px 12px !important;
+    font-size: 12px !important;
+  }
+
+  .avaBoardHeaderActions .avaBoardActionRefresh {
+    min-width: 162px !important;
+  }
+
+  .avaBoardHeaderActions .avaBoardActionMontage {
+    min-width: 122px !important;
+  }
+}
+
+/* AVA08X manual scene creation bar */
+.avaBoardManualSceneBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 15px;
+  border: 1px solid rgba(118, 215, 255, 0.18);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(116, 255, 225, 0.12), transparent 32%),
+    linear-gradient(135deg, rgba(9, 20, 42, 0.86), rgba(17, 26, 54, 0.78));
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.16);
+}
+
+.avaBoardManualSceneInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 220px;
+}
+
+.avaBoardManualSceneInfo strong {
+  color: rgba(246, 251, 255, 0.96);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.avaBoardManualSceneInfo span {
+  color: rgba(218, 234, 255, 0.62);
+  font-size: 12px;
+}
+
+.avaBoardDurationSlider {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: rgba(231, 241, 255, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.avaBoardDurationSlider strong {
+  color: #78ffe0;
+}
+
+.avaBoardDurationSlider input[type="range"] {
+  width: 100%;
+  accent-color: #69f5dc;
+  cursor: pointer;
+}
+
+.avaBoardAddSceneButton {
+  min-width: 118px;
+  min-height: 44px;
+  border: 1px solid rgba(125, 255, 211, 0.44);
+  border-radius: 16px;
+  padding: 10px 15px;
+  color: #061421;
+  background:
+    radial-gradient(circle at 20% 12%, rgba(255, 255, 255, 0.38), transparent 24%),
+    linear-gradient(135deg, #79ffd8, #58d5ff);
+  font-weight: 1000;
+  cursor: pointer;
+  box-shadow:
+    0 16px 34px rgba(61, 231, 219, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: transform 0.16s ease, filter 0.16s ease;
+}
+
+.avaBoardAddSceneButton:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+@media (max-width: 980px) {
+  .avaBoardManualSceneBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .avaBoardDurationSlider {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .avaBoardAddSceneButton {
+    width: 100%;
+  }
+}
+
+/* AVA08Y manual scene bar under video preview */
+.avaBoardMediaPanel .avaBoardManualSceneBarMedia {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.75fr) minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-radius: 18px;
+  border-color: rgba(114, 237, 255, 0.18);
+  background:
+    radial-gradient(circle at 10% 10%, rgba(116, 255, 225, 0.11), transparent 30%),
+    linear-gradient(135deg, rgba(7, 17, 36, 0.92), rgba(16, 26, 55, 0.86));
+}
+
+.avaBoardMediaPanel .avaBoardManualSceneBarMedia .avaBoardManualSceneInfo {
+  min-width: 0;
+}
+
+.avaBoardMediaPanel .avaBoardManualSceneBarMedia .avaBoardManualSceneInfo strong {
+  font-size: 12.5px;
+}
+
+.avaBoardMediaPanel .avaBoardManualSceneBarMedia .avaBoardManualSceneInfo span {
+  font-size: 11.5px;
+  line-height: 1.25;
+}
+
+.avaBoardMediaPanel .avaBoardManualSceneBarMedia .avaBoardDurationSlider {
+  min-width: 0;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.avaBoardMediaPanel .avaBoardManualSceneBarMedia .avaBoardDurationSlider input[type="range"] {
+  height: 6px;
+}
+
+.avaBoardMediaPanel .avaBoardManualSceneBarMedia .avaBoardAddSceneButton {
+  min-width: 94px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border-radius: 14px;
+  font-size: 12.5px;
+}
+
+@media (max-width: 1120px) {
+  .avaBoardMediaPanel .avaBoardManualSceneBarMedia {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .avaBoardMediaPanel .avaBoardManualSceneBarMedia .avaBoardAddSceneButton {
+    width: 100%;
+  }
+}
+
+/* AVA08Z split add-scene button and duration slider */
+.avaBoardManualSceneTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(118, 215, 255, 0.16);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(116, 255, 225, 0.10), transparent 32%),
+    linear-gradient(135deg, rgba(9, 20, 42, 0.78), rgba(17, 26, 54, 0.68));
+}
+
+.avaBoardManualSceneTopBar .avaBoardManualSceneInfo {
+  min-width: 0;
+}
+
+.avaBoardManualSceneTopBar .avaBoardManualSceneInfo strong {
+  color: rgba(246, 251, 255, 0.96);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.avaBoardManualSceneTopBar .avaBoardManualSceneInfo span {
+  color: rgba(218, 234, 255, 0.62);
+  font-size: 12px;
+}
+
+.avaBoardManualSceneTopBar .avaBoardAddSceneButton {
+  min-width: 118px;
+  min-height: 42px;
+  border: 1px solid rgba(125, 255, 211, 0.44);
+  border-radius: 16px;
+  padding: 9px 15px;
+  color: #061421;
+  background:
+    radial-gradient(circle at 20% 12%, rgba(255, 255, 255, 0.38), transparent 24%),
+    linear-gradient(135deg, #79ffd8, #58d5ff);
+  font-weight: 1000;
+  cursor: pointer;
+  box-shadow:
+    0 16px 34px rgba(61, 231, 219, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: transform 0.16s ease, filter 0.16s ease;
+}
+
+.avaBoardManualSceneTopBar .avaBoardAddSceneButton:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.avaBoardMediaPanel .avaBoardSceneDurationPanel {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(114, 237, 255, 0.18);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 10% 10%, rgba(116, 255, 225, 0.10), transparent 30%),
+    linear-gradient(135deg, rgba(7, 17, 36, 0.9), rgba(16, 26, 55, 0.82));
+}
+
+.avaBoardMediaPanel .avaBoardSceneDurationPanel .avaBoardDurationSlider {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: rgba(231, 241, 255, 0.78);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.avaBoardMediaPanel .avaBoardSceneDurationPanel .avaBoardDurationSlider strong {
+  color: #78ffe0;
+}
+
+.avaBoardMediaPanel .avaBoardSceneDurationPanel .avaBoardDurationSlider input[type="range"] {
+  width: 100%;
+  accent-color: #69f5dc;
+  cursor: pointer;
+}
+
+@media (max-width: 980px) {
+  .avaBoardManualSceneTopBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .avaBoardManualSceneTopBar .avaBoardAddSceneButton {
+    width: 100%;
+  }
+}

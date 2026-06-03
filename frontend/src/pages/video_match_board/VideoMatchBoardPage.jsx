@@ -23,6 +23,7 @@ import {
 } from "../clip_nodes/video_match/videoMatchBoardDomain.js";
 import "./VideoMatchBoardPage.css";
 import { WORKFLOW_PRESETS, getPresetById } from "../../data/codex_jobs/index.js";
+import WorkflowStageControls from "../../components/WorkflowStageControls.jsx";
 
 const DEFAULT_WORKFLOW_PRESET = "video_first_documentary";
 const DEFAULT_WORKFLOW_STEP = "01_video_inventory";
@@ -114,6 +115,80 @@ function getMarkerTone(block = {}) {
   if (matchRole === "reserved_intro" || sceneType === "reserved_intro" || sourceKind === "reserved_intro") return "intro";
   return "broll";
 }
+
+
+const VIDEO_MATCH_SOURCE_COLORS = {
+  src_01: "#facc15",
+  src_02: "#38bdf8",
+  src_03: "#34d399",
+  src_04: "#a78bfa",
+  src_05: "#fb7185",
+};
+
+function getVideoNodeSourceVideoId(item = {}) {
+  return String(
+    item?.sourceVideoId
+    || item?.source_video_id
+    || item?.sourceId
+    || item?.source_id
+    || item?.source_video?.id
+    || "src_01"
+  ).trim() || "src_01";
+}
+
+function getVideoNodeSourceColor(sourceId = "src_01") {
+  return VIDEO_MATCH_SOURCE_COLORS[String(sourceId || "src_01").trim()] || VIDEO_MATCH_SOURCE_COLORS.src_01;
+}
+
+function getVideoNodeSourceShortLabel(sourceId = "src_01") {
+  const raw = String(sourceId || "src_01").trim();
+  const match = raw.match(/(\d+)/);
+  return match ? `V${Number(match[1])}` : raw.toUpperCase();
+}
+
+
+function getVideoNodeSegmentSourceVideoId(segment = {}, candidates = []) {
+  const selectedCandidateId = String(segment?.selectedCandidateId || segment?.selected_candidate_id || "").trim();
+  const selectedCandidate = Array.isArray(candidates)
+    ? (candidates.find((candidate) => String(candidate?.id || "") === selectedCandidateId) || candidates[0])
+    : null;
+  return getVideoNodeSourceVideoId(selectedCandidate || segment);
+}
+
+
+
+function normalizeVideoNodeSourceEntry(entry = {}, index = 0) {
+  const source = entry && typeof entry === "object" ? entry : {};
+  const id = String(source.id || source.sourceVideoId || source.source_video_id || `src_${String(index + 1).padStart(2, "0")}`).trim();
+  return {
+    ...source,
+    id,
+    sourceVideoId: id,
+    source_video_id: id,
+    label: String(source.label || source.sourceVideoLabel || source.source_video_label || `Видео ${index + 1}`).trim(),
+    filename: String(source.filename || source.name || source.fileName || "").trim(),
+    name: String(source.name || source.filename || source.fileName || "").trim(),
+    path: String(source.path || source.sourceVideoPath || source.source_video_path || "").trim(),
+    duration_sec: Number(source.duration_sec || source.durationSec || 0) || 0,
+    durationSec: Number(source.durationSec || source.duration_sec || 0) || 0,
+    previewUrl: String(source.previewUrl || source.preview_url || source.url || "").trim(),
+    sourceVideoUrl: String(source.sourceVideoUrl || source.source_video_url || source.previewUrl || source.preview_url || "").trim(),
+    backendPath: String(source.backendPath || source.backend_path || "").trim(),
+    sourceVideoPathForAssembly: String(source.sourceVideoPathForAssembly || source.source_video_path_for_assembly || source.backendPath || source.backend_path || "").trim(),
+    color: source.color || getVideoNodeSourceColor(id),
+  };
+}
+
+function mergeVideoNodeSourceEntry(existing = [], nextEntry = {}) {
+  const normalizedExisting = (Array.isArray(existing) ? existing : []).map(normalizeVideoNodeSourceEntry);
+  const next = normalizeVideoNodeSourceEntry(nextEntry, normalizedExisting.length);
+  const found = normalizedExisting.some((item) => item.id === next.id);
+  const list = found
+    ? normalizedExisting.map((item) => item.id === next.id ? { ...item, ...next } : item)
+    : [...normalizedExisting, next];
+  return list.slice(0, 5);
+}
+
 
 function isLipSyncScene(block = {}) {
   return getMarkerTone(block) === "lipsync";
@@ -526,7 +601,7 @@ function getResolvedOverrideUrl(blockOrCandidate = {}) {
   return resolveOutputUrl(blockOrCandidate?.overrideVideoUrl || "");
 }
 
-const AUDIO_EXPORT_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac"];
+const AUDIO_EXPORT_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"];
 
 function validateAssembleAudioPath(rawPath = "") {
   const value = String(rawPath || "").trim();
@@ -552,11 +627,11 @@ function resolveAssembleApiErrorMessage(error) {
     || error?.response?.detail?.code
     || "",
   ).trim();
-  if (code === "AUDIO_PATH_REQUIRED") return "Для сборки MP4 с аудио укажите путь к аудиофайлу.";
+  if (code === "AUDIO_PATH_REQUIRED") return "Загрузите аудио через +Аудио: файл должен сохраниться на backend для MP4-сборки.";
   if (code === "AUDIO_PATH_NOT_FOUND") return "Файл не найден по указанному пути к аудио.";
   if (code === "AUDIO_PATH_INVALID_EXT") return "Неподдерживаемый формат аудио. Используйте .mp3, .wav, .m4a или .aac.";
   if (["AUDIO_PATH_PREVIEW_ONLY", "AUDIO_PATH_NOT_LOCAL", "AUDIO_PATH_TRUNCATED"].includes(code)) {
-    return "Путь к аудио выглядит неверно. Для MP4 с аудио укажите реальный локальный путь.";
+    return "Аудио не готово для MP4. Нажмите +Аудио ещё раз, чтобы файл загрузился на backend.";
   }
   return String(error?.message || error || "Не удалось собрать MP4");
 }
@@ -598,8 +673,13 @@ export default function VideoMatchBoardPage() {
   const audioRef = useRef(null);
   const backgroundAudioRef = useRef(null);
   const playbackRef = useRef(null);
+  const sceneExactPreviewStopTimerRef = useRef(null);
+  const sceneAutoPreviewStopTimerRef = useRef(null);
+  const assemblyAudioSyncTimerRef = useRef(null);
+  const assemblyAudioSwitchingBlockRef = useRef("");
   const activeVideoSourceKindRef = useRef("source");
   const objectUrlRef = useRef("");
+  const sourceVideoObjectUrlByIdRef = useRef({});
   const audioObjectUrlRef = useRef("");
   const backgroundAudioObjectUrlRef = useRef("");
   const videoPlayTokenRef = useRef(0);
@@ -677,6 +757,7 @@ export default function VideoMatchBoardPage() {
   }, [location.state?.project, nodeId]);
 
   const [project, setProject] = useState(initialProject);
+  const [activeSourceVideoId, setActiveSourceVideoId] = useState("src_01");
   const [videoDurationSec, setVideoDurationSec] = useState(Number(initialProject?.sourceVideo?.duration_sec || 0));
   const [currentTimeSec, setCurrentTimeSec] = useState(0);
   const [audioDurationSec, setAudioDurationSec] = useState(Number(initialProject?.audioPreviewMeta?.duration_sec || 0));
@@ -695,6 +776,20 @@ export default function VideoMatchBoardPage() {
     errorMessage: "",
   });
   const [audioLoadMessage, setAudioLoadMessage] = useState("");
+  const audioLoadMessageTone = useMemo(() => {
+    const value = String(audioLoadMessage || "").toLowerCase();
+    if (!value) return "";
+    if (value.includes("готово") || value.includes("загружено на backend") || value.includes("ready")) return "isSuccess";
+    if (value.includes("загружаю") || value.includes("upload")) return "isInfo";
+    return "isError";
+  }, [audioLoadMessage]);
+
+  useEffect(() => {
+    const value = String(audioLoadMessage || "").toLowerCase();
+    if (!(value.includes("готово") || value.includes("загружено на backend") || value.includes("ready"))) return undefined;
+    const timer = window.setTimeout(() => setAudioLoadMessage(""), 3600);
+    return () => window.clearTimeout(timer);
+  }, [audioLoadMessage]);
   const [previewCandidateId, setPreviewCandidateId] = useState("");
   const [isAssemblyPlaying, setIsAssemblyPlaying] = useState(false);
   const [isPlaybackActive, setIsPlaybackActive] = useState(false);
@@ -709,6 +804,7 @@ export default function VideoMatchBoardPage() {
   const [jsonInputDraft, setJsonInputDraft] = useState("");
   const [boardGeneratedClips, setBoardGeneratedClips] = useState([]);
   const [boardGeneratedClipsStatus, setBoardGeneratedClipsStatus] = useState("");
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   const refreshBoardGeneratedClips = useCallback(async (reason = "auto") => {
     try {
@@ -745,12 +841,100 @@ export default function VideoMatchBoardPage() {
   const assemblyBlocks = useMemo(() => [...videoBlocks].sort((a, b) => getBlockTargetStart(a) - getBlockTargetStart(b)), [videoBlocks]);
   const selectedBlock = videoBlocks.find((block) => block.id === project.selectedBlockId) || assemblyBlocks[0] || null;
   const sourceVideoUrl = String(project.sourceVideoUrl || "");
+  const sourceVideos = useMemo(() => {
+    const fromProject = Array.isArray(project.sourceVideos)
+      ? project.sourceVideos
+      : (Array.isArray(project.source_videos) ? project.source_videos : []);
+    const normalized = fromProject.map(normalizeVideoNodeSourceEntry);
+    const primaryEntry = normalizeVideoNodeSourceEntry({
+      id: "src_01",
+      label: "Видео 1",
+      filename: project.sourceVideo?.filename || project.source_video?.filename || "source.mp4",
+      name: project.sourceVideo?.name || project.sourceVideo?.filename || project.source_video?.filename || "source.mp4",
+      path: project.sourceVideo?.path || project.source_video?.path || project.sourceVideoPath || "",
+      duration_sec: project.sourceVideo?.duration_sec || project.source_video?.duration_sec || 0,
+      previewUrl: sourceVideoUrl,
+      sourceVideoUrl,
+      backendPath: project.sourceVideo?.backendPath || project.uploadedSourceVideoPath || project.sourceVideoPathForAssembly || "",
+      sourceVideoPathForAssembly: project.sourceVideoPathForAssembly || project.uploadedSourceVideoPath || project.sourceVideo?.backendPath || "",
+    }, 0);
+    const list = normalized.some((item) => item.id === "src_01")
+      ? normalized.map((item) => item.id === "src_01" ? { ...primaryEntry, ...item, previewUrl: item.previewUrl || primaryEntry.previewUrl, sourceVideoUrl: item.sourceVideoUrl || primaryEntry.sourceVideoUrl } : item)
+      : [primaryEntry, ...normalized];
+    return list.slice(0, 5);
+  }, [project.sourceVideos, project.source_videos, project.sourceVideo, project.source_video, project.sourceVideoPath, project.uploadedSourceVideoPath, project.sourceVideoPathForAssembly, sourceVideoUrl]);
   const audioPreviewUrl = String(project.audioPreviewUrl || "");
+
+  const isVideoNodeSourceLoaded = (source = {}) => {
+    const normalized = normalizeVideoNodeSourceEntry(source);
+    return Boolean(
+      normalized.previewUrl ||
+      normalized.sourceVideoUrl ||
+      normalized.url ||
+      normalized.backendPath ||
+      normalized.sourceVideoPathForAssembly ||
+      normalized.source_video_path_for_assembly ||
+      normalized.backend_path
+    );
+  };
+
+  const getNextAvailableVideoSourceId = () => {
+    const normalizedSources = (Array.isArray(sourceVideos) ? sourceVideos : []).map(normalizeVideoNodeSourceEntry);
+    for (let index = 1; index <= 5; index += 1) {
+      const id = `src_${String(index).padStart(2, "0")}`;
+      const existing = normalizedSources.find((source) => source.id === id || source.sourceVideoId === id || source.source_video_id === id);
+      if (!existing || !isVideoNodeSourceLoaded(existing)) return id;
+    }
+    return "";
+  };
+
+  const getLoadedVideoSourceCount = () => {
+    return (Array.isArray(sourceVideos) ? sourceVideos : [])
+      .map(normalizeVideoNodeSourceEntry)
+      .filter(isVideoNodeSourceLoaded)
+      .length;
+  };
+
+  const onNextSourceVideoFileChange = async (file, event = null) => {
+    if (!file) return;
+    const nextSourceId = getNextAvailableVideoSourceId();
+    if (!nextSourceId) {
+      setSourceVideoLoadMessage("Лимит: уже загружено 5 исходных видео. Замену/удаление источника добавим отдельной кнопкой.");
+      if (event?.target) event.target.value = "";
+      return;
+    }
+
+    setSourceVideoLoadMessage(`Загружаю ${getVideoNodeSourceShortLabel(nextSourceId)}...`);
+    try {
+      await onVideoFileChange(file, nextSourceId);
+    } finally {
+      if (event?.target) event.target.value = "";
+    }
+  };
+
   const runtimeSourceVideoUrlRef = useRef(String(initialProject?.sourceVideoUrl || "").startsWith("blob:") ? String(initialProject?.sourceVideoUrl || "") : "");
   const runtimeAudioPreviewUrlRef = useRef(String(initialProject?.audioPreviewUrl || "").startsWith("blob:") ? String(initialProject?.audioPreviewUrl || "") : "");
+  const effectiveAudioPreviewUrl = String(
+    project.audioPreviewUrl
+    || runtimeAudioPreviewUrlRef.current
+    || project.audioPreviewBackendUrl
+    || project.audioPreviewMeta?.backendUrl
+    || project.audioPreviewMeta?.url
+    || ""
+  );
+
+
   const useAudioPreview = Boolean(project.useAudioPreview);
   const wantsAssembleWithAudio = useAudioPreview;
-  const resolvedAssembleAudioPath = String(assembleAudioPath || project?.timingContext?.sourceAudioPath || "").trim();
+  const uploadedAssemblyAudioPath = String(
+    project?.audioPathForAssembly
+    || project?.audioPreviewMeta?.backendPath
+    || project?.timingContext?.sourceAudioPath
+    || project?.assembleAudioPath
+    || assembleAudioPath
+    || ""
+  ).trim();
+  const resolvedAssembleAudioPath = /(^|[\\/])path[\\/]to[\\/]|practice_30/i.test(uploadedAssemblyAudioPath) ? "" : uploadedAssemblyAudioPath;
   const assembleAudioPathValidation = validateAssembleAudioPath(resolvedAssembleAudioPath);
   const isAssembleAudioPathValid = assembleAudioPathValidation.ok;
   const audioPathInputError = wantsAssembleWithAudio && !isAssembleAudioPathValid;
@@ -887,34 +1071,6 @@ export default function VideoMatchBoardPage() {
 
   const onSelectBlock = (block = {}) => {
     patchProject(getSelectionPatchForBlock(block), { lastGood: false });
-    const seekTo = Math.max(0, Number(getBlockClipRange(block).clipStart || 0));
-    const video = videoRef.current;
-    const isActivePlayback = Boolean(playbackRef.current);
-    if (!video || !sourceVideoUrl) return;
-    if (!isActivePlayback) safePauseVideo(video, "scene_select_prepare_seek");
-    const applySeek = () => {
-      const duration = Number(video.duration || 0);
-      if (duration > 0 && seekTo > duration) {
-        const msg = `Сцена начинается за пределами видео (${formatSec(seekTo)} > ${formatSec(duration)}).`;
-        setSourceVideoLoadMessage(msg);
-        patchProject({ jsonError: msg }, { lastGood: false });
-        return;
-      }
-      video.currentTime = seekTo;
-      setCurrentTimeSec(seekTo);
-      updateVideoDiagnostics("scene_seek_applied");
-    };
-    if (Number(video.readyState || 0) >= 1) {
-      applySeek();
-    } else {
-      const onReady = () => {
-        video.removeEventListener("loadedmetadata", onReady);
-        video.removeEventListener("canplay", onReady);
-        applySeek();
-      };
-      video.addEventListener("loadedmetadata", onReady, { once: true });
-      video.addEventListener("canplay", onReady, { once: true });
-    }
   };
 
   useEffect(() => {
@@ -928,7 +1084,7 @@ export default function VideoMatchBoardPage() {
     setPreviewCandidateId("");
     setIsAssemblyPlaying(false);
     setIsPlaybackActive(false);
-    setAssembleAudioPath(String(initialProject?.assembleAudioPath || initialProject?.audioPath || ""));
+    setAssembleAudioPath(String(initialProject?.audioPathForAssembly || initialProject?.audioPreviewMeta?.backendPath || initialProject?.timingContext?.sourceAudioPath || initialProject?.assembleAudioPath || initialProject?.audioPath || ""));
     setAssembledPreview(null);
     setAssembleError("");
     setAssembleWarning("");
@@ -969,7 +1125,7 @@ export default function VideoMatchBoardPage() {
         setProject(restoredProject);
         setVideoDurationSec(Number(restoredProject?.sourceVideo?.duration_sec || 0));
         setAudioDurationSec(Number(restoredProject?.audioPreviewMeta?.duration_sec || restoredProject?.timingContext?.audioDurationSec || 0));
-        setAssembleAudioPath(String(restoredProject?.assembleAudioPath || restoredProject?.audioPath || ""));
+        setAssembleAudioPath(String(restoredProject?.audioPathForAssembly || restoredProject?.audioPreviewMeta?.backendPath || restoredProject?.timingContext?.sourceAudioPath || restoredProject?.assembleAudioPath || restoredProject?.audioPath || ""));
         setStateOrigin("backend_workspace_restored");
         console.info("[VIDEO MATCH BACKEND WORKSPACE RESTORED]", {
           nodeId,
@@ -1055,7 +1211,30 @@ export default function VideoMatchBoardPage() {
     patchProject({ jsonError: "Загрузите аудио для просмотра с аудио" }, { lastGood: false });
   };
 
+  const stopAssemblyAudioSyncTimer = () => {
+    if (assemblyAudioSyncTimerRef.current) {
+      clearInterval(assemblyAudioSyncTimerRef.current);
+      assemblyAudioSyncTimerRef.current = null;
+    }
+    assemblyAudioSwitchingBlockRef.current = "";
+  };
+
+  const clearSceneAutoPreviewStopTimer = () => {
+    if (sceneAutoPreviewStopTimerRef.current) {
+      clearTimeout(sceneAutoPreviewStopTimerRef.current);
+      sceneAutoPreviewStopTimerRef.current = null;
+    }
+  };
+
+  const clearSceneExactPreviewStopTimer = () => {
+    if (sceneExactPreviewStopTimerRef.current) {
+      clearTimeout(sceneExactPreviewStopTimerRef.current);
+      sceneExactPreviewStopTimerRef.current = null;
+    }
+  };
+
   const stopPlayback = () => {
+    stopAssemblyAudioSyncTimer();
     playbackRef.current = null;
     setIsAssemblyPlaying(false);
     setIsPlaybackActive(false);
@@ -1091,21 +1270,93 @@ export default function VideoMatchBoardPage() {
     project?.audioMix?.originalVideoVolume,
   ]);
 
-  const restoreSourceVideoElement = () => {
-    if (!videoRef.current || !sourceVideoUrl) return;
-    activeVideoSourceKindRef.current = "source";
-    const currentSrc = String(videoRef.current.src || "");
-    const expectedSrc = String(sourceVideoUrl || "");
-    const resolvedExpectedSrc = (() => {
-      try {
-        return new URL(expectedSrc, window.location.href).href;
-      } catch {
-        return expectedSrc;
+
+  const getSourceVideoEntryById = (sourceVideoId = "src_01") => {
+    const safeId = String(sourceVideoId || "src_01").trim() || "src_01";
+    return sourceVideos.find((item) => item.id === safeId || item.sourceVideoId === safeId || item.source_video_id === safeId)
+      || sourceVideos[0]
+      || null;
+  };
+
+  const getSourceVideoRuntimeUrl = (sourceVideoId = "src_01") => {
+    const safeId = String(sourceVideoId || "src_01").trim() || "src_01";
+    const fromRef = String(sourceVideoObjectUrlByIdRef.current?.[safeId] || "").trim();
+    if (fromRef) return fromRef;
+    const entry = getSourceVideoEntryById(safeId);
+    const fromEntry = String(entry?.previewUrl || entry?.sourceVideoUrl || entry?.url || "").trim();
+    if (fromEntry) return fromEntry;
+    return safeId === "src_01" ? sourceVideoUrl : "";
+  };
+
+  const activeSourceVideoUrl = getSourceVideoRuntimeUrl(activeSourceVideoId) || sourceVideoUrl;
+
+  const switchPreviewToSourceVideoId = (sourceVideoId = "src_01", startSec = 0) => {
+    const safeSourceVideoId = String(sourceVideoId || "src_01").trim() || "src_01";
+    if (!safeSourceVideoId.startsWith("src_")) return false;
+
+    setActiveSourceVideoId(safeSourceVideoId);
+
+    const expectedSrc = getSourceVideoRuntimeUrl(safeSourceVideoId);
+    if (!expectedSrc || !videoRef.current) return Boolean(expectedSrc);
+
+    const video = videoRef.current;
+    const currentSrc = String(video.currentSrc || video.src || "");
+    const shouldSwap = currentSrc !== expectedSrc;
+
+    try {
+      if (shouldSwap) {
+        safePauseVideo(video, "switch_preview_source");
+        video.src = expectedSrc;
+        video.load();
+        const jump = () => {
+          try {
+            video.currentTime = Math.max(0, Number(startSec || 0));
+            setCurrentTimeSec(video.currentTime || Math.max(0, Number(startSec || 0)));
+          } catch {}
+          video.removeEventListener("loadedmetadata", jump);
+          video.removeEventListener("canplay", jump);
+        };
+        video.addEventListener("loadedmetadata", jump, { once: true });
+        video.addEventListener("canplay", jump, { once: true });
+        window.setTimeout(jump, 80);
+      } else {
+        video.currentTime = Math.max(0, Number(startSec || 0));
+        setCurrentTimeSec(video.currentTime || Math.max(0, Number(startSec || 0)));
       }
-    })();
-    if (currentSrc !== expectedSrc && currentSrc !== resolvedExpectedSrc) {
-      videoRef.current.src = sourceVideoUrl;
+      updateVideoDiagnostics(`switch_preview_${safeSourceVideoId}`);
+    } catch (error) {
+      console.warn("[VIDEO MATCH SWITCH SOURCE FAILED]", { safeSourceVideoId, startSec, error });
     }
+    return true;
+  };
+
+  const switchPreviewToBlockSource = (block = {}) => {
+    const sourceVideoId = getVideoNodeSourceVideoId(block);
+    if (!String(sourceVideoId || "").startsWith("src_")) return false;
+    const range = getBlockClipRange(block);
+    return switchPreviewToSourceVideoId(sourceVideoId, range.clipStart);
+  };
+
+
+  const restoreSourceVideoElement = (sourceVideoId = "src_01") => {
+    const safeSourceVideoId = String(sourceVideoId || "src_01").trim() || "src_01";
+    setActiveSourceVideoId(safeSourceVideoId);
+    const expectedSrc = getSourceVideoRuntimeUrl(safeSourceVideoId);
+    if (!videoRef.current || !expectedSrc) return false;
+    activeVideoSourceKindRef.current = "source";
+
+    const video = videoRef.current;
+    const currentSrc = String(video.currentSrc || video.src || "");
+    const resolvedExpectedSrc = (() => {
+      try { return new URL(expectedSrc, window.location.href).href; } catch { return expectedSrc; }
+    })();
+
+    if (currentSrc !== expectedSrc && currentSrc !== resolvedExpectedSrc) {
+      safePauseVideo(video, "restore_source_video_element");
+      video.src = expectedSrc;
+      try { video.load(); } catch {}
+    }
+    return true;
   };
 
   const getOverrideBlockEndSec = (block = {}) => {
@@ -1114,6 +1365,56 @@ export default function VideoMatchBoardPage() {
     const targetDuration = Math.max(0, getBlockTargetEnd(block) - getBlockTargetStart(block));
     const baseEnd = Math.max(0, overrideDuration || sourceEnd);
     return targetDuration > 0 ? Math.min(baseEnd, targetDuration) : baseEnd;
+  };
+
+  const isBenignVideoPlayInterruption = (error) => {
+    const message = String(error?.message || error || "").toLowerCase();
+    const name = String(error?.name || "").toLowerCase();
+    return name === "aborterror"
+      || message.includes("interrupted by a new load request")
+      || message.includes("the play() request was interrupted")
+      || message.includes("play() request was interrupted")
+      || message.includes("new load request");
+  };
+
+  const getVideoNodePreviewSourceUrlById = (sourceVideoId = "") => {
+    const requestedId = String(sourceVideoId || "").trim();
+    const fallbackId = requestedId || "src_01";
+    let entry = null;
+    try {
+      entry = typeof getSourceVideoEntryById === "function" ? getSourceVideoEntryById(fallbackId) : null;
+    } catch {
+      entry = null;
+    }
+    const fromEntry = String(
+      entry?.previewUrl
+      || entry?.preview_url
+      || entry?.sourceVideoUrl
+      || entry?.source_video_url
+      || entry?.url
+      || ""
+    ).trim();
+    if (fromEntry) return fromEntry;
+
+    const listEntry = (Array.isArray(sourceVideos) ? sourceVideos : [])
+      .find((source) => {
+        const id = String(source?.id || source?.sourceVideoId || source?.source_video_id || "").trim();
+        return id === fallbackId;
+      });
+    const fromList = String(
+      listEntry?.previewUrl
+      || listEntry?.preview_url
+      || listEntry?.sourceVideoUrl
+      || listEntry?.source_video_url
+      || listEntry?.url
+      || ""
+    ).trim();
+    if (fromList) return fromList;
+
+    if (fallbackId === "src_01") {
+      return String(sourceVideoUrl || runtimeSourceVideoUrlRef.current || project.sourceVideoUrl || "").trim();
+    }
+    return String(sourceVideoUrl || runtimeSourceVideoUrlRef.current || project.sourceVideoUrl || "").trim();
   };
 
   const playOverrideRange = async (block = {}, { muted = false } = {}) => {
@@ -1145,75 +1446,175 @@ export default function VideoMatchBoardPage() {
       }
       return true;
     } catch (error) {
+      if (isBenignVideoPlayInterruption(error)) {
+        console.info("[VIDEO MATCH OVERRIDE PLAY INTERRUPTED QUIETLY]", { message: String(error?.message || error), sceneId: block?.id || "" });
+        return false;
+      }
       patchProject({ jsonError: `Не удалось запустить override video: ${String(error?.message || error)}` }, { lastGood: false });
       return false;
     }
   };
 
-  const playSourceRange = async (start = 0, end = 0, { muted = false } = {}) => {
-    if (!sourceVideoUrl || !videoRef.current) {
+  const playSourceRange = async (start = 0, end = 0, { muted = false, sourceVideoId = "src_01" } = {}) => {
+    const safeSourceVideoId = String(sourceVideoId || "src_01").trim() || "src_01";
+    const expectedSrc = getSourceVideoRuntimeUrl(safeSourceVideoId);
+
+    if (!expectedSrc || !videoRef.current) {
+      console.warn("[VIDEO MATCH SOURCE PREVIEW MISSING]", { sourceVideoId: safeSourceVideoId });
       showMissingSourceVideoMessage();
       return false;
     }
-    const requestToken = (videoPlayTokenRef.current || 0) + 1;
-    videoPlayTokenRef.current = requestToken;
-    restoreSourceVideoElement();
+
+    const video = videoRef.current;
+    setActiveSourceVideoId(safeSourceVideoId);
     activeVideoSourceKindRef.current = "source";
     applyPreviewVideoAudioMix(Boolean(muted));
-    safePauseVideo(videoRef.current, "source_seek_before_play");
-    videoPlayTokenRef.current = requestToken;
-    videoRef.current.currentTime = Math.max(0, Number(start || 0));
-    logVideoPlayerAction("seek", "source_range_seek", { currentTime: Number(videoRef.current.currentTime || 0) });
+
+    const startSec = Math.max(0, Number(start || 0));
+    const endSec = Math.max(startSec + 0.05, Number(end || startSec + 0.05));
+
+    const currentSrc = String(video.currentSrc || video.src || "");
+    const resolvedExpectedSrc = (() => {
+      try { return new URL(expectedSrc, window.location.href).href; } catch { return expectedSrc; }
+    })();
+
     try {
-      await waitForVideoReady(videoRef.current);
-      if (videoPlayTokenRef.current !== requestToken) {
-        console.info("[VIDEO PLAYER REQUEST CANCELLED BEFORE PLAY]", { reason: "token_changed_before_play" });
-        return false;
+      safePauseVideo(video, "scene_exact_prepare_source");
+      if (currentSrc !== expectedSrc && currentSrc !== resolvedExpectedSrc) {
+        video.src = expectedSrc;
+        video.load();
       }
-      const result = await safePlayVideo(videoRef.current, "play_source_range", {}, requestToken);
-      if (!result.ok) {
-        if (result.cancelled) {
-          console.info("[VIDEO PLAYER PLAY CANCELLED QUIETLY]", { reason: result.reason });
-          return false;
-        }
-        throw new Error(result.message || result.reason || "source_play_failed");
-      }
+
+      await new Promise((resolve) => {
+        if (Number(video.readyState || 0) >= 1) return resolve();
+        const done = () => {
+          video.removeEventListener("loadedmetadata", done);
+          video.removeEventListener("canplay", done);
+          resolve();
+        };
+        video.addEventListener("loadedmetadata", done, { once: true });
+        video.addEventListener("canplay", done, { once: true });
+        window.setTimeout(done, 900);
+      });
+
+      try {
+        const duration = Number(video.duration || 0);
+        const safeStart = duration > 0 && startSec >= duration ? Math.max(0, duration - (endSec - startSec)) : startSec;
+        video.currentTime = safeStart;
+        setCurrentTimeSec(safeStart);
+      } catch {}
+
+      logVideoPlayerAction("seek", "scene_exact_source_seek", {
+        currentTime: Number(video.currentTime || 0),
+        sourceVideoId: safeSourceVideoId,
+      });
+
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.then === "function") await playPromise;
+
+      logVideoPlayerAction("play", "scene_exact_source_play", {
+        sourceVideoId: safeSourceVideoId,
+        endSec,
+      });
       return true;
     } catch (error) {
-      patchProject({ jsonError: `Не удалось запустить video player: ${String(error?.message || error)}` }, { lastGood: false });
+      const message = String(error?.message || error);
+      if (message.includes("interrupted by a call to pause") || message.includes("interrupted by a new load request")) {
+        console.info("[VIDEO MATCH SOURCE PLAY INTERRUPTED QUIETLY]", { message, sourceVideoId: safeSourceVideoId });
+        return false;
+      }
+      patchProject({ jsonError: `Не удалось запустить video player: ${message}` }, { lastGood: false });
       return false;
     }
   };
 
   const playAudioFrom = async (start = 0) => {
-    if (!audioPreviewUrl || !audioRef.current) {
+    const resolvedAudioUrl = String(
+      project.audioPreviewUrl
+      || runtimeAudioPreviewUrlRef.current
+      || project.audioPreviewBackendUrl
+      || project.audioPreviewMeta?.backendUrl
+      || project.audioPreviewMeta?.url
+      || effectiveAudioPreviewUrl
+      || ""
+    ).trim();
+
+    if (!resolvedAudioUrl || !audioRef.current) {
+      console.warn("[VIDEO MATCH AUDIO PLAY MISSING]", {
+        hasProjectAudioPreviewUrl: Boolean(project.audioPreviewUrl),
+        hasRuntimeAudioPreviewUrl: Boolean(runtimeAudioPreviewUrlRef.current),
+        hasBackendAudioUrl: Boolean(project.audioPreviewBackendUrl || project.audioPreviewMeta?.backendUrl),
+      });
       showMissingAudioMessage();
       return false;
     }
-    const offsetSec = getAudioTimelineOffsetSec(project);
-    const timelineSec = Math.max(0, Number(start || 0));
-    const sourceAudioSec = Math.max(0, timelineSec - offsetSec);
-    if (timelineSec < offsetSec) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      setAudioCurrentTimeSec(0);
-      return true;
-    }
-    audioRef.current.currentTime = sourceAudioSec;
-    audioRef.current.volume = Number(project.audioMix?.narrationVolume ?? 1.0);
-    if (backgroundAudioRef.current && project.audioMix?.backgroundAudioUrl) {
-      backgroundAudioRef.current.currentTime = sourceAudioSec;
-      backgroundAudioRef.current.volume = Number(project.audioMix?.backgroundAudioVolume ?? 0.6);
-      try {
-        await backgroundAudioRef.current.play();
-      } catch {
-        // no-op for autoplay restrictions
-      }
-    }
+
+    const audio = audioRef.current;
+    const currentSrc = String(audio.currentSrc || audio.src || "");
+    const expectedSrc = (() => {
+      try { return new URL(resolvedAudioUrl, window.location.href).href; } catch { return resolvedAudioUrl; }
+    })();
+
     try {
-      await audioRef.current.play();
+      if (currentSrc !== resolvedAudioUrl && currentSrc !== expectedSrc) {
+        audio.pause();
+        audio.src = resolvedAudioUrl;
+        audio.load();
+      }
+
+      await new Promise((resolve) => {
+        if (Number(audio.readyState || 0) >= 1) return resolve();
+        const done = () => {
+          audio.removeEventListener("loadedmetadata", done);
+          audio.removeEventListener("canplay", done);
+          resolve();
+        };
+        audio.addEventListener("loadedmetadata", done, { once: true });
+        audio.addEventListener("canplay", done, { once: true });
+        window.setTimeout(done, 900);
+      });
+
+      const timelineSec = Math.max(0, Number(start || 0));
+      // Video Match targetStartSec/targetEndSec are already in the loaded master audio timeline.
+      // Do NOT subtract getAudioTimelineOffsetSec() here, otherwise every scene can seek back to 0.
+      const sourceAudioSec = timelineSec;
+      audio.currentTime = sourceAudioSec;
+      setAudioCurrentTimeSec(timelineSec);
+      audio.volume = Number(project.audioMix?.narrationVolume ?? 1.0);
+
+      if (backgroundAudioRef.current && project.audioMix?.backgroundAudioUrl) {
+        backgroundAudioRef.current.currentTime = sourceAudioSec;
+        backgroundAudioRef.current.volume = Number(project.audioMix?.backgroundAudioVolume ?? 0.6);
+        try { await backgroundAudioRef.current.play(); } catch {}
+      }
+
+      console.info("[VIDEO MATCH AUDIO DIRECT TIMELINE PATCH ACTIVE]", {
+        timelineSec,
+        sourceAudioSec,
+      });
+      console.info("[VIDEO MATCH AUDIO PLAY TRY]", {
+        timelineSec,
+        sourceAudioSec,
+        src: String(audio.currentSrc || audio.src || ""),
+        readyState: Number(audio.readyState || 0),
+        duration: Number(audio.duration || 0),
+      });
+
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.then === "function") await playPromise;
+
+      console.info("[VIDEO MATCH AUDIO PLAY OK]", {
+        currentTime: Number(audio.currentTime || 0),
+        duration: Number(audio.duration || 0),
+      });
       return true;
     } catch (error) {
+      console.warn("[VIDEO MATCH AUDIO PLAY FAILED]", {
+        message: String(error?.message || error),
+        name: String(error?.name || ""),
+        src: String(audio.currentSrc || audio.src || ""),
+        readyState: Number(audio.readyState || 0),
+      });
       patchProject({ jsonError: `Не удалось запустить audio player: ${String(error?.message || error)}` }, { lastGood: false });
       return false;
     }
@@ -1231,51 +1632,118 @@ export default function VideoMatchBoardPage() {
     const shouldMute = isTruthyFlag(block?.forceMuteVideoAudio ?? block?.force_mute_video_audio);
     const didPlay = isOverride
       ? await playOverrideRange(block, { muted: shouldMute })
-      : await playSourceRange(start, end, { muted: shouldMute });
+      : await playSourceRange(start, end, { muted: shouldMute, sourceVideoId: getVideoNodeSourceVideoId(block) });
     if (!didPlay) setIsPlaybackActive(false);
     return didPlay;
   };
 
-  const startAudioSyncedBlock = async (block = {}) => {
-    if (!audioPreviewUrl || !audioRef.current) {
-      showMissingAudioMessage();
-      return false;
+  const startAudioSyncedBlock = async (block = {}, reason = "scene_click") => {
+    if (!block) return false;
+
+    clearSceneExactPreviewStopTimer();
+
+    const targetStart = Math.max(0, Number(getBlockTargetStart(block) || 0));
+    const targetEnd = Math.max(targetStart + 0.05, Number(getBlockTargetEnd(block) || 0));
+    const sceneDuration = Math.max(0.05, targetEnd - targetStart);
+
+    const sourceVideoId = typeof getVideoNodeSourceVideoId === "function"
+      ? getVideoNodeSourceVideoId(block)
+      : String(block.sourceVideoId || block.source_video_id || "src_01");
+
+    const range = getBlockClipRange(block);
+    let clipStart = Math.max(0, Number(range.clipStart || 0));
+    let clipEnd = Math.max(clipStart + 0.05, Math.min(Number(range.clipEnd || clipStart + sceneDuration), clipStart + sceneDuration));
+
+    const sourceEntry = (typeof getSourceVideoEntryById === "function" ? getSourceVideoEntryById(sourceVideoId) : null) || {};
+    const sourceDuration = Number(sourceEntry.duration_sec || sourceEntry.durationSec || 0);
+    if (sourceDuration > 0) {
+      if (clipStart >= sourceDuration) {
+        const oldStart = clipStart;
+        clipStart = Math.max(0, sourceDuration - sceneDuration);
+        clipEnd = Math.min(sourceDuration, clipStart + sceneDuration);
+        setSourceVideoLoadMessage(`Preview: таймкод сцены был за пределами ${getVideoNodeSourceShortLabel(sourceVideoId)} (${formatSec(oldStart)} > ${formatSec(sourceDuration)}), временно сдвинул к концу видео.`);
+      } else if (clipEnd > sourceDuration) {
+        clipEnd = sourceDuration;
+        clipStart = Math.max(0, clipEnd - sceneDuration);
+      } else {
+        setSourceVideoLoadMessage("");
+      }
     }
-    const targetStart = getBlockTargetStart(block);
-    const sourceAudioStart = Number(block?.source_audio_t0 ?? block?.sourceAudioStartSec ?? 0);
-    const computedOffset = getAudioTimelineOffsetSec(project);
-    if (targetStart > 0 && sourceAudioStart === 0 && computedOffset <= 0) {
-      console.warn("BOARD_AUDIO_OFFSET_MISSING", {
-        blockId: String(block?.id || block?.audioSceneId || ""),
-        targetStart,
-        sourceAudioStart,
-        computedOffset,
-      });
-    }
-    const targetEnd = getBlockTargetEnd(block);
+
+    const previewBlock = {
+      ...block,
+      sourceVideoId,
+      source_video_id: sourceVideoId,
+      sourceVideoStartSec: clipStart,
+      source_video_start_sec: clipStart,
+      clipSourceStartSec: clipStart,
+      clip_source_start_sec: clipStart,
+      sourceVideoEndSec: clipEnd,
+      source_video_end_sec: clipEnd,
+      clipSourceEndSec: clipEnd,
+      clip_source_end_sec: clipEnd,
+    };
+
     playbackRef.current = {
       mode: "audio_range",
-      blocks: [block],
+      blocks: [previewBlock],
       index: 0,
       targetEnd,
-      currentBlockId: block.id || "",
+      end: clipEnd,
+      currentBlockId: String(previewBlock.id || previewBlock.audioSceneId || previewBlock.segmentId || ""),
+      reason,
     };
+
+    onSelectBlock(previewBlock);
     setIsAssemblyPlaying(false);
     setIsPlaybackActive(true);
-    const shouldMute = isTruthyFlag(block?.forceMuteVideoAudio ?? block?.force_mute_video_audio);
-    const didStartVideo = (isOverrideBlock(block) && block.overrideVideoUrl)
-      ? await playOverrideRange(block, { muted: shouldMute })
-      : await playSourceRange(getBlockClipRange(block).clipStart, getBlockClipRange(block).clipEnd, { muted: shouldMute });
-    if (!didStartVideo) {
+
+    const shouldMute = isTruthyFlag(previewBlock?.forceMuteVideoAudio ?? previewBlock?.force_mute_video_audio);
+    const hasAudioForPreview = Boolean(effectiveAudioPreviewUrl || audioPreviewUrl || project.audioPreviewBackendUrl || project.audioPreviewMeta?.backendUrl || runtimeAudioPreviewUrlRef.current);
+
+    console.info("[VIDEO MATCH SCENE EXACT PREVIEW START]", {
+      reason,
+      blockId: previewBlock.id || "",
+      sourceVideoId,
+      targetStart,
+      targetEnd,
+      clipStart,
+      clipEnd,
+      sceneDuration,
+      hasAudioForPreview,
+    });
+
+    const didStartVideo = (isOverrideBlock(previewBlock) && previewBlock.overrideVideoUrl)
+      ? await playOverrideRange(previewBlock, { muted: shouldMute })
+      : await playSourceRange(clipStart, clipEnd, { muted: shouldMute, sourceVideoId });
+
+    let didStartAudio = false;
+    if (hasAudioForPreview && audioRef.current) {
+      didStartAudio = await playAudioFrom(targetStart);
+    } else if (audioRef.current) {
+      audioRef.current.pause();
+    }
+
+    if (!didStartVideo && !didStartAudio) {
       setIsPlaybackActive(false);
       return false;
     }
-    const didStartAudio = await playAudioFrom(targetStart);
-    if (!didStartAudio) {
-      if (videoRef.current) safePauseVideo(videoRef.current, "audio_start_failed_pause_video");
+
+    sceneExactPreviewStopTimerRef.current = window.setTimeout(() => {
+      const playback = playbackRef.current;
+      if (!playback || playback.currentBlockId !== String(previewBlock.id || previewBlock.audioSceneId || previewBlock.segmentId || "")) return;
+      if (videoRef.current) {
+        safePauseVideo(videoRef.current, "scene_exact_preview_stop");
+        try { videoRef.current.currentTime = clipEnd; } catch {}
+        setCurrentTimeSec(clipEnd);
+      }
+      if (audioRef.current) audioRef.current.pause();
+      if (backgroundAudioRef.current) backgroundAudioRef.current.pause();
+      playbackRef.current = null;
       setIsPlaybackActive(false);
-      return false;
-    }
+      setIsAssemblyPlaying(false);
+    }, Math.max(100, Math.round(sceneDuration * 1000) + 160));
+
     return true;
   };
 
@@ -1289,10 +1757,105 @@ export default function VideoMatchBoardPage() {
     await startVideoOnlyBlock(selectedBlock);
   };
 
+  const syncAssemblyAudioPlaybackNow = (reason = "tick") => {
+    const playback = playbackRef.current;
+    if (!playback || playback.mode !== "assembly_audio") return;
+    if (!audioRef.current) return;
+
+    const blocks = Array.isArray(playback.blocks) ? playback.blocks : [];
+    if (!blocks.length) return;
+
+    const offsetSec = getAudioTimelineOffsetSec(project);
+    const timelineAudioTime = Number(audioRef.current.currentTime || 0) + offsetSec;
+    const lastTargetEnd = Number(playback.targetEnd || getBlockTargetEnd(blocks[blocks.length - 1]) || 0);
+
+    if (lastTargetEnd > 0 && timelineAudioTime >= lastTargetEnd) {
+      console.info("[VIDEO MATCH ASSEMBLY AUDIO DONE]", { reason, timelineAudioTime, lastTargetEnd });
+      stopPlayback();
+      return;
+    }
+
+    const found = findAssemblyBlockByAudioTime(blocks, timelineAudioTime, playback.index);
+    if (!found?.block) return;
+
+    const nextBlock = found.block;
+    const nextBlockId = String(nextBlock.id || "");
+    if (found.index === playback.index && nextBlockId === playback.currentBlockId) return;
+    if (assemblyAudioSwitchingBlockRef.current === nextBlockId) return;
+
+    playbackRef.current = {
+      ...playback,
+      index: found.index,
+      currentBlockId: nextBlockId,
+    };
+
+    onSelectBlock(nextBlock);
+
+    const nextShouldMute = isTruthyFlag(nextBlock?.forceMuteVideoAudio ?? nextBlock?.force_mute_video_audio);
+    assemblyAudioSwitchingBlockRef.current = nextBlockId;
+
+    const clearSwitchGuard = () => {
+      if (assemblyAudioSwitchingBlockRef.current === nextBlockId) {
+        assemblyAudioSwitchingBlockRef.current = "";
+      }
+    };
+
+    console.info("[VIDEO MATCH ASSEMBLY AUDIO SWITCH]", {
+      reason,
+      blockId: nextBlockId,
+      index: found.index,
+      timelineAudioTime,
+      sourceVideoId: typeof getVideoNodeSourceVideoId === "function" ? getVideoNodeSourceVideoId(nextBlock) : "",
+    });
+
+    if (isOverrideBlock(nextBlock) && nextBlock.overrideVideoUrl) {
+      Promise.resolve(playOverrideRange(nextBlock, { muted: nextShouldMute })).finally(clearSwitchGuard);
+      return;
+    }
+
+    const range = getBlockClipRange(nextBlock);
+    const sourceVideoId = typeof getVideoNodeSourceVideoId === "function"
+      ? getVideoNodeSourceVideoId(nextBlock)
+      : "src_01";
+    Promise.resolve(playSourceRange(range.clipStart, range.clipEnd, {
+      muted: nextShouldMute,
+      sourceVideoId,
+    })).finally(clearSwitchGuard);
+  };
+
+  const startAssemblyAudioSyncTimer = () => {
+    stopAssemblyAudioSyncTimer();
+    syncAssemblyAudioPlaybackNow("start_now");
+    assemblyAudioSyncTimerRef.current = window.setInterval(() => {
+      syncAssemblyAudioPlaybackNow("timer");
+    }, 120);
+    window.setTimeout(() => syncAssemblyAudioPlaybackNow("start_timeout"), 80);
+  };
+
+  const onSelectBlockAndPreview = (block = {}, reason = "scene_click") => {
+    if (!block) return;
+    void startAudioSyncedBlock(block, reason);
+  };
+
   const playAssemblyFromBlock = async (startBlock = null) => {
     if (!assemblyBlocks.length) return;
-    restoreSourceVideoElement();
-    if (!sourceVideoUrl || !videoRef.current) {
+    const hasAnySourceForAssemblyPreview = Boolean(
+      ((typeof activeSourceVideoUrl !== "undefined") && activeSourceVideoUrl)
+      || sourceVideoUrl
+      || (Array.isArray(sourceVideos) && sourceVideos.some((source) => {
+        try {
+          return typeof isVideoNodeSourceLoaded === "function"
+            ? isVideoNodeSourceLoaded(source)
+            : Boolean(source?.previewUrl || source?.sourceVideoUrl || source?.url);
+        } catch {
+          return Boolean(source?.previewUrl || source?.sourceVideoUrl || source?.url);
+        }
+      }))
+    );
+    if (typeof restoreSourceVideoElement === "function") {
+      try { restoreSourceVideoElement(getVideoNodeSourceVideoId(startBlock || assemblyBlocks[0] || {})); } catch { restoreSourceVideoElement(); }
+    }
+    if (!hasAnySourceForAssemblyPreview || !videoRef.current) {
       showMissingSourceVideoMessage();
       return;
     }
@@ -1302,34 +1865,60 @@ export default function VideoMatchBoardPage() {
     onSelectBlock(firstBlock);
 
     if (useAudioPreview) {
-      if (!audioPreviewUrl || !audioRef.current) {
+      if (!effectiveAudioPreviewUrl || !audioRef.current) {
         showMissingAudioMessage();
         return;
       }
+
       playbackRef.current = {
         mode: "assembly_audio",
         blocks: assemblyBlocks,
         index: startIndex,
         targetEnd: getBlockTargetEnd(assemblyBlocks[assemblyBlocks.length - 1]),
-        currentBlockId: firstBlock.id || "",
+        currentBlockId: "",
       };
       setIsAssemblyPlaying(true);
       setIsPlaybackActive(true);
-      const firstShouldMute = isTruthyFlag(firstBlock?.forceMuteVideoAudio ?? firstBlock?.force_mute_video_audio);
-      const didStartVideo = (isOverrideBlock(firstBlock) && firstBlock.overrideVideoUrl)
-        ? await playOverrideRange(firstBlock, { muted: firstShouldMute })
-        : await playSourceRange(getBlockClipRange(firstBlock).clipStart, getBlockClipRange(firstBlock).clipEnd, { muted: firstShouldMute });
-      if (!didStartVideo) {
-        setIsAssemblyPlaying(false);
-        setIsPlaybackActive(false);
-        return;
-      }
-      const didStartAudio = await playAudioFrom(getBlockTargetStart(firstBlock));
+
+      const targetStart = getBlockTargetStart(firstBlock);
+      const didStartAudio = await playAudioFrom(targetStart);
+
       if (!didStartAudio) {
         setIsAssemblyPlaying(false);
         setIsPlaybackActive(false);
         if (videoRef.current) safePauseVideo(videoRef.current, "assembly_audio_start_failed_pause_video");
+        return;
       }
+
+      startAssemblyAudioSyncTimer();
+
+      const firstShouldMute = isTruthyFlag(firstBlock?.forceMuteVideoAudio ?? firstBlock?.force_mute_video_audio);
+      const firstSourceVideoId = typeof getVideoNodeSourceVideoId === "function"
+        ? getVideoNodeSourceVideoId(firstBlock)
+        : "src_01";
+
+      window.setTimeout(() => {
+        const latestPlayback = playbackRef.current;
+        if (!latestPlayback || latestPlayback.mode !== "assembly_audio") return;
+
+        if (isOverrideBlock(firstBlock) && firstBlock.overrideVideoUrl) {
+          void playOverrideRange(firstBlock, { muted: firstShouldMute });
+          return;
+        }
+
+        const firstRange = getBlockClipRange(firstBlock);
+        void playSourceRange(firstRange.clipStart, firstRange.clipEnd, {
+          muted: firstShouldMute,
+          sourceVideoId: firstSourceVideoId,
+        });
+      }, 0);
+
+      console.info("[VIDEO MATCH ASSEMBLY AUDIO-FIRST STARTED]", {
+        firstBlockId: firstBlock?.id || "",
+        targetStart,
+        firstSourceVideoId,
+      });
+
       return;
     }
 
@@ -1345,7 +1934,7 @@ export default function VideoMatchBoardPage() {
     const firstShouldMute = isTruthyFlag(firstBlock?.forceMuteVideoAudio ?? firstBlock?.force_mute_video_audio);
     const didPlay = (isOverrideBlock(firstBlock) && firstBlock.overrideVideoUrl)
       ? await playOverrideRange(firstBlock, { muted: firstShouldMute })
-      : await playSourceRange(getBlockClipRange(firstBlock).clipStart, getBlockClipRange(firstBlock).clipEnd, { muted: firstShouldMute });
+      : await playSourceRange(getBlockClipRange(firstBlock).clipStart, getBlockClipRange(firstBlock).clipEnd, { muted: firstShouldMute, sourceVideoId: getVideoNodeSourceVideoId(firstBlock) });
     if (!didPlay) {
       setIsAssemblyPlaying(false);
       setIsPlaybackActive(false);
@@ -1384,10 +1973,11 @@ export default function VideoMatchBoardPage() {
           playbackRef.current = { ...playbackRef.current, mode: "assembly_video", end: getOverrideBlockEndSec(nextBlock) };
           void playOverrideRange(nextBlock, { muted: nextShouldMute });
         } else {
-          void playSourceRange(getBlockClipRange(nextBlock).clipStart, getBlockClipRange(nextBlock).clipEnd, { muted: nextShouldMute });
+          void playSourceRange(getBlockClipRange(nextBlock).clipStart, getBlockClipRange(nextBlock).clipEnd, { muted: nextShouldMute, sourceVideoId: getVideoNodeSourceVideoId(nextBlock) });
         }
         return;
       }
+      stopAssemblyAudioSyncTimer();
       playbackRef.current = null;
       setIsAssemblyPlaying(false);
       setIsPlaybackActive(false);
@@ -1396,8 +1986,9 @@ export default function VideoMatchBoardPage() {
 
   const onAudioTimeUpdate = () => {
     const current = Number(audioRef.current?.currentTime || 0);
-    const offsetSec = getAudioTimelineOffsetSec(project);
-    const timelineAudioTime = current + offsetSec;
+    // Video Match preview uses direct master-audio time.
+    // targetStartSec/targetEndSec from JSON are already in the same audio file.
+    const timelineAudioTime = current;
     setAudioCurrentTimeSec(timelineAudioTime);
     if (backgroundAudioRef.current) {
       const bg = backgroundAudioRef.current;
@@ -1409,6 +2000,11 @@ export default function VideoMatchBoardPage() {
     }
     const playback = playbackRef.current;
     if (!playback || (playback.mode !== "audio_range" && playback.mode !== "assembly_audio")) return;
+
+    if (playback.mode === "assembly_audio") {
+      syncAssemblyAudioPlaybackNow("audio_timeupdate");
+      return;
+    }
 
     if (playback.mode === "audio_range") {
       const targetEnd = Number(playback.targetEnd || 0);
@@ -1439,7 +2035,7 @@ export default function VideoMatchBoardPage() {
       if (isOverrideBlock(found.block) && found.block.overrideVideoUrl) {
         void playOverrideRange(found.block, { muted: foundShouldMute });
       } else {
-        void playSourceRange(getBlockClipRange(found.block).clipStart, getBlockClipRange(found.block).clipEnd, { muted: foundShouldMute });
+        void playSourceRange(getBlockClipRange(found.block).clipStart, getBlockClipRange(found.block).clipEnd, { muted: foundShouldMute, sourceVideoId: getVideoNodeSourceVideoId(found.block) });
       }
     }
   };
@@ -1506,6 +2102,12 @@ export default function VideoMatchBoardPage() {
       selectedCandidateId: targetCandidateKey,
       selectedBlockId: nextBlock?.id || "",
     });
+    if (nextBlock) {
+      window.setTimeout(() => {
+        console.info("[VIDEO MATCH CANDIDATE AUTO PREVIEW]", { segmentId: targetSegmentKey, candidateId: targetCandidateKey, blockId: nextBlock?.id || "" });
+        void startAudioSyncedBlock(nextBlock, "candidate_select");
+      }, 45);
+    }
   };
 
   const onPreviewCandidate = async (segment = {}, candidate = {}) => {
@@ -1536,7 +2138,8 @@ export default function VideoMatchBoardPage() {
       if (!didPlay) setIsPlaybackActive(false);
       return;
     }
-    restoreSourceVideoElement();
+    const previewSourceVideoId = getVideoNodeSourceVideoId(candidateBlock || candidate || segment);
+    restoreSourceVideoElement(previewSourceVideoId);
     const segmentDuration = Math.max(0, Number(segment?.targetEndSec || 0) - Number(segment?.targetStartSec || 0));
     const start = Math.max(0, getBlockSourceStart(candidate));
     const end = Math.max(start, Math.min(getBlockSourceEnd(candidate), start + segmentDuration));
@@ -1545,7 +2148,7 @@ export default function VideoMatchBoardPage() {
     setIsPlaybackActive(true);
     if (audioRef.current) audioRef.current.pause();
     patchProject({ selectedSegmentId: segmentKey, selectedCandidateId: candidateKey }, { lastGood: false });
-    const didPlay = await playSourceRange(start, end, { muted: shouldMutePreview });
+    const didPlay = await playSourceRange(start, end, { muted: shouldMutePreview, sourceVideoId: previewSourceVideoId });
     if (!didPlay) setIsPlaybackActive(false);
   };
 
@@ -1682,8 +2285,94 @@ export default function VideoMatchBoardPage() {
     }, 80);
   };
 
-  const onVideoFileChange = async (file) => {
+  const onVideoFileChange = async (file, sourceVideoId = "src_01") => {
     if (!file) return;
+    const normalizedSourceId = String(sourceVideoId || "src_01").trim() || "src_01";
+
+    // VIDEO MATCH SOURCE 2 UPLOAD: keep the old single-source path untouched for src_01.
+    if (normalizedSourceId !== "src_01") {
+      if (sourceVideoObjectUrlByIdRef.current?.[normalizedSourceId]) {
+        try { URL.revokeObjectURL(sourceVideoObjectUrlByIdRef.current[normalizedSourceId]); } catch {}
+      }
+      const url = URL.createObjectURL(file);
+      sourceVideoObjectUrlByIdRef.current = {
+        ...(sourceVideoObjectUrlByIdRef.current || {}),
+        [normalizedSourceId]: url,
+      };
+      setSourceVideoLoadMessage("");
+      stopPlayback();
+
+      const localEntry = normalizeVideoNodeSourceEntry({
+        id: normalizedSourceId,
+        label: normalizedSourceId === "src_02" ? "Видео 2" : getVideoNodeSourceShortLabel(normalizedSourceId),
+        filename: file.name || `${normalizedSourceId}.mp4`,
+        name: file.name || `${normalizedSourceId}.mp4`,
+        previewUrl: url,
+        sourceVideoUrl: url,
+        duration_sec: 0,
+        type: file.type || "video/mp4",
+        size: file.size || 0,
+      });
+
+      patchProject({
+        sourceVideos: mergeVideoNodeSourceEntry(project.sourceVideos || project.source_videos || [], localEntry),
+        jsonError: "",
+      }, { lastGood: false });
+
+      if (videoRef.current) {
+        safePauseVideo(videoRef.current, "video_file_change_secondary");
+        videoRef.current.src = url;
+        videoRef.current.currentTime = 0;
+        videoRef.current.load();
+        updateVideoDiagnostics(`file_selected_${normalizedSourceId}`);
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("nodeId", nodeId);
+      formData.append("sourceVideoId", normalizedSourceId);
+
+      try {
+        const response = await fetch(`${API_BASE}/api/video-match/source-upload`, {
+          method: "POST",
+          credentials: "include",
+          headers: getVideoMatchAuthHeaders(),
+          body: formData,
+        });
+        const data = await readVideoMatchJsonResponse(response);
+        if (!response.ok || !data?.ok) throw new Error(getVideoMatchApiErrorMessage(data, response, "source upload failed"));
+        const rawSourceVideoUrl = String(data.sourceVideoUrl || "");
+        const backendSourceVideoUrl = rawSourceVideoUrl
+          ? (rawSourceVideoUrl.startsWith("http") ? rawSourceVideoUrl : `${API_BASE}${rawSourceVideoUrl}`)
+          : "";
+        const backendEntry = normalizeVideoNodeSourceEntry({
+          ...localEntry,
+          previewUrl: backendSourceVideoUrl || url,
+          sourceVideoUrl: backendSourceVideoUrl || url,
+          path: String(data.sourceVideoPathForAssembly || ""),
+          backendPath: String(data.sourceVideoPathForAssembly || ""),
+          sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
+          filename: data.filename || file.name || `${normalizedSourceId}.mp4`,
+          name: data.filename || file.name || `${normalizedSourceId}.mp4`,
+          duration_sec: Number(data.duration_sec || 0),
+          durationSec: Number(data.duration_sec || 0),
+          width: Number(data.width || 0),
+          height: Number(data.height || 0),
+          fps: Number(data.fps || 0),
+          has_audio_stream: Boolean(data.has_audio_stream),
+        });
+        patchProject({
+          sourceVideos: mergeVideoNodeSourceEntry(project.sourceVideos || project.source_videos || [], backendEntry),
+          source_videos: mergeVideoNodeSourceEntry(project.sourceVideos || project.source_videos || [], backendEntry),
+          jsonError: "",
+        }, { lastGood: true });
+        setSourceVideoLoadMessage(`${getVideoNodeSourceShortLabel(normalizedSourceId)} загружено: ${backendEntry.filename}`);
+      } catch (error) {
+        setSourceVideoLoadMessage(`${getVideoNodeSourceShortLabel(normalizedSourceId)} играет в preview, но НЕ загрузилось на backend: ${String(error?.message || error)}`);
+      }
+      return;
+    }
+
     const fallbackJsonPath = String(project?.source_video?.path || project?.sourceVideo?.path || project?.sourceVideoPath || "").trim();
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     const url = URL.createObjectURL(file);
@@ -1739,10 +2428,37 @@ export default function VideoMatchBoardPage() {
       const backendSourceVideoUrl = rawSourceVideoUrl
         ? (rawSourceVideoUrl.startsWith("http") ? rawSourceVideoUrl : `${API_BASE}${rawSourceVideoUrl}`)
         : "";
+      const backendEntry = normalizeVideoNodeSourceEntry({
+        id: "src_01",
+        sourceVideoId: "src_01",
+        source_video_id: "src_01",
+        label: "Видео 1",
+        filename: data.filename || file.name || "source.mp4",
+        name: data.filename || file.name || "source.mp4",
+        previewUrl: backendSourceVideoUrl || url,
+        sourceVideoUrl: backendSourceVideoUrl || url,
+        source_video_url: backendSourceVideoUrl || url,
+        path: String(data.sourceVideoPathForAssembly || ""),
+        backendPath: String(data.sourceVideoPathForAssembly || ""),
+        backend_path: String(data.sourceVideoPathForAssembly || ""),
+        sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
+        source_video_path_for_assembly: String(data.sourceVideoPathForAssembly || ""),
+        durationSec: Number(data.duration_sec || 0),
+        duration_sec: Number(data.duration_sec || 0),
+        width: Number(data.width || 0),
+        height: Number(data.height || 0),
+        fps: Number(data.fps || 0),
+        has_audio_stream: Boolean(data.has_audio_stream),
+        type: file.type || "video/mp4",
+        size: file.size || 0,
+      });
+      const mergedSources = mergeVideoNodeSourceEntry(project.sourceVideos || project.source_videos || [], backendEntry);
       patchProject({
         sourceVideoUrl: String(backendSourceVideoUrl || ""),
         sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
         uploadedSourceVideoPath: String(data.sourceVideoPathForAssembly || ""),
+        sourceVideos: mergedSources,
+        source_videos: mergedSources,
         sourceVideo: {
           ...(project.sourceVideo || {}),
           path: String(data.sourceVideoPathForAssembly || ""),
@@ -1765,25 +2481,148 @@ export default function VideoMatchBoardPage() {
     }
   };
 
-  const onAudioFileChange = (file) => {
+  const onAudioFileChange = async (file) => {
     if (!file) return;
     if (audioObjectUrlRef.current) URL.revokeObjectURL(audioObjectUrlRef.current);
     const url = URL.createObjectURL(file);
     audioObjectUrlRef.current = url;
     runtimeAudioPreviewUrlRef.current = url;
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.src = url;
+        audioRef.current.load();
+      } catch (error) {
+        console.warn("[VIDEO MATCH AUDIO LOCAL_BIND_FAILED]", { error });
+      }
+    }
     setAudioDurationSec(0);
     setAudioCurrentTimeSec(0);
-    setAudioLoadMessage("");
+    setAudioLoadMessage("Загружаю аудио на backend для MP4-сборки...");
+    setAssembleAudioPath("");
+    const baseAudioMeta = {
+      filename: file.name || "audio.mp3",
+      duration_sec: 0,
+      type: file.type || "audio/mpeg",
+      size: file.size || 0,
+    };
     patchProject({
       audioPreviewUrl: url,
-      audioPreviewMeta: {
-        filename: file.name || "audio.mp3",
-        duration_sec: 0,
-        type: file.type || "audio/mpeg",
-        size: file.size || 0,
-      },
+      audioPreviewMeta: baseAudioMeta,
+      assembleAudioPath: "",
+      audioPathForAssembly: "",
       useAudioPreview: true,
     });
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("nodeId", nodeId);
+    try {
+      const response = await fetch(`${API_BASE}/api/video-match/audio-upload`, {
+        method: "POST",
+        credentials: "include",
+        headers: getVideoMatchAuthHeaders(),
+        body: formData,
+      });
+      const data = await readVideoMatchJsonResponse(response);
+      if (!response.ok || !data?.ok) throw new Error(getVideoMatchApiErrorMessage(data, response, "audio upload failed"));
+      const backendAudioPath = String(data.audioPathForAssembly || data.audioPath || "").trim();
+      const rawAudioUrl = String(data.audioUrl || "").trim();
+      const backendAudioUrl = rawAudioUrl
+        ? (rawAudioUrl.startsWith("http") ? rawAudioUrl : `${API_BASE}${rawAudioUrl}`)
+        : "";
+      const backendDuration = Number(data.durationSec || data.duration_sec || 0) || 0;
+      if (!backendAudioPath) throw new Error("audio upload response missing audioPathForAssembly");
+      setAssembleAudioPath(backendAudioPath);
+      patchProject({
+        assembleAudioPath: backendAudioPath,
+        audioPathForAssembly: backendAudioPath,
+        audioPreviewUrl: String(runtimeAudioPreviewUrlRef.current || project.audioPreviewUrl || backendAudioUrl || ""),
+        audioPreviewBackendUrl: backendAudioUrl,
+        audioPreviewMeta: {
+          ...baseAudioMeta,
+          backendPath: backendAudioPath,
+          backendUrl: backendAudioUrl,
+          duration_sec: backendDuration || 0,
+        },
+        timingContext: {
+          ...(project.timingContext || {}),
+          sourceAudioPath: backendAudioPath,
+          sourceAudioFilename: data.filename || file.name || "audio.mp3",
+          sourceAudioDurationSec: backendDuration || Number(project.timingContext?.audioDurationSec || 0) || 0,
+        },
+        useAudioPreview: true,
+      });
+      setAudioLoadMessage("Аудио загружено на backend и готово для MP4-сборки.");
+    } catch (error) {
+      setAssembleAudioPath("");
+      patchProject({ assembleAudioPath: "", audioPathForAssembly: "" }, { lastGood: false });
+      setAudioLoadMessage(`Аудио играет в preview, но НЕ загрузилось на backend для MP4: ${String(error?.message || error)}`);
+    }
+  };
+
+  const onBackgroundAudioFileChange = async (file) => {
+    if (!file) return;
+
+    const localUrl = URL.createObjectURL(file);
+    console.info("[VIDEO MATCH BACKGROUND AUDIO UPLOAD START]", { filename: file?.name || "" });
+    patchProject({
+      audioMix: getDefaultVideoMatchAudioMix({
+        ...(project.audioMix || {}),
+        backgroundAudioFilename: String(file.name || "background.mp3"),
+        backgroundAudioUrl: localUrl,
+        backgroundAudioPath: backgroundAudioPathForAssembly,
+        backgroundAudioBackendUrl: "",
+        backgroundAudioNeedsReload: false,
+        backgroundAudioStatus: "uploading",
+      }),
+    }, { lastGood: false });
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("nodeId", nodeId);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/video-match/audio-upload`, {
+        method: "POST",
+        credentials: "include",
+        headers: getVideoMatchAuthHeaders(),
+        body: formData,
+      });
+      const data = await readVideoMatchJsonResponse(response);
+      if (!response.ok || !data?.ok) throw new Error(getVideoMatchApiErrorMessage(data, response, "background audio upload failed"));
+
+      const backendPath = String(data.audioPathForAssembly || data.audioPath || "").trim();
+      const rawUrl = String(data.audioUrl || "").trim();
+      const backendUrl = rawUrl ? (rawUrl.startsWith("http") ? rawUrl : `${API_BASE}${rawUrl}`) : "";
+      if (!backendPath) throw new Error("background audio upload response missing audioPathForAssembly");
+
+      patchProject({
+        audioMix: getDefaultVideoMatchAudioMix({
+          ...(project.audioMix || {}),
+          backgroundAudioFilename: String(data.filename || file.name || "background.mp3"),
+          backgroundAudioUrl: localUrl,
+          backgroundAudioPath: backendPath,
+          backgroundAudioBackendUrl: backendUrl,
+          backgroundAudioNeedsReload: false,
+          backgroundAudioStatus: "ready",
+        }),
+      }, { lastGood: false });
+      console.info("[VIDEO MATCH BACKGROUND AUDIO READY]", { filename: data.filename || file.name, backendPath, backendUrl });
+    } catch (error) {
+      patchProject({
+        audioMix: getDefaultVideoMatchAudioMix({
+          ...(project.audioMix || {}),
+          backgroundAudioFilename: String(file.name || "background.mp3"),
+          backgroundAudioUrl: localUrl,
+          backgroundAudioPath: "",
+          backgroundAudioBackendUrl: "",
+          backgroundAudioNeedsReload: true,
+          backgroundAudioStatus: "upload_failed",
+        }),
+      }, { lastGood: false });
+      console.warn("[VIDEO MATCH BACKGROUND AUDIO UPLOAD FAILED]", { message: String(error?.message || error) });
+    }
   };
 
   const onLoadedMetadata = () => {
@@ -1914,6 +2753,8 @@ export default function VideoMatchBoardPage() {
       audioPreviewMeta: project.audioPreviewMeta || {},
       useAudioPreview: project.useAudioPreview,
       sourceVideo: { ...normalizedSourceVideo },
+      sourceVideos: Array.isArray(result.sourceVideos) ? result.sourceVideos : (Array.isArray(result.source_videos) ? result.source_videos : project.sourceVideos || []),
+      source_videos: Array.isArray(result.source_videos) ? result.source_videos : (Array.isArray(result.sourceVideos) ? result.sourceVideos : project.source_videos || []),
       source_video: {
         ...(project.source_video || {}),
         path: normalizedPath,
@@ -2033,8 +2874,111 @@ export default function VideoMatchBoardPage() {
     validateAndApplyVideoMatchJsonText(textToApply);
   };
 
+  const getVideoNodeSourcePathForAssembly = (source = {}) => {
+    const item = source && typeof source === "object" ? source : {};
+    return String(
+      item.sourceVideoPathForAssembly
+      || item.source_video_path_for_assembly
+      || item.backendPath
+      || item.backend_path
+      || item.path
+      || item.sourceVideoPath
+      || item.source_video_path
+      || ""
+    ).trim();
+  };
+
+  const getVideoNodeSourceUrlForAssembly = (source = {}) => {
+    const item = source && typeof source === "object" ? source : {};
+    return String(
+      item.sourceVideoUrl
+      || item.source_video_url
+      || item.previewUrl
+      || item.preview_url
+      || item.url
+      || ""
+    ).trim();
+  };
+
+  const getVideoNodeSourcePathOrUrlForAssembly = (source = {}) => {
+    const item = source && typeof source === "object" ? source : {};
+    return String(
+      item.sourceVideoPathForAssembly
+      || item.source_video_path_for_assembly
+      || item.backendPath
+      || item.backend_path
+      || item.path
+      || item.sourceVideoPath
+      || item.source_video_path
+      || item.sourceVideoUrl
+      || item.source_video_url
+      || item.previewUrl
+      || item.preview_url
+      || item.url
+      || ""
+    ).trim();
+  };
+
+  const getVideoMatchDownloadUrl = (url = "") => {
+    const raw = String(url || "").trim();
+    if (!raw) return "";
+    const glue = raw.includes("?") ? "&" : "?";
+    return `${raw}${glue}download=1`;
+  };
+
+  const getVideoMatchMainAudioPathForAssembly = () => String(
+    project.audioPathForAssembly
+    || project.audio_path_for_assembly
+    || project.assembleAudioPath
+    || project.assemble_audio_path
+    || project.audioPreviewMeta?.audioPathForAssembly
+    || project.audioPreviewMeta?.audio_path_for_assembly
+    || project.audioPreviewMeta?.backendPath
+    || project.audioPreviewMeta?.backend_path
+    || project.audioPreviewMeta?.path
+    || ""
+  ).trim();
+
+  const hasVideoMatchMainAudioForAssembly = () => Boolean(getVideoMatchMainAudioPathForAssembly());
+
+  const getVideoMatchBackgroundAudioPathForAssembly = () => String(
+    project.audioMix?.backgroundAudioPath
+    || project.audioMix?.background_audio_path
+    || project.audioMix?.backgroundAudioPathForAssembly
+    || project.audioMix?.background_audio_path_for_assembly
+    || project.audioMix?.backgroundBackendPath
+    || project.audioMix?.background_backend_path
+    || ""
+  ).trim();
+
+  const hasVideoMatchBackgroundAudioForAssembly = () => Boolean(getVideoMatchBackgroundAudioPathForAssembly());
+
   const onAssembleMp4 = async () => {
     if (!assemblyBlocks.length) return;
+    const backgroundAudioPathForAssembly = getVideoMatchBackgroundAudioPathForAssembly();
+    const includeBackgroundAudioForAssembly = Boolean(backgroundAudioPathForAssembly);
+    const mainAudioRequestedForAssembly = Boolean(
+      (typeof includeAudio !== "undefined" ? includeAudio : false)
+      || project.includeAudio
+      || project.include_audio
+    );
+    const sourceVideosForAssembly = (Array.isArray(sourceVideos) ? sourceVideos : [])
+      .map(normalizeVideoNodeSourceEntry)
+      .map((source) => ({
+        ...source,
+        id: String(source.id || source.sourceVideoId || source.source_video_id || "").trim(),
+        sourceVideoId: String(source.sourceVideoId || source.id || source.source_video_id || "").trim(),
+        source_video_id: String(source.source_video_id || source.id || source.sourceVideoId || "").trim(),
+        path: getVideoNodeSourcePathForAssembly(source),
+        backendPath: getVideoNodeSourcePathForAssembly(source),
+        backend_path: getVideoNodeSourcePathForAssembly(source),
+        sourceVideoPathForAssembly: getVideoNodeSourcePathForAssembly(source),
+        source_video_path_for_assembly: getVideoNodeSourcePathForAssembly(source),
+        sourceVideoUrl: getVideoNodeSourceUrlForAssembly(source),
+        source_video_url: getVideoNodeSourceUrlForAssembly(source),
+      }));
+    const sourcePathById = Object.fromEntries(sourceVideosForAssembly.map((source) => [String(source.id || source.sourceVideoId || source.source_video_id || ""), getVideoNodeSourcePathForAssembly(source)]));
+    const anySourceVideoPath = sourceVideosForAssembly.map(getVideoNodeSourcePathForAssembly).find(Boolean) || "";
     const sourceVideoPath = String(
       project?.sourceVideoPathForAssembly
       || project?.uploadedSourceVideoPath
@@ -2043,11 +2987,12 @@ export default function VideoMatchBoardPage() {
       || project?.source_video?.path
       || project?.sourceVideoPath
       || project?.source_video_path
+      || anySourceVideoPath
       || "",
     ).trim();
     const isProxySource = isProxySourcePath(sourceVideoPath);
     if (!sourceVideoPath) {
-      setAssembleError("Для сборки нужен sourceVideo.path из JSON или загрузите source video заново");
+      setAssembleError("Для MP4 нужно заново загрузить видео через +Видео: backend path не найден для V1/V2/V3.");
       console.log("[VIDEO MATCH ASSEMBLY MISSING SOURCE]", {
         sourceVideo: project.sourceVideo,
         source_video: project.source_video,
@@ -2057,7 +3002,7 @@ export default function VideoMatchBoardPage() {
       return;
     }
     if (wantsAssembleWithAudio && !isAssembleAudioPathValid) {
-      setAssembleError("Путь к аудио выглядит неверно. Для MP4 с аудио укажите реальный локальный путь.");
+      setAssembleError("Для Создать MP4 нажмите +Аудио: файл должен загрузиться на backend автоматически. Ручной путь больше не нужен.");
       return;
     }
     setIsAssemblingMp4(true);
@@ -2073,8 +3018,22 @@ export default function VideoMatchBoardPage() {
         const { clipStart, clipEnd } = getBlockClipRange(block);
         const forceMuteVideoAudio = isTruthyFlag(block.forceMuteVideoAudio ?? block.force_mute_video_audio);
         const effectiveOriginalVideoVolume = forceMuteVideoAudio ? 0 : globalOriginalVideoVolume;
+        const blockSourceVideoId = typeof getVideoNodeSourceVideoId === "function" ? getVideoNodeSourceVideoId(block) : String(block.sourceVideoId || block.source_video_id || "src_01");
+        const blockSourceEntry = getSourceVideoEntryById(blockSourceVideoId) || {};
+        const blockSourceVideoPath = String(
+          block.sourceVideoPath
+          || block.source_video_path
+          || getVideoNodeSourcePathForAssembly(blockSourceEntry)
+          || sourcePathById[blockSourceVideoId]
+          || (blockSourceVideoId === "src_01" ? sourceVideoPath : "")
+          || ""
+        ).trim();
         return {
           ...block,
+          sourceVideoId: blockSourceVideoId,
+          source_video_id: blockSourceVideoId,
+          sourceVideoPath: blockSourceVideoPath,
+          source_video_path: blockSourceVideoPath,
           clipSourceStartSec: clipStart,
           clipSourceEndSec: clipEnd,
           sourceVideoStartSec: clipStart,
@@ -2095,19 +3054,33 @@ export default function VideoMatchBoardPage() {
         method: "POST",
         body: {
           sourceVideoPath,
+          sourceVideos: sourceVideosForAssembly,
+          source_videos: sourceVideosForAssembly,
           sourceVideo: project?.sourceVideo || {},
           source_video: project?.source_video || {},
           includeAudio: wantsAssembleWithAudio,
+          includeBackgroundAudio: Boolean(backgroundAudioPathForAssembly),
           audioPath: wantsAssembleWithAudio ? resolvedAssembleAudioPath : "",
           audioUrl: project?.timingContext?.sourceAudioUrl || "",
           outputFormat: "16:9",
           previewQuality: "720p",
-          audioMix: getDefaultVideoMatchAudioMix(project.audioMix || {}),
+          audioMix: {
+            ...getDefaultVideoMatchAudioMix(project.audioMix || {}),
+            backgroundAudioPath: "",
+            backgroundAudioVolume: Number(project.audioMix?.backgroundAudioVolume ?? 0.6),
+            backgroundAudioFilename: String(project.audioMix?.backgroundAudioFilename || ""),
+          },
           blocks: assemblyBlocksForExport.map((block) => {
             const forceMuteVideoAudio = isTruthyFlag(block.forceMuteVideoAudio ?? block.force_mute_video_audio);
             return ({
               id: block.id,
               audioSceneId: block.audioSceneId || block.segmentId || "",
+              sourceVideoId: block.sourceVideoId || block.source_video_id || "",
+              source_video_id: block.source_video_id || block.sourceVideoId || "",
+              sourceVideoPath: block.sourceVideoPath || block.source_video_path || "",
+              source_video_path: block.source_video_path || block.sourceVideoPath || "",
+              sourceVideoUrl: block.sourceVideoUrl || block.source_video_url || "",
+              source_video_url: block.source_video_url || block.sourceVideoUrl || "",
               targetStartSec: Number(block.targetStartSec || 0),
               targetEndSec: Number(block.targetEndSec || 0),
               sourceVideoStartSec: Number(block.sourceVideoStartSec || 0),
@@ -2717,12 +3690,42 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
 
   return (
     <div className="videoMatchPage">
+
+      {/* AVA_PATCH_VIDEO_MATCH_CLEAR_MODAL_V9_START */}
+      {resetConfirmOpen ? (
+        <div className="videoMatchModalOverlay" role="dialog" aria-modal="true" aria-label="Очистить Video Match Node" onMouseDown={() => setResetConfirmOpen(false)}>
+          <div className="videoMatchResetModal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="videoMatchResetModalTop">
+              <span className="videoMatchResetModalIcon">🧹</span>
+              <div>
+                <h3>Очистить Video Match Node?</h3>
+                <p>Удалится текущая доска, candidates и черновая сборка. Это действие не отправляет ничего в генерацию.</p>
+              </div>
+            </div>
+            <div className="videoMatchResetModalWarn">Лучше сначала экспортировать пакет/JSON, если этот board ещё нужен.</div>
+            <div className="videoMatchResetModalActions">
+              <button className="videoMatchModalCancelBtn" type="button" onClick={() => setResetConfirmOpen(false)}>Отмена</button>
+              <button className="videoMatchModalDangerBtn" type="button" onClick={() => { setResetConfirmOpen(false); clearNodeState(); }}>Очистить</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {/* AVA_PATCH_VIDEO_MATCH_CLEAR_MODAL_V9_END */}
       <div className="videoMatchHeader">
         <div>
           <h1>Video Match Board</h1>
           <p>Компактная доска подбора фрагментов большого видео под аудио-карту.</p>
         </div>
-        <button className="btn" type="button" onClick={() => navigate(-1)}>Назад в граф</button>
+        <div className="videoMatchHeaderActions">
+          <button className="videoMatchTopClearBtn" type="button" onClick={() => setResetConfirmOpen(true)} title="Очистить текущую доску">
+            <span className="videoMatchTopClearIcon">🧹</span>
+            <span>Очистить</span>
+          </button>
+          <button className="videoMatchBackMenuBtn" type="button" onClick={() => navigate(-1)} title="Вернуться к предыдущему экрану">
+            <span className="videoMatchBackMenuIcon">←</span>
+            <span>Назад в меню</span>
+          </button>
+        </div>
       </div>
 
       <div className="videoMatchSummaryBar">
@@ -2738,9 +3741,9 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
           <div className="videoMatchPanelHeader">
             <h2>Исходное видео</h2>
             <div className="videoMatchHeaderButtons">
-              <label className="clipSB_btn clipSB_btnPrimary videoMatchUploadBtn videoMatchBtnUploadVideo">
-                Загрузить видео
-                <input type="file" accept="video/*" hidden onChange={(event) => onVideoFileChange(event.target.files?.[0])} />
+              <label className="clipSB_btn clipSB_btnPrimary videoMatchUploadBtn videoMatchBtnAddVideo">
+                + Видео
+                <input type="file" accept="video/*" hidden onChange={(event) => onNextSourceVideoFileChange(event.target.files?.[0], event)} />
               </label>
               <label className="clipSB_btn clipSB_btnSecondary videoMatchUploadBtn videoMatchBtnUploadAudio">
                 + Аудио
@@ -2750,10 +3753,10 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
           </div>
 
           <div className="videoMatchVideoBox">
-            {sourceVideoUrl ? (
+            {activeSourceVideoUrl ? (
               <video
                 ref={videoRef}
-                src={sourceVideoUrl}
+                src={activeSourceVideoUrl}
                 controls
                 onLoadStart={() => updateVideoDiagnostics("loadstart")}
                 onLoadedMetadata={onLoadedMetadata}
@@ -2768,7 +3771,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
           </div>
           <audio
             ref={audioRef}
-            src={audioPreviewUrl || undefined}
+            src={effectiveAudioPreviewUrl || undefined}
             onLoadedMetadata={onLoadedAudioMetadata}
             onTimeUpdate={onAudioTimeUpdate}
             onEnded={onAudioEnded}
@@ -2776,11 +3779,102 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
             preload="metadata"
           />
           {sourceVideoLoadMessage ? <div className="videoMatchError">{sourceVideoLoadMessage}</div> : null}
-          {audioLoadMessage ? <div className="videoMatchError videoMatchAudioNotice">{audioLoadMessage}</div> : null}
+          {audioLoadMessage ? <div className={`videoMatchAudioNotice ${audioLoadMessageTone || "isInfo"}`}>{audioLoadMessage}</div> : null}
 
           <div className="videoMatchTimelineMeta">
-            <span>{project.sourceVideo?.filename || "source.mp4"}</span>
+            <span>{getSourceVideoEntryById(activeSourceVideoId)?.filename || getSourceVideoEntryById(activeSourceVideoId)?.name || project.sourceVideo?.filename || "source.mp4"}</span>
             <span>{formatSec(currentTimeSec)} / {formatSec(timelineDuration)} с</span>
+          </div>
+          <div className="videoMatchSourceCountHint">Исходные видео: {getLoadedVideoSourceCount()}/5 · цвета назначаются автоматически по порядку загрузки</div>
+          <div className="videoMatchSourceLanes" aria-label="source video lanes">
+            {sourceVideos.slice(0, 5).map((source, index) => (
+              <button
+                key={source.id || index}
+                type="button"
+                className="videoMatchSourceLaneChip"
+                style={{ "--source-color": getVideoNodeSourceColor(source.id) }}
+                onClick={() => {
+                  const url = getSourceVideoRuntimeUrl(source.id);
+                  if (url && videoRef.current) {
+                    safePauseVideo(videoRef.current, "source_lane_chip");
+                    setActiveSourceVideoId(source.id);
+                    videoRef.current.src = url;
+                    videoRef.current.currentTime = 0;
+                    videoRef.current.load();
+                  }
+                }}
+                title={`${source.id}: ${source.path || source.filename || "не задан"}`}
+              >
+                <span className="videoMatchSourceLaneDot" />
+                <b>{getVideoNodeSourceShortLabel(source.id)}</b>
+                <span>{source.filename || (index === 0 ? "source.mp4" : "не загружено")}</span>
+              </button>
+            ))}
+          </div>
+          <div className="videoMatchSourceSceneLanes" aria-label="source video scene lanes">
+            {[
+              ...sourceVideos.slice(0, 5),
+              ...(assemblyBlocks.some((block) => ["board", "ls"].includes(getVideoNodeSourceVideoId(block))) ? [{
+                id: "board",
+                label: "BOARD / LS",
+                filename: "клипы с Доски и lip-sync",
+                duration_sec: Math.max(assemblyDurationSec || 0, ...assemblyBlocks.map((block) => getBlockTargetEnd(block) || 0), 1),
+              }] : []),
+            ].map((source, sourceIndex) => {
+              const sourceId = String(source.id || source.sourceVideoId || source.source_video_id || `src_${String(sourceIndex + 1).padStart(2, "0")}`).trim();
+              const isBoardLane = sourceId === "board" || sourceId === "ls";
+              const laneBlocks = assemblyBlocks.filter((block) => {
+                const blockSourceId = getVideoNodeSourceVideoId(block);
+                return isBoardLane
+                  ? ["board", "ls"].includes(blockSourceId)
+                  : blockSourceId === sourceId;
+              });
+              const laneDuration = Math.max(
+                Number(source.duration_sec || source.durationSec || 0) || 0,
+                ...laneBlocks.map((block) => isBoardLane ? getBlockTargetEnd(block) : Number(block.sourceVideoEndSec || block.videoEndSec || 0)),
+                1,
+              );
+              return (
+                <div
+                  key={sourceId}
+                  className={`videoMatchSourceSceneLane ${isBoardLane ? "isBoardLane" : ""}`}
+                  style={{ "--source-color": getVideoNodeSourceColor(sourceId) }}
+                >
+                  <div className="videoMatchSourceSceneLaneHead">
+                    <span className="videoMatchSourceLaneDot" />
+                    <b>{getVideoNodeSourceShortLabel(sourceId)}</b>
+                    <span>{source.filename || source.name || source.label || (sourceIndex === 0 ? "source.mp4" : "не загружено")}</span>
+                    <small>{laneBlocks.length ? `${laneBlocks.length} сцен` : "нет сцен"}</small>
+                  </div>
+                  <div className="videoMatchSourceSceneLaneTrack">
+                    {laneBlocks.length === 0 ? <span className="videoMatchSourceSceneLaneEmpty">Codex пока не выбрал сцен из этого источника</span> : null}
+                    {laneBlocks.map((block, blockIndex) => {
+                      const blockSourceId = getVideoNodeSourceVideoId(block);
+                      const laneStart = isBoardLane ? getBlockTargetStart(block) : Number(block.sourceVideoStartSec || block.videoStartSec || 0);
+                      const laneEnd = isBoardLane ? getBlockTargetEnd(block) : Number(block.sourceVideoEndSec || block.videoEndSec || laneStart + 0.1);
+                      const safeStart = Math.max(0, laneStart);
+                      const safeEnd = Math.max(safeStart + 0.05, laneEnd);
+                      const left = Math.max(0, Math.min(98, (safeStart / laneDuration) * 100));
+                      const width = Math.max(4.2, Math.min(60, ((safeEnd - safeStart) / laneDuration) * 100));
+                      const isSelected = block.id === project.selectedBlockId;
+                      return (
+                        <button
+                          key={`${sourceId}_${block.id}_${blockIndex}`}
+                          type="button"
+                          className={`videoMatchSourceScenePill ${isSelected ? "isSelected" : ""} ${isLipSyncScene(block) ? "isLipSync" : ""}`}
+                          style={{ left: `${left}%`, width: `${width}%`, "--source-color": getVideoNodeSourceColor(blockSourceId) }}
+                          onClick={() => onSelectBlockAndPreview(block, "source_lane_click")}
+                          title={`${block.audioSceneId || block.segmentId || block.id} · ${getVideoNodeSourceShortLabel(blockSourceId)} · source ${formatSec(safeStart)}–${formatSec(safeEnd)}с · final ${formatSec(getBlockTargetStart(block))}–${formatSec(getBlockTargetEnd(block))}с`}
+                        >
+                          <span>{block.audioSceneId || block.segmentId || `seg_${String(blockIndex + 1).padStart(2, "0")}`}</span>
+                          {isLipSyncScene(block) ? <i>LS</i> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <div className="videoMatchTimeline videoMatchTimelineScroller" aria-label="Scene source proof strip">
             <div className="videoMatchTimelineInner" style={{ width: `${sourceTimelineInnerWidth}px` }}>
@@ -2793,8 +3887,8 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                     key={block.id}
                     type="button"
                     className={`videoMatchTimelineMarker tone-${markerTone} ${block.id === project.selectedBlockId ? "isSelected" : ""} ${isAssemblyPlaying && block.id === project.selectedBlockId ? "isPlaying" : ""}`}
-                    style={{ left: `${markerLeft}%` }}
-                    onClick={() => onSelectBlock(block)}
+                    style={{ left: `${markerLeft}%`, "--source-color": getVideoNodeSourceColor(getVideoNodeSourceVideoId(block)) }}
+                    onClick={() => onSelectBlockAndPreview(block, "scene_click")}
                     title={`${block.audioSceneId || block.segmentId || block.id}: source ${formatSec(block.sourceVideoStartSec)}–${formatSec(block.sourceVideoEndSec)}с / final ${formatSec(getBlockTargetStart(block))}–${formatSec(getBlockTargetEnd(block))}с`}
                   >
                     {markerTone === "lipsync" ? <span className="videoMatchLsBadge">LS</span> : null}
@@ -2805,19 +3899,14 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
           </div>
 
           <div className="videoMatchAudioRow">
-            <label className="videoMatchAudioToggle">
-              <input
-                type="checkbox"
-                checked={useAudioPreview}
-                onChange={(event) => patchProject({ useAudioPreview: event.target.checked }, { lastGood: false })}
-              />
-              <span>С аудио</span>
-            </label>
+            {/* PATCH18AJ: hidden old 'Аудио подключается автоматически' checkbox; audio inclusion is automatic by backend path */}
             <span>{project.audioPreviewMeta?.filename || "аудио не загружено"}</span>
             <span>{formatSec(audioCurrentTimeSec)} / {formatSec(effectiveAudioDurationSec)} с</span>
           </div>
+          <div className="videoMatchScenePreviewHint">▶ Клик по сцене = точный preview: видео + аудио этого сегмента, затем автостоп.</div>
+<div className="videoMatchAudioSimpleNotice">🎧 Простая логика: основной MP3 включается, если он загружен на backend; фон включается, если он загружен на backend. Галка больше не решает сборку.</div>
           <div className="videoMatchAudioStatusBadges">
-            {sourceVideoUrl
+            {(activeSourceVideoUrl || sourceVideoUrl)
               ? <span className="videoMatchAudioStatusBadge isOk">✅ Видео для предпросмотра загружено</span>
               : <span className="videoMatchAudioStatusBadge isWarn">⚠️ Видео для предпросмотра не загружено</span>}
             {sourceVideoPathForAssembly
@@ -2826,15 +3915,15 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                 ? <span className="videoMatchAudioStatusBadge isWarn">⚠️ MP4 использует путь из JSON</span>
                 : <span className="videoMatchAudioStatusBadge isWarn">⚠️ MP4 source path не задан</span>)}
             {isAssemblyUsingProxySource ? <span className="videoMatchAudioStatusBadge isWarn">⚠️ MP4 использует proxy video</span> : null}
-            {(audioPreviewUrl || project.audioPreviewMeta?.filename)
+            {(effectiveAudioPreviewUrl || project.audioPreviewMeta?.filename)
               ? <span className="videoMatchAudioStatusBadge isOk">✅ Аудио для предпросмотра загружено</span>
               : <span className="videoMatchAudioStatusBadge isWarn">⚠️ Аудио для предпросмотра не загружено</span>}
             {wantsAssembleWithAudio ? (
               isAssembleAudioPathValid
-                ? <span className="videoMatchAudioStatusBadge isOk">✅ Путь к аудио для MP4 указан</span>
-                : <span className={`videoMatchAudioStatusBadge ${resolvedAssembleAudioPath ? "isError" : "isWarn"}`}>{resolvedAssembleAudioPath ? "❌ Путь к аудио выглядит неверно" : "⚠️ Путь к аудио для MP4 не указан"}</span>
+                ? <span className="videoMatchAudioStatusBadge isOk">✅ Аудио для MP4 готово</span>
+                : <span className={`videoMatchAudioStatusBadge ${resolvedAssembleAudioPath ? "isError" : "isWarn"}`}>{resolvedAssembleAudioPath ? "❌ Аудио не готово для MP4" : "⚠️ Нажмите +Аудио для MP4"}</span>
             ) : (
-              <span className="videoMatchAudioStatusBadge isWarn">⚠️ Собрать без аудио</span>
+              <span className="videoMatchAudioStatusBadge isWarn">⚠️ {"Собрать без аудио"}</span>
             )}
           </div>
 
@@ -2849,8 +3938,8 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                 key={block.id}
                 type="button"
                 className={`videoMatchStripSegment ${block.id === project.selectedBlockId ? "isSelected" : ""} ${block.id === currentPlayingBlockId ? "isCurrent" : ""} ${isAssemblyPlaying && block.id === project.selectedBlockId ? "isPlaying" : ""} ${block.sourceKind === "override_video" ? "isOverride" : ""} ${isLipSyncScene(block) ? "isLipSync" : ""}`}
-                style={{ "--strip-color-index": index % 8 }}
-                onClick={() => onSelectBlock(block)}
+                style={{ "--strip-color-index": index % 8, "--source-color": getVideoNodeSourceColor(getVideoNodeSourceVideoId(block)) }}
+                onClick={() => onSelectBlockAndPreview(block, "scene_click")}
                 title={`${block.audioSceneId || block.segmentId}: video ${formatSec(block.sourceVideoStartSec)}–${formatSec(block.sourceVideoEndSec)}с · candidate ${block.candidateId || block.id}`}
               >
                 <span>{block.audioSceneId || block.segmentId || `seg_${String(index + 1).padStart(2, "0")}`}</span>
@@ -2859,38 +3948,36 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
             ))}
           </div>
           <div className="videoMatchActions videoMatchPlaybackActions">
-            <button className="clipSB_btn clipSB_btnPrimary videoMatchBtnChunk" type="button" disabled={!selectedBlock} onClick={onPlaySelectedBlock}>▶ Кусок</button>
-            <button className="clipSB_btn clipSB_btnPrimary videoMatchBtnAssembly" type="button" disabled={!assemblyBlocks.length} onClick={() => playAssemblyFromBlock(assemblyBlocks[0])}>▶ Сборка</button>
-            <button className="clipSB_btn clipSB_btnSecondary videoMatchBtnFromHere" type="button" disabled={!selectedBlock || !assemblyBlocks.length} onClick={() => playAssemblyFromBlock(selectedBlock)}>▶ Отсюда</button>
-            <button className="clipSB_btn clipSB_btnSecondary" type="button" disabled={!isPlaybackActive} onClick={stopPlayback}>■ Стоп</button>
-            <button className={`clipSB_btn clipSB_btnSecondary ${wantsAssembleWithAudio ? "videoMatchBtnMp4WithAudio" : "videoMatchBtnMp4NoAudio"}`} type="button" disabled={!assemblyBlocks.length || isAssemblingMp4 || (wantsAssembleWithAudio && !isAssembleAudioPathValid)} onClick={onAssembleMp4}>{isAssemblingMp4 ? "Собираем MP4..." : (wantsAssembleWithAudio ? "⬇ MP4 с аудио" : "⬇ MP4 без аудио")}</button>
-            <span>{selectedBlock ? `${selectedBlock.id}: ${formatSec(selectedBlock.sourceVideoStartSec)}–${formatSec(selectedBlock.sourceVideoEndSec)} с` : "Кусок не выбран"}</span>
+            {/* PATCH18Q: manual preview button removed; click scene to preview */}
+            {/* PATCH18P: live preview assembly hidden; use Создать MP4 instead */}
+            {/* PATCH18Q: manual preview button removed; click scene to preview */}
+            {/* PATCH18AJ: Stop button hidden; scene preview auto-stops */}
+            <button className={`clipSB_btn clipSB_btnSecondary ${wantsAssembleWithAudio ? "videoMatchBtnMp4WithAudio" : "videoMatchBtnMp4NoAudio"} videoMatchCreateMp4MagicBtn`} type="button" disabled={!assemblyBlocks.length || isAssemblingMp4 || (wantsAssembleWithAudio && !isAssembleAudioPathValid)} onClick={onAssembleMp4}>{isAssemblingMp4 ? "Собираем MP4..." : "✨ Создать MP4"}</button>
+            {/* PATCH18AK: selected clip technical label hidden */}
           </div>
           <div className="videoMatchContextRows">
-            <label>
-              Путь к аудио для сборки
-              <input
-                type="text"
-                value={assembleAudioPath}
-                className={audioPathInputError ? "videoMatchInputInvalid" : ""}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setAssembleAudioPath(value);
-                  patchProject({ assembleAudioPath: value }, { lastGood: false });
-                }}
-                placeholder="C:\\path\\to\\practice_30sec_audio.mp3"
-              />
-            </label>
-            <div className="videoMatchWarnings">
-              Для MP4-сборки нужен реальный путь к mp3 на диске. Загруженный через +Аудио blob используется только для предпросмотра.
+            <div className={`videoMatchAutoAudioBox ${isAssembleAudioPathValid ? "isReady" : "isMissing"}`}>
+              <div className="videoMatchAutoAudioTitle">
+                {isAssembleAudioPathValid ? "✓ Аудио готово для MP4-сборки" : "⚠ MP4-аудио не подготовлено"}
+              </div>
+              <div className="videoMatchAutoAudioText">
+                {isAssembleAudioPathValid
+                  ? "Файл уже загружен на backend через +Аудио. Ручной путь больше не нужен."
+                  : "Нажмите +Аудио и выберите mp3/wav/m4a — система сама сохранит файл для сборки."}
+              </div>
+              {isAssembleAudioPathValid ? <div className="videoMatchAssemblyAudioPathHint">{resolvedAssembleAudioPath}</div> : null}
             </div>
             <details className="videoMatchAudioMixDetails">
               <summary>
                 {project.audioMix?.backgroundAudioFilename
-                  ? `▸ Аудио микс · фон: ${project.audioMix.backgroundAudioFilename}`
-                  : `▸ Аудио микс · видео: ${project.audioMix?.originalVideoAudioMode === "keep" ? "оставить" : project.audioMix?.originalVideoAudioMode === "mute" ? "выключить" : "приглушить"} ${Math.round(Number(project.audioMix?.originalVideoVolume ?? 0.10) * 100)}% · фон: ${Math.round(Number(project.audioMix?.backgroundAudioVolume ?? 0.6) * 100)}%`}
+                  ? `▸ Аудио микс · фон будет подмешан в MP4`
+                  : `▸ Аудио микс · звук видео: ${project.audioMix?.originalVideoAudioMode === "keep" ? "оставить" : project.audioMix?.originalVideoAudioMode === "mute" ? "выключить" : "приглушить"} ${Math.round(Number(project.audioMix?.originalVideoVolume ?? 0.10) * 100)}% · фон: ${Math.round(Number(project.audioMix?.backgroundAudioVolume ?? 0.6) * 100)}%`}
               </summary>
               <div className="videoMatchAudioMixCompact">
+              <div className="videoMatchAudioMixPurpose">
+                🎧 Этот блок применяется при кнопке <b>Создать MP4</b>: основной MP3 остаётся главным, фон тихо подмешивается сверху, звук исходных видео можно приглушить или выключить.
+              </div>
+              
               <label>
                 🔊 Звук видео:
                 <select
@@ -2915,23 +4002,10 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                 <span>{Math.round(Number(project.audioMix?.originalVideoVolume ?? 0.10) * 100)}%</span>
               </label>
               <label>
-                🎵 Фон:
+                🎵 Фоновая музыка:
                 <span className="clipSB_btn clipSB_btnSecondary videoMatchAudioMixUploadBtn">
-                  Загрузить фон
-                  <input type="file" accept="audio/*" hidden onChange={async (event) => {
-                    const file = event.target.files?.[0];
-                    event.target.value = "";
-                    if (!file) return;
-                    patchProject({
-                      audioMix: getDefaultVideoMatchAudioMix({
-                        ...(project.audioMix || {}),
-                        backgroundAudioFilename: String(file.name || ""),
-                        backgroundAudioUrl: URL.createObjectURL(file),
-                        backgroundAudioPath: "",
-                        backgroundAudioNeedsReload: false,
-                      }),
-                    }, { lastGood: false });
-                  }} />
+                  Загрузить фон для MP4
+                  <input type="file" accept="audio/*" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void onBackgroundAudioFileChange(file); }} />
                 </span>
                 <input type="range" min="0" max="1" step="0.01" value={Number(project.audioMix?.backgroundAudioVolume ?? 0.6)} onChange={(event) => patchProject({
                   audioMix: getDefaultVideoMatchAudioMix({
@@ -2941,23 +4015,45 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                 }, { lastGood: false })} />
                 <span>{Math.round(Number(project.audioMix?.backgroundAudioVolume ?? 0.6) * 100)}%</span>
               </label>
-              <div className="videoMatchAudioMixMeta">файл: {project.audioMix?.backgroundAudioFilename || "Фон не загружен"}</div>
+              <div className="videoMatchAudioMixMeta">
+                {project.audioMix?.backgroundAudioFilename
+                  ? `фон: ${project.audioMix.backgroundAudioFilename} · будет подмешан в MP4 · громкость ${Math.round(Number(project.audioMix?.backgroundAudioVolume ?? 0.6) * 100)}%`
+                  : "Фон не загружен. Если загрузить фон, он будет подмешан в финальный MP4."}
+              </div>
+              {project.audioMix?.backgroundAudioPath ? <div className="videoMatchAudioMixReady">✓ Фон загружен на backend и готов для MP4</div> : null}
+              {project.audioMix?.backgroundAudioStatus === "uploading" ? <div className="videoMatchAudioMixUploading">Загружаю фон на backend...</div> : null}
               {project.audioMix?.backgroundAudioNeedsReload ? <div className="videoMatchError videoMatchAudioNotice">Фон нужно загрузить заново</div> : null}
               </div>
             </details>
             {assembleError ? <div className="videoMatchError">{assembleError}</div> : null}
             {assembleWarning ? <div className="videoMatchWarnings">{assembleWarning}</div> : null}
             {assembledPreview?.ok && assembledPreviewOutputUrl ? (
-              <div>
-                <a href={assembledPreviewOutputUrl} target="_blank" rel="noreferrer">▶ Смотреть MP4</a>{" "}
-                <button
-                  className="clipSB_btn clipSB_btnSecondary"
-                  type="button"
-                  onClick={() => window.open(assembledPreviewOutputUrl, "_blank", "noopener,noreferrer")}
-                >
-                  ⬇ Скачать MP4
-                </button>
-                {assembledPreview.warning ? <div className="videoMatchWarnings">warning: {assembledPreview.warning}</div> : null}
+              <div className="videoMatchReadyMp4Panel">
+                <div className="videoMatchReadyMp4Header">
+                  <div>
+                    <div className="videoMatchReadyMp4Eyebrow">MP4 готов</div>
+                    <strong>Готовый черновик собран</strong>
+                    <span>Откройте результат или скачайте файл для проверки монтажа.</span>
+                  </div>
+                  <span className="videoMatchReadyMp4Pulse">✓</span>
+                </div>
+                <div className="videoMatchReadyMp4Actions">
+                  <button
+                    className="videoMatchReadyMp4Button"
+                    type="button"
+                    onClick={() => { console.info("[VIDEO MATCH OPEN INLINE MP4]", { url: assembledPreviewOutputUrl }); window.open(assembledPreviewOutputUrl, "_blank", "noopener,noreferrer"); }}
+                  >
+                    ✨ Смотреть готовый MP4
+                  </button>
+                  <a
+                    className="videoMatchReadyMp4Download"
+                    href={getVideoMatchDownloadUrl(assembledPreviewOutputUrl)}
+                    download
+                  >
+                    ⬇ Скачать MP4
+                  </a>
+                </div>
+                {assembledPreview.warning ? <div className="videoMatchWarnings videoMatchReadyMp4Warning">warning: {assembledPreview.warning}</div> : null}
               </div>
             ) : null}
           </div>
@@ -2989,6 +4085,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                   const candidateKey = getCandidateKey(candidate);
                   const selectedCandidateKey = String(selectedSegment.selectedCandidateId || selectedSegment.selected_candidate_id || "").trim();
                   const isCandidateSelected = candidateKey === selectedCandidateKey;
+                          const candidateSourceId = getVideoNodeSourceVideoId(candidate);
                   const isPreviewCandidate = candidateKey === previewCandidateId;
                   const selectedSegmentKey = getSegmentKey(selectedSegment);
                   const candidateBlock = assemblyBlocks.find((block) => {
@@ -2998,7 +4095,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                   });
                   const effectiveForceMute = getEffectiveForceMuteVideoAudio(candidateBlock, selectedSegment, candidate);
                   return (
-                    <div key={candidate.id} className={`videoMatchCandidateCard ${isCandidateSelected ? "isSelected" : ""} ${isPreviewCandidate ? "isPreview" : ""} ${isOverrideCandidate(candidate) ? "isOverride" : ""}`}>
+                    <div key={candidate.id} className={`videoMatchCandidateCard ${isCandidateSelected ? "isSelected" : ""} ${isPreviewCandidate ? "isPreview" : ""} ${isOverrideCandidate(candidate) ? "isOverride" : ""}`} data-source-video-id={candidateSourceId} style={{ "--vm-source-color": getVideoNodeSourceColor(candidateSourceId), "--source-color": getVideoNodeSourceColor(candidateSourceId) }}>
                       {isBrowserSafeThumbnail(candidate.thumbnail) ? <img src={candidate.thumbnail} alt={`${candidate.id} thumbnail`} /> : null}
                       <div className="videoMatchCandidateBody">
                         <b>{candidate.id}{isCandidateSelected ? " · выбрано" : ""}{isPreviewCandidate ? " · просмотр" : ""}</b>
@@ -3006,8 +4103,8 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                         {isOverrideCandidate(candidate) ? <span className="videoMatchCandidateBadge">свой клип · lip-sync override</span> : null}
                         {isBoardClipCandidate(candidate) ? <span className="videoMatchCandidateBadge">клип с доски</span> : null}
                         {isOverrideCandidate(candidate) ? <small>длина клипа: {formatSec(candidate.overrideDurationSec || candidate.sourceVideoEndSec)}с / цель: {formatSec((selectedSegment?.targetEndSec || 0) - (selectedSegment?.targetStartSec || 0))}с</small> : null}
-                        {candidate.matchReason ? <small>{candidate.matchReason}</small> : null}
-                        {candidate.warnings?.length ? <small className="videoMatchWarnings">Предупреждения: {candidate.warnings.join("; ")}</small> : null}
+                        {candidate.matchReason && !String(candidate.matchReason).toLowerCase().includes("ui layout test") ? null : null}
+                        {false && candidate.warnings?.length ? <small className="videoMatchWarnings">Предупреждения: {candidate.warnings.join("; ")}</small> : null}
                         {isCandidateSelected ? (
                           <label className="videoMatchSceneMuteToggle">
                             <input
@@ -3102,7 +4199,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
             <button className="clipSB_btn clipSB_btnPrimary" type="button" onClick={onApplyJson}>✅ Применить</button>
             <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => forceApplyVideoMatchJsonText(String(jsonInputDraft || project.jsonInputPreview || project.jsonInput || ""))}>⚠️ Заменить проект</button>
             <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={onExportChatGptPackage}>📤 Пакет для ChatGPT</button>
-            <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => { if (window.confirm("Очистить Video Match Node и удалить текущий board/candidates/черновую сборку?")) clearNodeState(); }}>🧹 Очистить</button>
+            <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => setResetConfirmOpen(true)}>🧹 Очистить</button>
           </div>
           <div className="videoMatchWorkflowStatus">Пакет для ChatGPT сохраняет контекст. Пришлите его в чат — ChatGPT предложит следующий шаг и напишет точное задание Codex.</div>
           <textarea value={jsonInputDraft || project.jsonInputPreview || ""} onChange={(event) => setJsonInputDraft(event.target.value)} placeholder="Вставьте JSON schema video_match_board_v1 или video_match_board_v2..." />
@@ -3111,7 +4208,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
           {pendingImportResult ? <div className="videoMatchWarnings">Импорт ожидает подтверждения замены текущего проекта.</div> : null}
         </details>
 
-        <details className="videoMatchPanel videoMatchDetailsPanel">
+        <details className="videoMatchPanel videoMatchDetailsPanel videoMatchRemovedPanel">
           <summary>Аудио-карта</summary>
           <div className="videoMatchContextRows">
             <div>sourceAudioUrl: {project.timingContext?.sourceAudioUrl || "—"}</div>
@@ -3125,7 +4222,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
           </div>
         </details>
 
-        <details className="videoMatchPanel videoMatchDetailsPanel videoMatchBlocksPanel">
+        <details className="videoMatchPanel videoMatchDetailsPanel videoMatchBlocksPanel videoMatchRemovedPanel">
           <summary>Статистика / Debug</summary>
           <div className="videoMatchContextRows">
             <div>board status: {project.status || "—"}</div>
@@ -3146,7 +4243,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
             <div>video blocks: {videoBlocks.length}</div>
             <div>длительность сборки: {formatSec(assemblyDurationSec)} с</div>
             <div>аудио preview: {project.audioPreviewMeta?.filename || "—"}</div>
-            <div>audioPreviewUrl: {project.audioPreviewUrl ? "есть" : "—"}</div>
+            <div>audioPreviewUrl: {effectiveAudioPreviewUrl ? "есть" : "—"}</div>
             <div>selectedSegmentId: {project.selectedSegmentId || "—"}</div>
             <div>selectedCandidateId: {project.selectedCandidateId || "—"}</div>
             <div>selectedBlockId: {project.selectedBlockId || "—"}</div>
@@ -3182,30 +4279,32 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                 const candidates = Array.isArray(segment.candidates) ? segment.candidates : [];
                 const isSegmentSelected = segment.id === project.selectedSegmentId;
                 const isOpen = segment.id === project.selectedSegmentId;
+                const segmentSourceId = getVideoNodeSegmentSourceVideoId(segment, candidates);
                 return (
-                  <div key={segment.id} className={`videoMatchSegmentCard ${isSegmentSelected ? "isSelected" : ""}`}>
+                  <div key={segment.id} className={`videoMatchSegmentCard ${isSegmentSelected ? "isSelected" : ""}`} style={{ "--source-color": getVideoNodeSourceColor(segmentSourceId) }}>
                     <div className="videoMatchSegmentHeader">
                       <div className="videoMatchSegmentTitle">
-                        <b>{segment.audioSceneId || segment.id}</b>
-                        <span>story: {segment.storySceneId || "—"}</span>
-                        <span>тайминг {formatSec(segment.targetStartSec)}–{formatSec(segment.targetEndSec)} · выбрано {segment.selectedCandidateId || "—"} · вариантов {candidates.length}</span>
+                        <b>{segment.audioSceneId || segment.id}</b><span className="videoMatchRightSourceBadge">{getVideoNodeSourceShortLabel(segmentSourceId)}</span>
+                        <span>Видео: {getVideoNodeSourceShortLabel(segmentSourceId)} · {getSourceVideoEntryById(segmentSourceId)?.filename || getSourceVideoEntryById(segmentSourceId)?.name || "—"}</span>
+                        <span>Тайминг сцены: {formatSec(segment.targetStartSec)}–{formatSec(segment.targetEndSec)} c · вариантов: {candidates.length}</span>
                       </div>
                     </div>
-                    {segment.text ? <p>{segment.text}</p> : null}
+                    {segment.text && !String(segment.text).toLowerCase().includes("ui test") ? <p>{segment.text}</p> : null}
                     {segment.visualNeed ? <small className="videoMatchSegmentNeed">Нужно: {segment.visualNeed}</small> : null}
                     {isOpen ? (
                       <div className="videoMatchCandidatesList">
                         {candidates.map((candidate) => {
                           const isCandidateSelected = candidate.id === segment.selectedCandidateId;
+                          const candidateSourceId = getVideoNodeSourceVideoId(candidate);
                           const isPreviewCandidate = candidate.id === previewCandidateId;
   return (
-                            <div key={candidate.id} className={`videoMatchCandidateCard ${isCandidateSelected ? "isSelected" : ""} ${isPreviewCandidate ? "isPreview" : ""}`}>
+                            <div key={candidate.id} className={`videoMatchCandidateCard ${isCandidateSelected ? "isSelected" : ""} ${isPreviewCandidate ? "isPreview" : ""}`} style={{ "--source-color": getVideoNodeSourceColor(getVideoNodeSourceVideoId(candidate)) }} data-source-video-id={candidateSourceId} style={{ "--vm-source-color": getVideoNodeSourceColor(candidateSourceId), "--source-color": getVideoNodeSourceColor(candidateSourceId) }}>
                               {isBrowserSafeThumbnail(candidate.thumbnail) ? <img src={candidate.thumbnail} alt={`${candidate.id} thumbnail`} /> : null}
                               <div className="videoMatchCandidateBody">
-                                <b>{candidate.id}{isPreviewCandidate ? " · просмотр" : ""}</b>
-                                <span>видео {formatSec(candidate.sourceVideoStartSec)}–{formatSec(candidate.sourceVideoEndSec)} · уверенность {candidate.confidence ?? "—"}</span>
-                                {candidate.matchReason ? <small>{candidate.matchReason}</small> : null}
-                                {candidate.warnings?.length ? <small className="videoMatchWarnings">Предупреждения: {candidate.warnings.join("; ")}</small> : null}
+                                <b>{segment.audioSceneId || segment.id} · {getVideoNodeSourceShortLabel(candidateSourceId)}{isCandidateSelected ? " · выбрано" : ""}{isPreviewCandidate ? " · просмотр" : ""}</b>
+                                <span className="videoMatchCandidateCleanMeta"><b className="videoMatchRightSourceBadge" style={{ "--vm-source-color": getVideoNodeSourceColor(candidateSourceId), "--source-color": getVideoNodeSourceColor(candidateSourceId) }}>{getVideoNodeSourceShortLabel(candidateSourceId)}</b><span>{getSourceVideoEntryById(candidateSourceId)?.filename || getSourceVideoEntryById(candidateSourceId)?.name || candidate.sourceVideoFilename || candidate.source_video_filename || "video"}</span><span>{formatSec(candidate.sourceVideoStartSec)}–{formatSec(candidate.sourceVideoEndSec)} c</span></span>
+                                {candidate.matchReason && !String(candidate.matchReason).toLowerCase().includes("ui layout test") ? null : null}
+                                {false && candidate.warnings?.length ? <small className="videoMatchWarnings">Предупреждения: {candidate.warnings.join("; ")}</small> : null}
                                                       </div>
                               <div className="videoMatchCandidateActions">
                                 <button className="clipSB_btn clipSB_btnSecondary videoMatchIconBtn" type="button" onClick={() => onPreviewCandidate(segment, candidate)}>▶</button>
@@ -3227,7 +4326,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
             {videoBlocks.length === 0 ? <div className="videoMatchEmptyList">Выбранные варианты появятся здесь как video blocks.</div> : null}
             <div className="videoMatchBlocksList">
               {videoBlocks.map((block) => (
-                <button key={block.id} type="button" className={`videoMatchBlockCard ${block.id === project.selectedBlockId ? "isSelected" : ""}`} onClick={() => onSelectBlock(block)}>
+                <button key={block.id} type="button" className={`videoMatchBlockCard ${block.id === project.selectedBlockId ? "isSelected" : ""}`} onClick={() => onSelectBlockAndPreview(block, "scene_click")}>
                   <b>{block.id}</b>
                   <span>audio: {block.audioSceneId || "—"} · тайминг {formatSec(block.targetStartSec)}–{formatSec(block.targetEndSec)}</span>
                   <span>видео {formatSec(block.sourceVideoStartSec)}–{formatSec(block.sourceVideoEndSec)} · уверенность {block.confidence ?? "—"}</span>

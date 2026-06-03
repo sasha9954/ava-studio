@@ -16,6 +16,7 @@ import BoardAssemblyPage from './pages/BoardAssemblyPage.jsx'
 import ModulePlaceholderPage from './pages/ModulePlaceholderPage.jsx'
 import PodcastAudioComposerPage from './pages/podcast_audio/PodcastAudioComposerPage.jsx'
 import VideoMatchBoardPage from './pages/video_match_board/VideoMatchBoardPage.jsx'
+import StandaloneGeneratorPage from './pages/standalone_generator/StandaloneGeneratorPage.jsx'
 
 function Protected({ children }) {
   const { token, booting } = useAuth()
@@ -32,6 +33,8 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/studio/podcast-audio-composer" element={<Protected><PodcastAudioComposerPage /></Protected>} />
       <Route path="/studio/video-node" element={<Protected><VideoMatchBoardPage /></Protected>} />
+      <Route path="/generator" element={<Protected><StandaloneGeneratorPage /></Protected>} />
+      <Route path="/studio/generator" element={<Protected><StandaloneGeneratorPage /></Protected>} />
       <Route path="/studio/video-match-board" element={<Protected><VideoMatchBoardPage /></Protected>} />
       <Route
         path="/app"
@@ -51,14 +54,14 @@ export default function App() {
         <Route path="workspace/board-assembly" element={<BoardAssemblyPage />} />
         <Route path="workspace/video-node" element={<VideoMatchBoardPage />} />
         <Route path="workspace/video-match-board" element={<VideoMatchBoardPage />} />
-        <Route path="workspace/generator" element={<ModulePlaceholderPage stage="generator" />} />
+        <Route path="workspace/generator" element={<StandaloneGeneratorPage />} />
         <Route path="projects/:projectId/timing" element={<ManualTimingPage />} />
         <Route path="projects/:projectId/podcast" element={<PodcastAudioComposerPage />} />
         <Route path="projects/:projectId/board" element={<BoardPage />} />
         <Route path="projects/:projectId/board-assembly" element={<BoardAssemblyPage />} />
         <Route path="projects/:projectId/video-node" element={<VideoMatchBoardPage />} />
         <Route path="projects/:projectId/video-match-board" element={<VideoMatchBoardPage />} />
-        <Route path="projects/:projectId/generator" element={<ModulePlaceholderPage stage="generator" />} />
+        <Route path="projects/:projectId/generator" element={<StandaloneGeneratorPage />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="credits" element={<CreditsPage />} />
         <Route path="settings" element={<SettingsPage />} />

@@ -13,6 +13,8 @@ import {
   readManualTimingProjectForNode,
 } from "../clip_nodes/manual_timing/manualTimingDomain.js";
 import "./PodcastAudioComposerPage.css";
+import WorkflowStageControls from "../../components/WorkflowStageControls.jsx";
+import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, makeWorkflowEntry, rememberWorkflowEntry } from "../../utils/workflowNavigation.js";
 
 const AVA_STAGE101_PODCAST_DB = "ava_podcast_audio_persist_v1";
 const AVA_STAGE101_ACTOR_STORE = "actor_audio_blobs";
@@ -650,11 +652,36 @@ const COMPOSER_STORAGE_VERSION = 44;
 const RESTORABLE_STORAGE_VERSIONS = new Set([30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]);
 const ACTOR_AUDIO_DB_NAME = "podcast_audio_composer_assets_v1";
 const ACTOR_AUDIO_DB_STORE = "audio_files";
+const PODCAST_STAGE_CLEARED_STORAGE_KEY = 'ava:podcast:cleared:v1';
+
+function isPodcastClearedStorageMarkerActive() {
+  try {
+    return Boolean(
+      localStorage.getItem(PODCAST_STAGE_CLEARED_STORAGE_KEY) ||
+      sessionStorage.getItem(PODCAST_STAGE_CLEARED_STORAGE_KEY)
+    );
+  } catch {
+    return false;
+  }
+}
+
 const DEFAULT_MICRO_STEP_SEC = 0.5;
 const MIN_BLOCK_SEC = 0.001;
 const MAX_HISTORY_ITEMS = 50;
 const ASSET_UPLOAD_SOFT_LIMIT_BYTES = 60 * 1024 * 1024;
 const PODCAST_AUDIO_HANDOFF_SOURCE = "podcast_audio_composer";
+
+const PODCAST_AUDIO_VIDEO_ACCEPT = "audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov,.mkv,.avi,.m4v";
+
+function isPodcastVideoFile(file = {}) {
+  const type = String(file?.type || "").toLowerCase();
+  const name = String(file?.name || "").toLowerCase();
+  return (
+    type.startsWith("video/") ||
+    /\.(mp4|mov|mkv|avi|m4v)$/i.test(name)
+  );
+}
+
 const BLOCK_COLORS = [
   "var(--podcast-block-color-1)",
   "var(--podcast-block-color-2)",
@@ -1083,6 +1110,7 @@ function getComposerStorageKey(sourceNodeId = "") {
 }
 
 function readComposerStorage(sourceNodeId = "") {
+  if (isPodcastClearedStorageMarkerActive()) return null;
   try {
     const raw = localStorage.getItem(getComposerStorageKey(sourceNodeId));
     return raw ? JSON.parse(raw) : null;
@@ -1092,6 +1120,7 @@ function readComposerStorage(sourceNodeId = "") {
 }
 
 function writeComposerStorage(sourceNodeId = "", payload = {}) {
+  if (isPodcastClearedStorageMarkerActive()) return;
   try {
     localStorage.setItem(getComposerStorageKey(sourceNodeId), JSON.stringify(payload));
   } catch {}
@@ -1222,6 +1251,7 @@ async function deleteActorAudioBlob(key = "") {
 }
 
 async function restoreActorAudiosFromStorage(sourceNodeId = "", actorAudios = []) {
+  if (isPodcastClearedStorageMarkerActive()) return [];
   const rows = Array.isArray(actorAudios) ? actorAudios : [];
   const restored = [];
   for (const actor of rows) {
@@ -1494,7 +1524,7 @@ function resolveServerRenderableBlockSource({ block = {}, mainAudio = {}, origin
   if (sourceId !== "main" && actorUrl) return { sourceUrl: actorUrl, resolvedVia: registry?.sourceUrlByLegacyActorId?.has(sourceId) ? "legacy_actor" : "actor", savedClip };
 
   const fallbackOriginalUrl = String(originalAudioUrl || mainAudio?.url || "").trim();
-  if (sourceId === "main" && isBackendStaticAssetUrl(fallbackOriginalUrl)) return { sourceUrl: fallbackOriginalUrl, resolvedVia: "main", savedClip };
+  if (sourceId === "main" && fallbackOriginalUrl) return { sourceUrl: fallbackOriginalUrl, resolvedVia: isBackendStaticAssetUrl(fallbackOriginalUrl) ? "main" : "main_asset_url", savedClip };
 
   return { sourceUrl: "", resolvedVia: "missing", savedClip };
 }
@@ -1527,7 +1557,7 @@ function resolveServerRenderableBlockSourceUrl({ block = {}, mainAudio = {}, ori
   }
 
   const fallbackOriginalUrl = String(originalAudioUrl || mainAudio?.url || "").trim();
-  if (sourceId === "main" && isBackendStaticAssetUrl(fallbackOriginalUrl)) return fallbackOriginalUrl;
+  if (sourceId === "main" && fallbackOriginalUrl) return fallbackOriginalUrl;
 
   return "";
 }
@@ -2540,6 +2570,7 @@ export default function PodcastAudioComposerPage() {
   const routeProjectId = String(projectId || searchParams.get("projectId") || "").trim();
   const fallbackSourceNodeId = routeProjectId ? `ava_project_${routeProjectId}_podcast_audio` : "ava_workspace_podcast_audio";
   const sourceNodeId = String(location.state?.sourceNodeId || searchParams.get("sourceNodeId") || fallbackSourceNodeId).trim();
+  const podcastStageCleared = isWorkflowStageCleared("podcast");
   const [standaloneAudio, setStandaloneAudio] = useState(() => {
     try {
       const raw = sessionStorage.getItem(`ava_podcast_standalone_audio:${sourceNodeId}`) || localStorage.getItem(`ava_podcast_standalone_audio:${sourceNodeId}`);
@@ -2552,10 +2583,11 @@ export default function PodcastAudioComposerPage() {
   const stateAudio = normalizeManualTimingAudio(location.state?.audio);
   const storedManualTimingProject = useMemo(() => readManualTimingProjectForNode(sourceNodeId), [sourceNodeId]);
   const audio = useMemo(() => {
+    if (podcastStageCleared) return normalizeManualTimingAudio({});
     if (standaloneAudio.url) return standaloneAudio;
     if (stateAudio.url) return stateAudio;
     return normalizeManualTimingAudio(storedManualTimingProject?.audio);
-  }, [standaloneAudio, stateAudio, storedManualTimingProject]);
+  }, [standaloneAudio, stateAudio, storedManualTimingProject, podcastStageCleared]);
 
   const audioRef = useRef(null);
   const runtimeAudioBlobCacheRef = useRef({});
@@ -2602,8 +2634,9 @@ export default function PodcastAudioComposerPage() {
   const handleStandaloneMainAudioUpload = async (event) => {
     const file = event.target.files?.[0] || null;
     if (!file) return;
-    setMessage("Загружаю основное аудио подкаста...");
-    const localPlaybackUrl = URL.createObjectURL(file);
+    const isVideoUpload = isPodcastVideoFile(file);
+    setMessage(isVideoUpload ? "Загружаю видео и извлекаю MP3 для подкаста..." : "Загружаю основное аудио подкаста...");
+    const localPlaybackUrl = isVideoUpload ? "" : URL.createObjectURL(file);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -2625,11 +2658,11 @@ export default function PodcastAudioComposerPage() {
       if (!serverUrl && !assetApiPath) throw new Error("backend не вернул URL аудио");
       const nextAudio = normalizeManualTimingAudio({
         ...uploaded,
-        url: localPlaybackUrl,
-        playbackUrl: localPlaybackUrl,
-        playback_url: localPlaybackUrl,
-        localUrl: localPlaybackUrl,
-        local_url: localPlaybackUrl,
+        url: localPlaybackUrl || serverUrl || assetApiPath,
+        playbackUrl: localPlaybackUrl || "",
+        playback_url: localPlaybackUrl || "",
+        localUrl: localPlaybackUrl || "",
+        local_url: localPlaybackUrl || "",
         server_url: serverUrl || assetApiPath,
         assetUrl: serverUrl || assetApiPath,
         asset_url: serverUrl || assetApiPath,
@@ -2672,10 +2705,10 @@ export default function PodcastAudioComposerPage() {
         }));
         sessionStorage.setItem(`ava_podcast_standalone_audio:${sourceNodeId}`, JSON.stringify(nextAudio));
       } catch {}
-      console.log("[PODCAST MAIN AUDIO READY]", { playbackUrl: localPlaybackUrl, serverUrl, assetApiPath, durationSec: nextAudio.duration_sec });
-      setMessage("Основное аудио загружено и готово к прослушке. Теперь можно вставлять роли, тишину и собирать подкаст.");
+      console.log("[PODCAST MAIN AUDIO READY]", { playbackUrl: localPlaybackUrl, serverUrl, assetApiPath, durationSec: nextAudio.duration_sec, convertedFromVideo: uploaded.converted_from_video });
+      setMessage(uploaded.converted_from_video ? "Видео загружено, аудио извлечено в MP3. Теперь можно вставлять роли, тишину и собирать подкаст." : "Основное аудио загружено и готово к прослушке. Теперь можно вставлять роли, тишину и собирать подкаст.");
     } catch (error) {
-      try { URL.revokeObjectURL(localPlaybackUrl); } catch {}
+      if (localPlaybackUrl) try { URL.revokeObjectURL(localPlaybackUrl); } catch {}
       setMessage(`Не удалось загрузить аудио: ${error?.message || "ошибка"}.`);
     } finally {
       event.target.value = "";
@@ -2822,6 +2855,7 @@ export default function PodcastAudioComposerPage() {
     });
   }, [audio.url, audioSignature, blocks, selectedBlockId, deletionMarkers, savedClips, actorAudios, microStepSec, hasHydrated, sourceNodeId]);
   useEffect(() => {
+    if (podcastStageCleared) return;
     if (!hasHydrated || !actorAudios.length) return;
     actorAudios.forEach((actor) => {
       if (!actor?.id || !isBlobUrl(actor.url)) return;
@@ -2835,6 +2869,21 @@ export default function PodcastAudioComposerPage() {
 
   const hydrateState = async (nextDurationSec) => {
     const safeDuration = roundSeconds(nextDurationSec);
+
+    if (podcastStageCleared) {
+      removeComposerStorage(sourceNodeId);
+      setBlocks([]);
+      setSelectedBlockId("");
+      setDeletionMarkers([]);
+      setSavedClips([]);
+      setActorAudios([]);
+      setMicroStepSec(DEFAULT_MICRO_STEP_SEC);
+      setMessage("Подкаст очищен. Перейди из Тайминга или загрузи новое аудио.");
+      setHasHydrated(true);
+      hydratedRef.current = true;
+      return;
+    }
+
     if (!audio.url || safeDuration <= 0) return;
     const saved = readComposerStorage(sourceNodeId);
     const signature = getAudioSignature(audio, safeDuration);
@@ -4297,60 +4346,128 @@ export default function PodcastAudioComposerPage() {
     }));
   };
 
-  const addActorAudioFiles = (event) => {
+  const addActorAudioFiles = async (event) => {
     const files = Array.from(event.target.files || []);
+    event.target.value = "";
     if (!files.length) return;
-    files.forEach((file, fileIndex) => {
+
+    setMessage("Загружаю дополнительное аудио/видео актёра...");
+    for (const [fileIndex, file] of files.entries()) {
       const id = createId("actor_audio");
-      const url = URL.createObjectURL(file);
+      const isVideoUpload = isPodcastVideoFile(file);
+      const localUrl = isVideoUpload ? "" : URL.createObjectURL(file);
       const label = inferActorLabelFromFilename(file.name);
       const color = COLOR_SWATCHES[(actorAudios.length + fileIndex + 1) % COLOR_SWATCHES.length];
-      const sourceName = file.name || `actor_${fileIndex + 1}.mp3`;
-      const baseActor = {
-        id,
-        url,
-        name: sourceName,
-        filename: sourceName,
-        label,
-        color,
-        duration_sec: 0,
-        blocks: [],
-        selectedBlockId: "",
-        currentTimeSec: 0,
-        isPlaying: false,
-        microStepSec: DEFAULT_MICRO_STEP_SEC,
-      };
-      void putActorAudioBlob(getActorAudioBlobKey(sourceNodeId, id), file).catch(() => {
-        setMessage(`Аудио “${sourceName}” добавлено, но браузер не смог сохранить его для восстановления после F5.`);
-      });
-      setActorAudios((items) => [...items, baseActor]);
 
-      const probe = new Audio(url);
-      probe.preload = "metadata";
-      probe.onloadedmetadata = () => {
-        const duration = roundSeconds(probe.duration || 0);
-        const initialBlock = duration > 0 ? createExternalAudioBlock({
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("stage", "podcast_audio_actor");
+        if (routeProjectId) form.append("project_id", routeProjectId);
+
+        const response = await fetch(`${API_BASE}/api/assets/audio`, {
+          method: "POST",
+          credentials: "include",
+          headers: getAvaAuthHeaders(),
+          body: form,
+        });
+        const uploaded = await response.json().catch(() => null);
+        if (!response.ok || !uploaded) {
+          throw new Error(uploaded?.detail || uploaded?.message || `upload_failed_${response.status}`);
+        }
+
+        const serverUrl = String(uploaded.asset_url || uploaded.assetUrl || uploaded.publicUrl || uploaded.url || uploaded.path || "").trim();
+        const assetApiPath = String(uploaded.asset_api_path || uploaded.assetApiPath || uploaded.audioApiPath || "").trim();
+        const assetId = String(uploaded.asset_id || uploaded.assetId || uploaded.id || "").trim();
+        const playbackUrl = localUrl || serverUrl || assetApiPath;
+        const sourceName = uploaded.audio_name || uploaded.filename || uploaded.name || file.name || `actor_${fileIndex + 1}.mp3`;
+        const uploadedDuration = roundSeconds(uploaded.audio_duration_sec || uploaded.duration_sec || uploaded.durationSec || 0);
+
+        const initialBlock = uploadedDuration > 0 ? createExternalAudioBlock({
           sourceId: id,
-          sourceUrl: url,
+          sourceUrl: playbackUrl,
           sourceName,
           label,
           sourceLabel: label,
           color,
           startSec: 0,
-          endSec: duration,
+          endSec: uploadedDuration,
           colorIndex: fileIndex + 1,
         }) : null;
-        setActorAudios((items) => items.map((item) => item.id === id ? {
-          ...item,
-          duration_sec: duration,
+
+        const baseActor = {
+          id,
+          url: playbackUrl,
+          playbackUrl: localUrl || "",
+          playback_url: localUrl || "",
+          localUrl: localUrl || "",
+          local_url: localUrl || "",
+          asset_url: serverUrl || assetApiPath,
+          assetUrl: serverUrl || assetApiPath,
+          server_url: serverUrl || assetApiPath,
+          publicUrl: serverUrl || assetApiPath,
+          assetApiPath,
+          asset_api_path: assetApiPath,
+          assetId,
+          asset_id: assetId,
+          name: sourceName,
+          filename: sourceName,
+          label,
+          color,
+          duration_sec: uploadedDuration,
+          durationSec: uploadedDuration,
+          mime: uploaded.mime_type || uploaded.mime || "audio/mpeg",
+          mime_type: uploaded.mime_type || uploaded.mime || "audio/mpeg",
+          converted_from_video: Boolean(uploaded.converted_from_video),
           blocks: initialBlock ? [initialBlock] : [],
           selectedBlockId: initialBlock?.id || "",
-        } : item));
-      };
-      probe.onerror = () => setMessage(`Не удалось прочитать длительность аудио “${sourceName}”.`);
-    });
-    event.target.value = "";
-    setMessage("Добавлено аудио актёра. В этом блоке можно только резать, слушать и сохранять фразы в общий список.");
+          currentTimeSec: 0,
+          isPlaying: false,
+          microStepSec: DEFAULT_MICRO_STEP_SEC,
+        };
+
+        if (localUrl) {
+          void putActorAudioBlob(getActorAudioBlobKey(sourceNodeId, id), file).catch(() => {
+            setMessage(`Аудио “${sourceName}” добавлено, но браузер не смог сохранить его для восстановления после F5.`);
+          });
+        }
+
+        setActorAudios((items) => [...items, baseActor]);
+
+        if (!uploadedDuration) {
+          const probeUrl = await resolvePodcastPlaybackUrl(baseActor);
+          const probe = new Audio(probeUrl || playbackUrl);
+          probe.preload = "metadata";
+          probe.onloadedmetadata = () => {
+            const duration = roundSeconds(probe.duration || 0);
+            const block = duration > 0 ? createExternalAudioBlock({
+              sourceId: id,
+              sourceUrl: playbackUrl,
+              sourceName,
+              label,
+              sourceLabel: label,
+              color,
+              startSec: 0,
+              endSec: duration,
+              colorIndex: fileIndex + 1,
+            }) : null;
+            setActorAudios((items) => items.map((item) => item.id === id ? {
+              ...item,
+              duration_sec: duration,
+              durationSec: duration,
+              blocks: block ? [block] : [],
+              selectedBlockId: block?.id || "",
+            } : item));
+          };
+          probe.onerror = () => setMessage(`Не удалось прочитать длительность аудио “${sourceName}”.`);
+        }
+      } catch (error) {
+        if (localUrl) try { URL.revokeObjectURL(localUrl); } catch {}
+        setMessage(`Не удалось добавить аудио/видео актёра “${file.name}”: ${error?.message || "ошибка"}.`);
+      }
+    }
+
+    setMessage("Добавлено аудио/видео актёра. Видео автоматически извлекается в MP3 на сервере.");
   };
 
   const getActorPhraseDependencies = (actorId) => {
@@ -4465,7 +4582,9 @@ export default function PodcastAudioComposerPage() {
     setActorAudios((items) => items.map((item) => item.id === actorId ? { ...item, selectedBlockId: block.id, currentTimeSec: roundSeconds(virtualStart + resumeOffset), isPlaying: true } : { ...item, isPlaying: false }));
     try {
       await element.play();
-    } catch {
+    } catch (error) {
+      console.warn("[PODCAST ACTOR AUDIO PLAY FAILED]", { actorId, error });
+      setMessage("Браузер не запустил аудио актёра. Нажми Play ещё раз или проверь, что файл не пустой.");
       stopActorPlayback({ pause: false });
     }
   };
@@ -6047,8 +6166,19 @@ const applyComposedAudioToTiming = async () => {
         avaStage114StorePodcastHandoff(nextProject); // PODCAST_STAGE114_HANDOFF_STORAGE_REPLACED
                 }
       const timingPath = routeProjectId ? `/app/projects/${routeProjectId}/timing` : "/app/workspace/timing";
+      const podcastTimingWorkflowEntry = makeWorkflowEntry({
+        from: 'podcast',
+        to: 'manual_timing',
+        fromPath: routeProjectId ? `/app/projects/${routeProjectId}/podcast` : '/app/workspace/podcast',
+        toPath: timingPath,
+        projectId: routeProjectId || '',
+        source: 'podcast_to_manual_timing_apply_audio',
+      });
+      clearWorkflowStageClearedMarker('manual_timing');
+      rememberWorkflowEntry(podcastTimingWorkflowEntry);
       navigate(timingPath, {
         state: {
+          workflowEntry: podcastTimingWorkflowEntry,
           sourceNodeId,
           fromPodcastComposer: true,
           replaceAudio: true,
@@ -6086,6 +6216,16 @@ const applyComposedAudioToTiming = async () => {
 
   return (
     <div className="podcastComposerPage" data-build={BUILD_ID}>
+      {/* AVA08N_PODCAST_TOP_CONTROLS */}
+      <WorkflowStageControls
+        stageKey="podcast"
+        stageLabel="Подкаст"
+        clearLabel="Очистить подкаст"
+        clearStages={[]}
+        clearStorageMatchers={['podcast', 'podcast_audio', 'ava_podcast', 'manual_timing_podcast_return']}
+        clearDescription="Очистит локальный проект подкаста, временные ключи и IndexedDB с actor/audio blobs. Backend assets на диске не удаляются."
+      />
+
       <header className="podcastComposerHeader">
         <div>
           <p className="podcastComposerEyebrow">Podcast Audio Composer · {BUILD_ID}</p>
@@ -6112,18 +6252,18 @@ const applyComposedAudioToTiming = async () => {
           <input
             ref={mainAudioInputRef}
             type="file"
-            accept="audio/*"
+            accept={PODCAST_AUDIO_VIDEO_ACCEPT}
             hidden
             onChange={handleStandaloneMainAudioUpload}
           />
           <div className="podcastStandaloneStartText">
             <span>Новый подкаст</span>
-            <strong>Загрузи основную аудио-дорожку</strong>
+            <strong>Загрузи аудио или видео</strong>
             <p>Здесь отдельно собираем подкаст: добавляем роли, вставки, тишину, сохраняем финальное аудио - и уже потом переходим в Manual Timing для разрезки и правок.</p>
           </div>
           <div className="podcastStandaloneStartActions">
             <button className="podcastPrimaryAction" type="button" onClick={() => mainAudioInputRef.current?.click()}>
-              🎧 Загрузить аудио
+              🎧 Загрузить аудио / видео
             </button>
             <button type="button" onClick={() => {
             if (typeof setShowTimingHandoffConfirm === 'function') {
@@ -6173,6 +6313,8 @@ const applyComposedAudioToTiming = async () => {
               <button type="button" title="Вставить JSON-план" onClick={openGuideJsonDialog}>{"{}"} JSON</button>
             </div>
             <button className="podcastComposerCutButton" type="button" onClick={splitCurrentBlock}>резать</button>
+            <button className="podcastComposerDeleteButton" type="button" onClick={deleteSelectedBlock} disabled={!selectedBlockId}>🗑 удалить</button>
+            <button className="podcastComposerSaveAudioButton" type="button" onClick={downloadComposedAudio} disabled={!!finalAudioBusy || !blocks.length}>💾 сохранить аудио</button>
             <button className="podcastComposerSilenceButton" type="button" onClick={insertSilenceAtCursor}>тишина</button>
             <div className="podcastCutControls" aria-label="Микро-доводчик правой границы">
               <button type="button" onClick={() => adjustSelectedRightEdge(-1)} disabled={!selectedBoundaryAvailable}>←</button>
@@ -6442,7 +6584,7 @@ const applyComposedAudioToTiming = async () => {
               <input
                 ref={actorAudioInputRef}
                 type="file"
-                accept="audio/*"
+                accept={PODCAST_AUDIO_VIDEO_ACCEPT}
                 multiple
                 hidden
                 onChange={addActorAudioFiles}

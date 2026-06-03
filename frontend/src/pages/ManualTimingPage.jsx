@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { Clock3, Film, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Clock3, Film, Pause, Play, Save, StepBack, StepForward, Trash2, Undo2, UploadCloud } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { fetchProtectedBlobUrl, getAuthHeaders, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
+import { cutAudioAssetRange, fetchProtectedBlobUrl, getAuthHeaders, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
+import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
+import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, makeWorkflowEntry, navigateWithWorkflowEntry, rememberWorkflowEntry, readWorkflowEntry } from '../utils/workflowNavigation.js'
 
 const STAGE = 'manual_timing'
 const DRAFT_VERSION = 'manual_timing_single_timeline_v6_handoff_manifest'
@@ -14,6 +16,55 @@ const AVA_PODCAST_TO_TIMING_KEY_STAGE95 = 'ava:podcast-to-timing:v1'
 const AVA_DOWNSTREAM_RESET_KEY_STAGE95 = 'ava:downstream-reset:v1'
 const AVA_ACTIVE_JOBS_KEY_STAGE95 = 'ava:active-jobs:v1'
 const AVA_COMPLETED_JOBS_KEY_STAGE95 = 'ava:completed-jobs:v1'
+
+
+function avaStage16SafeAudioFilename(name = 'ava_audio.mp3') {
+  const raw = String(name || 'ava_audio.mp3').trim() || 'ava_audio.mp3'
+  const cleaned = raw.replace(/[\\/:*?"<>|]+/g, '_')
+  if (/\.(mp3|wav|m4a|aac|ogg|flac|webm)$/i.test(cleaned)) return cleaned
+  return `${cleaned}.mp3`
+}
+
+async function avaStage16DownloadAudioSource({ source = '', filename = 'ava_audio.mp3', fetchProtectedBlobUrl, getAuthHeaders, setStatus }) {
+  const raw = String(source || '').trim()
+  if (!raw) throw new Error('empty_audio_source')
+
+  let objectUrl = ''
+  let shouldRevoke = false
+
+  if (raw.startsWith('blob:') || raw.startsWith('data:')) {
+    objectUrl = raw
+  } else if (raw.startsWith('/api/assets/')) {
+    objectUrl = await fetchProtectedBlobUrl(raw.replace(/^\/api/, ''))
+    shouldRevoke = true
+  } else if (raw.startsWith('/assets/')) {
+    objectUrl = await fetchProtectedBlobUrl(raw)
+    shouldRevoke = true
+  } else {
+    const response = await fetch(raw, {
+      credentials: 'include',
+      headers: getAuthHeaders ? getAuthHeaders() : {},
+    })
+    if (!response.ok) throw new Error(`download_failed_${response.status}`)
+    const blob = await response.blob()
+    objectUrl = URL.createObjectURL(blob)
+    shouldRevoke = true
+  }
+
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = avaStage16SafeAudioFilename(filename)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+
+  if (shouldRevoke) {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 4000)
+  }
+
+  setStatus?.(`аудио сохранено: ${avaStage16SafeAudioFilename(filename)}`)
+}
+
 
 function avaStage95JsonReadOnce(key) {
   let value = null
@@ -936,6 +987,10 @@ function applySceneSliceTranslations(sceneList = [], translatedItems = [], speec
 
 export default function ManualTimingPage() {
   const { projectId } = useParams()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const manualTimingWorkflowEntry = useMemo(() => readWorkflowEntry('manual_timing', location.state), [location.state])
+  const openedFromPodcast = manualTimingWorkflowEntry?.from === 'podcast'
   const { activeProject, loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
   const workspaceMode = !projectId
   const [draft, setDraft] = useState(emptyDraft)
@@ -946,6 +1001,7 @@ export default function ManualTimingPage() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadingVocal, setUploadingVocal] = useState(false)
+  const [deletingSceneAudio, setDeletingSceneAudio] = useState(false)
   const [asrRunning, setAsrRunning] = useState(false)
   const [translationRunning, setTranslationRunning] = useState(false)
   const [showSceneTranslator, setShowSceneTranslator] = useState(true)
@@ -1113,6 +1169,21 @@ export default function ManualTimingPage() {
       setLoading(true)
       setStatus('загрузка snapshot…')
       try {
+        if (isWorkflowStageCleared('manual_timing')) {
+          if (!active) return
+          historyRef.current = []
+          setDraft(emptyDraft)
+          setHistory([])
+          setBlockSelection([])
+          setBlockDraft({ title: '' })
+          setSceneEditor(null)
+          setCursorSec(0)
+          setAudioSrc('')
+          setStatus('Тайминг очищен. Загрузи новое аудио или импортируй JSON.')
+          setLoading(false)
+          return
+        }
+
         const data = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
         if (!active) return
         let incomingPodcastProject = null
@@ -1135,6 +1206,17 @@ export default function ManualTimingPage() {
         }
 
         const hasPodcastHandoff = Boolean(incomingPodcastProject?.audio || incomingPodcastProject?.finalAudio || incomingPodcastProject?.final_audio)
+        if (hasPodcastHandoff) {
+          clearWorkflowStageClearedMarker('manual_timing')
+          rememberWorkflowEntry(makeWorkflowEntry({
+            from: 'podcast',
+            to: 'manual_timing',
+            fromPath: projectId ? `/app/projects/${projectId}/podcast` : '/app/workspace/podcast',
+            toPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+            projectId,
+            source: 'podcast_to_manual_timing_handoff',
+          }))
+        }
         let normalized = hasPodcastHandoff
           ? avaStage95DraftFromPodcastHandoff(avaStage110ForcePodcastBlockScenes(incomingPodcastProject))
           : normalizeDraft(data)
@@ -1538,6 +1620,181 @@ export default function ManualTimingPage() {
     applyDraftChange({ ...draft, scenes: nextScenes, scenesCount: nextScenes.length, selectedSceneIndex: index }, 'сцены соединены', merged.start)
   }
 
+
+  function shiftTimingItemAfterDeletedRange(item, start, end, delta) {
+    const itemStart = Number(item?.start ?? item?.start_sec ?? item?.t0 ?? 0)
+    const itemEnd = Math.max(itemStart, Number(item?.end ?? item?.end_sec ?? item?.t1 ?? itemStart))
+    if (itemEnd <= start + 0.001) return item
+    if (itemStart >= end - 0.001) {
+      const nextStart = Math.max(0, itemStart - delta)
+      const nextEnd = Math.max(nextStart, itemEnd - delta)
+      return {
+        ...item,
+        start: Number(nextStart.toFixed(3)),
+        end: Number(nextEnd.toFixed(3)),
+        start_sec: item.start_sec !== undefined ? Number(nextStart.toFixed(3)) : item.start_sec,
+        end_sec: item.end_sec !== undefined ? Number(nextEnd.toFixed(3)) : item.end_sec,
+        t0: item.t0 !== undefined ? Number(nextStart.toFixed(3)) : item.t0,
+        t1: item.t1 !== undefined ? Number(nextEnd.toFixed(3)) : item.t1,
+      }
+    }
+    return null
+  }
+
+  function shiftTimingListAfterDeletedRange(items = [], start, end, delta) {
+    if (!Array.isArray(items)) return []
+    return items
+      .map((item) => shiftTimingItemAfterDeletedRange(item, start, end, delta))
+      .filter(Boolean)
+  }
+
+  async function deleteSelectedSceneFromAudio() {
+    if (!hasAudio || draft.audioDurationSec <= 0) {
+      setStatus('сначала загрузите аудио')
+      return
+    }
+
+    const index = Math.min(draft.selectedSceneIndex, scenes.length - 1)
+    const scene = scenes[index]
+    if (!scene) {
+      setStatus('выберите сцену для удаления')
+      return
+    }
+
+    const start = Math.max(0, Number(scene.start || 0))
+    const end = Math.min(Number(draft.audioDurationSec || 0), Math.max(start, Number(scene.end || start)))
+    const cutLen = end - start
+    if (cutLen <= 0.03) {
+      setStatus('выбранный отрезок слишком короткий для удаления')
+      return
+    }
+
+    const nextDuration = Math.max(0, Number(draft.audioDurationSec || 0) - cutLen)
+    if (nextDuration < MIN_SCENE_SEC) {
+      setStatus('нельзя удалить весь аудиофайл')
+      return
+    }
+
+    if (!draft.audioAssetId && !draft.audioApiPath && !draft.audioUrl) {
+      setStatus('нет assetId/audioApiPath для серверного удаления')
+      return
+    }
+
+    setDeletingSceneAudio(true)
+    setStatus(`удаляю из аудио: ${formatTime(start, true)} → ${formatTime(end, true)}`)
+
+    try {
+      const result = await cutAudioAssetRange({
+        assetId: draft.audioAssetId,
+        assetApiPath: draft.audioApiPath,
+        audioUrl: draft.audioUrl,
+        projectId: workspaceMode ? null : projectId,
+        stage: STAGE,
+        startSec: start,
+        endSec: end,
+        durationSec: draft.audioDurationSec,
+        label: scene.title || scene.id || '',
+      })
+
+      const shiftedScenes = scenes
+        .map((item, itemIndex) => {
+          if (itemIndex === index) return null
+          if (Number(item.end || 0) <= start + 0.001) return item
+          if (Number(item.start || 0) >= end - 0.001) {
+            return {
+              ...item,
+              start: Math.max(0, Number((Number(item.start || 0) - cutLen).toFixed(3))),
+              end: Math.max(0, Number((Number(item.end || 0) - cutLen).toFixed(3))),
+            }
+          }
+          return null
+        })
+        .filter(Boolean)
+
+      const nextScenes = shiftedScenes.length
+        ? renumberScenes(shiftedScenes)
+        : makeSingleScene(result.new_duration_sec || nextDuration)
+
+      pushHistorySnapshot()
+      const selectedIndex = Math.min(index, nextScenes.length - 1)
+      const nextDraft = normalizeDraft({
+        ...draft,
+        audioName: result.audio_name || result.audioName || draft.audioName,
+        audioAssetId: result.asset_id || result.assetId || '',
+        audioApiPath: result.asset_api_path || result.assetApiPath || '',
+        audioUrl: result.asset_url || result.assetUrl || '',
+        audioSizeBytes: result.audio_size_bytes || result.audioSizeBytes || 0,
+        audioDurationSec: Number(result.audio_duration_sec || result.audioDurationSec || result.new_duration_sec || nextDuration),
+        scenes: nextScenes,
+        scenesCount: nextScenes.length,
+        selectedSceneIndex: selectedIndex,
+        speechSegments: shiftTimingListAfterDeletedRange(draft.speechSegments || [], start, end, cutLen),
+        audioPhrases: shiftTimingListAfterDeletedRange(draft.audioPhrases || [], start, end, cutLen),
+        missingSpeechHints: shiftTimingListAfterDeletedRange(draft.missingSpeechHints || [], start, end, cutLen),
+        silentSegments: shiftTimingListAfterDeletedRange(draft.silentSegments || [], start, end, cutLen),
+      })
+
+      stopAudio(nextScenes[selectedIndex]?.start || 0)
+      setDraft(nextDraft)
+      await saveDraft(nextDraft, 'delete_selected_audio_range')
+      setBlockSelection([])
+      setStatus(`отрезок удалён из аудио: -${formatTime(cutLen, true)} · новая длительность ${formatTime(nextDraft.audioDurationSec, true)}`)
+    } catch (err) {
+      console.error('[ManualTiming] delete selected scene from audio failed', err)
+      setStatus(`ошибка удаления аудио: ${err.message}`)
+    } finally {
+      setDeletingSceneAudio(false)
+    }
+  }
+
+
+
+  async function saveCurrentTimingAudio() {
+    if (!hasAudio) {
+      setStatus('сначала загрузите аудио')
+      return
+    }
+
+    const filename = avaStage16SafeAudioFilename(
+      draft.audioName ||
+      draft.audio_name ||
+      draft.filename ||
+      draft.name ||
+      'ava_timing_audio.mp3'
+    )
+
+    const source = String(
+      draft.audioApiPath ||
+      draft.audio_api_path ||
+      draft.audioUrl ||
+      draft.audio_url ||
+      draft.assetUrl ||
+      draft.asset_url ||
+      draft.url ||
+      ''
+    ).trim()
+
+    if (!source) {
+      setStatus('не найден путь к текущему аудио')
+      return
+    }
+
+    try {
+      setStatus('сохраняю текущее аудио…')
+      await avaStage16DownloadAudioSource({
+        source,
+        filename,
+        fetchProtectedBlobUrl,
+        getAuthHeaders,
+        setStatus,
+      })
+    } catch (error) {
+      console.error('[ManualTiming] save current audio failed', error)
+      setStatus(`не удалось сохранить аудио: ${error?.message || 'ошибка'}`)
+    }
+  }
+
+
   function resetScenes() {
     if (!hasAudio || draft.audioDurationSec <= 0) {
       setStatus('сначала загрузите аудио')
@@ -1655,6 +1912,7 @@ export default function ManualTimingPage() {
   }
 
   async function handleAudioUpload(event) {
+    clearWorkflowStageClearedMarker('manual_timing')
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
@@ -1687,7 +1945,7 @@ export default function ManualTimingPage() {
   async function uploadPickedAudio(file) {
     setUploading(true)
     stopAudio(0)
-    setStatus('загрузка аудио…')
+    setStatus('загрузка аудио… если это видео, сервер извлечёт MP3')
     try {
       const result = await uploadAudioAsset({ file, projectId: workspaceMode ? null : projectId, stage: STAGE })
       const duration = Math.max(0, Number(result.audio_duration_sec) || 0)
@@ -1727,7 +1985,7 @@ export default function ManualTimingPage() {
       setDraft(nextDraft)
       setCursorSec(0)
       await saveDraft(nextDraft, 'audio_upload')
-      setStatus('аудио загружено')
+      setStatus(result.converted_from_video ? 'видео загружено, аудио извлечено в MP3' : 'аудио загружено')
     } catch (err) {
       setStatus(`ошибка загрузки аудио: ${err.message}`)
     } finally {
@@ -2686,8 +2944,15 @@ const clearedDraft = normalizeDraft({
       return
     }
 
-    const startAt = clampCursor(Number(selectedScene?.start || 0), draft.audioDurationSec)
-    const endAt = clampCursor(Math.max(startAt + 0.05, Number(selectedScene?.end || startAt)), draft.audioDurationSec)
+    const sceneStart = clampCursor(Number(selectedScene?.start || 0), draft.audioDurationSec)
+    const sceneEnd = clampCursor(Math.max(sceneStart + 0.05, Number(selectedScene?.end || sceneStart)), draft.audioDurationSec)
+    const currentCursor = clampCursor(
+      Number.isFinite(Number(cursorSec)) ? Number(cursorSec) : Number(audio.currentTime || 0),
+      draft.audioDurationSec,
+    )
+    const cursorInsideScene = currentCursor > sceneStart + 0.01 && currentCursor < sceneEnd - 0.01
+    const startAt = cursorInsideScene ? currentCursor : sceneStart
+    const endAt = sceneEnd
     const fixedRange = {
       id: selectedScene?.id || selectedScene?.title || 'scene',
       start: startAt,
@@ -2833,7 +3098,7 @@ const clearedDraft = normalizeDraft({
           <h1>Загрузка Manual Timing...</h1>
           <p>Возвращаем таймкоды, блоки, аудио и разрезы. Дождись восстановления проекта перед правками.</p>
           <div className="avaTimingLoadingSteps">
-            <span className="isActive">Timing</span>
+            <span className="isActive">Prompt</span>
             <i />
             <span>Audio</span>
             <i />
@@ -2905,6 +3170,14 @@ const clearedDraft = normalizeDraft({
     const podcastPath = projectId
       ? `/app/projects/${projectId}/podcast?sourceNodeId=${encodeURIComponent(sourceNodeId)}`
       : `/app/workspace/podcast?sourceNodeId=${encodeURIComponent(sourceNodeId)}`;
+    rememberWorkflowEntry(makeWorkflowEntry({
+      from: 'manual_timing',
+      to: 'podcast',
+      fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+      toPath: podcastPath,
+      projectId,
+      source: 'manual_timing_to_podcast_button',
+    }));
     window.location.assign(podcastPath);
   }
 
@@ -2912,8 +3185,18 @@ const clearedDraft = normalizeDraft({
   return (
     <div className="avaPage avaTimingFlatPage">
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
-      <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm" hidden onChange={handleAudioUpload} />
+      <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov,.mkv,.avi,.m4v" hidden onChange={handleAudioUpload} />
       <input ref={jsonInputRef} type="file" accept="application/json,.json" hidden onChange={importTimingJson} />
+
+      {/* AVA08D_MANUAL_TIMING_CONTROLS */}
+      <WorkflowStageControls
+        stageKey="manual_timing"
+        stageLabel="Тайминг"
+        clearLabel="Очистить тайминг"
+        clearStages={['manual_timing']}
+        clearStorageMatchers={['manual_timing', 'timing', 'podcast-to-timing', 'downstream-reset']}
+        clearDescription="Очистит snapshot тайминга и временные ключи тайминга. Загруженные assets на диске не удаляются."
+      />
 
       <div className="avaTimingFlatHeader">
         <div>
@@ -2923,19 +3206,29 @@ const clearedDraft = normalizeDraft({
         </div>
         <div className="avaTimingHeaderActions">
           <button className="avaSoftButton avaTimingActionButton avaTimingActionAudio" type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || loading}>
-            <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Загрузить аудио'}
+            <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Аудио'}
           </button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт JSON</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт JSON</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchSeedJson} disabled={loading || !scenes.length}>📷 JSON для видео</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchCodexJobJson} disabled={loading || !scenes.length}>🧠 JSON для Codex</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionPodcast" type="button" onClick={openPodcastComposer} disabled={!hasAudio || loading}>🎙 Подкаст / аудио</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Prompt</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchSeedJson} disabled={loading || !scenes.length}>📷 Video</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchCodexJobJson} disabled={loading || !scenes.length}>🧠 Codex</button>
 
-          <Link className="avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink" to={projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'}>
-            <Film size={16} /> Перейти в доску
-          </Link>
-          <button className="avaPrimaryButton avaTimingActionButton avaTimingActionSave" type="button" onClick={() => saveDraft(draft, 'button_save')} disabled={saving || loading}>
-            <Save size={16} /> {saving ? 'Сохраняем…' : 'Сохранить'}
+          <button
+            className={`avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink ${hasAudio ? 'isReadyForBoard' : ''}`}
+            type="button"
+            onClick={() => {
+              const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+              navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
+                from: 'manual_timing',
+                to: 'board',
+                fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+                toPath,
+                projectId,
+                source: 'manual_timing_to_board_button',
+              }))
+            }}
+          >
+            <Film size={16} /> В доску
           </button>
         </div>
       </div>
@@ -3310,7 +3603,8 @@ const clearedDraft = normalizeDraft({
           <button type="button" onClick={splitAtCursor} disabled={!hasAudio}>✂ Разрезать</button>
           <button type="button" onClick={mergeSelectedWithNext} disabled={scenes.length <= 1}>🔗 Соединить</button>
           <button type="button" onClick={markSemanticBlock} disabled={!hasAudio}>+ Смысловой блок</button>
-<button className="isReset" type="button" onClick={resetScenes} disabled={!hasAudio}><RotateCcw size={15} /> сброс</button>
+<button className="isReset" type="button" onClick={deleteSelectedSceneFromAudio} disabled={!hasAudio || deletingSceneAudio || !selectedScene} title="Удалить выбранную сцену из общего аудио и сдвинуть всё дальше влево"><Trash2 size={15} /> {deletingSceneAudio ? 'удаляю…' : 'удалить'}</button>
+            <button className="isSaveAudio" type="button" onClick={saveCurrentTimingAudio} disabled={!hasAudio}>💾 сохранить аудио</button>
           <button type="button" onClick={undoLastChange} disabled={!history.length}><Undo2 size={15} /> вернуть</button>
 
           <button
@@ -3381,7 +3675,7 @@ const clearedDraft = normalizeDraft({
                   id="avaTimingVocalStemInput"
                   className="avaHiddenFileInput"
                   type="file"
-                  accept="audio/*"
+                  accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov,.mkv,.avi,.m4v"
                   onChange={handleVocalUpload}
                 />
                 <button

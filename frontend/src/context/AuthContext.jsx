@@ -9,11 +9,39 @@ export function AuthProvider({ children }) {
   const [booting, setBooting] = useState(Boolean(token))
 
   useEffect(() => {
+    function readCreditBalance(value) {
+      if (!value || typeof value !== 'object') return null
+      for (const key of ['balance', 'creditBalance', 'credit_balance', 'credits_balance', 'credits']) {
+        const raw = value?.[key]
+        if (raw === 0 || raw) {
+          const numberValue = Number(raw)
+          if (Number.isFinite(numberValue)) return numberValue
+        }
+      }
+      return null
+    }
+
     function handleUserUpdated(event) {
       if (event?.detail) setUser(event.detail)
     }
+
+    function handleCreditsUpdated(event) {
+      const nextBalance = readCreditBalance(event?.detail)
+      if (nextBalance === null) return
+
+      setUser((oldUser) => oldUser ? {
+        ...oldUser,
+        credits_balance: nextBalance,
+        creditBalance: nextBalance,
+      } : oldUser)
+    }
+
     window.addEventListener('ava:user-updated', handleUserUpdated)
-    return () => window.removeEventListener('ava:user-updated', handleUserUpdated)
+    window.addEventListener('ava:credits-updated', handleCreditsUpdated)
+    return () => {
+      window.removeEventListener('ava:user-updated', handleUserUpdated)
+      window.removeEventListener('ava:credits-updated', handleCreditsUpdated)
+    }
   }, [])
 
   useEffect(() => {

@@ -588,6 +588,7 @@ export function getDefaultVideoMatchBoardProject(nodeId = "", extra = {}) {
     sourceNodeId: safeNodeId,
     sourceVideo: { filename: "", duration_sec: 0 },
     sourceVideoUrl: "",
+    sourceVideos: [],
     timingContext: normalizeVideoMatchTimingContext(extra.timingContext || {}),
     matchSegments: [],
     videoBlocks: [],
@@ -610,6 +611,7 @@ export function normalizeVideoMatchCandidate(candidate = {}, segment = {}, sourc
   const source = candidate && typeof candidate === "object" ? candidate : {};
   const segmentId = String(segment.id || segment.audioSceneId || segment.audio_scene_id || `segment_${String(index + 1).padStart(3, "0")}`).trim();
   const id = String(source.id || source.candidateId || source.candidate_id || source.candidate_id || `${segmentId}_candidate_${String(index + 1).padStart(2, "0")}`).trim();
+  const sourceVideoId = String(source.sourceVideoId || source.source_video_id || source.source_id || source.sourceId || "").trim();
   const warnings = Array.isArray(source.warnings) ? source.warnings.map((warning) => String(warning || "").trim()).filter(Boolean) : [];
   const sourceCandidateStartSec = toFiniteNumber(source.source_video_start_sec ?? source.sourceVideoStartSec ?? source.video_t0, 0);
   const sourceCandidateEndSec = toFiniteNumber(source.source_video_end_sec ?? source.sourceVideoEndSec ?? source.video_t1, 0);
@@ -628,6 +630,14 @@ export function normalizeVideoMatchCandidate(candidate = {}, segment = {}, sourc
     id,
     candidateId: id,
     segmentId,
+    sourceVideoId,
+    source_video_id: sourceVideoId,
+    sourceVideoLabel: String(source.sourceVideoLabel || source.source_video_label || source.video_label || "").trim(),
+    source_video_label: String(source.source_video_label || source.sourceVideoLabel || source.video_label || "").trim(),
+    sourceVideoFilename: String(source.sourceVideoFilename || source.source_video_filename || source.filename || "").trim(),
+    source_video_filename: String(source.source_video_filename || source.sourceVideoFilename || source.filename || "").trim(),
+    sourceVideoPath: String(source.sourceVideoPath || source.source_video_path || "").trim(),
+    source_video_path: String(source.source_video_path || source.sourceVideoPath || "").trim(),
     videoStartSec: toFiniteNumber(source.video_t0 ?? source.videoStartSec ?? source.sourceVideoStartSec ?? source.source_video_start_sec, 0),
     videoEndSec: toFiniteNumber(source.video_t1 ?? source.videoEndSec ?? source.sourceVideoEndSec ?? source.source_video_end_sec, 0),
     sourceVideoStartSec: clipSourceStartSec ?? toFiniteNumber(source.video_t0 ?? source.videoStartSec ?? source.sourceVideoStartSec ?? source.source_video_start_sec, 0),
@@ -831,6 +841,14 @@ export function normalizeVideoBlock(match = {}, sourceVideoUrl = "") {
     audioSceneId: String(match.audio_scene_id || match.audioSceneId || match.segmentId || "").trim(),
     storySceneId: String(match.story_scene_id ?? match.storySceneId ?? "").trim(),
     story_scene_id: String(match.story_scene_id ?? match.storySceneId ?? "").trim(),
+    sourceVideoId: String(match.sourceVideoId || match.source_video_id || match.sourceId || match.source_id || "").trim(),
+    source_video_id: String(match.source_video_id || match.sourceVideoId || match.source_id || match.sourceId || "").trim(),
+    sourceVideoLabel: String(match.sourceVideoLabel || match.source_video_label || "").trim(),
+    source_video_label: String(match.source_video_label || match.sourceVideoLabel || "").trim(),
+    sourceVideoFilename: String(match.sourceVideoFilename || match.source_video_filename || "").trim(),
+    source_video_filename: String(match.source_video_filename || match.sourceVideoFilename || "").trim(),
+    sourceVideoPath: String(match.sourceVideoPath || match.source_video_path || "").trim(),
+    source_video_path: String(match.source_video_path || match.sourceVideoPath || "").trim(),
     targetStartSec: toFiniteNumber(match.target_t0 ?? match.targetStartSec, 0),
     targetEndSec: toFiniteNumber(match.target_t1 ?? match.targetEndSec, 0),
     sourceVideoStartSec: toFiniteNumber(match.video_t0 ?? match.sourceVideoStartSec ?? match.videoStartSec, 0),
@@ -907,6 +925,14 @@ export function buildVideoBlocksFromMatchSegments(matchSegments = [], sourceVide
         clipSourceStartSec: selectedCandidate.clipSourceStartSec,
         clipSourceEndSec: selectedCandidate.clipSourceEndSec,
         sourceVideoUrl: selectedCandidate.sourceVideoUrl || sourceVideoUrl,
+        sourceVideoId: selectedCandidate.sourceVideoId || selectedCandidate.source_video_id || normalizedSegment.sourceVideoId || normalizedSegment.source_video_id || "",
+        source_video_id: selectedCandidate.source_video_id || selectedCandidate.sourceVideoId || normalizedSegment.source_video_id || normalizedSegment.sourceVideoId || "",
+        sourceVideoLabel: selectedCandidate.sourceVideoLabel || selectedCandidate.source_video_label || "",
+        source_video_label: selectedCandidate.source_video_label || selectedCandidate.sourceVideoLabel || "",
+        sourceVideoFilename: selectedCandidate.sourceVideoFilename || selectedCandidate.source_video_filename || "",
+        source_video_filename: selectedCandidate.source_video_filename || selectedCandidate.sourceVideoFilename || "",
+        sourceVideoPath: selectedCandidate.sourceVideoPath || selectedCandidate.source_video_path || "",
+        source_video_path: selectedCandidate.source_video_path || selectedCandidate.sourceVideoPath || "",
         matchReason: selectedCandidate.matchReason,
         confidence: selectedCandidate.confidence,
         candidateType: selectedCandidate.candidateType,
@@ -962,6 +988,36 @@ function normalizeV1MatchAsSegment(match = {}, index = 0, sourceVideoUrl = "") {
       video_t1: source.video_t1 ?? source.sourceVideoEndSec ?? source.videoEndSec ?? 0,
     }],
   }, index, sourceVideoUrl);
+}
+
+
+function normalizeVideoMatchSourceVideos(parsed = {}) {
+  const rawList = Array.isArray(parsed?.source_videos)
+    ? parsed.source_videos
+    : (Array.isArray(parsed?.sourceVideos) ? parsed.sourceVideos : []);
+  const fallback = parsed?.source_video && typeof parsed.source_video === "object" ? [parsed.source_video] : [];
+  const list = rawList.length ? rawList : fallback;
+  return list.slice(0, 5).map((item, index) => {
+    const source = item && typeof item === "object" ? item : {};
+    const id = String(source.id || source.source_video_id || source.sourceVideoId || `src_${String(index + 1).padStart(2, "0")}`).trim();
+    return {
+      id,
+      sourceVideoId: id,
+      source_video_id: id,
+      label: String(source.label || source.source_video_label || source.sourceVideoLabel || `video_${String(index + 1).padStart(2, "0")}`).trim(),
+      filename: String(source.filename || source.name || source.fileName || "").trim(),
+      path: String(source.path || source.local_path || source.localPath || source.sourceVideoPath || source.source_video_path || source.backendPath || source.backend_path || source.sourceVideoPathForAssembly || source.source_video_path_for_assembly || "").trim(),
+      backendPath: String(source.backendPath || source.backend_path || source.sourceVideoPathForAssembly || source.source_video_path_for_assembly || source.path || source.sourceVideoPath || source.source_video_path || "").trim(),
+      backend_path: String(source.backend_path || source.backendPath || source.source_video_path_for_assembly || source.sourceVideoPathForAssembly || source.path || source.source_video_path || source.sourceVideoPath || "").trim(),
+      sourceVideoPathForAssembly: String(source.sourceVideoPathForAssembly || source.source_video_path_for_assembly || source.backendPath || source.backend_path || source.path || source.sourceVideoPath || source.source_video_path || "").trim(),
+      source_video_path_for_assembly: String(source.source_video_path_for_assembly || source.sourceVideoPathForAssembly || source.backend_path || source.backendPath || source.path || source.source_video_path || source.sourceVideoPath || "").trim(),
+      previewUrl: String(source.previewUrl || source.preview_url || source.sourceVideoUrl || source.source_video_url || source.url || "").trim(),
+      sourceVideoUrl: String(source.sourceVideoUrl || source.source_video_url || source.previewUrl || source.preview_url || source.url || "").trim(),
+      source_video_url: String(source.source_video_url || source.sourceVideoUrl || source.preview_url || source.previewUrl || source.url || "").trim(),
+      duration_sec: toFiniteNumber(source.duration_sec ?? source.durationSec, 0),
+      color: String(source.color || "").trim(),
+    };
+  });
 }
 
 export function parseVideoMatchBoardJson(jsonText = "", sourceVideoUrl = "") {
@@ -1031,6 +1087,8 @@ export function parseVideoMatchBoardJson(jsonText = "", sourceVideoUrl = "") {
     ok: true,
     schema: schemaAlias,
     sourceVideo: normalizeVideoMatchSourceVideo(parsed),
+    sourceVideos: normalizeVideoMatchSourceVideos(parsed),
+    source_videos: normalizeVideoMatchSourceVideos(parsed),
     source_video: parsed.source_video && typeof parsed.source_video === "object" ? parsed.source_video : {},
     sourceVideoPath: String(parsed.sourceVideoPath || parsed.source_video_path || "").trim(),
     matchSegments,
