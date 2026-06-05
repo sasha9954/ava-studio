@@ -408,6 +408,7 @@ export default function BoardAssemblyPage() {
   const [musicAsset, setMusicAsset] = useState(null)
   const [musicPreviewUrl, setMusicPreviewUrl] = useState('')
   const [selectedVideoBlobUrl, setSelectedVideoBlobUrl] = useState('')
+  const [selectedVideoLoadError, setSelectedVideoLoadError] = useState('')
   const [musicUploading, setMusicUploading] = useState(false)
   const [musicLoop, setMusicLoop] = useState(true)
   const [musicFadeOut, setMusicFadeOut] = useState(true)
@@ -493,13 +494,18 @@ export default function BoardAssemblyPage() {
     let cancelled = false
     let objectUrl = ''
     setSelectedVideoBlobUrl('')
+    setSelectedVideoLoadError('')
     if (!selectedItemVideoAssetApiPath) return undefined
     async function loadSelectedVideoBlob() {
       try {
         objectUrl = await fetchProtectedBlobUrl(selectedItemVideoAssetApiPath)
         if (!cancelled) setSelectedVideoBlobUrl(objectUrl)
       } catch (error) {
-        if (!cancelled) setStatus(`Видео сцены недоступно: ${error?.message || 'asset_fetch_failed'}`)
+        const message = error?.message || 'asset_fetch_failed'
+        if (!cancelled) {
+          setSelectedVideoLoadError(message)
+          setStatus(`Видео сцены недоступно: ${message}`)
+        }
       }
     }
     loadSelectedVideoBlob()
@@ -510,6 +516,12 @@ export default function BoardAssemblyPage() {
   }, [selectedItemVideoAssetApiPath])
 
   const selectedItemPlayableVideoUrl = selectedItemVideoAssetApiPath ? selectedVideoBlobUrl : (selectedItem?.videoUrl || '')
+  const selectedItemVideoHydrating = Boolean(
+    selectedItem &&
+    selectedItemVideoAssetApiPath &&
+    !selectedVideoBlobUrl &&
+    !selectedVideoLoadError
+  )
   const watermarkPreviewStyle = {
     opacity: Math.max(0.05, Math.min(1, watermarkOpacity / 100)),
     fontSize: `${Math.max(10, Math.round(watermarkSize * 0.42))}px`,
@@ -1081,11 +1093,17 @@ export default function BoardAssemblyPage() {
                   <button type="button" onClick={(event) => downloadVideoExplicitly(event, selectedItemPlayableVideoUrl, `${selectedItem.id || 'scene'}.mp4`)}>Скачать видео</button>
                 </div>
               </div>
+            ) : selectedItemVideoHydrating ? (
+              <div className="avaAssemblyEmptyPreview">
+                <RefreshCcw size={42} />
+                <strong>Загружаем видео сцены…</strong>
+                <span>Проверяем Board snapshot и подгружаем asset-файл. Это может занять несколько секунд.</span>
+              </div>
             ) : (
               <div className="avaAssemblyEmptyPreview">
                 <Clapperboard size={42} />
-                <strong>Нет видео для этой сцены</strong>
-                <span>Вернись в доску и перегенерируй сцену.</span>
+                <strong>{selectedVideoLoadError ? 'Видео сцены не загрузилось' : 'Нет видео для этой сцены'}</strong>
+                <span>{selectedVideoLoadError ? `Asset fetch: ${selectedVideoLoadError}` : 'Вернись в доску и перегенерируй сцену.'}</span>
                 <Link className="avaSecondaryButton" to={boardRoute}>Вернуться в доску</Link>
               </div>
             )}
