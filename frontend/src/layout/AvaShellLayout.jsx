@@ -66,6 +66,8 @@ function rememberCompletedAvaJob(job = {}, data = {}) {
     statusEndpoint: job.statusEndpoint || '',
     jobId: job.jobId || '',
     to: job.to || '',
+    pagePath: job.pagePath || job.to || '',
+    stage: job.stage || avaStageFromPath(job.to || job.pagePath || '') || 'board',
     data,
     completedAt: new Date().toISOString(),
   }
@@ -77,6 +79,48 @@ function rememberCompletedAvaJob(job = {}, data = {}) {
 function normalizeAvaEndpoint(endpoint) {
   const value = String(endpoint || '')
   return value.startsWith('/api/') ? value.slice(4) : value
+}
+
+function avaProjectIdFromPath(path = '') {
+  const value = String(path || (typeof window !== 'undefined' ? window.location.pathname : '') || '')
+  const match = value.match(/\/app\/projects\/([^/]+)/)
+  return match?.[1] ? decodeURIComponent(match[1]) : ''
+}
+
+function avaStageFromPath(path = '') {
+  const value = String(path || '')
+  if (value.includes('/board-assembly')) return 'board-assembly'
+  if (value.includes('/generator')) return 'generator'
+  if (value.includes('/video-node') || value.includes('/video-match-board')) return 'video-node'
+  if (value.includes('/podcast')) return 'podcast'
+  if (value.includes('/timing')) return 'timing'
+  if (value.includes('/board')) return 'board'
+  return ''
+}
+
+function avaStageRoute(stage = '') {
+  const normalized = String(stage || '').replace(/_/g, '-')
+  if (normalized === 'board-assembly') return 'board-assembly'
+  if (normalized === 'standalone-generator') return 'generator'
+  if (normalized === 'video-node' || normalized === 'video-match-board') return 'video-node'
+  if (normalized === 'podcast') return 'podcast'
+  if (normalized === 'manual-timing' || normalized === 'timing') return 'timing'
+  return 'board'
+}
+
+function avaToastDestination({ to = '', projectId = '', stage = '' } = {}) {
+  const explicitTo = String(to || '').trim()
+  const explicitProjectId = String(projectId || avaProjectIdFromPath(explicitTo) || avaProjectIdFromPath()).trim()
+  const targetStage = avaStageRoute(stage || avaStageFromPath(explicitTo) || 'board')
+
+  if (explicitTo.startsWith('/app/projects/')) return explicitTo
+
+  if (explicitProjectId) {
+    return `/app/projects/${explicitProjectId}/${targetStage}`
+  }
+
+  if (explicitTo.startsWith('/app/workspace/')) return explicitTo
+  return `/app/workspace/${targetStage}`
 }
 
 function avaAssetIdFromRef(...values) {
@@ -330,7 +374,10 @@ export default function AvaShellLayout() {
     const title = detail.title || (type === 'error' ? 'Ошибка' : type === 'success' ? 'Готово' : 'Уведомление')
     const message = detail.message || ''
     const sceneId = detail.sceneId || ''
-    const to = detail.to || ''
+    const rawTo = detail.to || detail.pagePath || ''
+    const projectId = String(detail.projectId || avaProjectIdFromPath(rawTo) || avaProjectIdFromPath()).trim()
+    const stage = String(detail.stage || detail.targetStage || avaStageFromPath(rawTo) || 'board').trim()
+    const to = avaToastDestination({ to: rawTo, projectId, stage })
 
     const normalizedTitle = String(title || '').toLowerCase()
     let jobToastGroup = ''
@@ -346,7 +393,7 @@ export default function AvaShellLayout() {
     }
 
     const dedupeKey = jobToastGroup
-      ? `${jobToastGroup}:${sceneId || message}`
+      ? `${jobToastGroup}:${projectId || 'workspace'}:${sceneId || message}`
       : (detail.dedupeKey || `${type}:${title}:${message}:${sceneId}`)
 
     const now = Date.now()
@@ -361,6 +408,8 @@ export default function AvaShellLayout() {
       title,
       message,
       sceneId,
+      projectId,
+      stage,
       to,
     }
 
@@ -376,14 +425,11 @@ export default function AvaShellLayout() {
   }
 
   function globalToastDestination(toast) {
-    const explicitTo = String(toast?.to || '')
-    const projectId = String(toast?.projectId || '')
-
-    if (explicitTo.includes('/app/projects/') && explicitTo.includes('/board')) return explicitTo
-    if (explicitTo.includes('/app/workspace/board')) return explicitTo
-    if (projectId) return `/app/projects/${projectId}/board`
-
-    return '/app/workspace/board'
+    return avaToastDestination({
+      to: toast?.to || toast?.pagePath || '',
+      projectId: toast?.projectId || '',
+      stage: toast?.stage || 'board',
+    })
   }
 
   function prepareGlobalToastOpen(toast) {

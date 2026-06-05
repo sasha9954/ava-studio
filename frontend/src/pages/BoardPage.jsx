@@ -2421,14 +2421,24 @@ export default function BoardPage() {
 
 
 
+  function boardProjectPagePath() {
+    return (!workspaceMode && projectId)
+      ? `/app/projects/${projectId}/board`
+      : '/app/workspace/board'
+  }
+
   function pushBoardToast({ type = 'info', title = '', message = '', sceneId = '', dedupeKey = '' } = {}) {
+    const to = boardProjectPagePath()
     window.dispatchEvent(new CustomEvent('ava:notify', {
       detail: {
         type,
         title,
         message,
         sceneId,
-        to: window.location.pathname,
+        projectId: workspaceMode ? '' : (projectId || ''),
+        stage: 'board',
+        to,
+        pagePath: to,
         dedupeKey,
         source: 'board-page',
       },
@@ -2461,7 +2471,9 @@ export default function BoardPage() {
       statusEndpoint,
       projectId: projectId || '',
       workspaceMode,
-      to: window.location.pathname,
+      stage: 'board',
+      to: boardProjectPagePath(),
+      pagePath: boardProjectPagePath(),
       createdAt: new Date().toISOString(),
     }
 

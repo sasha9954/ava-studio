@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './StandaloneGeneratorPage.css'
 import { pickLatestGeneratorJob } from '../../services/generatorJobs'
@@ -1046,6 +1046,9 @@ async function saveGeneratorHandoffBoardSnapshot(board = {}) {
 
 export default function StandaloneGeneratorPage() {
   const navigate = useNavigate()
+  const { projectId } = useParams()
+  const routeProjectId = String(projectId || '').trim()
+  const generatorPagePath = routeProjectId ? `/app/projects/${routeProjectId}/generator` : '/app/workspace/generator'
   const [route, setRoute] = useState(() => readGeneratorSettingsDraft().route || readAnyGeneratorDraft().route || 'i2v')
   const [aspect, setAspect] = useState(() => readGeneratorSettingsDraft().aspect || readAnyGeneratorDraft().aspect || '16:9')
   const [durationSec, setDurationSec] = useState(() => Number(readGeneratorSettingsDraft().durationSec || readAnyGeneratorDraft().durationSec || 5))
@@ -1280,7 +1283,7 @@ export default function StandaloneGeneratorPage() {
       route,
       durationSec: resultKind === 'image' ? 0 : targetDurationSec,
     })
-  }, [resultUrl, rememberGeneratedVideo, route, routeInfo?.kind, routeInfo?.label, targetDurationSec])
+  }, [resultUrl, rememberGeneratedVideo, route, routeInfo?.kind, routeInfo?.label, targetDurationSec, generatorPagePath, routeProjectId])
 
   useEffect(() => {
     const cleanUrl = normalizeUrl(mmaudioResultUrl)
@@ -1826,7 +1829,9 @@ export default function StandaloneGeneratorPage() {
             title: resultKind === 'image' ? 'Фото' : 'Видео',
             toastTitle: resultKind === 'image' ? 'Фото готово' : 'Видео готово',
             toastMessage: 'Генерация завершена. Перейти в генератор?',
-            pagePath: '/app/workspace/generator',
+            pagePath: generatorPagePath,
+            projectId: routeProjectId,
+            stage: 'generator',
             jobId,
             status: (statusLooksDone(data.status || data.video_status) || resultAssetUrl) ? 'done' : (data.status || data.video_status || 'running'),
             rawStatus: data.status || data.video_status || 'running',
@@ -1858,7 +1863,7 @@ export default function StandaloneGeneratorPage() {
     }
     tick()
     pollingRef.current = setInterval(tick, 2200)
-  }, [refreshCreditSummaryNow, updateCreditSummaryFromJobResponse, currentCreditCost, routeInfo?.kind])
+  }, [refreshCreditSummaryNow, updateCreditSummaryFromJobResponse, currentCreditCost, routeInfo?.kind, generatorPagePath, routeProjectId])
 
   useEffect(() => {
     // Hotfix: do not restore old generator jobs from global storage.
@@ -2128,7 +2133,9 @@ export default function StandaloneGeneratorPage() {
           title: routeInfo.label,
           toastTitle: routeInfo.kind === 'image' ? 'Фото готово' : 'Видео готово',
           toastMessage: 'Генерация завершена. Перейти в генератор?',
-          pagePath: '/app/workspace/generator',
+          pagePath: generatorPagePath,
+          projectId: routeProjectId,
+          stage: 'generator',
           jobId,
           status: data.status || 'queued',
           rawStatus: data.status || 'queued',
@@ -2147,7 +2154,7 @@ export default function StandaloneGeneratorPage() {
       setError(String(exc?.message || exc))
       setBusy(false)
     }
-  }, [audioDurationSec, audioFile, audioPersistedDataUrl, audioPreviewUrl, aspectInfo.value, currentCreditCost, renderSize.height, renderSize.width, endFile, endPersistedDataUrl, endPreview, generationDurationSec, negativePrompt, pollStatus, prompt, route, routeInfo, startFile, startPersistedDataUrl, startPreview, targetDurationSec])
+  }, [audioDurationSec, audioFile, audioPersistedDataUrl, audioPreviewUrl, aspectInfo.value, currentCreditCost, renderSize.height, renderSize.width, endFile, endPersistedDataUrl, endPreview, generationDurationSec, negativePrompt, pollStatus, prompt, route, routeInfo, startFile, startPersistedDataUrl, startPreview, targetDurationSec, generatorPagePath, routeProjectId])
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current)

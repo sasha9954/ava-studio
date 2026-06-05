@@ -28,6 +28,21 @@ function normalizeUrl(value) {
   return s
 }
 
+function generatorProjectIdFromPath(path = '') {
+  const value = String(path || (typeof window !== 'undefined' ? window.location.pathname : '') || '')
+  const match = value.match(/\/app\/projects\/([^/]+)/)
+  return match?.[1] ? decodeURIComponent(match[1]) : ''
+}
+
+function normalizeGlobalJobPagePath(job = {}) {
+  const rawPagePath = String(job.pagePath || '')
+  const projectId = String(job.projectId || generatorProjectIdFromPath(rawPagePath) || generatorProjectIdFromPath()).trim()
+
+  if (rawPagePath.startsWith('/app/projects/')) return rawPagePath
+  if (projectId) return `/app/projects/${projectId}/generator`
+  return rawPagePath || '/app/workspace/generator'
+}
+
 async function fetchJson(path) {
   const url = buildApiUrl(path)
   const response = await fetch(url, { headers: authHeaders() })
@@ -71,7 +86,7 @@ export default function GlobalJobNotifier() {
           id: job.id,
           title: job.toastTitle || 'Готово',
           message: job.toastMessage || 'Генерация завершена. Можно перейти к результату.',
-          pagePath: job.pagePath || '/app/workspace/generator',
+          pagePath: normalizeGlobalJobPagePath(job),
         },
       ].slice(-4)
     })
