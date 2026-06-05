@@ -1539,6 +1539,8 @@ export default function StandaloneGeneratorPage() {
   const generatorSnapshotHydratedRef = useRef(false)
   const generatorSnapshotSaveTimerRef = useRef(null)
   const pendingGeneratorResumeJobRef = useRef(null)
+  const activeGeneratorPollTokenRef = useRef('')
+  const completedGeneratorJobsRef = useRef(new Set())
   useEffect(() => {
     let cancelled = false
 
@@ -2588,45 +2590,82 @@ export default function StandaloneGeneratorPage() {
   }, [displayedResultUrl])
 
   const pollStatus = useCallback((jobId, statusBase) => {
-    if (!jobId || !statusBase) return
+    const cleanJobId = String(jobId || '').trim()
+    if (!cleanJobId || !statusBase) return
     if (pollingRef.current) clearInterval(pollingRef.current)
+
+    const pollToken = `${cleanJobId}:${Date.now()}:${Math.random().toString(16).slice(2)}`
+    activeGeneratorPollTokenRef.current = pollToken
     let tickCount = 0
+    let tickInFlight = false
+    let stopped = false
+
+    const stopPollingRun = () => {
+      stopped = true
+      if (pollingRef.current) clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+
     const tick = async () => {
+      if (stopped || tickInFlight || activeGeneratorPollTokenRef.current !== pollToken) return
+      tickInFlight = true
       tickCount += 1
       if (tickCount > 180) {
-        if (pollingRef.current) clearInterval(pollingRef.current)
-        pollingRef.current = null
+        stopPollingRun()
         setBusy(false)
+        setJob(null)
         setStatusText('polling остановлен по таймауту')
+        tickInFlight = false
         return
       }
       try {
-        const data = await fetchJson(`${statusBase}${jobId}`)
+        const data = await fetchJson(`${statusBase}${cleanJobId}`)
+        if (stopped || activeGeneratorPollTokenRef.current !== pollToken) return
+
         updateCreditSummaryFromJobResponse(data)
         setRawResponse(data)
         const polledStatus = data.status || data.video_status || 'running'
         const polledJob = compactGeneratorJob({
           ...data,
-          jobId,
+          jobId: cleanJobId,
           projectId: routeProjectId,
           pagePath: generatorPagePath,
           stage: 'generator',
           status: polledStatus,
           statusBase,
-          statusEndpoint: `${statusBase}${jobId}`,
+          statusEndpoint: `${statusBase}${cleanJobId}`,
           route,
         })
-        setJob((old) => compactGeneratorJob({ ...(old || {}), ...(polledJob || {}), ...data, jobId }))
-        setStatusText(polledStatus)
         const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
         const pickedResultUrl = normalizeUrl(pickVideoUrl(data))
         const resultAssetUrl = isBlockedGeneratorPreviewUrl(pickedResultUrl) ? '' : pickedResultUrl
         const refs = resultAssetUrl ? generatorResultRefs(data, resultAssetUrl) : { apiPath: '', assetId: '', url: '' }
-        if (!resultAssetUrl && !statusLooksDone(polledStatus) && !statusLooksFailed(polledStatus) && generatorJobLooksActive(polledJob)) {
+        const completionKey = cleanJobId
+        const isCompletedPoll = statusLooksDone(polledStatus) || Boolean(resultAssetUrl)
+        const isFailedPoll = statusLooksFailed(polledStatus)
+
+        if (isCompletedPoll && completionKey && completedGeneratorJobsRef.current.has(completionKey)) {
+          stopPollingRun()
+          setBusy(false)
+          setJob(null)
+          return
+        }
+
+        if (isCompletedPoll && completionKey) {
+          completedGeneratorJobsRef.current.add(completionKey)
+          stopPollingRun()
+          setBusy(false)
+          setJob(null)
+        } else {
+          setJob((old) => compactGeneratorJob({ ...(old || {}), ...(polledJob || {}), ...data, jobId: cleanJobId }))
+        }
+        setStatusText(polledStatus)
+
+        if (!resultAssetUrl && !isCompletedPoll && !isFailedPoll && generatorJobLooksActive(polledJob)) {
           saveGeneratorSnapshot('job_polling', { job: polledJob, statusText: polledStatus })
         }
+
         if (resultAssetUrl) {
-          const refs = generatorResultRefs(data, resultAssetUrl)
           const canonicalResultUrl = refs.apiPath || resultAssetUrl
           const resultMeta = {
             kind: resultKind,
@@ -2641,14 +2680,15 @@ export default function StandaloneGeneratorPage() {
           setResultUrl(normalizeUrl(canonicalResultUrl))
           setGeneratedVideos((old) => {
             const nextGallery = mergeGeneratorGalleryItem(old, canonicalResultUrl, resultMeta)
-            saveGeneratorSnapshot('generator_completed', { resultUrl: canonicalResultUrl, resultData: data, job: { ...data, jobId }, gallery: nextGallery })
+            saveGeneratorSnapshot('generator_completed', { resultUrl: canonicalResultUrl, resultData: data, job: null, statusText: 'completed', gallery: nextGallery })
             return nextGallery
           })
-          await saveCompletedGeneratorResultNow(canonicalResultUrl, data, jobId)
+          await saveCompletedGeneratorResultNow(canonicalResultUrl, data, cleanJobId)
         }
-        if (jobId) {
+
+        if (cleanJobId) {
           upsertGlobalJob({
-            id: `generator:${jobId}`,
+            id: `generator:${cleanJobId}`,
             source: 'standalone_generator',
             credit_cost_hint: currentCreditCost,
             creditCostHint: currentCreditCost,
@@ -2660,37 +2700,39 @@ export default function StandaloneGeneratorPage() {
             pagePath: generatorPagePath,
             projectId: routeProjectId,
             stage: 'generator',
-            jobId,
-            status: (statusLooksDone(data.status || data.video_status) || resultAssetUrl) ? 'done' : (data.status || data.video_status || 'running'),
-            rawStatus: data.status || data.video_status || 'running',
+            jobId: cleanJobId,
+            status: isCompletedPoll ? 'done' : (polledStatus || 'running'),
+            rawStatus: polledStatus || 'running',
             statusBase,
-            statusEndpoint: `${statusBase}${jobId}`,
+            statusEndpoint: `${statusBase}${cleanJobId}`,
             resultUrl: resultAssetUrl || '',
             apiPath: refs.apiPath || generatorCanonicalApiPath(resultAssetUrl),
             assetId: refs.assetId || generatorAssetIdFromRef(resultAssetUrl),
             response: data,
           })
         }
-        if (statusLooksDone(data.status || data.video_status) || resultAssetUrl) {
+
+        if (isCompletedPoll) {
           updateCreditSummaryFromJobResponse(data)
           refreshCreditSummaryNow('generator_completed')
           try { window.dispatchEvent(new CustomEvent('ava:credits-changed', { detail: data })) } catch {}
-          if (pollingRef.current) clearInterval(pollingRef.current)
-          pollingRef.current = null
-          setBusy(false)
+          return
         }
-        if (statusLooksFailed(data.status || data.video_status || data.status)) {
-          if (pollingRef.current) clearInterval(pollingRef.current)
-          pollingRef.current = null
+
+        if (isFailedPoll) {
+          stopPollingRun()
           setBusy(false)
+          setJob(null)
         }
       } catch (exc) {
         setError(String(exc?.message || exc))
         setBusy(false)
-        if (pollingRef.current) clearInterval(pollingRef.current)
-        pollingRef.current = null
+        stopPollingRun()
+      } finally {
+        tickInFlight = false
       }
     }
+
     tick()
     pollingRef.current = setInterval(tick, 2200)
   }, [refreshCreditSummaryNow, updateCreditSummaryFromJobResponse, currentCreditCost, routeInfo?.kind, routeInfo?.label, route, targetDurationSec, generatorPagePath, routeProjectId, saveGeneratorSnapshot, saveCompletedGeneratorResultNow])
@@ -2962,6 +3004,7 @@ export default function StandaloneGeneratorPage() {
         statusEndpoint: jobId ? `${routeInfo.statusBase}${jobId}` : '',
         route,
       })
+      if (jobId) completedGeneratorJobsRef.current.delete(String(jobId).trim())
       setJob(startedJob)
       setStatusText(startedStatus)
       if (jobId && generatorJobLooksActive(startedJob)) {
@@ -2985,11 +3028,14 @@ export default function StandaloneGeneratorPage() {
         setSelectedGalleryVideoUrl('')
         setImageActionMenuId('')
         setResultUrl(normalizeUrl(canonicalVideo))
+        if (jobId) completedGeneratorJobsRef.current.add(String(jobId).trim())
         setGeneratedVideos((old) => {
           const nextGallery = mergeGeneratorGalleryItem(old, canonicalVideo, resultMeta)
-          saveGeneratorSnapshot('generator_completed', { resultUrl: canonicalVideo, resultData: data, job: { ...data, jobId }, gallery: nextGallery })
+          saveGeneratorSnapshot('generator_completed', { resultUrl: canonicalVideo, resultData: data, job: null, statusText: 'completed', gallery: nextGallery })
           return nextGallery
         })
+        setJob(null)
+        setBusy(false)
         await saveCompletedGeneratorResultNow(canonicalVideo, data, jobId || '')
       }
       if (jobId) {

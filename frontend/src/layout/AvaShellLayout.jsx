@@ -55,6 +55,12 @@ function writeAvaCompletedJobs(jobs) {
   }
 }
 
+function avaCompletedJobAlreadyRemembered(key = '') {
+  const cleanKey = String(key || '').trim()
+  if (!cleanKey) return false
+  return readAvaCompletedJobs().some((saved) => String(saved?.key || '').trim() === cleanKey)
+}
+
 function rememberCompletedAvaJob(job = {}, data = {}) {
   const key = job.key || `${job.kind || 'job'}:${job.jobId || job.statusEndpoint || Date.now()}`
   const item = {
@@ -557,10 +563,14 @@ export default function AvaShellLayout() {
 
           if (resultUrl) {
             changed = true
+            const alreadyRemembered = avaCompletedJobAlreadyRemembered(key)
             const nextBalance = extractAvaCreditBalance(data)
             if (nextBalance !== null) setShellCreditBalance(nextBalance)
             refreshShellCredits('global_job_done')
             try { window.dispatchEvent(new CustomEvent('ava:credits-changed', { detail: data })) } catch {}
+            if (alreadyRemembered) {
+              continue
+            }
             rememberCompletedAvaJob(job, data)
             await persistFinishedJobToBoardSnapshot(job, data)
             pushGlobalToast({
