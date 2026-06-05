@@ -1,8 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './StandaloneGeneratorPage.css'
-import { pickLatestGeneratorJob, upsertGlobalJob } from '../../services/generatorJobs'
+import { pickLatestGeneratorJob } from '../../services/generatorJobs'
 import { makeWorkflowEntry, rememberWorkflowEntry } from '../../utils/workflowNavigation.js'
+
+// Hotfix: generator global job toasts/polling created request storms on restore.
+// Keep Generator local-only until asset persistence is rebuilt safely.
+const upsertGlobalJob = () => {}
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
@@ -108,9 +112,9 @@ function createLightGeneratorDraft(draft = {}) {
     imageQuality: draft.imageQuality || TXT2IMG_DEFAULT_QUALITY,
     durationSec: draft.durationSec || 5,
 
-    resultUrl: draft.resultUrl || '',
+    resultUrl: isBlockedGeneratorPreviewUrl(draft.resultUrl || '') ? '' : (draft.resultUrl || ''),
     statusText: draft.statusText || '',
-    job: compactGeneratorJob(draft.job),
+    job: isBlockedGeneratorPreviewUrl(draft?.job?.resultUrl || draft?.job?.videoUrl || '') ? null : compactGeneratorJob(draft.job),
 
     audioName: draft.audioName || '',
     audioDurationSec: draft.audioDurationSec || 0,
@@ -185,13 +189,13 @@ function generatorRenderSize(routeInfo, aspectInfo) {
 }
 
 const ROUTES = [
-  { value: 'txt2img', label: 'Фото по описанию', shortLabel: 'фото', kind: 'image', needsStart: false, needsEnd: false, needsAudio: false, maxDuration: null, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Генерация картинки по описанию через text to image.json. Для 16:9 отправляем 2304×1296.' },
-  { value: 'i2v', label: 'Фото → видео', shortLabel: 'фото→видео', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Обычное видео: итог до 8 секунд. Генерация идёт с +1 сек запаса.' },
-  { value: 'ia2v', label: 'Липсинк', shortLabel: 'липсинк', kind: 'video', needsStart: true, needsEnd: false, needsAudio: true, maxDuration: 10, maxAudioDuration: 15, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Lip-sync: итог до 10 сек, аудио до 15 сек. Видео идёт с +1 сек запаса.' },
-  { value: 'i2v_sound', label: 'Видео со звуком', shortLabel: 'звук', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Звук/речь описываем в prompt. Аудио-файл не нужен.' },
-  { value: 'i2v_text', label: 'Видео с речью', shortLabel: 'речь', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Короткая речь/звук задаётся в prompt. Аудио-файл не нужен.' },
-  { value: 'first_last', label: 'Первый-последний кадр', shortLabel: 'first-last', kind: 'video', needsStart: true, needsEnd: true, needsAudio: false, maxDuration: 8, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Нужны Start и End. Генерация идёт с +1 сек запаса.' },
-  { value: 'first_last_sound', label: 'Первый-последний кадр со звуком', shortLabel: 'first-last+звук', kind: 'video', needsStart: true, needsEnd: true, needsAudio: false, maxDuration: 8, endpoint: '/api/clip/video/start', statusBase: '/api/clip/video/status/', help: 'Нужны Start и End. Звук/речь описываем в prompt.' },
+  { value: 'txt2img', label: 'Фото по описанию', shortLabel: 'фото', kind: 'image', needsStart: false, needsEnd: false, needsAudio: false, maxDuration: null, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Генерация картинки по описанию через text to image.json. Для 16:9 отправляем 2304×1296.' },
+  { value: 'i2v', label: 'Фото → видео', shortLabel: 'фото→видео', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Обычное видео: итог до 8 секунд. Генерация идёт с +1 сек запаса.' },
+  { value: 'ia2v', label: 'Липсинк', shortLabel: 'липсинк', kind: 'video', needsStart: true, needsEnd: false, needsAudio: true, maxDuration: 10, maxAudioDuration: 15, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Lip-sync: итог до 10 сек, аудио до 15 сек. Видео идёт с +1 сек запаса.' },
+  { value: 'i2v_sound', label: 'Видео со звуком', shortLabel: 'звук', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Звук/речь описываем в prompt. Аудио-файл не нужен.' },
+  { value: 'i2v_text', label: 'Видео с речью', shortLabel: 'речь', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Короткая речь/звук задаётся в prompt. Аудио-файл не нужен.' },
+  { value: 'first_last', label: 'Первый-последний кадр', shortLabel: 'first-last', kind: 'video', needsStart: true, needsEnd: true, needsAudio: false, maxDuration: 8, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Нужны Start и End. Генерация идёт с +1 сек запаса.' },
+  { value: 'first_last_sound', label: 'Первый-последний кадр со звуком', shortLabel: 'first-last+звук', kind: 'video', needsStart: true, needsEnd: true, needsAudio: false, maxDuration: 8, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Нужны Start и End. Звук/речь описываем в prompt.' },
 ]
 
 const DEFAULT_NEGATIVE = 'identity drift, deformed body, bad hands, extra limbs, warped face, melting objects, text, logo, watermark, subtitles, flicker, jitter, unstable camera, broken geometry'
@@ -516,6 +520,24 @@ function normalizeUrl(value) {
   return s
 }
 
+
+function isBlockedGeneratorPreviewUrl(url) {
+  const value = String(url || '').trim()
+  if (!value) return false
+  try {
+    const parsed = new URL(value, typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
+    const host = String(parsed.hostname || '').toLowerCase()
+    const path = String(parsed.pathname || '')
+    if ((host === 'localhost' || host === '127.0.0.1') && path.startsWith('/static/assets/')) return true
+    if (path.startsWith('/static/assets/board_videos/')) return true
+    if (path.startsWith('/static/assets/board_assembly/')) return true
+  } catch {
+    if (value.startsWith('/static/assets/board_videos/')) return true
+    if (value.startsWith('/static/assets/board_assembly/')) return true
+  }
+  return false
+}
+
 function isGeneratorImageUrl(url) {
   const value = String(url || '').trim()
   if (!value) return false
@@ -526,7 +548,7 @@ function isGeneratorImageUrl(url) {
 function normalizeGeneratorGalleryItem(item) {
   if (!item || typeof item !== 'object') return null
   const url = normalizeUrl(item.url || item.videoUrl || item.imageUrl || item.resultUrl || '')
-  if (!url) return null
+  if (!url || isBlockedGeneratorPreviewUrl(url)) return null
   const isImage = isGeneratorImageUrl(url)
   return {
     ...item,
@@ -1006,7 +1028,7 @@ function clearBoardAssemblyStorageForGeneratorHandoff() {
 }
 
 async function saveGeneratorHandoffBoardSnapshot(board = {}) {
-  const response = await fetch(`${API_BASE}/api/workspace/snapshots/board`, {
+  const response = await fetch(`${API_BASE}/workspace/snapshots/board`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
@@ -1106,8 +1128,8 @@ export default function StandaloneGeneratorPage() {
     async function loadGeneratorTariffsAndCredits() {
       try {
         const [tariffsResult, creditsResult] = await Promise.allSettled([
-          fetchJson('/api/clip/ltx/tariffs'),
-          fetchJson('/api/credits/summary'),
+          fetchJson('/clip/ltx/tariffs'),
+          fetchJson('/credits/summary'),
         ])
 
         if (cancelled) return
@@ -1171,7 +1193,7 @@ export default function StandaloneGeneratorPage() {
 
   const refreshCreditSummaryNow = useCallback(async (reason = '') => {
     try {
-      const latest = await fetchJson('/api/credits/summary')
+      const latest = await fetchJson('/credits/summary')
       setCreditSummary(latest)
       notifyGeneratorCreditBalance(latest, 'credits_summary')
       return latest
@@ -1204,7 +1226,7 @@ export default function StandaloneGeneratorPage() {
     || (routeInfo.kind === 'image' && !mmaudioResultUrl)
     || /\.(png|jpe?g|webp)(\?|$)/i.test(String(displayedResultUrl || ''))
   )
-  const previousVideoForFrame = normalizeUrl(generatedVideoItems[0]?.url || (!displayedResultIsImage ? (selectedGalleryVideoUrl || resultUrl || mmaudioResultUrl || displayedResultUrl) : '') || '')
+  const previousVideoForFrame = normalizeUrl(generatedVideoItems[0]?.url || (!displayedResultIsImage && !isBlockedGeneratorPreviewUrl(selectedGalleryVideoUrl || resultUrl || mmaudioResultUrl || displayedResultUrl) ? (selectedGalleryVideoUrl || resultUrl || mmaudioResultUrl || displayedResultUrl) : '') || '')
   const canUseMmaudio = !!resultUrl && ['i2v', 'first_last'].includes(route)
   const targetDurationSec = Number(durationSec) || 1
   const generationDurationSec = routeInfo.kind === 'video' ? targetDurationSec + EXTRA_TAIL_SEC : targetDurationSec
@@ -1369,7 +1391,7 @@ export default function StandaloneGeneratorPage() {
       let imageName = 'last-frame.jpg'
 
       try {
-        const data = await fetchJson('/api/clip/video/extract-last-frame', {
+        const data = await fetchJson('/clip/video/extract-last-frame', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1769,7 +1791,16 @@ export default function StandaloneGeneratorPage() {
   const pollStatus = useCallback((jobId, statusBase) => {
     if (!jobId || !statusBase) return
     if (pollingRef.current) clearInterval(pollingRef.current)
+    let tickCount = 0
     const tick = async () => {
+      tickCount += 1
+      if (tickCount > 180) {
+        if (pollingRef.current) clearInterval(pollingRef.current)
+        pollingRef.current = null
+        setBusy(false)
+        setStatusText('polling остановлен по таймауту')
+        return
+      }
       try {
         const data = await fetchJson(`${statusBase}${jobId}`)
         updateCreditSummaryFromJobResponse(data)
@@ -1777,7 +1808,8 @@ export default function StandaloneGeneratorPage() {
         setJob((old) => ({ ...(old || {}), ...data }))
         setStatusText(data.status || data.video_status || 'running')
         const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
-        const resultAssetUrl = normalizeUrl(pickVideoUrl(data))
+        const pickedResultUrl = normalizeUrl(pickVideoUrl(data))
+        const resultAssetUrl = isBlockedGeneratorPreviewUrl(pickedResultUrl) ? '' : pickedResultUrl
         if (resultAssetUrl) {
           setSelectedGalleryVideoUrl('')
           setImageActionMenuId('')
@@ -1829,27 +1861,21 @@ export default function StandaloneGeneratorPage() {
   }, [refreshCreditSummaryNow, updateCreditSummaryFromJobResponse, currentCreditCost, routeInfo?.kind])
 
   useEffect(() => {
-    const latest = pickLatestGeneratorJob()
-    if (!latest) return
-    if (latest.resultUrl) {
-      setResultUrl(latest.resultUrl)
-      setStatusText('готово после восстановления')
-      setJob(latest)
-      return
-    }
-    if (latest.jobId && latest.statusBase && latest.status !== 'done' && latest.status !== 'failed') {
-      setJob(latest)
-      setStatusText(latest.rawStatus || latest.status || 'восстановлено после F5')
-      pollStatus(latest.jobId, latest.statusBase)
-    }
-  }, [pollStatus])
+    // Hotfix: do not restore old generator jobs from global storage.
+    // Old jobs may contain localhost/static URLs and pending status endpoints;
+    // restoring them causes endless polling/toasts. New jobs still work locally.
+    try {
+      const latest = pickLatestGeneratorJob()
+      if (latest?.jobId) console.log('[GENERATOR RESTORE DISABLED]', { jobId: latest.jobId })
+    } catch {}
+  }, [])
 
   const pollMmaudioStatus = useCallback((jobId) => {
     if (!jobId) return
     if (mmaudioPollingRef.current) clearInterval(mmaudioPollingRef.current)
     const tick = async () => {
       try {
-        const data = await fetchJson(`/api/clip/mmaudio/status/${jobId}`)
+        const data = await fetchJson(`/clip/mmaudio/status/${jobId}`)
         updateCreditSummaryFromJobResponse(data)
         setMmaudioRawResponse(data)
         setMmaudioJob((old) => ({ ...(old || {}), ...data }))
@@ -1930,7 +1956,7 @@ export default function StandaloneGeneratorPage() {
         aspect_ratio: aspectInfo.value,
         aspectRatio: aspectInfo.value,
       }
-      const data = await fetchJson('/api/clip/mmaudio/start', {
+      const data = await fetchJson('/clip/mmaudio/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -2087,7 +2113,8 @@ export default function StandaloneGeneratorPage() {
       const jobId = data.jobId || data.job_id || data.id
       setJob({ ...data, jobId })
       setStatusText(data.status || 'queued')
-      const video = normalizeUrl(pickVideoUrl(data))
+      const pickedVideo = normalizeUrl(pickVideoUrl(data))
+      const video = isBlockedGeneratorPreviewUrl(pickedVideo) ? '' : pickedVideo
       if (video) {
         setSelectedGalleryVideoUrl('')
         setImageActionMenuId('')
@@ -2432,8 +2459,13 @@ export default function StandaloneGeneratorPage() {
                       ⇩
                     </button>
                   </div>
-                ) : displayedResultUrl ? (
+                ) : displayedResultUrl && !isBlockedGeneratorPreviewUrl(displayedResultUrl) ? (
                   <video className="avaGeneratorVideo" src={displayedResultUrl} controls playsInline />
+                ) : displayedResultUrl && isBlockedGeneratorPreviewUrl(displayedResultUrl) ? (
+                  <div className="avaGeneratorCanvasState isPlaceholder">
+                    <strong>Старый static-result заблокирован</strong>
+                    <span>Очисти старый результат и сгенерируй новое видео. Прямой localhost/static preview отключён.</span>
+                  </div>
                 ) : busy ? (
                   <div className="avaGeneratorCanvasState isBusy">
                     <div className="avaGeneratorSpinner" />

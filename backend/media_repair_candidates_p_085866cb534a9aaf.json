@@ -1,0 +1,3568 @@
+{
+  "projectId": "p_085866cb534a9aaf",
+  "dryRun": true,
+  "projectFile": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\ava_db.json",
+  "summary": {
+    "scenes": 43,
+    "filesScanned": 30,
+    "videoFiles": 28,
+    "imageFiles": 2,
+    "highConfidenceCandidates": 2,
+    "manualSelectionNeeded": 41,
+    "unlinkedFiles": 29
+  },
+  "candidates": [
+    {
+      "sceneId": "seg_01",
+      "slot": "last",
+      "kind": "image",
+      "confidence": 0.99,
+      "reasons": [
+        "filename_contains_scene_id",
+        "board_frame_source_scene"
+      ],
+      "staticUrl": "/static/assets/board_frames/seg_02_from_seg_01_last_6973307bb5f8.jpg",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_frames\\seg_02_from_seg_01_last_6973307bb5f8.jpg",
+      "size": 157044,
+      "mtime": "2026-06-03T22:03:03",
+      "filename": "seg_02_from_seg_01_last_6973307bb5f8.jpg"
+    },
+    {
+      "sceneId": "seg_02",
+      "slot": "first",
+      "kind": "image",
+      "confidence": 0.99,
+      "reasons": [
+        "filename_contains_scene_id",
+        "board_frame_target_scene"
+      ],
+      "staticUrl": "/static/assets/board_frames/seg_02_from_seg_01_last_6973307bb5f8.jpg",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_frames\\seg_02_from_seg_01_last_6973307bb5f8.jpg",
+      "size": 157044,
+      "mtime": "2026-06-03T22:03:03",
+      "filename": "seg_02_from_seg_01_last_6973307bb5f8.jpg"
+    }
+  ],
+  "manualSelectionNeeded": [
+    {
+      "sceneId": "seg_03",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_03",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_03",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_03",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_03",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_03",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_04",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_04",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_04",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_04",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_04",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_04",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_05",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_05",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_05",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_05",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4",
+          "size": 600605,
+          "mtime": "2026-06-03T21:35:59",
+          "filename": "boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_05",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_05",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_06",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_06",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4",
+          "size": 600605,
+          "mtime": "2026-06-03T21:35:59",
+          "filename": "boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_06",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_06",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4",
+          "size": 599338,
+          "mtime": "2026-06-03T21:40:01",
+          "filename": "boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_06",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_06",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_07",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_07",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4",
+          "size": 599338,
+          "mtime": "2026-06-03T21:40:01",
+          "filename": "boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_07",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4",
+          "size": 600605,
+          "mtime": "2026-06-03T21:35:59",
+          "filename": "boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_07",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4",
+          "size": 698211,
+          "mtime": "2026-06-03T21:43:32",
+          "filename": "boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_07",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_07",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_08",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_08",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4",
+          "size": 698211,
+          "mtime": "2026-06-03T21:43:32",
+          "filename": "boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_08",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4",
+          "size": 599338,
+          "mtime": "2026-06-03T21:40:01",
+          "filename": "boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_08",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4",
+          "size": 1311893,
+          "mtime": "2026-06-03T21:53:46",
+          "filename": "boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_08",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_08",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_09",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_09",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4",
+          "size": 1311893,
+          "mtime": "2026-06-03T21:53:46",
+          "filename": "boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_09",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4",
+          "size": 698211,
+          "mtime": "2026-06-03T21:43:32",
+          "filename": "boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_09",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4",
+          "size": 1696545,
+          "mtime": "2026-06-03T22:06:03",
+          "filename": "boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4"
+        },
+        {
+          "sceneId": "seg_09",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_09",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_10",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_10",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4",
+          "size": 1696545,
+          "mtime": "2026-06-03T22:06:03",
+          "filename": "boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4"
+        },
+        {
+          "sceneId": "seg_10",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4",
+          "size": 1311893,
+          "mtime": "2026-06-03T21:53:46",
+          "filename": "boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4"
+        },
+        {
+          "sceneId": "seg_10",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_10",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_10",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_11",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_11",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.31,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_11",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.21,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_11",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4",
+          "size": 1696545,
+          "mtime": "2026-06-03T22:06:03",
+          "filename": "boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4"
+        },
+        {
+          "sceneId": "seg_11",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_11",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_12",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_12",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.31,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_12",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.21,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_12",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.21,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_12",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_12",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_13",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_13",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_13",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_13",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_13",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_13",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_14",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_14",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.26,
+          "reasons": [
+            "trim_file_preferred",
+            "same_order_as_scene_index_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_14",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.16,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_14",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_14",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_14",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_15",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_15",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.21,
+          "reasons": [
+            "trim_file_preferred",
+            "near_order_low_confidence",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_15",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_15",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_15",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_15",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_16",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_16",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_16",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_16",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_16",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_16",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_17",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_17",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_17",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_17",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_17",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_17",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_18",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_18",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_18",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_18",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_18",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_18",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_19",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_19",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_19",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_19",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_19",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_19",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_20",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_20",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_20",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_20",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_20",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_20",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_21",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_21",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_21",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_21",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_21",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_21",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_22",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_22",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_22",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_22",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_22",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_22",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_23",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_23",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_23",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_23",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_23",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_23",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_24",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_24",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_24",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_24",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_24",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_24",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_25",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_25",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_25",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_25",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_25",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_25",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_26",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_26",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_26",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_26",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_26",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_26",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_27",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_27",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_27",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_27",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_27",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_27",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_28",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_28",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_28",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_28",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_28",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_28",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_29",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_29",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_29",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_29",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_29",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_29",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_30",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_30",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_30",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_30",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_30",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_30",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_31",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_31",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_31",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_31",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_31",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_31",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_32",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_32",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_32",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_32",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_32",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_32",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_33",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_33",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_33",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_33",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_33",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_33",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_34",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_34",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_34",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_34",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_34",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_34",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_35",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_35",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_35",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_35",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_35",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_35",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_36",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_36",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_36",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_36",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_36",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_36",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_37",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_37",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_37",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_37",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_37",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_37",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_38",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_38",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_38",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_38",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_38",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_38",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_39",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_39",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_39",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_39",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_39",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_39",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_40",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_40",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_40",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_40",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_40",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_40",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_41",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_41",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_41",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_41",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_41",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_41",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_42",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_42",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+          "size": 1808904,
+          "mtime": "2026-06-03T22:13:16",
+          "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_42",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+          "size": 1881084,
+          "mtime": "2026-06-03T22:20:02",
+          "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_42",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+          "size": 1316027,
+          "mtime": "2026-06-03T22:27:45",
+          "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_42",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+          "size": 1197791,
+          "mtime": "2026-06-03T22:36:44",
+          "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+        },
+        {
+          "sceneId": "seg_42",
+          "slot": "image",
+          "kind": "image",
+          "confidence": 0.1,
+          "reasons": [
+            "unscoped_board_image_manual_candidate"
+          ],
+          "staticUrl": "/static/assets/board_images/boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+          "size": 2541757,
+          "mtime": "2026-06-03T11:56:14",
+          "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+        }
+      ]
+    },
+    {
+      "sceneId": "seg_43",
+      "reason": "manual selection needed",
+      "topCandidates": [
+        {
+          "sceneId": "seg_43",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+          "size": 929216,
+          "mtime": "2026-06-03T15:13:41",
+          "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_43",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+          "size": 649830,
+          "mtime": "2026-06-03T15:18:47",
+          "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_43",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+          "size": 698591,
+          "mtime": "2026-06-03T15:22:50",
+          "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+        },
+        {
+          "sceneId": "seg_43",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+          "size": 1747766,
+          "mtime": "2026-06-03T15:27:00",
+          "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+        },
+        {
+          "sceneId": "seg_43",
+          "slot": "video",
+          "kind": "video",
+          "confidence": 0.13,
+          "reasons": [
+            "trim_file_preferred",
+            "route_hint"
+          ],
+          "staticUrl": "/static/assets/board_videos/boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+          "size": 1171338,
+          "mtime": "2026-06-03T21:30:12",
+          "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+        }
+      ]
+    }
+  ],
+  "unlinkedFiles": [
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+      "kind": "image",
+      "size": 2541757,
+      "mtime": "2026-06-03T11:56:14",
+      "filename": "boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2.3_i2v_00238_.mp4",
+      "kind": "video",
+      "size": 1031634,
+      "mtime": "2026-06-03T15:13:41",
+      "filename": "boardjob_7d02a45f46094d_LTX_2.3_i2v_00238_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+      "kind": "video",
+      "size": 929216,
+      "mtime": "2026-06-03T15:13:41",
+      "filename": "boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2.3_i2v_00239_.mp4",
+      "kind": "video",
+      "size": 741017,
+      "mtime": "2026-06-03T15:18:47",
+      "filename": "boardjob_a680a73c7a8f4e_LTX_2.3_i2v_00239_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+      "kind": "video",
+      "size": 649830,
+      "mtime": "2026-06-03T15:18:47",
+      "filename": "boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2.3_i2v_00240_.mp4",
+      "kind": "video",
+      "size": 790740,
+      "mtime": "2026-06-03T15:22:49",
+      "filename": "boardjob_020ee2608aa547_LTX_2.3_i2v_00240_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+      "kind": "video",
+      "size": 698591,
+      "mtime": "2026-06-03T15:22:50",
+      "filename": "boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2.3_i2v_00241_.mp4",
+      "kind": "video",
+      "size": 1944772,
+      "mtime": "2026-06-03T15:27:00",
+      "filename": "boardjob_0908ef4739df42_LTX_2.3_i2v_00241_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+      "kind": "video",
+      "size": 1747766,
+      "mtime": "2026-06-03T15:27:00",
+      "filename": "boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2.3_i2v_00242_.mp4",
+      "kind": "video",
+      "size": 1532677,
+      "mtime": "2026-06-03T21:30:11",
+      "filename": "boardjob_b5e76cc65efb4c_LTX_2.3_i2v_00242_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+      "kind": "video",
+      "size": 1171338,
+      "mtime": "2026-06-03T21:30:12",
+      "filename": "boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_1401ff7b9d644f_ltx2.3_flf2v_00070_.mp4",
+      "kind": "video",
+      "size": 612280,
+      "mtime": "2026-06-03T21:35:58",
+      "filename": "boardjob_1401ff7b9d644f_ltx2.3_flf2v_00070_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4",
+      "kind": "video",
+      "size": 600605,
+      "mtime": "2026-06-03T21:35:59",
+      "filename": "boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_75b65d2c263447_ltx2.3_flf2v_00071_.mp4",
+      "kind": "video",
+      "size": 611014,
+      "mtime": "2026-06-03T21:40:01",
+      "filename": "boardjob_75b65d2c263447_ltx2.3_flf2v_00071_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4",
+      "kind": "video",
+      "size": 599338,
+      "mtime": "2026-06-03T21:40:01",
+      "filename": "boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_d1462908169944_ltx2.3_flf2v_00072_.mp4",
+      "kind": "video",
+      "size": 709862,
+      "mtime": "2026-06-03T21:43:32",
+      "filename": "boardjob_d1462908169944_ltx2.3_flf2v_00072_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4",
+      "kind": "video",
+      "size": 698211,
+      "mtime": "2026-06-03T21:43:32",
+      "filename": "boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_27042847baf946_ltx2.3_flf2v_00073_.mp4",
+      "kind": "video",
+      "size": 1323544,
+      "mtime": "2026-06-03T21:53:45",
+      "filename": "boardjob_27042847baf946_ltx2.3_flf2v_00073_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4",
+      "kind": "video",
+      "size": 1311893,
+      "mtime": "2026-06-03T21:53:46",
+      "filename": "boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_29fcb8e3e68248_ltx2.3_flf2v_00074_.mp4",
+      "kind": "video",
+      "size": 1706516,
+      "mtime": "2026-06-03T22:06:03",
+      "filename": "boardjob_29fcb8e3e68248_ltx2.3_flf2v_00074_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4",
+      "kind": "video",
+      "size": 1696545,
+      "mtime": "2026-06-03T22:06:03",
+      "filename": "boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2.3_ia2v_00106_.mp4",
+      "kind": "video",
+      "size": 1895988,
+      "mtime": "2026-06-03T22:13:16",
+      "filename": "boardjob_0eb849af1f5c49_LTX_2.3_ia2v_00106_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+      "kind": "video",
+      "size": 1808904,
+      "mtime": "2026-06-03T22:13:16",
+      "filename": "boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2.3_ia2v_00107_.mp4",
+      "kind": "video",
+      "size": 1964327,
+      "mtime": "2026-06-03T22:20:02",
+      "filename": "boardjob_000d6133ce3b49_LTX_2.3_ia2v_00107_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+      "kind": "video",
+      "size": 1881084,
+      "mtime": "2026-06-03T22:20:02",
+      "filename": "boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2.3_ia2v_00108_.mp4",
+      "kind": "video",
+      "size": 1357340,
+      "mtime": "2026-06-03T22:27:45",
+      "filename": "boardjob_b9c469c6700a4e_LTX_2.3_ia2v_00108_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+      "kind": "video",
+      "size": 1316027,
+      "mtime": "2026-06-03T22:27:45",
+      "filename": "boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2.3_ia2v_00109_.mp4",
+      "kind": "video",
+      "size": 1235853,
+      "mtime": "2026-06-03T22:36:44",
+      "filename": "boardjob_11a4d46257984e_LTX_2.3_ia2v_00109_.mp4"
+    },
+    {
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+      "kind": "video",
+      "size": 1197791,
+      "mtime": "2026-06-03T22:36:44",
+      "filename": "boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4"
+    }
+  ],
+  "warnings": [
+    "Dry-run only: ava_db.json was not modified.",
+    "Order-based board_videos matches are intentionally low confidence unless filename contains scene id."
+  ]
+}

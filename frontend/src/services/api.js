@@ -1,6 +1,9 @@
-import { getApiBaseUrl } from "./apiClient.js";
+import { buildApiUrl, getApiBaseUrl, getApiOrigin } from "./apiClient.js";
 
 export const API_BASE = getApiBaseUrl().replace(/\/api\/?$/, "");
+export const API_BASE_URL = getApiBaseUrl();
+export const API_ORIGIN = getApiOrigin();
+export { buildApiUrl };
 
 export async function fetchJson(path, options = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("ava_token") : "";
@@ -8,7 +11,7 @@ export async function fetchJson(path, options = {}) {
   const requestBody = options.body && !isFormData && typeof options.body === "object"
     ? JSON.stringify(options.body)
     : options.body;
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     ...options,
     body: requestBody,
     headers: {

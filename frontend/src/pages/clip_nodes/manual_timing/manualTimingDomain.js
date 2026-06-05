@@ -1,4 +1,4 @@
-import { API_BASE } from "../../../services/api.js";
+import { API_BASE, buildApiUrl } from "../../../services/api.js";
 
 export const MANUAL_TIMING_PODCAST_DIALOGUE_MODE = "podcast_dialogue";
 export const MANUAL_TIMING_PODCAST_DIALOGUE_PROJECT_KIND = "podcast";
@@ -30,8 +30,8 @@ function normalizeStaticUrl(value = "") {
   if (!raw) return "";
   if (/^https?:\/\//i.test(raw) || raw.startsWith("blob:") || raw.startsWith("data:")) return raw;
   if (raw.startsWith("/static/")) return `${API_BASE}${raw}`;
-  if (raw.startsWith("/api/")) return `${API_BASE}${raw}`;
-  if (raw.startsWith("/assets/")) return `${API_BASE}/api${raw}`;
+  if (raw.startsWith("/api/")) return buildApiUrl(raw);
+  if (raw.startsWith("/assets/")) return buildApiUrl(raw);
   if (raw.startsWith("static/")) return `${API_BASE}/${raw}`;
   return raw;
 }

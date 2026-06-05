@@ -22,7 +22,7 @@ import {
   Volume2,
 } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { apiRequest, fetchProtectedBlobUrl } from '../services/apiClient.js'
+import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, normalizeAssetFileUrl, normalizeStaticMediaUrl, registerStaticMediaAsset, uploadMediaAsset } from '../services/apiClient.js'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
 import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, readWorkflowEntry } from '../utils/workflowNavigation.js'
 import '../styles/ava-board.css'
@@ -31,6 +31,7 @@ const STAGE = 'board'
 const BOARD_VERSION = 'ava_board_foundation_v1'
 const AVA_GLOBAL_JOBS_KEY = 'ava:active-jobs:v1'
 const AVA_COMPLETED_JOBS_KEY = 'ava:completed-jobs:v1'
+const AVA_BOARD_SEEN_COMPLETED_JOBS_KEY = 'ava:board:seen-completed-jobs:v1'
 const AVA_OPEN_BOARD_SCENE_KEY = 'ava:open-board-scene:v1'
 
 function readAvaGlobalJobs() {
@@ -88,6 +89,392 @@ const FORMAT_OPTIONS = [
 
 const AVA_BOARD_DURABLE_PREFIX = 'ava:board:durable:v1';
 
+function normalizeBoardMediaUrl(value = '') {
+  const raw = asText(value)
+  if (!raw) return ''
+  const apiOrigin = getApiOrigin()
+  if (/^https?:\/\/localhost:8000(\/|$)/i.test(raw)) {
+    return raw.replace(/^https?:\/\/localhost:8000/i, apiOrigin)
+  }
+  if (raw.startsWith('/static/')) return buildApiUrl(raw)
+  if (raw.startsWith('/api/')) return buildApiUrl(raw)
+  if (raw.startsWith('/assets/')) return buildApiUrl(raw)
+  if (/^(https?:|blob:|data:)/i.test(raw)) return raw
+  if (raw.startsWith('/')) return buildApiUrl(raw)
+  return raw
+}
+
+function boardProtectedAssetApiPath(value = '') {
+  const asset = normalizeAssetFileUrl(value)
+  return asset.assetId ? asset.apiPath : ''
+}
+
+function boardStaticMediaUrl(value = '') {
+  const normalized = normalizeStaticMediaUrl(value)
+  return normalized && normalized.includes('/static/assets/') ? normalized : ''
+}
+
+function isProtectedBoardAssetApiPath(value = '') {
+  return Boolean(boardProtectedAssetApiPath(value))
+}
+
+function boardAudioHasAsset(audio = {}) {
+  return Boolean(
+    audio?.assetId ||
+    audio?.asset_id ||
+    audio?.audioAssetId ||
+    audio?.audio_asset_id ||
+    audio?.assetApiPath ||
+    audio?.asset_api_path ||
+    audio?.audioApiPath ||
+    audio?.audio_api_path
+  )
+}
+
+function boardAudioFromTiming(timing = {}) {
+  const audio = timing.audio && typeof timing.audio === 'object' ? timing.audio : {}
+  const assetId = audio.assetId || audio.asset_id || timing.audioAssetId || timing.audio_asset_id || ''
+  const assetApiPath = audio.assetApiPath || audio.asset_api_path || timing.audioApiPath || timing.audio_api_path || ''
+  const name = audio.name || audio.audioName || timing.audioName || timing.audio_name || ''
+  const durationSec = audio.durationSec || audio.duration_sec || timing.audioDurationSec || timing.audio_duration_sec || 0
+  if (!assetId && !assetApiPath) return null
+  return {
+    ...audio,
+    name,
+    assetId,
+    asset_id: assetId,
+    assetApiPath,
+    asset_api_path: assetApiPath,
+    durationSec,
+    duration_sec: durationSec,
+  }
+}
+
+function boardAssetApiPathFromRef(...values) {
+  for (const value of values) {
+    const raw = asText(value)
+    if (!raw) continue
+    if (raw.startsWith('asset_')) return `/assets/${raw}/file`
+    const asset = normalizeAssetFileUrl(raw)
+    if (asset.assetId) return asset.apiPath || `/assets/${asset.assetId}/file`
+  }
+  return ''
+}
+
+function firstTextValue(...values) {
+  for (const value of values) {
+    const text = asText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+
+function boardAssetIdFromRef(...values) {
+  for (const value of values) {
+    const raw = asText(value)
+    if (!raw) continue
+    if (raw.startsWith('asset_')) return raw
+    const asset = normalizeAssetFileUrl(raw)
+    if (asset.assetId) return asset.assetId
+  }
+  return ''
+}
+
+function boardCanonicalAssetApiPath(assetId = '') {
+  const safeAssetId = asText(assetId)
+  return safeAssetId ? `/assets/${safeAssetId}/file` : ''
+}
+
+function canonicalizeSceneAssetFields(scene = {}, config = {}) {
+  const next = { ...scene }
+  const assetId = boardAssetIdFromRef(...(config.assetKeys || []).map((key) => next?.[key]), ...(config.refKeys || []).map((key) => next?.[key]))
+  if (!assetId) return next
+
+  const assetApiPath = boardCanonicalAssetApiPath(assetId)
+  for (const key of config.assetKeys || []) next[key] = assetId
+  for (const key of config.apiKeys || []) next[key] = assetApiPath
+  for (const key of config.urlKeys || []) next[key] = assetApiPath
+  return next
+}
+
+function canonicalizeBoardSceneMediaRefs(scene = {}) {
+  let next = { ...scene }
+
+  next = canonicalizeSceneAssetFields(next, {
+    assetKeys: ['video_asset_id', 'videoAssetId'],
+    apiKeys: ['video_api_path', 'videoApiPath'],
+    urlKeys: ['video_url', 'videoUrl'],
+    refKeys: ['video_api_path', 'videoApiPath', 'video_url', 'videoUrl', 'resultUrl', 'result_url'],
+  })
+
+  next = canonicalizeSceneAssetFields(next, {
+    assetKeys: ['mmaudio_video_asset_id', 'mmaudioVideoAssetId'],
+    apiKeys: ['mmaudio_video_api_path', 'mmaudioVideoApiPath'],
+    urlKeys: ['mmaudio_video_url', 'mmaudioVideoUrl'],
+    refKeys: ['mmaudio_video_api_path', 'mmaudioVideoApiPath', 'mmaudio_video_url', 'mmaudioVideoUrl'],
+  })
+
+  next = canonicalizeSceneAssetFields(next, {
+    assetKeys: ['image_asset_id', 'imageAssetId'],
+    apiKeys: ['image_api_path', 'imageApiPath'],
+    urlKeys: ['image_url', 'imageUrl'],
+    refKeys: ['image_api_path', 'imageApiPath', 'image_url', 'imageUrl', 'resultUrl', 'result_url'],
+  })
+
+  next = canonicalizeSceneAssetFields(next, {
+    assetKeys: ['first_image_asset_id', 'firstImageAssetId', 'first_frame_asset_id', 'firstFrameAssetId', 'start_image_asset_id', 'startImageAssetId'],
+    apiKeys: ['first_image_api_path', 'firstImageApiPath', 'first_frame_api_path', 'firstFrameApiPath', 'start_image_api_path', 'startImageApiPath'],
+    urlKeys: ['first_frame_url', 'firstFrameUrl', 'first_image_url', 'firstImageUrl', 'start_image_url', 'startImageUrl'],
+    refKeys: ['first_image_api_path', 'firstImageApiPath', 'first_frame_api_path', 'firstFrameApiPath', 'first_frame_url', 'firstFrameUrl', 'start_image_api_path', 'startImageApiPath'],
+  })
+
+  next = canonicalizeSceneAssetFields(next, {
+    assetKeys: ['last_image_asset_id', 'lastImageAssetId', 'last_frame_asset_id', 'lastFrameAssetId', 'end_image_asset_id', 'endImageAssetId'],
+    apiKeys: ['last_image_api_path', 'lastImageApiPath', 'last_frame_api_path', 'lastFrameApiPath', 'end_image_api_path', 'endImageApiPath'],
+    urlKeys: ['last_frame_url', 'lastFrameUrl', 'last_image_url', 'lastImageUrl', 'end_image_url', 'endImageUrl'],
+    refKeys: ['last_image_api_path', 'lastImageApiPath', 'last_frame_api_path', 'lastFrameApiPath', 'last_frame_url', 'lastFrameUrl', 'end_image_api_path', 'endImageApiPath'],
+  })
+
+  return next
+}
+
+function canonicalizeBoardMediaRefs(boardData = {}) {
+  if (!boardData || typeof boardData !== 'object') return boardData
+  const scenes = Array.isArray(boardData.scenes)
+    ? asSceneArray(boardData.scenes).map((scene) => canonicalizeBoardSceneMediaRefs(scene))
+    : boardData.scenes
+  return { ...boardData, scenes }
+}
+
+function normalizeMediaRef(input, context = {}) {
+  const fallback = {
+    assetId: null,
+    assetApiPath: null,
+    imageUrl: null,
+    videoUrl: null,
+    runtimeUrl: null,
+  }
+  if (!input || typeof input !== 'object') {
+    console.warn('[MEDIA NULL FALLBACK]', {
+      sceneId: context.sceneId || '',
+      field: context.field || context.slot || '',
+      type: input === null ? 'null' : typeof input,
+    })
+    return fallback
+  }
+  return {
+    ...fallback,
+    ...input,
+    assetId: input.assetId || input.asset_id || null,
+    assetApiPath: input.assetApiPath || input.asset_api_path || null,
+    imageUrl: input.imageUrl || input.image_url || input.url || null,
+    videoUrl: input.videoUrl || input.video_url || input.url || null,
+    runtimeUrl: input.runtimeUrl || input.runtime_url || null,
+  }
+}
+
+function safeMediaObject(value, context = {}) {
+  if (value && typeof value === 'object') return value
+  normalizeMediaRef(value, context)
+  return {}
+}
+
+function sceneMediaFieldValue(scene = {}, slot = 'image', kind = 'apiPath') {
+  if (!isPlainObject(scene)) return ''
+  const safeScene = safeMediaObject(scene, { sceneId: scene?.id || scene?.scene_id || '', slot, field: 'scene' })
+  if (slot === 'video') {
+    if (kind === 'apiPath') {
+      return boardAssetApiPathFromRef(
+        safeScene.mmaudio_video_api_path,
+        safeScene.mmaudioVideoApiPath,
+        safeScene.mmaudio_video_asset_id,
+        safeScene.mmaudioVideoAssetId,
+        safeScene.video_api_path,
+        safeScene.videoApiPath,
+        safeScene.video_asset_id,
+        safeScene.videoAssetId,
+        safeScene.resultVideoApiPath,
+        safeScene.result_video_api_path,
+        safeScene.video_result?.video_api_path,
+        safeScene.videoResult?.videoApiPath
+      )
+    }
+    return firstTextValue(
+      safeScene.mmaudio_video_url,
+      safeScene.mmaudioVideoUrl,
+      safeScene.video_url,
+      safeScene.videoUrl,
+      safeScene.resultVideoUrl,
+      safeScene.result_video_url,
+      safeScene.mediaUrl,
+      safeScene.media_url,
+      safeScene.resultUrl,
+      safeScene.result_url,
+      safeScene.video_result?.video_url,
+      safeScene.videoResult?.videoUrl
+    )
+  }
+
+  if (slot === 'first') {
+    if (kind === 'apiPath') {
+      return boardAssetApiPathFromRef(
+        safeScene.first_image_api_path,
+        safeScene.firstImageApiPath,
+        safeScene.first_image_asset_id,
+        safeScene.firstImageAssetId,
+        safeScene.first_frame_api_path,
+        safeScene.firstFrameApiPath,
+        safeScene.first_frame_asset_id,
+        safeScene.firstFrameAssetId,
+        safeScene.start_image_api_path,
+        safeScene.startImageApiPath,
+        safeScene.start_image_asset_id,
+        safeScene.startImageAssetId,
+        safeScene.image_api_path,
+        safeScene.imageApiPath,
+        safeScene.image_asset_id,
+        safeScene.imageAssetId
+      )
+    }
+    return firstTextValue(
+      safeScene.first_frame_url,
+      safeScene.firstFrameUrl,
+      safeScene.first_image_url,
+      safeScene.firstImageUrl,
+      safeScene.start_image_url,
+      safeScene.startImageUrl,
+      safeScene.image_url,
+      safeScene.imageUrl,
+      safeScene.mediaUrl,
+      safeScene.media_url
+    )
+  }
+
+  if (slot === 'last') {
+    if (kind === 'apiPath') {
+      return boardAssetApiPathFromRef(
+        safeScene.last_image_api_path,
+        safeScene.lastImageApiPath,
+        safeScene.last_image_asset_id,
+        safeScene.lastImageAssetId,
+        safeScene.last_frame_api_path,
+        safeScene.lastFrameApiPath,
+        safeScene.last_frame_asset_id,
+        safeScene.lastFrameAssetId,
+        safeScene.end_image_api_path,
+        safeScene.endImageApiPath,
+        safeScene.end_image_asset_id,
+        safeScene.endImageAssetId
+      )
+    }
+    return firstTextValue(
+      safeScene.last_frame_url,
+      safeScene.lastFrameUrl,
+      safeScene.last_image_url,
+      safeScene.lastImageUrl,
+      safeScene.end_image_url,
+      safeScene.endImageUrl
+    )
+  }
+
+  if (kind === 'apiPath') {
+    return boardAssetApiPathFromRef(
+      safeScene.image_api_path,
+      safeScene.imageApiPath,
+      safeScene.image_asset_id,
+      safeScene.imageAssetId,
+      safeScene.first_image_api_path,
+      safeScene.firstImageApiPath,
+      safeScene.first_image_asset_id,
+      safeScene.firstImageAssetId,
+      safeScene.first_frame_api_path,
+      safeScene.firstFrameApiPath
+    )
+  }
+  return firstTextValue(
+    safeScene.image_url,
+    safeScene.imageUrl,
+    safeScene.mediaUrl,
+    safeScene.media_url,
+    safeScene.resultUrl,
+    safeScene.result_url,
+    safeScene.first_frame_url,
+    safeScene.firstFrameUrl,
+    safeScene.start_image_url,
+    safeScene.startImageUrl
+  )
+}
+
+const BOARD_MEDIA_REF_KEYS = [
+  'video_asset_id', 'videoAssetId', 'video_api_path', 'videoApiPath', 'video_url', 'videoUrl',
+  'mmaudio_video_asset_id', 'mmaudioVideoAssetId', 'mmaudio_video_api_path', 'mmaudioVideoApiPath', 'mmaudio_video_url', 'mmaudioVideoUrl',
+  'image_asset_id', 'imageAssetId', 'image_api_path', 'imageApiPath', 'image_url', 'imageUrl',
+  'first_image_asset_id', 'firstImageAssetId', 'first_image_api_path', 'firstImageApiPath', 'first_frame_api_path', 'firstFrameApiPath', 'first_frame_url', 'firstFrameUrl',
+  'last_image_asset_id', 'lastImageAssetId', 'last_image_api_path', 'lastImageApiPath', 'last_frame_api_path', 'lastFrameApiPath', 'last_frame_url', 'lastFrameUrl',
+]
+
+function isEmptyMediaRefValue(value) {
+  return value === '' || value === null || value === undefined
+}
+
+function mergePreserveMediaRefs(prevScene = {}, nextScene = {}) {
+  const merged = { ...(nextScene || {}) }
+  for (const key of BOARD_MEDIA_REF_KEYS) {
+    if (!isEmptyMediaRefValue(prevScene?.[key]) && isEmptyMediaRefValue(merged[key])) {
+      merged[key] = prevScene[key]
+    }
+  }
+  return merged
+}
+
+function sceneStaticMediaCandidate(scene = {}, slot = 'video') {
+  const value = sceneMediaFieldValue(scene, slot, 'url')
+  return boardStaticMediaUrl(value)
+}
+
+function stripBoardDurableRuntimePayload(value, key = '') {
+  if (Array.isArray(value)) return value.map((item) => stripBoardDurableRuntimePayload(item, key))
+  if (!value || typeof value !== 'object') {
+    if (typeof value === 'string' && /^(data:|blob:)/i.test(value)) return ''
+    return value
+  }
+
+  const stripped = {}
+  for (const [field, fieldValue] of Object.entries(value)) {
+    const lower = String(field || '').toLowerCase()
+    if (
+      lower.includes('image_data_url') ||
+      lower.includes('imagedataurl') ||
+      lower.includes('base64') ||
+      lower === 'raw' ||
+      lower === 'payload'
+    ) {
+      continue
+    }
+    if (typeof fieldValue === 'string' && /^(data:|blob:)/i.test(fieldValue)) {
+      stripped[field] = ''
+      continue
+    }
+    stripped[field] = stripBoardDurableRuntimePayload(fieldValue, field)
+  }
+  return stripped
+}
+
+function sanitizeBoardDurableBackup(boardData = {}) {
+  return stripBoardDurableRuntimePayload(boardData)
+}
+
+function boardSaveVerifyScene(boardData = {}) {
+  const scenes = asArray(boardData.scenes)
+  return scenes.find((scene) => (
+    scene?.video_asset_id || scene?.videoAssetId ||
+    scene?.video_api_path || scene?.videoApiPath ||
+    scene?.image_asset_id || scene?.imageAssetId ||
+    scene?.image_api_path || scene?.imageApiPath
+  )) || scenes[0] || {}
+}
+
 function boardDurableKey({ projectId = '', workspaceMode = true } = {}) {
   const projectPart = workspaceMode ? 'workspace' : `project:${String(projectId || 'unknown')}`;
   return `${AVA_BOARD_DURABLE_PREFIX}:${projectPart}`;
@@ -113,11 +500,12 @@ function writeBoardDurableBackup(key = '', boardData = {}) {
   if (!key || typeof localStorage === 'undefined') return;
 
   try {
+    const canonicalBoardData = canonicalizeBoardMediaRefs(boardData)
     const payload = {
-      ...boardData,
-      boardVersion: boardData?.boardVersion || BOARD_VERSION,
+      ...sanitizeBoardDurableBackup(canonicalBoardData),
+      boardVersion: canonicalBoardData?.boardVersion || BOARD_VERSION,
       durableSavedAt: new Date().toISOString(),
-      updatedAt: boardData?.updatedAt || new Date().toISOString(),
+      updatedAt: canonicalBoardData?.updatedAt || new Date().toISOString(),
     };
     localStorage.setItem(key, JSON.stringify(payload));
   } catch (error) {
@@ -245,17 +633,69 @@ function writeAvaCompletedJobs(jobs) {
   }
 }
 
+function readBoardSeenCompletedJobIds() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(AVA_BOARD_SEEN_COMPLETED_JOBS_KEY) || '[]')
+    return new Set(Array.isArray(parsed) ? parsed.map((item) => asText(item)).filter(Boolean) : [])
+  } catch (error) {
+    return new Set()
+  }
+}
+
+function writeBoardSeenCompletedJobIds(ids) {
+  try {
+    localStorage.setItem(AVA_BOARD_SEEN_COMPLETED_JOBS_KEY, JSON.stringify(Array.from(ids || []).slice(-80)))
+  } catch (error) {
+    // ignore storage errors
+  }
+}
+
+function isGeneratorSceneId(sceneId = '') {
+  return asText(sceneId).startsWith('generator_')
+}
+
 function completedJobMatchesBoard(job = {}, { projectId = '', workspaceMode = true } = {}) {
-  const jobProjectId = String(job.projectId || '')
+  const data = job.data || {}
+  const jobProjectId = String(job.projectId || job.project_id || data.projectId || data.project_id || '')
   if (workspaceMode) return !jobProjectId
   return Boolean(jobProjectId) && jobProjectId === String(projectId || '')
 }
 
+function boardCompletedJobSkipReason(job = {}, context = {}) {
+  const data = job.data || {}
+  const sceneId = asText(job.sceneId || job.scene_id || data.sceneId || data.scene_id)
+  const jobProjectId = asText(job.projectId || job.project_id || data.projectId || data.project_id)
+  if (isGeneratorSceneId(sceneId)) return 'generator scene'
+  if (!context.workspaceMode && !jobProjectId) return 'projectId null'
+  if (!completedJobMatchesBoard(job, context)) return 'project mismatch'
+  return ''
+}
+
 function completedJobVideoUrl(kind, data = {}) {
   if (kind === 'mmaudio') {
-    return data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
+    const assetApiPath = boardAssetApiPathFromRef(
+      data?.mmaudioVideoAssetId,
+      data?.mmaudio_video_asset_id,
+      data?.assetId,
+      data?.asset_id,
+      data?.mmaudioVideoApiPath,
+      data?.mmaudio_video_api_path,
+      data?.videoApiPath,
+      data?.video_api_path
+    )
+    return assetApiPath || data?.mmaudioVideoApiPath || data?.mmaudio_video_api_path || data?.videoApiPath || data?.video_api_path || data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
   }
-  return data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
+  const assetApiPath = boardAssetApiPathFromRef(
+    data?.videoAssetId,
+    data?.video_asset_id,
+    data?.assetId,
+    data?.asset_id,
+    data?.videoApiPath,
+    data?.video_api_path,
+    data?.resultVideoApiPath,
+    data?.result_video_api_path
+  )
+  return assetApiPath || data?.videoApiPath || data?.video_api_path || data?.resultVideoApiPath || data?.result_video_api_path || data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
 }
 
 function completedJobPatch(job = {}) {
@@ -265,10 +705,17 @@ function completedJobPatch(job = {}) {
   if (kind === 'mmaudio') {
     const videoUrl = completedJobVideoUrl(kind, data)
     if (!videoUrl) return null
+    const assetId = boardAssetIdFromRef(data?.mmaudioVideoAssetId, data?.mmaudio_video_asset_id, data?.assetId, data?.asset_id, videoUrl)
+    const assetApiPath = boardCanonicalAssetApiPath(assetId) || boardAssetApiPathFromRef(videoUrl, data?.mmaudioVideoApiPath, data?.mmaudio_video_api_path)
 
     return {
       mmaudio_status: 'ready',
-      mmaudio_video_url: videoUrl,
+      mmaudio_video_asset_id: assetId,
+      mmaudioVideoAssetId: assetId,
+      mmaudio_video_api_path: assetApiPath || data?.mmaudioVideoApiPath || data?.mmaudio_video_api_path || data?.videoApiPath || data?.video_api_path || '',
+      mmaudioVideoApiPath: assetApiPath || data?.mmaudioVideoApiPath || data?.mmaudio_video_api_path || data?.videoApiPath || data?.video_api_path || '',
+      mmaudio_video_url: assetApiPath || videoUrl,
+      mmaudioVideoUrl: assetApiPath || videoUrl,
       mmaudio_video_name: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
       mmaudio_job_id: data?.jobId || data?.job_id || job.jobId || '',
       mmaudio_status_endpoint: job.statusEndpoint || '',
@@ -280,10 +727,16 @@ function completedJobPatch(job = {}) {
 
   const videoUrl = completedJobVideoUrl(kind, data)
   if (!videoUrl) return null
+  const assetId = boardAssetIdFromRef(data?.videoAssetId, data?.video_asset_id, data?.assetId, data?.asset_id, videoUrl)
+  const assetApiPath = boardCanonicalAssetApiPath(assetId) || boardAssetApiPathFromRef(videoUrl, data?.videoApiPath, data?.video_api_path)
 
   return {
-    video_url: videoUrl,
-    video_api_path: data?.videoApiPath || data?.video_api_path || '',
+    video_url: assetApiPath || videoUrl,
+    videoUrl: assetApiPath || videoUrl,
+    video_asset_id: assetId,
+    videoAssetId: assetId,
+    video_api_path: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
+    videoApiPath: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
     video_name: data?.videoName || data?.video_name || 'video.mp4',
     original_video_url: data?.originalVideoUrl || data?.original_video_url || '',
     video_status: 'ready',
@@ -302,13 +755,28 @@ function applyCompletedJobsToBoard(boardData = {}, context = {}) {
   }
 
   const usedKeys = []
-  const matchingJobs = jobs.filter((job) => completedJobMatchesBoard(job, context))
+  const matchingJobs = []
+  for (const job of jobs) {
+    const reason = boardCompletedJobSkipReason(job, context)
+    if (reason) {
+      const key = job.key || job.jobId || job.job_id || ''
+      if (key) usedKeys.push(key)
+      console.warn('[BOARD JOB COMPLETED SKIP]', {
+        reason,
+        jobId: job.jobId || job.job_id || '',
+        projectId: job.projectId || job.project_id || '',
+        sceneId: job.sceneId || job.scene_id || '',
+      })
+      continue
+    }
+    matchingJobs.push(job)
+  }
   if (!matchingJobs.length) return { board: boardData, usedKeys }
 
   let changed = false
   const scenes = boardData.scenes.map((scene) => {
     const sceneId = scene?.id || scene?.scene_id
-    const sceneJobs = matchingJobs.filter((job) => job.sceneId === sceneId)
+    const sceneJobs = matchingJobs.filter((job) => asText(job.sceneId || job.scene_id || job.data?.sceneId || job.data?.scene_id) === asText(sceneId))
     if (!sceneJobs.length) return scene
 
     let nextScene = scene
@@ -316,10 +784,10 @@ function applyCompletedJobsToBoard(boardData = {}, context = {}) {
       const patch = completedJobPatch(job)
       if (!patch) continue
 
-      nextScene = {
+      nextScene = canonicalizeBoardSceneMediaRefs({
         ...nextScene,
         ...patch,
-      }
+      })
       usedKeys.push(job.key)
       changed = true
     }
@@ -327,7 +795,7 @@ function applyCompletedJobsToBoard(boardData = {}, context = {}) {
     return nextScene
   })
 
-  if (!changed) return { board: boardData, usedKeys: [] }
+  if (!changed) return { board: boardData, usedKeys }
 
   return {
     board: {
@@ -341,6 +809,14 @@ function applyCompletedJobsToBoard(boardData = {}, context = {}) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : []
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function asSceneArray(value) {
+  return asArray(value).filter((scene) => isPlainObject(scene))
 }
 
 function asText(value) {
@@ -576,9 +1052,9 @@ function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
   const startImageDataUrl = asText(savedScene?.start_image_data_url || savedScene?.startImageDataUrl || rawScene?.start_image_data_url || rawScene?.startImageDataUrl || imageDataUrl)
   const endImageDataUrl = asText(savedScene?.end_image_data_url || savedScene?.endImageDataUrl || rawScene?.end_image_data_url || rawScene?.endImageDataUrl)
 
-  const rawImageUrl = asText(savedScene?.image_url || rawScene?.image_url)
-  const rawFirstFrameUrl = asText(savedScene?.first_frame_url || rawScene?.first_frame_url)
-  const rawLastFrameUrl = asText(savedScene?.last_frame_url || rawScene?.last_frame_url)
+  const rawImageUrl = sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'image', 'url')
+  const rawFirstFrameUrl = sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'first', 'url')
+  const rawLastFrameUrl = sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'last', 'url')
 
   const imageUrl = rawImageUrl.startsWith('blob:') && imageDataUrl ? imageDataUrl : rawImageUrl
   const firstFrameUrl = rawFirstFrameUrl.startsWith('blob:') && startImageDataUrl ? startImageDataUrl : rawFirstFrameUrl
@@ -632,16 +1108,27 @@ function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
     image_status: savedScene?.image_status || rawScene?.image_status || 'empty',
     video_status: savedScene?.video_status || rawScene?.video_status || 'empty',
     image_url: imageUrl,
+    imageUrl,
+    image_api_path: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'image', 'apiPath'),
+    imageApiPath: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'image', 'apiPath'),
     image_data_url: imageDataUrl,
     image_name: savedScene?.image_name || rawScene?.image_name || '',
     first_frame_url: firstFrameUrl,
+    firstFrameUrl: firstFrameUrl,
+    first_image_api_path: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'first', 'apiPath'),
+    firstImageApiPath: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'first', 'apiPath'),
     start_image_data_url: startImageDataUrl,
     first_frame_name: savedScene?.first_frame_name || rawScene?.first_frame_name || '',
     last_frame_url: lastFrameUrl,
+    lastFrameUrl: lastFrameUrl,
+    last_image_api_path: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'last', 'apiPath'),
+    lastImageApiPath: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'last', 'apiPath'),
     end_image_data_url: endImageDataUrl,
     last_frame_name: savedScene?.last_frame_name || rawScene?.last_frame_name || '',
-    video_url: savedScene?.video_url || savedScene?.videoUrl || rawScene?.video_url || rawScene?.videoUrl || '',
-    video_api_path: savedScene?.video_api_path || savedScene?.videoApiPath || rawScene?.video_api_path || rawScene?.videoApiPath || '',
+    video_url: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'video', 'url'),
+    videoUrl: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'video', 'url'),
+    video_api_path: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'video', 'apiPath'),
+    videoApiPath: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'video', 'apiPath'),
     video_name: savedScene?.video_name || savedScene?.videoName || rawScene?.video_name || rawScene?.videoName || '',
     original_video_url: savedScene?.original_video_url || savedScene?.originalVideoUrl || rawScene?.original_video_url || rawScene?.originalVideoUrl || '',
     video_result: savedScene?.video_result || savedScene?.videoResult || rawScene?.video_result || rawScene?.videoResult || null,
@@ -655,15 +1142,17 @@ function buildBoardFromTiming(timingData = {}, boardData = {}) {
   const timing = timingData?.manualTiming || timingData?.manual_timing || timingData || {}
   const existing = boardData?.board || boardData || {}
   const phrases = buildPhraseList(timing)
-  const savedScenes = new Map(asArray(existing.scenes).map((scene) => [asText(scene.scene_id || scene.id), scene]))
-  const sourceScenes = asArray(timing.scenes)
+  const savedScenes = new Map(asSceneArray(existing.scenes)
+    .map((scene) => [asText(scene.scene_id || scene.id), scene]))
+  const sourceScenes = asSceneArray(timing.scenes)
   const scenes = sourceScenes.map((scene, index) => {
     const id = asText(scene.scene_id || scene.id || `seg_${String(index + 1).padStart(2, '0')}`)
-    return normalizeBoardScene(scene, index, phrases, savedScenes.get(id) || {})
+    const savedScene = savedScenes.get(id) || {}
+    return mergePreserveMediaRefs(savedScene, normalizeBoardScene(scene, index, phrases, savedScene))
   })
 
-  const existingScenes = asArray(existing.scenes)
-  const fallbackScenes = existingScenes.map((scene, index) => normalizeBoardScene(scene, index, phrases, scene))
+  const existingScenes = asSceneArray(existing.scenes)
+  const fallbackScenes = existingScenes.map((scene, index) => mergePreserveMediaRefs(scene, normalizeBoardScene(scene, index, phrases, scene)))
 
   // AVA09B_KEEP_EXTRA_BOARD_SCENES:
   // Timing may be the source for imported scenes, but manual Board scenes must survive F5.
@@ -675,16 +1164,17 @@ function buildBoardFromTiming(timingData = {}, boardData = {}) {
           const id = asText(scene.scene_id || scene.id)
           return id && !timingSceneIds.has(id)
         })
-        .map((scene, offset) => normalizeBoardScene(scene, scenes.length + offset, phrases, scene))
+        .map((scene, offset) => mergePreserveMediaRefs(scene, normalizeBoardScene(scene, scenes.length + offset, phrases, scene)))
     : []
 
   const finalScenes = scenes.length ? [...scenes, ...extraBoardScenes] : fallbackScenes
-  const audio = timing.audio || existing.audio || {
+  const timingAudio = boardAudioFromTiming(timing)
+  const audio = boardAudioHasAsset(existing.audio) ? existing.audio : (timingAudio || existing.audio || {
     name: timing.audioName || timing.audio_name || '',
     assetId: timing.audioAssetId || timing.audio_asset_id || '',
     assetApiPath: timing.audioApiPath || timing.asset_api_path || '',
     durationSec: timing.audioDurationSec || timing.audio_duration_sec || 0,
-  }
+  })
 
   const pendingOpenSceneIdForBuild = typeof sessionStorage !== 'undefined'
     ? asText(sessionStorage.getItem(AVA_OPEN_BOARD_SCENE_KEY))
@@ -714,15 +1204,53 @@ function isVideoBusyStatus(status) {
 
 function scenePreviewVideoUrl(scene) {
   if (!scene || isVideoBusyStatus(scene.video_status)) return ''
-  return (
+  return normalizeBoardMediaUrl(
+    scene.mmaudio_video_api_path ||
+    scene.mmaudioVideoApiPath ||
     scene.mmaudio_video_url ||
     scene.mmaudioVideoUrl ||
+    scene.video_api_path ||
+    scene.videoApiPath ||
     scene.video_url ||
     scene.videoUrl ||
+    scene.resultVideoApiPath ||
+    scene.result_video_api_path ||
     scene.resultVideoUrl ||
     scene.result_video_url ||
     ''
   )
+}
+
+function scenePreviewAssetApiPath(scene) {
+  if (!scene || isVideoBusyStatus(scene.video_status)) return ''
+  return boardProtectedAssetApiPath(
+    scene.mmaudio_video_api_path ||
+    scene.mmaudioVideoApiPath ||
+    scene.video_api_path ||
+    scene.videoApiPath ||
+    scene.resultVideoApiPath ||
+    scene.result_video_api_path ||
+    ''
+  )
+}
+
+function sceneStaticVideoCandidate(scene) {
+  if (!scene || isVideoBusyStatus(scene.video_status)) return ''
+  const values = [
+    scene.mmaudio_video_url,
+    scene.mmaudioVideoUrl,
+    scene.video_url,
+    scene.videoUrl,
+    scene.resultVideoUrl,
+    scene.result_video_url,
+    scene.video_result?.video_url,
+    scene.videoResult?.videoUrl,
+  ]
+  for (const value of values) {
+    const staticUrl = boardStaticMediaUrl(value)
+    if (staticUrl) return staticUrl
+  }
+  return ''
 }
 
 function scenePreviewVideoLabel(scene) {
@@ -739,7 +1267,7 @@ function scenePreviewVideoLabel(scene) {
 }
 
 function normalizeLoadedBoardVideoStatuses(boardData = {}) {
-  const scenes = asArray(boardData.scenes)
+  const scenes = asSceneArray(boardData.scenes)
   if (!scenes.length) return boardData
 
   const resetWhenNoServerJob = new Set(['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'])
@@ -748,7 +1276,7 @@ function normalizeLoadedBoardVideoStatuses(boardData = {}) {
   const nextScenes = scenes.map((scene) => {
     const status = String(scene?.video_status || '').toLowerCase()
     const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
-    const hasVideo = Boolean(scene?.video_url || scene?.videoUrl || scene?.video_name || scene?.videoName)
+    const hasVideo = Boolean(sceneMediaFieldValue(scene, 'video', 'apiPath') || sceneMediaFieldValue(scene, 'video', 'url') || scene?.video_name || scene?.videoName)
 
     if (hasVideo && isVideoBusyStatus(status)) {
       changed = true
@@ -801,11 +1329,12 @@ function sceneStatus(scene) {
   const status = String(scene?.video_status || '').toLowerCase()
   const hasPrompt = Boolean(asText(scene?.video_prompt))
   const hasImage = Boolean(
-    scene?.image_url || scene?.first_frame_url || scene?.last_frame_url ||
+    sceneMediaFieldValue(scene, 'image', 'apiPath') || sceneMediaFieldValue(scene, 'first', 'apiPath') || sceneMediaFieldValue(scene, 'last', 'apiPath') ||
+    sceneMediaFieldValue(scene, 'image', 'url') || sceneMediaFieldValue(scene, 'first', 'url') || sceneMediaFieldValue(scene, 'last', 'url') ||
     scene?.image_data_url || scene?.start_image_data_url || scene?.end_image_data_url ||
     scene?.image_name || scene?.first_frame_name || scene?.last_frame_name
   )
-  const hasVideo = Boolean(scene?.video_url || scene?.video_name)
+  const hasVideo = Boolean(sceneMediaFieldValue(scene, 'video', 'apiPath') || sceneMediaFieldValue(scene, 'video', 'url') || scene?.video_name || scene?.videoName)
 
   if (status === 'starting') return { label: 'отправляется', className: 'isRunning' }
   if (status === 'queued') return { label: 'в очереди', className: 'isRunning' }
@@ -820,7 +1349,7 @@ function sceneStatus(scene) {
 
 function videoButtonState(scene) {
   const status = String(scene?.video_status || '').toLowerCase()
-  const hasVideo = Boolean(scene?.video_url || scene?.video_name)
+  const hasVideo = Boolean(sceneMediaFieldValue(scene, 'video', 'apiPath') || sceneMediaFieldValue(scene, 'video', 'url') || scene?.video_name || scene?.videoName)
 
   if (status === 'starting') {
     return { className: 'isBusy', label: 'Отправляем видео', sublabel: 'создаём job…' }
@@ -910,7 +1439,7 @@ export default function BoardPage() {
   }
 
   function boardVideoUrlFromStatus(data) {
-    return data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
+    return data?.videoApiPath || data?.video_api_path || data?.resultVideoApiPath || data?.result_video_api_path || data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
   }
 
   function sceneVideoInputProblems(scene) {
@@ -919,11 +1448,11 @@ export default function BoardPage() {
     const isLipSync = ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(route)
 
     const startImage = isFirstLast
-      ? (scene?.first_frame_url || scene?.start_image_url || scene?.image_url || scene?.start_image_data_url || scene?.startImageDataUrl || scene?.image_data_url || scene?.imageDataUrl || '')
-      : (scene?.image_url || scene?.first_frame_url || scene?.start_image_url || scene?.image_data_url || scene?.imageDataUrl || scene?.start_image_data_url || scene?.startImageDataUrl || '')
+      ? (sceneMediaFieldValue(scene, 'first', 'apiPath') || sceneMediaFieldValue(scene, 'first', 'url') || sceneMediaFieldValue(scene, 'image', 'apiPath') || sceneMediaFieldValue(scene, 'image', 'url') || scene?.start_image_data_url || scene?.startImageDataUrl || scene?.image_data_url || scene?.imageDataUrl || '')
+      : (sceneMediaFieldValue(scene, 'image', 'apiPath') || sceneMediaFieldValue(scene, 'image', 'url') || sceneMediaFieldValue(scene, 'first', 'apiPath') || sceneMediaFieldValue(scene, 'first', 'url') || scene?.image_data_url || scene?.imageDataUrl || scene?.start_image_data_url || scene?.startImageDataUrl || '')
 
     const endImage = isFirstLast
-      ? (scene?.last_frame_url || scene?.end_image_url || scene?.end_image_data_url || scene?.endImageDataUrl || '')
+      ? (sceneMediaFieldValue(scene, 'last', 'apiPath') || sceneMediaFieldValue(scene, 'last', 'url') || scene?.end_image_data_url || scene?.endImageDataUrl || '')
       : ''
 
     const audioSlice = scene?.audio_slice_url || scene?.audioSliceUrl || ''
@@ -949,7 +1478,7 @@ export default function BoardPage() {
   function removeInvalidScenesFromLocalQueue() {
     const invalidIds = []
     localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => {
-      const scene = asArray(boardRef.current?.scenes).find((item) => item.id === sceneId)
+      const scene = asSceneArray(boardRef.current?.scenes).find((item) => item.id === sceneId)
       if (!scene) return false
       const problems = sceneVideoInputProblems(scene)
       if (problems.length) {
@@ -964,7 +1493,7 @@ export default function BoardPage() {
 
   function sceneVideoActionState(scene) {
     const videoStatus = String(scene?.video_status || '').toLowerCase()
-    const hasVideo = Boolean(scene?.video_url || scene?.video_name)
+    const hasVideo = Boolean(sceneMediaFieldValue(scene, 'video', 'apiPath') || sceneMediaFieldValue(scene, 'video', 'url') || scene?.video_name || scene?.videoName)
     const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
     const problems = sceneVideoInputProblems(scene)
     const hasInputProblems = problems.length > 0
@@ -1002,7 +1531,7 @@ export default function BoardPage() {
   function activeBoardVideoScene(currentBoard) {
     return asArray(currentBoard?.scenes).find((scene) => {
       const status = String(scene?.video_status || '').toLowerCase()
-      const hasVideoResult = Boolean(scene?.video_url || scene?.video_name)
+      const hasVideoResult = Boolean(scene?.video_api_path || scene?.videoApiPath || scene?.video_url || scene?.videoUrl || scene?.video_name || scene?.videoName)
       const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
 
       if (hasVideoResult) return false
@@ -1047,7 +1576,7 @@ export default function BoardPage() {
 
     while (localVideoQueueRef.current.length) {
       const nextId = localVideoQueueRef.current.shift()
-      const scene = asArray(boardRef.current?.scenes || currentBoard?.scenes).find((item) => item.id === nextId)
+      const scene = asSceneArray(boardRef.current?.scenes || currentBoard?.scenes).find((item) => item.id === nextId)
       if (!scene) continue
 
       const inputProblems = sceneVideoInputProblems(scene)
@@ -1110,10 +1639,25 @@ export default function BoardPage() {
   }
 
   function boardVideoPatchFromStatus(data, endpoint, jobId) {
-    const videoUrl = boardVideoUrlFromStatus(data)
+    const fallbackVideoUrl = boardVideoUrlFromStatus(data)
+    const assetId = boardAssetIdFromRef(
+      data?.videoAssetId,
+      data?.video_asset_id,
+      data?.assetId,
+      data?.asset_id,
+      data?.videoApiPath,
+      data?.video_api_path,
+      fallbackVideoUrl
+    )
+    const assetApiPath = boardCanonicalAssetApiPath(assetId) || boardAssetApiPathFromRef(data?.videoApiPath, data?.video_api_path, fallbackVideoUrl)
+    const videoUrl = assetApiPath || fallbackVideoUrl
     return {
       video_url: videoUrl,
-      video_api_path: data?.videoApiPath || data?.video_api_path || '',
+      videoUrl: videoUrl,
+      video_asset_id: assetId,
+      videoAssetId: assetId,
+      video_api_path: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
+      videoApiPath: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
       video_name: data?.videoName || data?.video_name || (videoUrl ? 'video.mp4' : ''),
       original_video_url: data?.originalVideoUrl || data?.original_video_url || '',
       video_status: 'ready',
@@ -1125,15 +1669,72 @@ export default function BoardPage() {
     }
   }
 
+  async function boardVideoPatchFromStatusWithAsset(data, endpoint, jobId, sceneId) {
+    const patch = canonicalizeBoardSceneMediaRefs(boardVideoPatchFromStatus(data, endpoint, jobId))
+    const staticUrl = boardStaticMediaUrl(patch.video_api_path || patch.video_url)
+    if (!isProtectedBoardAssetApiPath(patch.video_api_path || patch.videoUrl || patch.video_url) && staticUrl) {
+      try {
+        const asset = await registerStaticMediaAsset({
+          url: staticUrl,
+          projectId: workspaceMode ? null : projectId,
+          kind: 'video',
+          stage: 'board_videos',
+          originalName: patch.video_name || data?.videoName || data?.video_name || 'board-video.mp4',
+          sceneId,
+        })
+        const assetId = asset.asset_id || asset.assetId || ''
+        const assetApiPath = asset.asset_api_path || asset.assetApiPath || ''
+        if (assetId && assetApiPath) {
+          patch.video_asset_id = assetId
+          patch.videoAssetId = assetId
+          patch.video_api_path = assetApiPath
+          patch.videoApiPath = assetApiPath
+          patch.video_url = assetApiPath
+          patch.videoUrl = assetApiPath
+          console.log('[BOARD VIDEO ASSET RESTORE]', { sceneId, assetId, apiPath: assetApiPath, sourceField: 'completed_static_video', success: true })
+        }
+      } catch (error) {
+        console.warn('[BOARD VIDEO STATIC REGISTER]', { sceneId, staticUrl, success: false, error: error?.message || error })
+      }
+    }
+    return canonicalizeBoardSceneMediaRefs(patch)
+  }
+
+  function markBoardJobSeen(jobId = '') {
+    const safeJobId = asText(jobId)
+    if (!safeJobId) return
+    const nextSeen = new Set(seenCompletedJobIdsRef.current)
+    nextSeen.add(safeJobId)
+    seenCompletedJobIdsRef.current = nextSeen
+    writeBoardSeenCompletedJobIds(nextSeen)
+    console.log('[BOARD JOB SEEN]', { jobId: safeJobId })
+  }
+
+  function boardCompletedStatusSkipReason({ responseSceneId = '', responseProjectId = '', expectedSceneId = '' } = {}) {
+    const statusSceneId = asText(responseSceneId || expectedSceneId)
+    const statusProjectId = asText(responseProjectId)
+    if (isGeneratorSceneId(statusSceneId)) return 'generator scene'
+    if (!workspaceMode && !statusProjectId) return 'projectId null'
+    if (!workspaceMode && statusProjectId !== asText(projectId)) return 'project mismatch'
+    if (statusSceneId && expectedSceneId && statusSceneId !== expectedSceneId) return 'scene mismatch'
+    return ''
+  }
+
   function pollBoardVideoJob(sceneId, statusEndpoint, jobId) {
     const endpoint = statusEndpoint || (jobId ? `/clip/video/status/${jobId}` : '')
     if (!sceneId || !endpoint) return
+    const currentScene = asSceneArray(boardRef.current?.scenes).find((scene) => asText(scene?.id || scene?.scene_id) === asText(sceneId))
+    if (currentScene && String(currentScene.video_status || '').toLowerCase() === 'ready') return
+    if (jobId && seenCompletedJobIdsRef.current.has(jobId)) {
+      console.log('[BOARD JOB SEEN]', { jobId, skipPoll: true })
+      return
+    }
 
     const normalizedEndpoint = endpoint.startsWith('/api/')
       ? endpoint.slice(4)
       : endpoint
 
-    const pollKey = `${sceneId}:${normalizedEndpoint}:${jobId || ''}`
+    const pollKey = jobId ? `video:${jobId}` : `video:${normalizedEndpoint}`
     if (activeVideoPollsRef.current.has(pollKey)) return
     activeVideoPollsRef.current.add(pollKey)
 
@@ -1185,7 +1786,46 @@ export default function BoardPage() {
 
         if (videoUrl) {
           finishPoll()
-          updateScene(sceneId, boardVideoPatchFromStatus(data, endpoint, jobId))
+          const responseSceneId = asText(data?.sceneId || data?.scene_id || sceneId)
+          const responseProjectId = asText(data?.projectId || data?.project_id || '')
+          const skipReason = boardCompletedStatusSkipReason({
+            responseSceneId,
+            responseProjectId,
+            expectedSceneId: sceneId,
+          })
+          if (skipReason) {
+            console.warn('[BOARD JOB COMPLETED SKIP]', {
+              reason: skipReason,
+              jobId: data?.jobId || data?.job_id || jobId || '',
+              projectId: responseProjectId,
+              sceneId: responseSceneId,
+              resultUrl: videoUrl,
+            })
+            markBoardJobSeen(data?.jobId || data?.job_id || jobId || '')
+            updateSceneForVideoJob(sceneId, jobId, {
+              video_status: 'completed_skipped',
+              video_error: skipReason,
+              video_job_id: '',
+              video_status_endpoint: '',
+              video_queue_position: 0,
+              video_result: data || null,
+            })
+            window.setTimeout(processNextQueuedBoardVideo, 80)
+            return
+          }
+          console.log('[BOARD JOB COMPLETED APPLY]', {
+            jobId: data?.jobId || data?.job_id || jobId || '',
+            projectId: responseProjectId,
+            sceneId: responseSceneId,
+            resultUrl: videoUrl,
+          })
+          const readyPatch = await boardVideoPatchFromStatusWithAsset(data, endpoint, jobId, sceneId)
+          readyPatch.video_status = 'ready'
+          readyPatch.video_job_id = ''
+          readyPatch.video_status_endpoint = ''
+          readyPatch.video_queue_position = 0
+          updateSceneAndSave(sceneId, readyPatch)
+          markBoardJobSeen(data?.jobId || data?.job_id || jobId || '')
           setStatus(`Видео готово: ${sceneId}`)
           pushBoardToast({ type: 'success', title: 'Видео готово', message: `Сцена ${sceneId}`, sceneId })
           window.setTimeout(processNextQueuedBoardVideo, 80)
@@ -1274,30 +1914,36 @@ export default function BoardPage() {
   const [playback, setPlayback] = useState(null)
   const [collapsedPanels, setCollapsedPanels] = useState({ translation: false })
   const [audioSrc, setAudioSrc] = useState('')
+  const [selectedVideoBlobUrl, setSelectedVideoBlobUrl] = useState('')
+  const [selectedVideoLoadError, setSelectedVideoLoadError] = useState('')
+  const [runtimeSceneMediaUrls, setRuntimeSceneMediaUrls] = useState({})
   const [mmaudioOpen, setMmaudioOpen] = useState(false)
   const audioRef = useRef(null)
   const importRef = useRef(null)
   const boardRef = useRef(board)
   const localVideoQueueRef = useRef([])
   const activeVideoPollsRef = useRef(new Set())
+  const staticAssetRepairRef = useRef(new Set())
+  const seenCompletedJobIdsRef = useRef(readBoardSeenCompletedJobIds())
 
   const selectedScene = useMemo(() => {
-    return board.scenes.find((scene) => scene.id === board.selectedSceneId) || board.scenes[0] || null
+    const scenes = asSceneArray(board.scenes)
+    return scenes.find((scene) => scene.id === board.selectedSceneId) || scenes[0] || null
   }, [board.scenes, board.selectedSceneId])
 
   const selectedIndex = useMemo(() => {
     if (!selectedScene) return -1
-    return board.scenes.findIndex((scene) => scene.id === selectedScene.id)
+    return asSceneArray(board.scenes).findIndex((scene) => scene.id === selectedScene.id)
   }, [board.scenes, selectedScene])
 
   const previousScene = useMemo(() => {
     if (selectedIndex <= 0) return null
-    return board.scenes[selectedIndex - 1] || null
+    return asSceneArray(board.scenes)[selectedIndex - 1] || null
   }, [board.scenes, selectedIndex])
 
   const blockScenes = useMemo(() => {
     if (!selectedScene?.blockId) return selectedScene ? [selectedScene] : []
-    return board.scenes.filter((scene) => scene.blockId && scene.blockId === selectedScene.blockId)
+    return asSceneArray(board.scenes).filter((scene) => scene.blockId && scene.blockId === selectedScene.blockId)
   }, [board.scenes, selectedScene])
 
   useEffect(() => {
@@ -1308,7 +1954,7 @@ export default function BoardPage() {
   useEffect(() => {
     if (loading) return
     const queuedIds = new Set(localVideoQueueRef.current)
-    const staleQueued = asArray(board.scenes).filter((scene) => (
+    const staleQueued = asSceneArray(board.scenes).filter((scene) => (
       scene.video_status === 'queued' &&
       !scene.video_job_id &&
       !queuedIds.has(scene.id)
@@ -1363,7 +2009,7 @@ export default function BoardPage() {
 
         const serverBoardData = workspaceMode ? await loadWorkspaceStage(STAGE) : await loadStage(projectId, STAGE)
         const rawBoardData = chooseBoardDataForLoad(serverBoardData, localBoardData)
-        const boardData = openedFromTiming ? rawBoardData : boardDataForStandaloneEntry(rawBoardData)
+        const boardData = openedFromTiming || !workspaceMode ? rawBoardData : boardDataForStandaloneEntry(rawBoardData)
 
         const timingData = openedFromTiming
           ? (workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing'))
@@ -1372,6 +2018,12 @@ export default function BoardPage() {
         if (!active) return
         // AVA09D2_STANDALONE_BOARD_DOES_NOT_PULL_TIMING
         let nextBoard = buildBoardFromTiming(timingData, boardData)
+        if (!workspaceMode) {
+          nextBoard = {
+            ...nextBoard,
+            source: nextBoard.source === 'standalone_board' ? 'project_board' : (nextBoard.source || 'project_board'),
+          }
+        }
         const hydratedCompleted = applyCompletedJobsToBoard(nextBoard, { projectId: projectId || '', workspaceMode })
         nextBoard = normalizeLoadedBoardVideoStatuses(hydratedCompleted.board)
         if (hydratedCompleted.usedKeys.length) {
@@ -1417,6 +2069,186 @@ export default function BoardPage() {
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }, [board.audio?.assetApiPath, board.audio?.asset_api_path, board.audioApiPath])
+
+  useEffect(() => {
+    if (loading) return undefined
+    const slots = [
+      { slot: 'video', kind: 'video', stage: 'board_videos' },
+      { slot: 'image', kind: 'image', stage: 'board_images' },
+      { slot: 'first', kind: 'image', stage: 'board_images' },
+      { slot: 'last', kind: 'image', stage: 'board_images' },
+    ]
+    const candidates = asSceneArray(board.scenes).flatMap((scene) => slots.map((def) => ({
+      ...def,
+      scene,
+      staticUrl: sceneStaticMediaCandidate(scene, def.slot),
+      apiPath: sceneMediaFieldValue(scene, def.slot, 'apiPath'),
+    })))
+      .filter(({ staticUrl, apiPath }) => staticUrl && !isProtectedBoardAssetApiPath(apiPath))
+      .slice(0, 8)
+    if (!candidates.length) return undefined
+
+    let cancelled = false
+    async function repair() {
+      console.log('[BOARD MEDIA RESTORE START]', { count: candidates.length })
+      const patchesBySceneId = {}
+      for (const { scene, staticUrl, slot, kind, stage } of candidates) {
+        const sceneId = scene.id || scene.scene_id
+        const key = `${sceneId}:${slot}:${staticUrl}`
+        if (staticAssetRepairRef.current.has(key)) continue
+        staticAssetRepairRef.current.add(key)
+        try {
+          console.log(kind === 'video' ? '[BOARD VIDEO STATIC REGISTER]' : '[BOARD IMAGE STATIC REGISTER]', { sceneId, slot, sourceField: 'staticUrl', staticUrl })
+          const asset = await registerStaticMediaAsset({
+            url: staticUrl,
+            projectId: workspaceMode ? null : projectId,
+            kind,
+            stage,
+            originalName: scene.video_name || scene.videoName || scene.mmaudio_video_name || scene.mmaudioVideoName || scene.image_name || scene.first_frame_name || scene.last_frame_name || '',
+            sceneId,
+          })
+          if (cancelled) return
+          const assetId = asset.asset_id || asset.assetId || ''
+          const assetApiPath = asset.asset_api_path || asset.assetApiPath || ''
+          const patch = slot === 'video' && (scene.mmaudio_video_url || scene.mmaudioVideoUrl)
+            ? {
+                mmaudio_video_asset_id: assetId,
+                mmaudioVideoAssetId: assetId,
+                mmaudio_video_api_path: assetApiPath,
+                mmaudioVideoApiPath: assetApiPath,
+              }
+            : slot === 'video' ? {
+                video_asset_id: assetId,
+                videoAssetId: assetId,
+                video_api_path: assetApiPath,
+                videoApiPath: assetApiPath,
+                video_url: assetApiPath,
+                videoUrl: assetApiPath,
+              }
+            : slot === 'first' ? {
+                first_image_asset_id: assetId,
+                firstImageAssetId: assetId,
+                first_image_api_path: assetApiPath,
+                firstImageApiPath: assetApiPath,
+                first_frame_api_path: assetApiPath,
+                firstFrameApiPath: assetApiPath,
+              }
+            : slot === 'last' ? {
+                last_image_asset_id: assetId,
+                lastImageAssetId: assetId,
+                last_image_api_path: assetApiPath,
+                lastImageApiPath: assetApiPath,
+                last_frame_api_path: assetApiPath,
+                lastFrameApiPath: assetApiPath,
+              }
+            : {
+                image_asset_id: assetId,
+                imageAssetId: assetId,
+                image_api_path: assetApiPath,
+                imageApiPath: assetApiPath,
+              }
+          patchesBySceneId[sceneId] = {
+            ...(patchesBySceneId[sceneId] || {}),
+            ...patch,
+          }
+          console.log('[BOARD MEDIA RESTORE DONE]', { sceneId, slot, assetId, apiPath: assetApiPath, sourceField: 'staticUrl', success: true })
+        } catch (error) {
+          console.warn('[BOARD MEDIA RESTORE DONE]', { sceneId, slot, sourceField: 'staticUrl', success: false, error: error?.message || error })
+        }
+      }
+      if (cancelled || !Object.keys(patchesBySceneId).length) return
+      let nextBoardForSave = null
+      setBoard((current) => {
+        const scenes = asSceneArray(current.scenes).map((scene) => {
+          const sceneId = scene.id || scene.scene_id
+          const patch = patchesBySceneId[sceneId]
+          if (!patch) return scene
+          return mergePreserveMediaRefs(scene, { ...scene, ...patch })
+        })
+        nextBoardForSave = {
+          ...current,
+          scenes,
+          updatedAt: new Date().toISOString(),
+        }
+        return nextBoardForSave
+      })
+      window.setTimeout(() => {
+        if (nextBoardForSave) saveBoard(nextBoardForSave, true)
+      }, 0)
+    }
+    repair()
+    return () => { cancelled = true }
+  }, [loading, board.scenes, projectId, workspaceMode])
+
+  const selectedPreviewAssetApiPath = scenePreviewAssetApiPath(selectedScene)
+
+  useEffect(() => {
+    let cancelled = false
+    let objectUrl = ''
+    setSelectedVideoBlobUrl('')
+    setSelectedVideoLoadError('')
+    if (!selectedPreviewAssetApiPath) return undefined
+
+    async function loadVideoBlob() {
+      try {
+        objectUrl = await fetchProtectedBlobUrl(selectedPreviewAssetApiPath)
+        if (!cancelled) setSelectedVideoBlobUrl(objectUrl)
+      } catch (error) {
+        if (!cancelled) {
+          setStatus(`Видео preview недоступен: ${error?.message || 'asset_fetch_failed'}`)
+        }
+      }
+    }
+    loadVideoBlob()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [selectedPreviewAssetApiPath])
+
+  useEffect(() => {
+    let cancelled = false
+    const objectUrls = []
+    const sceneId = selectedScene?.id || selectedScene?.scene_id || ''
+    if (!sceneId) return undefined
+
+    async function loadSelectedImageBlobs() {
+      const entries = [
+        { slot: 'image', apiPath: sceneMediaFieldValue(selectedScene, 'image', 'apiPath') },
+        { slot: 'first', apiPath: sceneMediaFieldValue(selectedScene, 'first', 'apiPath') },
+        { slot: 'last', apiPath: sceneMediaFieldValue(selectedScene, 'last', 'apiPath') },
+      ].filter((entry) => entry.apiPath)
+
+      if (!entries.length) return
+      const next = {}
+      for (const entry of entries) {
+        try {
+          console.log('[BOARD IMAGE ASSET RESTORE]', { sceneId, slot: entry.slot, apiPath: entry.apiPath, sourceField: 'apiPath' })
+          const objectUrl = await fetchProtectedBlobUrl(entry.apiPath)
+          objectUrls.push(objectUrl)
+          next[entry.slot] = objectUrl
+        } catch (error) {
+          console.warn('[BOARD MEDIA RESTORE DONE]', { sceneId, slot: entry.slot, apiPath: entry.apiPath, sourceField: 'apiPath', success: false, error: error?.message || error })
+        }
+      }
+      if (!cancelled) {
+        setRuntimeSceneMediaUrls((current) => ({
+          ...current,
+          [sceneId]: {
+            ...(current[sceneId] || {}),
+            ...next,
+          },
+        }))
+        console.log('[BOARD MEDIA RESTORE DONE]', { sceneId, slots: Object.keys(next), success: true })
+      }
+    }
+
+    loadSelectedImageBlobs()
+    return () => {
+      cancelled = true
+      objectUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [selectedScene?.id, selectedScene?.image_api_path, selectedScene?.first_image_api_path, selectedScene?.last_image_api_path])
 
   useEffect(() => {
     if (loading) return undefined
@@ -1468,7 +2300,13 @@ export default function BoardPage() {
   }, [playback])
 
   async function saveBoard(nextBoard = board, quiet = false) {
-    const payload = { ...nextBoard, boardVersion: BOARD_VERSION, updatedAt: new Date().toISOString() }
+    const canonicalBoard = canonicalizeBoardMediaRefs(nextBoard)
+    const payload = {
+      ...sanitizeBoardDurableBackup(canonicalBoard),
+      boardVersion: BOARD_VERSION,
+      source: workspaceMode ? (canonicalBoard.source || 'board') : (canonicalBoard.source === 'standalone_board' ? 'project_board' : (canonicalBoard.source || 'project_board')),
+      updatedAt: new Date().toISOString(),
+    }
     // AVA09B_WRITE_LOCAL_BEFORE_BACKEND_SAVE
     writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), payload)
     try {
@@ -1476,8 +2314,37 @@ export default function BoardPage() {
         setSaving(true)
         setStatus('Сохраняем Storyboard…')
       }
-      if (workspaceMode) await saveWorkspaceStage(STAGE, payload)
-      else await saveStage(projectId, STAGE, payload, 'safe_merge')
+      const saveResult = workspaceMode
+        ? await saveWorkspaceStage(STAGE, payload)
+        : await saveStage(projectId, STAGE, payload, 'safe_merge')
+      const verifyScene = boardSaveVerifyScene(payload)
+      console.log('[BOARD SAVE VERIFY]', {
+        projectId: projectId || '',
+        sceneId: verifyScene?.scene_id || verifyScene?.id || '',
+        video_asset_id: verifyScene?.video_asset_id || verifyScene?.videoAssetId || '',
+        video_api_path: verifyScene?.video_api_path || verifyScene?.videoApiPath || '',
+        image_asset_id: verifyScene?.image_asset_id || verifyScene?.imageAssetId || '',
+        image_api_path: verifyScene?.image_api_path || verifyScene?.imageApiPath || '',
+        savedToProject: Boolean(saveResult?.saved),
+      })
+      for (const scene of asSceneArray(payload.scenes)) {
+        const sceneId = scene?.scene_id || scene?.id || ''
+        const assetId = scene?.video_asset_id || scene?.videoAssetId || ''
+        const assetApiPath = scene?.video_api_path || scene?.videoApiPath || ''
+        if (!assetId && !isProtectedBoardAssetApiPath(assetApiPath)) continue
+        const savedScene = asArray(saveResult?.snapshot?.data?.scenes).find((item) => asText(item?.scene_id || item?.id) === asText(sceneId))
+        console.log('[BOARD ASSET LINK SAVED]', {
+          projectId: projectId || '',
+          sceneId,
+          assetId,
+          assetApiPath,
+          stage: STAGE,
+          existsInAvaDb: Boolean(savedScene && (
+            (assetId && (savedScene.video_asset_id === assetId || savedScene.videoAssetId === assetId)) ||
+            (assetApiPath && (savedScene.video_api_path === assetApiPath || savedScene.videoApiPath === assetApiPath))
+          )),
+        })
+      }
       if (!quiet) setStatus('Storyboard сохранён')
     } catch (err) {
       setStatus(`Ошибка сохранения Доски: ${err.message}`)
@@ -1498,7 +2365,7 @@ export default function BoardPage() {
         if (!hasFieldChange) return scene
 
         changed = true
-        return { ...scene, ...patch }
+        return canonicalizeBoardSceneMediaRefs({ ...scene, ...patch })
       })
 
       if (!changed) return current
@@ -1511,16 +2378,42 @@ export default function BoardPage() {
     })
   }
 
+  function updateSceneAndSave(sceneId, patch) {
+    let nextBoardForSave = null
+    setBoard((current) => {
+      let changed = false
+      const entries = Object.entries(patch || {})
+      const scenes = current.scenes.map((scene) => {
+        if (scene.id !== sceneId && scene.scene_id !== sceneId) return scene
+        const nextScene = canonicalizeBoardSceneMediaRefs({ ...scene, ...patch })
+        const hasFieldChange = entries.some(([key]) => !Object.is(scene?.[key], nextScene?.[key]))
+        if (!hasFieldChange) return scene
+        changed = true
+        return nextScene
+      })
+      if (!changed) return current
+      nextBoardForSave = {
+        ...current,
+        scenes,
+        updatedAt: new Date().toISOString(),
+      }
+      return nextBoardForSave
+    })
+    window.setTimeout(() => {
+      if (nextBoardForSave) saveBoard(nextBoardForSave, true)
+    }, 0)
+  }
+
   function updateSceneForVideoJob(sceneId, jobId, patch) {
     setBoard((current) => ({
       ...current,
       scenes: current.scenes.map((scene) => {
-        if (scene.id !== sceneId) return scene
+        if (scene.id !== sceneId && scene.scene_id !== sceneId) return scene
         const currentJobId = scene.video_job_id || ''
         if (jobId && currentJobId && currentJobId !== jobId) {
           return scene
         }
-        return { ...scene, ...patch }
+        return canonicalizeBoardSceneMediaRefs({ ...scene, ...patch })
       }),
       updatedAt: new Date().toISOString(),
     }))
@@ -1549,6 +2442,15 @@ export default function BoardPage() {
 
   function registerAvaGlobalJob({ kind = 'video', sceneId = '', jobId = '', statusEndpoint = '' } = {}) {
     if (!jobId || !statusEndpoint) return
+    if (!workspaceMode && (!projectId || isGeneratorSceneId(sceneId))) {
+      console.warn('[BOARD JOB COMPLETED SKIP]', {
+        reason: !projectId ? 'projectId null' : 'generator scene',
+        jobId,
+        projectId: projectId || '',
+        sceneId,
+      })
+      return
+    }
 
     const key = `${kind}:${jobId}`
     const nextJob = {
@@ -1580,7 +2482,7 @@ export default function BoardPage() {
 
   function selectScene(sceneId) {
     setBoard((current) => {
-      const scene = asArray(current.scenes).find((item) => asText(item.id || item.scene_id) === asText(sceneId))
+      const scene = asSceneArray(current.scenes).find((item) => asText(item.id || item.scene_id) === asText(sceneId))
       if (scene) {
         const sceneDuration = durationOf(scene)
         if (sceneDuration > 0) setManualSceneDurationSec(sceneDuration)
@@ -1703,7 +2605,7 @@ export default function BoardPage() {
     let boardToPersist = null
 
     setBoard((current) => {
-      const scenes = asArray(current.scenes)
+      const scenes = asSceneArray(current.scenes)
       const selectedId = asText(current.selectedSceneId || current.selected_scene_id)
 
       if (!selectedId || !scenes.length) return current
@@ -1827,6 +2729,12 @@ export default function BoardPage() {
     return map[String(fieldUrl || '')] || ''
   }
 
+  function mediaSlotByUrlField(fieldUrl) {
+    if (fieldUrl === 'first_frame_url') return 'first'
+    if (fieldUrl === 'last_frame_url') return 'last'
+    return 'image'
+  }
+
   function staleVideoPatch(reason = 'source_media_changed') {
     return {
       video_url: '',
@@ -1848,31 +2756,69 @@ export default function BoardPage() {
     if (!file) return
     try {
       const dataUrl = await readFileAsDataUrl(file)
+      const uploaded = await uploadMediaAsset({
+        file,
+        projectId: workspaceMode ? null : projectId,
+        kind: 'image',
+        stage: 'board_images',
+      })
+      const assetId = uploaded.asset_id || uploaded.assetId || ''
+      const assetApiPath = uploaded.asset_api_path || uploaded.assetApiPath || ''
+      if (!assetId || !assetApiPath) throw new Error('image_asset_upload_missing_asset_id')
+      const mediaSlot = mediaSlotByUrlField(fieldUrl)
       const dataField = sceneDataFieldByUrlField(fieldUrl)
       const patch = {
         ...staleVideoPatch('source_image_changed'),
-        [fieldUrl]: dataUrl,
+        [fieldUrl]: assetApiPath,
         [fieldName]: file.name,
-        [statusField]: 'local_preview',
+        [statusField]: 'asset_ready',
       }
-      if (dataField) patch[dataField] = dataUrl
+      if (dataField) patch[dataField] = ''
+      if (mediaSlot === 'first') {
+        patch.first_image_asset_id = assetId
+        patch.firstImageAssetId = assetId
+        patch.first_image_api_path = assetApiPath
+        patch.firstImageApiPath = assetApiPath
+        patch.first_frame_api_path = assetApiPath
+        patch.firstFrameApiPath = assetApiPath
+      } else if (mediaSlot === 'last') {
+        patch.last_image_asset_id = assetId
+        patch.lastImageAssetId = assetId
+        patch.last_image_api_path = assetApiPath
+        patch.lastImageApiPath = assetApiPath
+        patch.last_frame_api_path = assetApiPath
+        patch.lastFrameApiPath = assetApiPath
+      } else {
+        patch.image_asset_id = assetId
+        patch.imageAssetId = assetId
+        patch.image_api_path = assetApiPath
+        patch.imageApiPath = assetApiPath
+      }
 
       // AVA_STAGE515_CLEAR_STALE_VIDEO_ON_IMAGE_CHANGE
       // Keep image_url and first_frame_url synchronized for ia2v.
       // Otherwise a stale start_image_data_url can override the newly uploaded image.
       if (fieldUrl === 'image_url') {
-        patch.first_frame_url = dataUrl
+        patch.first_frame_url = assetApiPath
         patch.first_frame_name = file.name
-        patch.start_image_url = ''
-        patch.startImageUrl = ''
-        patch.start_image_data_url = dataUrl
-        patch.startImageDataUrl = dataUrl
+        patch.start_image_url = assetApiPath
+        patch.startImageUrl = assetApiPath
+        patch.start_image_data_url = ''
+        patch.startImageDataUrl = ''
+        patch.first_image_asset_id = assetId
+        patch.firstImageAssetId = assetId
+        patch.first_image_api_path = assetApiPath
+        patch.firstImageApiPath = assetApiPath
       }
       if (fieldUrl === 'first_frame_url') {
-        patch.image_url = dataUrl
+        patch.image_url = assetApiPath
         patch.image_name = file.name
-        patch.image_data_url = dataUrl
-        patch.imageDataUrl = dataUrl
+        patch.image_data_url = ''
+        patch.imageDataUrl = ''
+        patch.image_asset_id = assetId
+        patch.imageAssetId = assetId
+        patch.image_api_path = assetApiPath
+        patch.imageApiPath = assetApiPath
       }
 
       Object.assign(patch, {
@@ -1893,7 +2839,17 @@ export default function BoardPage() {
         },
       })
 
-      updateScene(scene.id, patch)
+      updateSceneAndSave(scene.id, patch)
+      setRuntimeSceneMediaUrls((current) => ({
+        ...current,
+        [scene.id]: {
+          ...(current[scene.id] || {}),
+          [mediaSlot]: dataUrl,
+          ...(fieldUrl === 'image_url' ? { first: dataUrl } : {}),
+          ...(fieldUrl === 'first_frame_url' ? { image: dataUrl } : {}),
+        },
+      }))
+      console.log('[BOARD IMAGE ASSET RESTORE]', { sceneId: scene.id, slot: mediaSlot, assetId, apiPath: assetApiPath, sourceField: fieldUrl, success: true })
       setStatus(`Фото сцены сохранено: ${file.name}; старое видео очищено`)
     } catch (error) {
       console.error('[Board] setSceneFile failed', error)
@@ -1907,6 +2863,27 @@ export default function BoardPage() {
       patch[field] = ''
       const dataField = sceneDataFieldByUrlField(field)
       if (dataField) patch[dataField] = ''
+      const slot = mediaSlotByUrlField(field)
+      if (slot === 'first') {
+        patch.first_image_asset_id = ''
+        patch.firstImageAssetId = ''
+        patch.first_image_api_path = ''
+        patch.firstImageApiPath = ''
+        patch.first_frame_api_path = ''
+        patch.firstFrameApiPath = ''
+      } else if (slot === 'last') {
+        patch.last_image_asset_id = ''
+        patch.lastImageAssetId = ''
+        patch.last_image_api_path = ''
+        patch.lastImageApiPath = ''
+        patch.last_frame_api_path = ''
+        patch.lastFrameApiPath = ''
+      } else {
+        patch.image_asset_id = ''
+        patch.imageAssetId = ''
+        patch.image_api_path = ''
+        patch.imageApiPath = ''
+      }
     })
     // AVA_STAGE515_CLEAR_STALE_VIDEO_ON_IMAGE_CLEAR
     if (fields.includes('image_url') || fields.includes('first_frame_url') || fields.includes('last_frame_url')) {
@@ -2065,16 +3042,40 @@ async function takePreviousLastFrame(event = null) {
           }),
         })
 
-        const imageUrl = data.imageUrl || data.image_url || data.imageApiPath || data.image_api_path || ''
-        const imageApiPath = data.imageApiPath || data.image_api_path || ''
+        let imageUrl = data.imageUrl || data.image_url || data.imageApiPath || data.image_api_path || ''
+        let imageApiPath = data.imageApiPath || data.image_api_path || ''
+        let imageAssetId = data.imageAssetId || data.image_asset_id || data.assetId || data.asset_id || ''
         const imageName = data.imageName || data.image_name || `last-frame-from-${previousScene.id}.jpg`
         if (!imageUrl) throw new Error('extract_last_frame_returned_no_image_url')
+        const staticImageUrl = boardStaticMediaUrl(imageApiPath || imageUrl)
+        if (!imageAssetId && staticImageUrl) {
+          try {
+            const asset = await registerStaticMediaAsset({
+              url: staticImageUrl,
+              projectId: workspaceMode ? null : projectId,
+              kind: 'image',
+              stage: 'board_images',
+              originalName: imageName,
+              sceneId: selectedScene.id,
+            })
+            imageAssetId = asset.asset_id || asset.assetId || ''
+            imageApiPath = asset.asset_api_path || asset.assetApiPath || imageApiPath
+            imageUrl = imageApiPath || imageUrl
+            console.log('[BOARD IMAGE STATIC REGISTER]', { sceneId: selectedScene.id, assetId: imageAssetId, apiPath: imageApiPath, sourceField: 'extract_last_frame', success: Boolean(imageAssetId) })
+          } catch (error) {
+            console.warn('[BOARD IMAGE STATIC REGISTER]', { sceneId: selectedScene.id, staticUrl: staticImageUrl, sourceField: 'extract_last_frame', success: false, error: error?.message || error })
+          }
+        }
 
-        updateScene(selectedScene.id, {
+        updateSceneAndSave(selectedScene.id, {
           ...staleVideoPatch('source_frame_changed'),
           // AVA_LAST_FRAME_V4_BOARD_VISIBLE_IMAGE
           first_frame_url: imageUrl,
           first_frame_api_path: imageApiPath,
+          first_image_asset_id: imageAssetId,
+          firstImageAssetId: imageAssetId,
+          first_image_api_path: imageApiPath,
+          firstImageApiPath: imageApiPath,
           start_image_url: imageUrl,
           startImageUrl: imageUrl,
           start_image_data_url: '',
@@ -2082,6 +3083,9 @@ async function takePreviousLastFrame(event = null) {
           first_frame_name: imageName,
           image_url: imageUrl,
           image_api_path: imageApiPath,
+          image_asset_id: imageAssetId,
+          imageAssetId: imageAssetId,
+          imageApiPath: imageApiPath,
           image_data_url: '',
           imageDataUrl: '',
           image_name: imageName,
@@ -2187,6 +3191,21 @@ async function takePreviousLastFrame(event = null) {
 async function markVideoPlanned(sceneOverride = null) {
     const sceneToStart = sceneOverride || selectedScene
     if (!sceneToStart) return
+    const requestSceneId = asText(sceneToStart.id || sceneToStart.scene_id)
+    if (!workspaceMode && !projectId) {
+      const message = 'Нет projectId, видео не будет сохранено в проект'
+      setStatus(message)
+      pushBoardToast({ type: 'error', title: 'Видео не отправлено', message, sceneId: requestSceneId })
+      window.setTimeout(processNextQueuedBoardVideo, 80)
+      return
+    }
+    if (!requestSceneId || (!workspaceMode && isGeneratorSceneId(requestSceneId))) {
+      const message = 'Некорректный sceneId, видео не будет сохранено в проект'
+      setStatus(message)
+      pushBoardToast({ type: 'error', title: 'Видео не отправлено', message, sceneId: requestSceneId })
+      window.setTimeout(processNextQueuedBoardVideo, 80)
+      return
+    }
     const inputProblems = sceneVideoInputProblems(sceneToStart)
     if (inputProblems.length) {
       showSceneVideoInputError(sceneToStart, inputProblems)
@@ -2194,7 +3213,7 @@ async function markVideoPlanned(sceneOverride = null) {
       return
     }
 
-    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== sceneToStart.id)
+    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== requestSceneId)
     window.setTimeout(() => syncQueuedSceneBadges(), 0)
 
     const route = String(sceneToStart.route || 'i2v')
@@ -2217,11 +3236,11 @@ async function markVideoPlanned(sceneOverride = null) {
     const workflowMap = BOARD_ROUTE_WORKFLOW_MAP
 
     const imageUrl = isFirstLast
-      ? (sceneToStart.first_frame_url || sceneToStart.start_image_url || sceneToStart.image_url || '')
-      : (sceneToStart.image_url || sceneToStart.first_frame_url || sceneToStart.start_image_url || '')
+      ? (sceneMediaFieldValue(sceneToStart, 'first', 'apiPath') || sceneMediaFieldValue(sceneToStart, 'first', 'url') || sceneMediaFieldValue(sceneToStart, 'image', 'apiPath') || sceneMediaFieldValue(sceneToStart, 'image', 'url') || '')
+      : (sceneMediaFieldValue(sceneToStart, 'image', 'apiPath') || sceneMediaFieldValue(sceneToStart, 'image', 'url') || sceneMediaFieldValue(sceneToStart, 'first', 'apiPath') || sceneMediaFieldValue(sceneToStart, 'first', 'url') || '')
 
     const endImageUrl = isFirstLast
-      ? (sceneToStart.last_frame_url || sceneToStart.end_image_url || '')
+      ? (sceneMediaFieldValue(sceneToStart, 'last', 'apiPath') || sceneMediaFieldValue(sceneToStart, 'last', 'url') || '')
       : ''
 
     const audioSliceUrl = sceneToStart.audio_slice_url || sceneToStart.audioSliceUrl || ''
@@ -2239,7 +3258,7 @@ async function markVideoPlanned(sceneOverride = null) {
       return
     }
 
-    updateScene(sceneToStart.id, {
+    updateScene(requestSceneId, {
       ...staleVideoPatch('video_restarting'),
       video_status: 'starting',
       video_error: '',
@@ -2269,7 +3288,7 @@ async function markVideoPlanned(sceneOverride = null) {
     })
 
     try {
-      setStatus(`POST /api/clip/video/start · ${sceneToStart.id}`)
+      setStatus(`POST /api/clip/video/start · ${requestSceneId}`)
 
       // AVA_STAGE515_IMAGE_START_SYNC
       // Important: ia2v exact node 269 uses start_image_* when it exists.
@@ -2298,18 +3317,26 @@ async function markVideoPlanned(sceneOverride = null) {
       const finalVisibleNegativePromptForBackend = asText(sceneToStart.negative_prompt)
 
       console.log('[BOARD VIDEO PAYLOAD STRICT]', {
-        sceneId: sceneToStart.id,
+        sceneId: requestSceneId,
         route,
         finalVisibleVideoPromptForBackend,
         finalVisibleNegativePromptForBackend,
         ignoredLegacyPositivePrompt: asText(sceneToStart.positive_prompt),
         ignoredMeaningHint: asText(sceneToStart.meaning_hint_ru),
       })
+      console.log('[BOARD GENERATE REQUEST CONTEXT]', {
+        projectId: projectId || '',
+        sceneId: requestSceneId,
+        route,
+      })
 
       const data = await apiRequest('/clip/video/start', {
         method: 'POST',
         body: JSON.stringify({
-          scene_id: sceneToStart.id,
+          scene_id: requestSceneId,
+          sceneId: requestSceneId,
+          project_id: projectId || '',
+          projectId: projectId || '',
           route,
           workflow_key: boardWorkflowKeyForRoute(route, sceneToStart.workflow_key),
           image_url: imageMediaForBackend.url,
@@ -2341,7 +3368,7 @@ async function markVideoPlanned(sceneOverride = null) {
       const jobId = data.jobId || data.job_id || ''
       const status = data.status || 'queued'
 
-      updateScene(sceneToStart.id, {
+      updateScene(requestSceneId, {
         video_status: status,
         video_job_id: jobId,
         video_status_endpoint: data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : ''),
@@ -2357,27 +3384,27 @@ async function markVideoPlanned(sceneOverride = null) {
 
       const videoStatusEndpoint = data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : '')
       setStatus(`Video job: ${status} · ${jobId || 'no job id'}`)
-      registerAvaGlobalJob({ kind: 'video', sceneId: sceneToStart.id, jobId, statusEndpoint: videoStatusEndpoint })
-      pollBoardVideoJob(sceneToStart.id, videoStatusEndpoint, jobId)
+      registerAvaGlobalJob({ kind: 'video', sceneId: requestSceneId, jobId, statusEndpoint: videoStatusEndpoint })
+      pollBoardVideoJob(requestSceneId, videoStatusEndpoint, jobId)
     } catch (error) {
       console.error('[Board] /clip/video/start failed', error)
-      updateScene(sceneToStart.id, {
+      updateScene(requestSceneId, {
         video_status: 'error',
         video_error: error?.message || 'video_start_failed',
       })
       setStatus(error?.message || 'Не удалось отправить видео')
-      pushBoardToast({ type: 'error', title: 'Видео не отправлено', message: `Сцена ${sceneToStart.id}: ${error?.message || 'video_start_failed'}`, sceneId: sceneToStart.id })
+      pushBoardToast({ type: 'error', title: 'Видео не отправлено', message: `Сцена ${requestSceneId}: ${error?.message || 'video_start_failed'}`, sceneId: requestSceneId })
     }
   }
 
 
   function mmaudioVideoUrlFromStatus(data) {
-    return data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
+    return data?.mmaudioVideoApiPath || data?.mmaudio_video_api_path || data?.videoApiPath || data?.video_api_path || data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
   }
 
   function sceneMainPreviewVideoUrl(scene) {
-    const baseVideo = scene?.video_url || scene?.videoUrl || ''
-    const mmaudioVideo = scene?.mmaudio_video_url || scene?.mmaudioVideoUrl || ''
+    const baseVideo = normalizeBoardMediaUrl(scene?.video_api_path || scene?.videoApiPath || scene?.video_url || scene?.videoUrl || '')
+    const mmaudioVideo = normalizeBoardMediaUrl(scene?.mmaudio_video_api_path || scene?.mmaudioVideoApiPath || scene?.mmaudio_video_url || scene?.mmaudioVideoUrl || '')
 
     if (!mmaudioVideo) return baseVideo
     if (!baseVideo) return mmaudioVideo
@@ -2420,15 +3447,46 @@ async function markVideoPlanned(sceneOverride = null) {
         const videoUrl = mmaudioVideoUrlFromStatus(data)
 
         if (videoUrl) {
-          updateScene(sceneId, {
+          let assetPatch = {}
+          const staticUrl = boardStaticMediaUrl(videoUrl)
+          if (staticUrl) {
+            try {
+              const asset = await registerStaticMediaAsset({
+                url: staticUrl,
+                projectId: workspaceMode ? null : projectId,
+                kind: 'video',
+                stage: 'board_videos',
+                originalName: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
+                sceneId,
+              })
+              const assetId = asset.asset_id || asset.assetId || ''
+              const assetApiPath = asset.asset_api_path || asset.assetApiPath || ''
+              if (assetId && assetApiPath) {
+                assetPatch = {
+                  mmaudio_video_asset_id: assetId,
+                  mmaudioVideoAssetId: assetId,
+                  mmaudio_video_api_path: assetApiPath,
+                  mmaudioVideoApiPath: assetApiPath,
+                  mmaudio_video_url: assetApiPath,
+                  mmaudioVideoUrl: assetApiPath,
+                }
+                console.log('[BOARD VIDEO ASSET RESTORE]', { sceneId, assetId, apiPath: assetApiPath, sourceField: 'mmaudio_static_video', success: true })
+              }
+            } catch (error) {
+              console.warn('[BOARD VIDEO STATIC REGISTER]', { sceneId, staticUrl, sourceField: 'mmaudio_static_video', success: false, error: error?.message || error })
+            }
+          }
+          updateSceneAndSave(sceneId, {
             mmaudio_status: 'ready',
             mmaudio_video_url: videoUrl,
+            mmaudioVideoUrl: videoUrl,
             mmaudio_video_name: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
             mmaudio_job_id: data?.jobId || data?.job_id || jobId || '',
             mmaudio_status_endpoint: endpoint,
             mmaudio_error: '',
             mmaudio_result: data,
             mmaudio_ready_at: new Date().toISOString(),
+            ...assetPatch,
           })
           setStatus(`MMAudio готово: ${sceneId}`)
           pushBoardToast({ type: 'success', title: 'MMAudio готово', message: `Сцена ${sceneId}: звук добавлен`, sceneId })
@@ -2547,8 +3605,14 @@ async function importTimingJson(event) {
     }
   }
 
-  function exportBoardJson() {
-    const payload = { ...board, exportedAt: new Date().toISOString() }
+  function stopBoardActionEvent(event) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+  }
+
+  function exportBoardJson(event) {
+    stopBoardActionEvent(event)
+    const payload = { ...sanitizeBoardDurableBackup(board), exportedAt: new Date().toISOString() }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -2560,15 +3624,41 @@ async function importTimingJson(event) {
     URL.revokeObjectURL(url)
   }
 
+  function openSelectedSceneVideo(event) {
+    stopBoardActionEvent(event)
+    const url = selectedPreviewVideoUrl
+    if (!url) return
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  function downloadSelectedSceneVideo(event) {
+    stopBoardActionEvent(event)
+    const url = selectedPreviewVideoUrl
+    if (!url) return
+    const link = document.createElement('a')
+    const glue = url.includes('?') ? '&' : '?'
+    link.href = `${url}${glue}download=1`
+    link.download = selectedScene?.video_name || selectedScene?.videoName || selectedScene?.mmaudio_video_name || selectedScene?.mmaudioVideoName || 'ava-board-video.mp4'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
   const firstLastMode = isFirstLastRoute(selectedScene?.route)
   const selectedEffectiveFormat = selectedScene?.format || selectedScene?.aspect_ratio || board.format || '16:9'
-  const readiness = useMemo(() => {
-    const total = board.scenes.length
-    const prompts = board.scenes.filter((scene) => asText(scene.video_prompt)).length
-    const images = board.scenes.filter((scene) => scene.image_url || scene.first_frame_url || scene.last_frame_url || scene.image_name || scene.first_frame_name || scene.last_frame_name).length
-    const videos = board.scenes.filter((scene) => scene.video_url || scene.video_name).length
-    return { total, prompts, images, videos }
-  }, [board.scenes])
+  const selectedPreviewVideoLoading = Boolean(selectedPreviewAssetApiPath && !selectedVideoBlobUrl && !selectedVideoLoadError)
+  const selectedPreviewVideoUrl = selectedPreviewAssetApiPath ? selectedVideoBlobUrl : scenePreviewVideoUrl(selectedScene)
+  const selectedRuntimeMedia = runtimeSceneMediaUrls[selectedScene?.id || selectedScene?.scene_id || ''] || {}
+  const selectedImagePreviewUrl = selectedScene ? (selectedRuntimeMedia.image || normalizeBoardMediaUrl(sceneMediaFieldValue(selectedScene, 'image', 'url'))) : ''
+  const selectedFirstImagePreviewUrl = selectedScene ? (selectedRuntimeMedia.first || normalizeBoardMediaUrl(sceneMediaFieldValue(selectedScene, 'first', 'url'))) : ''
+  const selectedLastImagePreviewUrl = selectedScene ? (selectedRuntimeMedia.last || normalizeBoardMediaUrl(sceneMediaFieldValue(selectedScene, 'last', 'url'))) : ''
+  const boardScenes = asSceneArray(board.scenes)
+  const readiness = {
+    total: boardScenes.length,
+    prompts: boardScenes.filter((scene) => asText(scene.video_prompt)).length,
+    images: boardScenes.filter((scene) => sceneMediaFieldValue(scene, 'image', 'apiPath') || sceneMediaFieldValue(scene, 'first', 'apiPath') || sceneMediaFieldValue(scene, 'last', 'apiPath') || sceneMediaFieldValue(scene, 'image', 'url') || sceneMediaFieldValue(scene, 'first', 'url') || sceneMediaFieldValue(scene, 'last', 'url') || scene.image_name || scene.first_frame_name || scene.last_frame_name).length,
+    videos: boardScenes.filter((scene) => sceneMediaFieldValue(scene, 'video', 'apiPath') || sceneMediaFieldValue(scene, 'video', 'url') || scene.video_name).length,
+  }
 
   if (loading) {
     return (
@@ -2707,7 +3797,10 @@ async function importTimingJson(event) {
           <button
             type="button"
             className="avaBoardHeaderButton avaBoardActionJson avaBoardActionImport"
-            onClick={() => importRef.current?.click()}
+            onClick={(event) => {
+              stopBoardActionEvent(event)
+              importRef.current?.click()
+            }}
           >
             <FileJson size={15} /> Импорт
           </button>
@@ -2737,7 +3830,7 @@ async function importTimingJson(event) {
       <input ref={importRef} className="avaHiddenInput" type="file" accept="application/json,.json" onChange={importTimingJson} />
 
       <section className="avaBoardSceneStrip" aria-label="Сцены">
-        {board.scenes.map((scene, index) => {
+        {boardScenes.map((scene, index) => {
           const statusInfo = sceneStatus(scene)
           const active = selectedScene?.id === scene.id
           return (
@@ -2762,7 +3855,7 @@ async function importTimingJson(event) {
             </button>
           )
         })}
-        {board.scenes.length === 0 && (
+        {boardScenes.length === 0 && (
           <div className="avaBoardEmptyStrip">
             Нет сцен. Вернись в Manual Timing или импортируй JSON.
           </div>
@@ -2787,7 +3880,7 @@ async function importTimingJson(event) {
                 <span><Clock3 size={14} /> {formatRange(selectedScene)} · {durationOf(selectedScene).toFixed(2)} c</span>
               </div>
               <div className="avaBoardSceneMiniMeta">
-                <span>#{selectedIndex + 1} из {board.scenes.length}</span>
+                <span>#{selectedIndex + 1} из {boardScenes.length}</span>
                 <span>{selectedScene.source_phrase_ids?.join(', ') || 'phrases: —'}</span>
               </div>
             </div>
@@ -2962,7 +4055,7 @@ async function importTimingJson(event) {
                 <ImageSlot
                   title="Первый кадр"
                   subtitle="start frame"
-                  value={selectedScene.first_frame_url || selectedScene.start_image_url || selectedScene.image_url}
+                  value={selectedFirstImagePreviewUrl || selectedImagePreviewUrl}
                   name={selectedScene.first_frame_name}
                   onSelect={(event) => setSceneFile(selectedScene, 'first_frame_url', 'first_frame_name', 'image_status', event)}
                   onClear={() => clearSceneFile(selectedScene, ['first_frame_url', 'first_frame_name'])}
@@ -2970,7 +4063,7 @@ async function importTimingJson(event) {
                 <ImageSlot
                   title="Последний кадр"
                   subtitle="end frame"
-                  value={selectedScene.last_frame_url}
+                  value={selectedLastImagePreviewUrl}
                   name={selectedScene.last_frame_name}
                   onSelect={(event) => setSceneFile(selectedScene, 'last_frame_url', 'last_frame_name', 'image_status', event)}
                   onClear={() => clearSceneFile(selectedScene, ['last_frame_url', 'last_frame_name'])}
@@ -2980,7 +4073,7 @@ async function importTimingJson(event) {
               <ImageSlot
                 title="Фото / Start image"
                 subtitle="основной кадр для i2v / ia2v"
-                value={selectedScene.image_url || selectedScene.first_frame_url || selectedScene.start_image_url}
+                value={selectedImagePreviewUrl || selectedFirstImagePreviewUrl}
                 name={selectedScene.image_name}
                 onSelect={(event) => setSceneFile(selectedScene, 'image_url', 'image_name', 'image_status', event)}
                 onClear={() => clearSceneFile(selectedScene, ['image_url', 'image_name'])}
@@ -2992,8 +4085,50 @@ async function importTimingJson(event) {
                 <strong><Film size={16} /> Видео preview</strong>
                 <span>{scenePreviewVideoLabel(selectedScene)}</span>
               </div>
-              {scenePreviewVideoUrl(selectedScene) ? (
-                <video key={scenePreviewVideoUrl(selectedScene)} src={scenePreviewVideoUrl(selectedScene)} controls />
+              {selectedPreviewVideoUrl && !selectedVideoLoadError ? (
+                <>
+                  <video
+                    key={selectedPreviewVideoUrl}
+                    src={selectedPreviewVideoUrl}
+                    controls
+                    preload="metadata"
+                    playsInline
+                    onLoadedMetadata={(event) => {
+                      const duration = event.currentTarget?.duration || 0
+                      console.log('[BOARD VIDEO ELEMENT LOADED]', {
+                        sceneId: selectedScene?.id || selectedScene?.scene_id || '',
+                        src: selectedPreviewVideoUrl,
+                        duration,
+                      })
+                      if (!duration) setSelectedVideoLoadError('video_duration_0')
+                    }}
+                    onError={(event) => {
+                      const errorCode = event.currentTarget?.error?.code || ''
+                      setSelectedVideoLoadError(String(errorCode || 'video_element_error'))
+                      console.warn('[BOARD VIDEO ELEMENT ERROR]', {
+                        sceneId: selectedScene?.id || selectedScene?.scene_id || '',
+                        src: selectedPreviewVideoUrl,
+                        errorCode,
+                      })
+                    }}
+                  />
+                  <div className="avaBoardVideoActions">
+                    <button type="button" onClick={openSelectedSceneVideo}>Смотреть видео</button>
+                    <button type="button" onClick={downloadSelectedSceneVideo}>Скачать видео</button>
+                  </div>
+                </>
+              ) : selectedPreviewVideoLoading ? (
+                <div className="avaBoardVideoEmpty isBusy">
+                  <Film size={34} />
+                  <span>Загружаем видео</span>
+                  <small>Получаем protected asset preview.</small>
+                </div>
+              ) : selectedVideoLoadError ? (
+                <div className="avaBoardVideoEmpty isError">
+                  <Film size={34} />
+                  <span>Видео preview недоступно</span>
+                  <small>{selectedVideoLoadError}</small>
+                </div>
               ) : (
                 <div className={`avaBoardVideoEmpty ${isVideoBusyStatus(selectedScene.video_status) ? 'isBusy' : ''}`}>
                   <Film size={34} />
@@ -3032,7 +4167,10 @@ async function importTimingJson(event) {
                   <button
                     type="button"
                     className={`avaBoardWorkflowButton isFrame ${selectedScene.first_frame_url ? 'isReady' : selectedScene.first_frame_status ? 'isPlanned' : ''}`}
-                    onClick={takePreviousLastFrame}
+                    onClick={(event) => {
+                      stopBoardActionEvent(event)
+                      takePreviousLastFrame()
+                    }}
                     title={previousScene ? 'Взять последний кадр из видео предыдущей сцены' : 'Нет предыдущей сцены'}
                   >
                     <ImageIcon size={16} />
@@ -3046,7 +4184,10 @@ async function importTimingJson(event) {
                     type="button"
                     className={`avaBoardWorkflowButton isAudio ${selectedScene.audio_slice_status === 'ready' ? 'isReady' : selectedScene.audio_slice_status === 'extracting' ? 'isBusy' : selectedScene.audio_slice_status === 'error' ? 'isError' : ''}`}
                   title={selectedScene.audio_slice_name || selectedScene.audio_slice_url || "audio slice"}
-                    onClick={markAudioSlicePlanned}
+                    onClick={(event) => {
+                      stopBoardActionEvent(event)
+                      markAudioSlicePlanned()
+                    }}
                   >
                     <Scissors size={16} />
                     <span>Изъять аудио</span>
@@ -3057,7 +4198,10 @@ async function importTimingJson(event) {
                 <button
                   type="button"
                   className={sceneVideoActionState(selectedScene).className}
-                  onClick={requestSceneVideoQueue}
+                  onClick={(event) => {
+                    stopBoardActionEvent(event)
+                    requestSceneVideoQueue()
+                  }}
                   disabled={sceneVideoActionState(selectedScene).disabled}
                 >
                   <Film size={16} />
@@ -3093,7 +4237,10 @@ async function importTimingJson(event) {
                       <button
                         type="button"
                         className="avaBoardMmaudioToggle isMagic"
-                        onClick={() => setMmaudioOpen((value) => !value)}
+                        onClick={(event) => {
+                          stopBoardActionEvent(event)
+                          setMmaudioOpen((value) => !value)
+                        }}
                         title="MMAudio sound design через ComfyLab"
                       >
                         <Sparkles size={16} />
@@ -3125,7 +4272,10 @@ async function importTimingJson(event) {
                           <div className="avaBoardMmaudioActions">
                             <button
                               type="button"
-                              onClick={startMmaudioForSelectedScene}
+                              onClick={(event) => {
+                                stopBoardActionEvent(event)
+                                startMmaudioForSelectedScene()
+                              }}
                               disabled={mmaudioBusy || !hasSourceVideo}
                             >
                               <Volume2 size={15} />

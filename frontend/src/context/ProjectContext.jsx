@@ -5,6 +5,52 @@ import { useAuth } from './AuthContext.jsx'
 const ProjectContext = createContext(null)
 const ACTIVE_PROJECT_SESSION_KEY = 'ava_active_project_id'
 
+function countBoardSceneMediaRefs(data = {}) {
+  const scenes = Array.isArray(data?.scenes) ? data.scenes : []
+  let boardScenesWithVideoRefs = 0
+  let boardScenesWithImageRefs = 0
+  for (const scene of scenes) {
+    if (!scene || typeof scene !== 'object') continue
+    if (
+      scene.video_asset_id || scene.videoAssetId ||
+      scene.video_api_path || scene.videoApiPath ||
+      scene.video_url || scene.videoUrl ||
+      scene.mmaudio_video_api_path || scene.mmaudioVideoApiPath
+    ) boardScenesWithVideoRefs += 1
+    if (
+      scene.image_asset_id || scene.imageAssetId ||
+      scene.image_api_path || scene.imageApiPath ||
+      scene.first_image_asset_id || scene.firstImageAssetId ||
+      scene.first_image_api_path || scene.firstImageApiPath ||
+      scene.last_image_asset_id || scene.lastImageAssetId ||
+      scene.last_image_api_path || scene.lastImageApiPath
+    ) boardScenesWithImageRefs += 1
+  }
+  return { boardScenesWithVideoRefs, boardScenesWithImageRefs }
+}
+
+function countRuntimeMediaValues(value, depth = 0) {
+  if (!value || depth > 8) return 0
+  if (typeof value === 'string') return /^(blob:|data:)/i.test(value) ? 1 : 0
+  if (Array.isArray(value)) return value.reduce((sum, item) => sum + countRuntimeMediaValues(item, depth + 1), 0)
+  if (typeof value === 'object') return Object.values(value).reduce((sum, item) => sum + countRuntimeMediaValues(item, depth + 1), 0)
+  return 0
+}
+
+function logProjectSaveMediaRefsSummary(stage, data = {}, scope = 'project') {
+  const boardCounts = countBoardSceneMediaRefs(data)
+  console.log('[PROJECT SAVE MEDIA REFS SUMMARY]', {
+    scope,
+    stage,
+    ...boardCounts,
+    podcastAudioRefs: Number(Boolean(data?.podcast_audio_asset_id || data?.podcastAudioAssetId || data?.audioAssetId || data?.audio_asset_id || data?.audio?.assetId || data?.audio?.asset_id)),
+    assemblyRefs: Number(Boolean(data?.assembly_asset_id || data?.assemblyAssetId || data?.assembly_api_path || data?.assemblyApiPath || data?.assemblyUrl || data?.finalVideoUrl)),
+    videoNodeRefs: Number(Boolean(data?.sourceVideos?.length || data?.source_videos?.length || data?.assembledPreview || data?.assembly_asset_id || data?.assemblyApiPath)),
+    removedRuntimeBlobCount: countRuntimeMediaValues(data),
+    preservedAssetRefsCount: 0,
+  })
+}
+
 export function ProjectProvider({ children }) {
   const { token } = useAuth()
   const [projects, setProjects] = useState([])
@@ -76,6 +122,7 @@ export function ProjectProvider({ children }) {
   }
 
   async function saveStage(projectId, stage, data, guardMode = 'safe_merge') {
+    logProjectSaveMediaRefsSummary(stage, data, 'project')
     const response = await apiRequest(`/projects/${projectId}/snapshots/${stage}`, {
       method: 'POST',
       body: JSON.stringify({ data, guard_mode: guardMode, client_version: 'ava-shell-v0.1' }),
@@ -90,9 +137,10 @@ export function ProjectProvider({ children }) {
   }
 
   async function saveWorkspaceStage(stage, data) {
+    logProjectSaveMediaRefsSummary(stage, data, 'workspace')
     const response = await apiRequest(`/workspace/snapshots/${stage}`, {
       method: 'POST',
-      body: JSON.stringify({ data, guard_mode: 'replace', client_version: 'ava-shell-v0.1' }),
+      body: JSON.stringify({ data, guard_mode: 'safe_merge', client_version: 'ava-shell-v0.1' }),
     })
     if (response.saved) setLastSavedAt(new Date().toISOString())
     return response

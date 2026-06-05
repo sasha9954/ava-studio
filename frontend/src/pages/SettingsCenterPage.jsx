@@ -99,7 +99,7 @@ export default function SettingsCenterPage() {
   const counts = summary?.counts || {}
 
   return (
-    <div className="avaPage">
+    <div className="avaPage avaSettingsPageV2">
       <div className="avaSectionHeader">
         <div><h2>Настройки / Service Center</h2><p>Аккаунт, workspace, storage, jobs, backup и проверка системы.</p></div>
         <div className="avaSettingsHeaderActions">

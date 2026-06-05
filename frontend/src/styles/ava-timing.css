@@ -196,6 +196,12 @@
   overflow-x: auto;
 }
 
+.avaTimingTimelineContent {
+  position: relative;
+  min-width: 1040px;
+  width: 100%;
+}
+
 .avaTimingCursorLabel {
   position: absolute;
   top: 6px;
@@ -1186,11 +1192,10 @@
 }
 
 /* Stage 3.7 timeline proportional alignment
-   Important: scene blocks must never use content/min-width as timing width.
-   The inline % width is the source of truth, otherwise cuts drift after several small scenes. */
+   Scene blocks use the same absolute time coordinate system as the playhead. */
 .avaTimingSegmentsRow {
-  display: flex !important;
-  align-items: stretch !important;
+  position: relative !important;
+  display: block !important;
   width: 100% !important;
   min-width: 0 !important;
   max-width: 100% !important;
@@ -1198,6 +1203,9 @@
 }
 
 .avaTimingSegmentsRow > button {
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
   flex-grow: 0 !important;
   flex-shrink: 0 !important;
   min-width: 0 !important;

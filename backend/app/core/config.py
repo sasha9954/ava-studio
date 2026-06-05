@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     secret_key: str = Field(default='dev-secret-change-me')
     storage_dir: str = Field(default='storage')
     static_dir: str = Field(default='static')
-    cors_origins: str = Field(default='http://localhost:5173')
+    cors_origins: str = Field(default='http://100.80.135.114:8080,http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173')
     public_base_url: str = Field(default='http://localhost:8000')
     asr_provider: str = Field(default='local')
     asr_model: str = Field(default='base')

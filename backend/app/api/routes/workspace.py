@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.deps import get_current_user
+from app.core.snapshot_media import media_refs_summary, preserve_media_refs, sanitize_snapshot_runtime_media
 from app.core.security import make_id, now_iso
 from app.core.storage import store
 from app.schemas import SnapshotSaveRequest
@@ -138,9 +139,22 @@ def save_workspace_snapshot(stage: str, payload: SnapshotSaveRequest, user: dict
     def op(db):
         workspace = get_or_create_workspace(db, user)
         db['workspace_snapshots'].setdefault(workspace['id'], {})
+        current = db['workspace_snapshots'][workspace['id']].get(stage)
+        incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
+        preserved_media_refs = 0
+        if payload.guard_mode == 'safe_merge' and current:
+            incoming_data, preserved_media_refs = preserve_media_refs(current.get('data') or {}, incoming_data)
+        print('[PROJECT SAVE MEDIA REFS SUMMARY]', {
+            'scope': 'workspace',
+            'workspace_id': workspace['id'],
+            'stage': stage,
+            **media_refs_summary(incoming_data),
+            'removedRuntimeBlobCount': removed_runtime,
+            'preservedAssetRefsCount': preserved_media_refs,
+        })
         snapshot = {
             'stage': stage,
-            'data': payload.data or {},
+            'data': incoming_data,
             'client_version': payload.client_version,
             'updated_at': now_iso(),
         }

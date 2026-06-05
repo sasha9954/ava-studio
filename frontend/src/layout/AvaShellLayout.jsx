@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Brain, ChevronLeft, ChevronRight, FolderKanban, GitBranch, Home, LogOut, PlusCircle, Settings, Sparkles, UserRound, WalletCards } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FolderKanban, Home, LogOut, PlusCircle, Settings, UserRound, WalletCards } from 'lucide-react'
+import avaLogoUrl from '../assets/ava_logo.jpg'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { getProjectTheme } from '../utils/projectTheme.js'
@@ -13,8 +14,6 @@ const navItems = [
   { to: '/app/projects/new', label: 'Создать проект', icon: PlusCircle },
   { to: '/app/account', label: 'Кабинет', icon: UserRound },
   { to: '/app/credits', label: 'Пополнить счёт', icon: WalletCards },
-  { to: '/app/workspace/video-node', label: 'Видео нода', icon: GitBranch },
-  { to: '/app/workspace/generator', label: 'Генератор', icon: Sparkles },
 ]
 
 const SIDEBAR_OPEN_KEY = 'ava_sidebar_open'
@@ -80,11 +79,51 @@ function normalizeAvaEndpoint(endpoint) {
   return value.startsWith('/api/') ? value.slice(4) : value
 }
 
+function avaAssetIdFromRef(...values) {
+  for (const value of values) {
+    const raw = String(value || '').trim()
+    if (!raw) continue
+    if (raw.startsWith('asset_')) return raw
+    const match = raw.match(/\/(?:api\/)?assets\/([^/]+)\/file/i)
+    if (match?.[1]) return decodeURIComponent(match[1])
+  }
+  return ''
+}
+
+function avaAssetApiPath(assetId = '') {
+  const safeAssetId = String(assetId || '').trim()
+  return safeAssetId ? `/assets/${safeAssetId}/file` : ''
+}
+
 function avaJobVideoUrl(kind, data) {
   if (kind === 'mmaudio') {
-    return data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
+    const assetId = avaAssetIdFromRef(
+      data?.mmaudioVideoAssetId,
+      data?.mmaudio_video_asset_id,
+      data?.assetId,
+      data?.asset_id,
+      data?.mmaudioVideoApiPath,
+      data?.mmaudio_video_api_path,
+      data?.videoApiPath,
+      data?.video_api_path,
+      data?.mmaudioVideoUrl,
+      data?.mmaudio_video_url
+    )
+    return avaAssetApiPath(assetId) || data?.mmaudioVideoApiPath || data?.mmaudio_video_api_path || data?.videoApiPath || data?.video_api_path || data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
   }
-  return data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
+  const assetId = avaAssetIdFromRef(
+    data?.videoAssetId,
+    data?.video_asset_id,
+    data?.assetId,
+    data?.asset_id,
+    data?.videoApiPath,
+    data?.video_api_path,
+    data?.resultVideoApiPath,
+    data?.result_video_api_path,
+    data?.videoUrl,
+    data?.video_url
+  )
+  return avaAssetApiPath(assetId) || data?.videoApiPath || data?.video_api_path || data?.resultVideoApiPath || data?.result_video_api_path || data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
 }
 
 function avaJobIsError(status) {
@@ -111,11 +150,17 @@ function boardSnapshotEndpointForJob(job = {}) {
 }
 
 function videoPatchFromJobData(data = {}, job = {}) {
-  const videoUrl = data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
-  const videoApiPath = data?.videoApiPath || data?.video_api_path || ''
+  const assetId = avaAssetIdFromRef(data?.videoAssetId, data?.video_asset_id, data?.assetId, data?.asset_id, data?.videoApiPath, data?.video_api_path, data?.videoUrl, data?.video_url)
+  const assetApiPath = avaAssetApiPath(assetId)
+  const videoUrl = assetApiPath || data?.videoApiPath || data?.video_api_path || data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
+  const videoApiPath = assetApiPath || data?.videoApiPath || data?.video_api_path || ''
   return {
     video_url: videoUrl,
+    videoUrl: videoUrl,
+    video_asset_id: assetId,
+    videoAssetId: assetId,
     video_api_path: videoApiPath,
+    videoApiPath: videoApiPath,
     video_name: data?.videoName || data?.video_name || (videoUrl ? 'video.mp4' : ''),
     original_video_url: data?.originalVideoUrl || data?.original_video_url || '',
     video_status: 'ready',
@@ -145,10 +190,17 @@ function extractAvaCreditBalance(value) {
 }
 
 function mmaudioPatchFromJobData(data = {}, job = {}) {
-  const videoUrl = data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
+  const assetId = avaAssetIdFromRef(data?.mmaudioVideoAssetId, data?.mmaudio_video_asset_id, data?.assetId, data?.asset_id, data?.mmaudioVideoApiPath, data?.mmaudio_video_api_path, data?.videoApiPath, data?.video_api_path, data?.mmaudioVideoUrl, data?.mmaudio_video_url)
+  const assetApiPath = avaAssetApiPath(assetId)
+  const videoUrl = assetApiPath || data?.mmaudioVideoApiPath || data?.mmaudio_video_api_path || data?.videoApiPath || data?.video_api_path || data?.mmaudioVideoUrl || data?.mmaudio_video_url || data?.videoUrl || data?.video_url || ''
   return {
     mmaudio_status: 'ready',
+    mmaudio_video_asset_id: assetId,
+    mmaudioVideoAssetId: assetId,
+    mmaudio_video_api_path: assetApiPath || data?.mmaudioVideoApiPath || data?.mmaudio_video_api_path || data?.videoApiPath || data?.video_api_path || '',
+    mmaudioVideoApiPath: assetApiPath || data?.mmaudioVideoApiPath || data?.mmaudio_video_api_path || data?.videoApiPath || data?.video_api_path || '',
     mmaudio_video_url: videoUrl,
+    mmaudioVideoUrl: videoUrl,
     mmaudio_video_name: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || (videoUrl ? 'mmaudio.mp4' : ''),
     mmaudio_job_id: data?.jobId || data?.job_id || job.jobId || '',
     mmaudio_status_endpoint: job.statusEndpoint || '',
@@ -163,10 +215,11 @@ export default function AvaShellLayout() {
   const { user, logout } = useAuth()
   const { projects, activeProject, lastSavedAt, exitProject } = useProjects()
   const navigate = useNavigate()
-  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem(SIDEBAR_OPEN_KEY) === '1')
+  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem(SIDEBAR_OPEN_KEY) !== '0')
   const [globalToasts, setGlobalToasts] = useState([])
   const toastDedupeRef = useRef(new Map())
   const pollingJobsRef = useRef(new Set())
+  const creditsRefreshInFlightRef = useRef(null)
   const [shellCreditBalance, setShellCreditBalance] = useState(null)
   const [shellCreditsRefreshing, setShellCreditsRefreshing] = useState(false)
   const projectTheme = useMemo(() => getProjectTheme(activeProject, projects), [activeProject, projects])
@@ -180,30 +233,32 @@ export default function AvaShellLayout() {
   }, [shellCreditBalance, user])
 
   const refreshShellCredits = useCallback(async (reason = '') => {
+    // AVA_LOCAL_CREDIT_SUMMARY_LOOP_FIX:
+    // Do not allow overlapping /credits/summary requests. Before this guard,
+    // refreshShellCredits dispatched ava:user-updated, while the same component
+    // listened to ava:user-updated and triggered refreshShellCredits again. That
+    // created an infinite summary request loop and made pages look frozen.
+    if (creditsRefreshInFlightRef.current) return creditsRefreshInFlightRef.current
+
     setShellCreditsRefreshing(true)
-    try {
-      const summary = await apiRequest('/credits/summary')
-      const nextBalance = extractAvaCreditBalance(summary)
-      if (nextBalance !== null) {
-        setShellCreditBalance(nextBalance)
-        if (user) {
-          window.dispatchEvent(new CustomEvent('ava:user-updated', {
-            detail: {
-              ...user,
-              credits_balance: nextBalance,
-              creditBalance: nextBalance,
-            },
-          }))
-        }
-      }
-      return summary
-    } catch (error) {
-      console.warn('[AvaShell] credits refresh failed', reason, error)
-      return null
-    } finally {
-      setShellCreditsRefreshing(false)
-    }
-  }, [user])
+    const request = apiRequest('/credits/summary')
+      .then((summary) => {
+        const nextBalance = extractAvaCreditBalance(summary)
+        if (nextBalance !== null) setShellCreditBalance(nextBalance)
+        return summary
+      })
+      .catch((error) => {
+        console.warn('[AvaShell] credits refresh failed', reason, error)
+        return null
+      })
+      .finally(() => {
+        creditsRefreshInFlightRef.current = null
+        setShellCreditsRefreshing(false)
+      })
+
+    creditsRefreshInFlightRef.current = request
+    return request
+  }, [])
 
 
   useEffect(() => {
@@ -228,7 +283,6 @@ export default function AvaShellLayout() {
     return () => window.removeEventListener('ava:credits-updated', handleDirectCreditUpdate)
   }, [])
 
-  function pushGlobalToast(detail = {}) {
   // PATCH_07BA_LIVE_CREDITS: keep topbar credits fresh without F5.
   useEffect(() => {
     let alive = true
@@ -244,7 +298,8 @@ export default function AvaShellLayout() {
     const onUserUpdated = (event) => {
       const nextBalance = extractAvaCreditBalance(event?.detail)
       if (nextBalance !== null) setShellCreditBalance(nextBalance)
-      runRefresh('ava_user_updated')
+      // Do not call runRefresh here: ava:user-updated can be emitted by a
+      // credits refresh itself, so re-fetching here creates a summary loop.
     }
     const onFocus = () => runRefresh('window_focus')
     const onStorage = (event) => {
@@ -270,6 +325,7 @@ export default function AvaShellLayout() {
     }
   }, [refreshShellCredits])
 
+  function pushGlobalToast(detail = {}) {
     const type = detail.type || 'info'
     const title = detail.title || (type === 'error' ? 'Ошибка' : type === 'success' ? 'Готово' : 'Уведомление')
     const message = detail.message || ''
@@ -561,7 +617,7 @@ export default function AvaShellLayout() {
         </button>
 
         <Link to="/app/dashboard" className="avaBrand" title="ava-studio">
-          <span className="avaBrandIcon"><Brain size={24} /></span>
+          <span className="avaBrandIcon avaBrandLogoIcon"><img src={avaLogoUrl} alt="" /></span>
           <span className="avaSidebarText">
             <strong>ava-studio</strong>
             <em>AI video workflow</em>
@@ -598,8 +654,8 @@ export default function AvaShellLayout() {
 
       <main className="avaMain">
         <header className="avaTopbar">
-          <div className="avaTopbarLeft">
-            <p>{activeProject ? `Проект открыт · ${activeProject.format}` : 'Рабочая область'}</p>
+          <div className={`avaTopbarLeft ${activeProject ? '' : 'isWorkspaceOnly'}`}>
+            {activeProject && <p>{`Проект открыт · ${activeProject.format}`}</p>}
             <h1>{activeProject ? activeProject.name : 'ava-studio'}</h1>
           </div>
           <div className="avaTopbarRight">

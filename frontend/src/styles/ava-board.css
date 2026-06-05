@@ -445,6 +445,34 @@
   border-radius: 16px;
   background: #020611;
   object-fit: contain;
+  position: relative;
+  z-index: 1;
+}
+
+.avaBoardVideoActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  position: relative;
+  z-index: 2;
+}
+
+.avaBoardVideoActions button {
+  appearance: none;
+  border: 1px solid rgba(128, 156, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(12, 22, 48, 0.82);
+  color: #e8efff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+  padding: 9px 12px;
+}
+
+.avaBoardVideoActions button:hover {
+  border-color: rgba(120, 192, 255, 0.48);
+  color: #ffffff;
 }
 
 .avaBoardActionGroups {
@@ -2674,6 +2702,94 @@
 @keyframes avaSkeletonMove {
   from { background-position: 0 0, 0 0; }
   to { background-position: -240% 0, 0 0; }
+}
+
+/* Sparse Board Assembly: compact scene strip for long 40+ scene timelines. */
+.avaAssemblyPage .avaAssemblyWorkspace {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px) !important;
+  grid-template-areas:
+    "sceneStrip sceneStrip"
+    "preview settings" !important;
+  align-items: start !important;
+}
+
+.avaAssemblyPage .avaAssemblySceneRail {
+  grid-area: sceneStrip !important;
+  min-height: 0 !important;
+  padding: 12px !important;
+}
+
+.avaAssemblyPage .avaAssemblyPreviewPanel {
+  grid-area: preview !important;
+}
+
+.avaAssemblyPage .avaAssemblySettings {
+  grid-area: settings !important;
+}
+
+.avaAssemblyPage .avaAssemblySceneList {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  max-height: none !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding: 2px 4px 10px !important;
+  scroll-snap-type: x proximity;
+}
+
+.avaAssemblyPage .avaAssemblySceneList::-webkit-scrollbar {
+  height: 8px;
+}
+
+.avaAssemblyPage .avaAssemblySceneItem {
+  flex: 0 0 136px !important;
+  min-height: 78px !important;
+  max-height: 92px !important;
+  padding: 8px 9px !important;
+  border-radius: 12px !important;
+  gap: 3px !important;
+  scroll-snap-align: start;
+}
+
+.avaAssemblyPage .avaAssemblySceneItem strong,
+.avaAssemblyPage .avaAssemblySceneItem span,
+.avaAssemblyPage .avaAssemblySceneItem small,
+.avaAssemblyPage .avaAssemblySceneItem em {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaAssemblyPage .avaAssemblySceneItem strong {
+  font-size: 12px !important;
+}
+
+.avaAssemblyPage .avaAssemblySceneItem span,
+.avaAssemblyPage .avaAssemblySceneItem small {
+  font-size: 10px !important;
+}
+
+.avaAssemblyPage .avaAssemblySceneItem.isMissing {
+  border-color: rgba(150, 160, 180, .26) !important;
+  background: linear-gradient(135deg, rgba(80, 88, 104, .28), rgba(255,255,255,.032)) !important;
+  box-shadow: inset 4px 0 0 rgba(120, 130, 150, .52) !important;
+}
+
+.avaAssemblyPage .avaAssemblySceneItem.isReady {
+  border-color: rgba(74, 255, 174, .42) !important;
+  box-shadow: inset 4px 0 0 rgba(74, 255, 174, .72) !important;
+}
+
+@media (max-width: 1080px) {
+  .avaAssemblyPage .avaAssemblyWorkspace {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "sceneStrip"
+      "preview"
+      "settings" !important;
+  }
 }
 
 @media (max-width: 860px) {

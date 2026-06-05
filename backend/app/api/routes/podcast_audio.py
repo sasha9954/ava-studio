@@ -139,7 +139,19 @@ def _resolve_static_audio_source(url: str) -> str:
     return ""
 
 
-_AUDIO_URL_KEYS = ("source_url", "url", "asset_url", "assetUrl", "server_url", "public_url", "publicUrl")
+_AUDIO_URL_KEYS = (
+    "source_url",
+    "url",
+    "asset_url",
+    "assetUrl",
+    "server_url",
+    "public_url",
+    "publicUrl",
+    "asset_api_path",
+    "assetApiPath",
+    "audio_api_path",
+    "audioApiPath",
+)
 
 
 def _first_audio_url(row: dict) -> str:
@@ -262,7 +274,7 @@ def render_podcast_audio_to_asset(payload: PodcastAudioRenderIn):
             return _podcast_audio_error(400, "PODCAST_AUDIO_RENDER_FAILED", message="no_renderable_segments")
 
         concat_file = tmp_path / "concat.txt"
-        concat_file.write_text("\\n".join(concat_lines) + "\\n", encoding="utf-8")
+        concat_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
         temp_output = tmp_path / "podcast_composer_final.mp3"
         concat_cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c:a", "libmp3lame", "-b:a", "192k", str(temp_output)]
 

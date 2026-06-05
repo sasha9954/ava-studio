@@ -9,6 +9,43 @@ const emptyPaymentForm = {
   cvc: '',
 }
 
+const CREDIT_PACKAGE_COPY = {
+  pack_100: {
+    badge: 'Старт',
+    caption: 'Для быстрых тестов и проверки пайплайна.',
+  },
+  pack_250: {
+    badge: 'Практично',
+    caption: 'Нормальный запас для регулярной работы.',
+  },
+  pack_600: {
+    badge: 'Выгодно',
+    caption: 'Лучший баланс цены и количества тестов.',
+    featured: true,
+  },
+  pack_1000: {
+    badge: 'Студия',
+    caption: 'Для длинных проектов и активной генерации.',
+  },
+}
+
+function packageMeta(pack = {}) {
+  const fallbackCredits = Number(String(pack.label || '').match(/\d+/)?.[0] || 0)
+  const credits = Number(pack.credits || fallbackCredits || 0)
+  const usd = Number(pack.usd || 0)
+  const rate = usd > 0 ? Math.round((credits / usd) * 10) / 10 : 0
+  const copy = CREDIT_PACKAGE_COPY[pack.id] || {}
+
+  return {
+    credits,
+    usd,
+    rate,
+    badge: copy.badge || 'Пакет',
+    caption: copy.caption || 'Пакет credits для работы в Ava Studio.',
+    featured: Boolean(copy.featured),
+  }
+}
+
 export default function CreditsPage() {
   const { setCurrentUser } = useAuth()
   const [summary, setSummary] = useState(null)
@@ -148,17 +185,26 @@ export default function CreditsPage() {
         </div>
       </div>
 
-      <div className="avaModuleGrid">
-        {summary?.packages?.map((pack) => (
-          <div className="avaModuleCard" key={pack.id}>
-            <div className="avaModuleIcon"><Gift size={22} /></div>
-            <h4>{pack.label}</h4>
-            <p className="avaPriceLine">${pack.usd ?? 0}</p>
-            <button className="avaMiniActionButton" type="button" onClick={() => openPaymentModal(pack)} disabled={loading}>
-              <Plus size={14} /> Купить
-            </button>
-          </div>
-        ))}
+      <div className="avaCreditsPackagesGrid">
+        {summary?.packages?.map((pack) => {
+          const meta = packageMeta(pack)
+          return (
+            <div className={`avaCreditPackCard ${meta.featured ? 'isFeatured' : ''}`} key={pack.id}>
+              {meta.featured && <span className="avaCreditPackRibbon">Лучший выбор</span>}
+              <div className="avaCreditPackTop">
+                <div className="avaCreditPackIcon"><Gift size={22} /></div>
+                <span className="avaCreditPackBadge">{meta.badge}</span>
+              </div>
+              <h4>{meta.credits} credits</h4>
+              <div className="avaCreditPackPrice"><span>$</span>{meta.usd}</div>
+              <div className="avaCreditPackRate">{meta.rate} credits / $1</div>
+              <p>{meta.caption}</p>
+              <button className="avaCreditPackButton" type="button" onClick={() => openPaymentModal(pack)} disabled={loading}>
+                <Plus size={14} /> Купить пакет
+              </button>
+            </div>
+          )
+        })}
       </div>
 
       {selectedPack && (

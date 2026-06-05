@@ -1,0 +1,1207 @@
+{
+  "projectId": "p_085866cb534a9aaf",
+  "projectFile": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\ava_db.json",
+  "summary": {
+    "audioRefs": 20,
+    "imageRefs": 0,
+    "videoRefs": 0,
+    "assemblyRefs": 0,
+    "existingFiles": 15,
+    "missingFiles": 5,
+    "unlinkedProjectFiles": 76
+  },
+  "refs": [
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.audioName",
+      "value": "слизни тиш.wav",
+      "kind": "audio",
+      "resolvedPath": null,
+      "exists": false,
+      "size": null,
+      "mtime": null
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.audioAssetId",
+      "value": "asset_7f22ad34c216447b",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.audioApiPath",
+      "value": "/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.audioUrl",
+      "value": "http://100.80.135.114:8010/api/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[0].audioName",
+      "value": "слизни тиш.wav",
+      "kind": "audio",
+      "resolvedPath": null,
+      "exists": false,
+      "size": null,
+      "mtime": null
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[0].audioAssetId",
+      "value": "asset_7f22ad34c216447b",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[0].audioApiPath",
+      "value": "/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[0].audioUrl",
+      "value": "http://100.80.135.114:8010/api/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[1].audioName",
+      "value": "слизни тиш.wav",
+      "kind": "audio",
+      "resolvedPath": null,
+      "exists": false,
+      "size": null,
+      "mtime": null
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[1].audioAssetId",
+      "value": "asset_7f22ad34c216447b",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[1].audioApiPath",
+      "value": "/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[1].audioUrl",
+      "value": "http://100.80.135.114:8010/api/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[2].audioName",
+      "value": "слизни тиш.wav",
+      "kind": "audio",
+      "resolvedPath": null,
+      "exists": false,
+      "size": null,
+      "mtime": null
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[2].audioAssetId",
+      "value": "asset_7f22ad34c216447b",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[2].audioApiPath",
+      "value": "/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[2].audioUrl",
+      "value": "http://100.80.135.114:8010/api/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[3].audioName",
+      "value": "слизни тиш.wav",
+      "kind": "audio",
+      "resolvedPath": null,
+      "exists": false,
+      "size": null,
+      "mtime": null
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[3].audioAssetId",
+      "value": "asset_7f22ad34c216447b",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[3].audioApiPath",
+      "value": "/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    },
+    {
+      "module": "snapshot.manual_timing",
+      "sceneId": null,
+      "field": "data.historySnapshots[3].audioUrl",
+      "value": "http://100.80.135.114:8010/api/assets/asset_7f22ad34c216447b/file",
+      "kind": "audio",
+      "resolvedPath": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "exists": true,
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "assetId": "asset_7f22ad34c216447b"
+    }
+  ],
+  "unlinkedFiles": [
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_audio\\video_match_audio_269841a0db0f4de1be3972718c6a7419.mp3",
+      "size": 475577,
+      "mtime": "2026-06-03T12:57:31",
+      "probableModule": "video_match_audio"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_audio\\video_match_audio_a3a2ea3e439146a993705910399439e3.mp3",
+      "size": 475577,
+      "mtime": "2026-06-03T13:41:35",
+      "probableModule": "video_match_audio"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_audio\\video_match_audio_cc6ddfb4fed749cc94d0c8c3626dd56b.mp3",
+      "size": 475577,
+      "mtime": "2026-06-03T12:59:03",
+      "probableModule": "video_match_audio"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_outputs\\video_match_preview_a05da8a7c6d8.mp4",
+      "size": 4810731,
+      "mtime": "2026-06-03T13:40:03",
+      "probableModule": "video_match_outputs"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_outputs\\video_match_preview_bbd6c6fa99cf.mp4",
+      "size": 5205286,
+      "mtime": "2026-06-03T13:42:04",
+      "probableModule": "video_match_outputs"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_outputs\\video_match_preview_c24e5782510a.mp4",
+      "size": 5205286,
+      "mtime": "2026-06-03T12:59:20",
+      "probableModule": "video_match_outputs"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_030aeee5d059421ca6ed18517df514f2.mp4",
+      "size": 43160116,
+      "mtime": "2026-06-03T12:58:53",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_03da12e125ef411887b3587235049b0d.mp4",
+      "size": 35414478,
+      "mtime": "2026-06-03T12:58:49",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_16d672466a47457c821f244a209203d8.mp4",
+      "size": 35414478,
+      "mtime": "2026-06-03T13:39:20",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_3dc8926c328243f393e63d10176187db.mp4",
+      "size": 43160116,
+      "mtime": "2026-06-03T12:57:07",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_410686d296f741dca54bc4d2d0fab0ae.mp4",
+      "size": 50756664,
+      "mtime": "2026-06-03T13:41:31",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_42f8d367a71941798bef922ba9b13d40.mp4",
+      "size": 50756664,
+      "mtime": "2026-06-03T12:59:01",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_6553a32c3d0f499aa45e97bee7f335ce.mp4",
+      "size": 50756664,
+      "mtime": "2026-06-03T13:06:32",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_6983f4b13841463c990e052feff2c18a.mp4",
+      "size": 43160116,
+      "mtime": "2026-06-03T13:06:28",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_6a80a3bf158a4e3dbe4dd89e3bf14973.mp4",
+      "size": 35414478,
+      "mtime": "2026-06-03T13:41:20",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_6b68a11e8a5f4d66ae0d11a923466723.mp4",
+      "size": 43160116,
+      "mtime": "2026-06-03T13:39:25",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_aff635f8dad54ad0b6a00d60b5c4bab3.mp4",
+      "size": 35414478,
+      "mtime": "2026-06-03T12:57:02",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_b884eced6c8a4e91a9c33e0d9914c9ae.mp4",
+      "size": 43160116,
+      "mtime": "2026-06-03T13:41:25",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_c8e57e9847eb457a9bde24f62bb8aa3c.mp4",
+      "size": 35414478,
+      "mtime": "2026-06-03T13:06:23",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_cf152cb1e40e4fff9b7986728f60c50f.mp4",
+      "size": 50756664,
+      "mtime": "2026-06-03T13:39:29",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\app\\static\\assets\\video_match_sources\\video_match_source_eb795c8af36e4246b9019c156df8600c.mp4",
+      "size": 50756664,
+      "mtime": "2026-06-03T12:57:12",
+      "probableModule": "video_match_sources"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\AVA_podcast_audio_composer_4108abeec742f575.mp3",
+      "size": 474008,
+      "mtime": "2026-06-03T11:36:31",
+      "probableModule": "podcast"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\AVA_podcast_audio_composer_f8f63f95fb84bc8a.mp3",
+      "size": 6924581,
+      "mtime": "2026-06-03T18:56:39",
+      "probableModule": "podcast"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\AVA_podcast_saved_phrase_ava_workspace_podcast_audio_АНГЛ1_bedde7f53a045097.mp3",
+      "size": 563034,
+      "mtime": "2026-06-03T11:12:38",
+      "probableModule": "podcast"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\AVA_podcast_saved_phrase_ava_workspace_podcast_audio_АНГЛ2_9b16c3f5cc80e5f5.mp3",
+      "size": 26374,
+      "mtime": "2026-06-03T11:12:43",
+      "probableModule": "podcast"
+    },
+    {
+      "kind": "assembly",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_assembly\\assembly_556931ff300a40_original_audio.mp4",
+      "size": 23001494,
+      "mtime": "2026-06-03T23:17:14",
+      "probableModule": "board_assembly"
+    },
+    {
+      "kind": "assembly",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_assembly\\assembly_8bf5f0a7229d4d_scene_audio_draft.mp4",
+      "size": 16630703,
+      "mtime": "2026-06-03T16:49:57",
+      "probableModule": "board_assembly"
+    },
+    {
+      "kind": "assembly",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_assembly\\assembly_c50fa4ecfa8b46_scene_audio_draft.mp4",
+      "size": 16630703,
+      "mtime": "2026-06-03T16:32:02",
+      "probableModule": "board_assembly"
+    },
+    {
+      "kind": "image",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_frames\\seg_02_from_seg_01_last_6973307bb5f8.jpg",
+      "size": 157044,
+      "mtime": "2026-06-03T22:03:03",
+      "probableModule": "board",
+      "sceneId": "seg_02"
+    },
+    {
+      "kind": "image",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_images\\boardjob_566f1cb0ae314e_ava_text_to_image_00027_.png",
+      "size": 2541757,
+      "mtime": "2026-06-03T11:56:14",
+      "probableModule": "board",
+      "jobId": "boardjob_566f1cb0ae314e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2.3_ia2v_00107_.mp4",
+      "size": 1964327,
+      "mtime": "2026-06-03T22:20:02",
+      "probableModule": "board",
+      "jobId": "boardjob_000d6133ce3b49"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+      "size": 1881084,
+      "mtime": "2026-06-03T22:20:02",
+      "probableModule": "board",
+      "jobId": "boardjob_000d6133ce3b49"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2.3_i2v_00240_.mp4",
+      "size": 790740,
+      "mtime": "2026-06-03T15:22:49",
+      "probableModule": "board",
+      "jobId": "boardjob_020ee2608aa547"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+      "size": 698591,
+      "mtime": "2026-06-03T15:22:50",
+      "probableModule": "board",
+      "jobId": "boardjob_020ee2608aa547"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2.3_i2v_00241_.mp4",
+      "size": 1944772,
+      "mtime": "2026-06-03T15:27:00",
+      "probableModule": "board",
+      "jobId": "boardjob_0908ef4739df42"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+      "size": 1747766,
+      "mtime": "2026-06-03T15:27:00",
+      "probableModule": "board",
+      "jobId": "boardjob_0908ef4739df42"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2.3_ia2v_00106_.mp4",
+      "size": 1895988,
+      "mtime": "2026-06-03T22:13:16",
+      "probableModule": "board",
+      "jobId": "boardjob_0eb849af1f5c49"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+      "size": 1808904,
+      "mtime": "2026-06-03T22:13:16",
+      "probableModule": "board",
+      "jobId": "boardjob_0eb849af1f5c49"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2.3_ia2v_00109_.mp4",
+      "size": 1235853,
+      "mtime": "2026-06-03T22:36:44",
+      "probableModule": "board",
+      "jobId": "boardjob_11a4d46257984e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+      "size": 1197791,
+      "mtime": "2026-06-03T22:36:44",
+      "probableModule": "board",
+      "jobId": "boardjob_11a4d46257984e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_1401ff7b9d644f_ltx2.3_flf2v_00070_.mp4",
+      "size": 612280,
+      "mtime": "2026-06-03T21:35:58",
+      "probableModule": "board",
+      "jobId": "boardjob_1401ff7b9d644f"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4",
+      "size": 600605,
+      "mtime": "2026-06-03T21:35:59",
+      "probableModule": "board",
+      "jobId": "boardjob_1401ff7b9d644f"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_27042847baf946_ltx2.3_flf2v_00073_.mp4",
+      "size": 1323544,
+      "mtime": "2026-06-03T21:53:45",
+      "probableModule": "board",
+      "jobId": "boardjob_27042847baf946"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4",
+      "size": 1311893,
+      "mtime": "2026-06-03T21:53:46",
+      "probableModule": "board",
+      "jobId": "boardjob_27042847baf946"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_29fcb8e3e68248_ltx2.3_flf2v_00074_.mp4",
+      "size": 1706516,
+      "mtime": "2026-06-03T22:06:03",
+      "probableModule": "board",
+      "jobId": "boardjob_29fcb8e3e68248"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4",
+      "size": 1696545,
+      "mtime": "2026-06-03T22:06:03",
+      "probableModule": "board",
+      "jobId": "boardjob_29fcb8e3e68248"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_75b65d2c263447_ltx2.3_flf2v_00071_.mp4",
+      "size": 611014,
+      "mtime": "2026-06-03T21:40:01",
+      "probableModule": "board",
+      "jobId": "boardjob_75b65d2c263447"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4",
+      "size": 599338,
+      "mtime": "2026-06-03T21:40:01",
+      "probableModule": "board",
+      "jobId": "boardjob_75b65d2c263447"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2.3_i2v_00238_.mp4",
+      "size": 1031634,
+      "mtime": "2026-06-03T15:13:41",
+      "probableModule": "board",
+      "jobId": "boardjob_7d02a45f46094d"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+      "size": 929216,
+      "mtime": "2026-06-03T15:13:41",
+      "probableModule": "board",
+      "jobId": "boardjob_7d02a45f46094d"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2.3_i2v_00239_.mp4",
+      "size": 741017,
+      "mtime": "2026-06-03T15:18:47",
+      "probableModule": "board",
+      "jobId": "boardjob_a680a73c7a8f4e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+      "size": 649830,
+      "mtime": "2026-06-03T15:18:47",
+      "probableModule": "board",
+      "jobId": "boardjob_a680a73c7a8f4e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2.3_i2v_00242_.mp4",
+      "size": 1532677,
+      "mtime": "2026-06-03T21:30:11",
+      "probableModule": "board",
+      "jobId": "boardjob_b5e76cc65efb4c"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+      "size": 1171338,
+      "mtime": "2026-06-03T21:30:12",
+      "probableModule": "board",
+      "jobId": "boardjob_b5e76cc65efb4c"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2.3_ia2v_00108_.mp4",
+      "size": 1357340,
+      "mtime": "2026-06-03T22:27:45",
+      "probableModule": "board",
+      "jobId": "boardjob_b9c469c6700a4e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+      "size": 1316027,
+      "mtime": "2026-06-03T22:27:45",
+      "probableModule": "board",
+      "jobId": "boardjob_b9c469c6700a4e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_d1462908169944_ltx2.3_flf2v_00072_.mp4",
+      "size": 709862,
+      "mtime": "2026-06-03T21:43:32",
+      "probableModule": "board",
+      "jobId": "boardjob_d1462908169944"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4",
+      "size": 698211,
+      "mtime": "2026-06-03T21:43:32",
+      "probableModule": "board",
+      "jobId": "boardjob_d1462908169944"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\manual_clip_audio\\seg_03_11_550_17_250_00d5f43c7e26.mp3",
+      "size": 138596,
+      "mtime": "2026-06-03T22:07:17",
+      "probableModule": "manual_timing",
+      "sceneId": "seg_03"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\manual_clip_audio\\seg_03_11_550_17_250_37a564dbd11a.mp3",
+      "size": 138596,
+      "mtime": "2026-06-03T22:33:26",
+      "probableModule": "manual_timing",
+      "sceneId": "seg_03"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\manual_clip_audio\\seg_03_11_550_17_250_9a3f08650a91.mp3",
+      "size": 138596,
+      "mtime": "2026-06-03T22:16:36",
+      "probableModule": "manual_timing",
+      "sceneId": "seg_03"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\manual_clip_audio\\seg_03_11_550_17_250_9ca7164a2ef3.mp3",
+      "size": 138596,
+      "mtime": "2026-06-03T22:23:12",
+      "probableModule": "manual_timing",
+      "sceneId": "seg_03"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_9bfc6deb25534977.wav",
+      "size": 55382252,
+      "mtime": "2026-06-03T19:31:27",
+      "probableModule": "unknown"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\podcast_audio\\asset_2b013263e4abfc65.mp3",
+      "size": 4354652,
+      "mtime": "2026-06-03T18:53:50",
+      "probableModule": "unknown"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_14f12672fe0c67cb.mp3",
+      "size": 449028,
+      "mtime": "2026-06-03T11:08:38",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_1853dd6b43338351.mp3",
+      "size": 6924581,
+      "mtime": "2026-06-03T19:40:35",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_3857171e1cca28db.mp3",
+      "size": 409953,
+      "mtime": "2026-06-03T11:16:52",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_4b0c7d183cf9ef8a.mp3",
+      "size": 409953,
+      "mtime": "2026-06-03T12:07:44",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_8f2f61d639e0f187.mp3",
+      "size": 409953,
+      "mtime": "2026-06-03T11:12:38",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_b642c29987505bea.mp3",
+      "size": 409953,
+      "mtime": "2026-06-03T11:12:43",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_eeda150f3ee952c1.mp3",
+      "size": 409953,
+      "mtime": "2026-06-03T11:36:31",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_f31e0a0e621b255d.mp3",
+      "size": 409953,
+      "mtime": "2026-06-03T11:15:31",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_f467548edaaa8847.mp3",
+      "size": 409953,
+      "mtime": "2026-06-03T11:15:48",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing_vocal\\asset_c968ffa0ce0425b5.mp3",
+      "size": 409953,
+      "mtime": "2026-06-03T12:11:08",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\podcast_audio\\asset_4b31df995dbe0f25.mp3",
+      "size": 449028,
+      "mtime": "2026-06-03T11:12:28",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\podcast_audio_actor\\asset_5ebdf380cdfb5815.mp3",
+      "size": 409953,
+      "mtime": "2026-06-03T11:12:33",
+      "probableModule": "workspace_assets"
+    }
+  ],
+  "scannedEveningFiles": [
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2.3_i2v_00238_.mp4",
+      "size": 1031634,
+      "mtime": "2026-06-03T15:13:41",
+      "probableModule": "board",
+      "jobId": "boardjob_7d02a45f46094d"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_7d02a45f46094d_LTX_2_3_i2v_00238__trim_4.000s.mp4",
+      "size": 929216,
+      "mtime": "2026-06-03T15:13:41",
+      "probableModule": "board",
+      "jobId": "boardjob_7d02a45f46094d"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2.3_i2v_00239_.mp4",
+      "size": 741017,
+      "mtime": "2026-06-03T15:18:47",
+      "probableModule": "board",
+      "jobId": "boardjob_a680a73c7a8f4e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_a680a73c7a8f4e_LTX_2_3_i2v_00239__trim_4.000s.mp4",
+      "size": 649830,
+      "mtime": "2026-06-03T15:18:47",
+      "probableModule": "board",
+      "jobId": "boardjob_a680a73c7a8f4e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2.3_i2v_00240_.mp4",
+      "size": 790740,
+      "mtime": "2026-06-03T15:22:49",
+      "probableModule": "board",
+      "jobId": "boardjob_020ee2608aa547"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_020ee2608aa547_LTX_2_3_i2v_00240__trim_4.000s.mp4",
+      "size": 698591,
+      "mtime": "2026-06-03T15:22:50",
+      "probableModule": "board",
+      "jobId": "boardjob_020ee2608aa547"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2.3_i2v_00241_.mp4",
+      "size": 1944772,
+      "mtime": "2026-06-03T15:27:00",
+      "probableModule": "board",
+      "jobId": "boardjob_0908ef4739df42"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0908ef4739df42_LTX_2_3_i2v_00241__trim_5.000s.mp4",
+      "size": 1747766,
+      "mtime": "2026-06-03T15:27:00",
+      "probableModule": "board",
+      "jobId": "boardjob_0908ef4739df42"
+    },
+    {
+      "kind": "assembly",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_assembly\\assembly_c50fa4ecfa8b46_scene_audio_draft.mp4",
+      "size": 16630703,
+      "mtime": "2026-06-03T16:32:02",
+      "probableModule": "board_assembly"
+    },
+    {
+      "kind": "assembly",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_assembly\\assembly_8bf5f0a7229d4d_scene_audio_draft.mp4",
+      "size": 16630703,
+      "mtime": "2026-06-03T16:49:57",
+      "probableModule": "board_assembly"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\podcast_audio\\asset_2b013263e4abfc65.mp3",
+      "size": 4354652,
+      "mtime": "2026-06-03T18:53:50",
+      "probableModule": "unknown"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\AVA_podcast_audio_composer_f8f63f95fb84bc8a.mp3",
+      "size": 6924581,
+      "mtime": "2026-06-03T18:56:39",
+      "probableModule": "podcast"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_9bfc6deb25534977.wav",
+      "size": 55382252,
+      "mtime": "2026-06-03T19:31:27",
+      "probableModule": "unknown"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\workspace\\assets\\manual_timing\\asset_1853dd6b43338351.mp3",
+      "size": 6924581,
+      "mtime": "2026-06-03T19:40:35",
+      "probableModule": "workspace_assets"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\storage\\users\\u_afd9d47982a656be\\projects\\p_085866cb534a9aaf\\assets\\manual_timing\\asset_7f22ad34c216447b.wav",
+      "size": 55382252,
+      "mtime": "2026-06-03T19:46:24",
+      "probableModule": "unknown"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2.3_i2v_00242_.mp4",
+      "size": 1532677,
+      "mtime": "2026-06-03T21:30:11",
+      "probableModule": "board",
+      "jobId": "boardjob_b5e76cc65efb4c"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b5e76cc65efb4c_LTX_2_3_i2v_00242__trim_5.800s.mp4",
+      "size": 1171338,
+      "mtime": "2026-06-03T21:30:12",
+      "probableModule": "board",
+      "jobId": "boardjob_b5e76cc65efb4c"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_1401ff7b9d644f_ltx2.3_flf2v_00070_.mp4",
+      "size": 612280,
+      "mtime": "2026-06-03T21:35:58",
+      "probableModule": "board",
+      "jobId": "boardjob_1401ff7b9d644f"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_1401ff7b9d644f_ltx2_3_flf2v_00070__trim_5.800s.mp4",
+      "size": 600605,
+      "mtime": "2026-06-03T21:35:59",
+      "probableModule": "board",
+      "jobId": "boardjob_1401ff7b9d644f"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_75b65d2c263447_ltx2.3_flf2v_00071_.mp4",
+      "size": 611014,
+      "mtime": "2026-06-03T21:40:01",
+      "probableModule": "board",
+      "jobId": "boardjob_75b65d2c263447"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_75b65d2c263447_ltx2_3_flf2v_00071__trim_5.800s.mp4",
+      "size": 599338,
+      "mtime": "2026-06-03T21:40:01",
+      "probableModule": "board",
+      "jobId": "boardjob_75b65d2c263447"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_d1462908169944_ltx2.3_flf2v_00072_.mp4",
+      "size": 709862,
+      "mtime": "2026-06-03T21:43:32",
+      "probableModule": "board",
+      "jobId": "boardjob_d1462908169944"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_d1462908169944_ltx2_3_flf2v_00072__trim_5.800s.mp4",
+      "size": 698211,
+      "mtime": "2026-06-03T21:43:32",
+      "probableModule": "board",
+      "jobId": "boardjob_d1462908169944"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_27042847baf946_ltx2.3_flf2v_00073_.mp4",
+      "size": 1323544,
+      "mtime": "2026-06-03T21:53:45",
+      "probableModule": "board",
+      "jobId": "boardjob_27042847baf946"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_27042847baf946_ltx2_3_flf2v_00073__trim_5.800s.mp4",
+      "size": 1311893,
+      "mtime": "2026-06-03T21:53:46",
+      "probableModule": "board",
+      "jobId": "boardjob_27042847baf946"
+    },
+    {
+      "kind": "image",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_frames\\seg_02_from_seg_01_last_6973307bb5f8.jpg",
+      "size": 157044,
+      "mtime": "2026-06-03T22:03:03",
+      "probableModule": "board",
+      "sceneId": "seg_02"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_29fcb8e3e68248_ltx2.3_flf2v_00074_.mp4",
+      "size": 1706516,
+      "mtime": "2026-06-03T22:06:03",
+      "probableModule": "board",
+      "jobId": "boardjob_29fcb8e3e68248"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_29fcb8e3e68248_ltx2_3_flf2v_00074__trim_5.750s.mp4",
+      "size": 1696545,
+      "mtime": "2026-06-03T22:06:03",
+      "probableModule": "board",
+      "jobId": "boardjob_29fcb8e3e68248"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\manual_clip_audio\\seg_03_11_550_17_250_00d5f43c7e26.mp3",
+      "size": 138596,
+      "mtime": "2026-06-03T22:07:17",
+      "probableModule": "manual_timing",
+      "sceneId": "seg_03"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2.3_ia2v_00106_.mp4",
+      "size": 1895988,
+      "mtime": "2026-06-03T22:13:16",
+      "probableModule": "board",
+      "jobId": "boardjob_0eb849af1f5c49"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_0eb849af1f5c49_LTX_2_3_ia2v_00106__trim_5.700s.mp4",
+      "size": 1808904,
+      "mtime": "2026-06-03T22:13:16",
+      "probableModule": "board",
+      "jobId": "boardjob_0eb849af1f5c49"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\manual_clip_audio\\seg_03_11_550_17_250_9a3f08650a91.mp3",
+      "size": 138596,
+      "mtime": "2026-06-03T22:16:36",
+      "probableModule": "manual_timing",
+      "sceneId": "seg_03"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2.3_ia2v_00107_.mp4",
+      "size": 1964327,
+      "mtime": "2026-06-03T22:20:02",
+      "probableModule": "board",
+      "jobId": "boardjob_000d6133ce3b49"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_000d6133ce3b49_LTX_2_3_ia2v_00107__trim_5.700s.mp4",
+      "size": 1881084,
+      "mtime": "2026-06-03T22:20:02",
+      "probableModule": "board",
+      "jobId": "boardjob_000d6133ce3b49"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\manual_clip_audio\\seg_03_11_550_17_250_9ca7164a2ef3.mp3",
+      "size": 138596,
+      "mtime": "2026-06-03T22:23:12",
+      "probableModule": "manual_timing",
+      "sceneId": "seg_03"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2.3_ia2v_00108_.mp4",
+      "size": 1357340,
+      "mtime": "2026-06-03T22:27:45",
+      "probableModule": "board",
+      "jobId": "boardjob_b9c469c6700a4e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_b9c469c6700a4e_LTX_2_3_ia2v_00108__trim_5.700s.mp4",
+      "size": 1316027,
+      "mtime": "2026-06-03T22:27:45",
+      "probableModule": "board",
+      "jobId": "boardjob_b9c469c6700a4e"
+    },
+    {
+      "kind": "audio",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\manual_clip_audio\\seg_03_11_550_17_250_37a564dbd11a.mp3",
+      "size": 138596,
+      "mtime": "2026-06-03T22:33:26",
+      "probableModule": "manual_timing",
+      "sceneId": "seg_03"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2.3_ia2v_00109_.mp4",
+      "size": 1235853,
+      "mtime": "2026-06-03T22:36:44",
+      "probableModule": "board",
+      "jobId": "boardjob_11a4d46257984e"
+    },
+    {
+      "kind": "video",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_videos\\boardjob_11a4d46257984e_LTX_2_3_ia2v_00109__trim_5.700s.mp4",
+      "size": 1197791,
+      "mtime": "2026-06-03T22:36:44",
+      "probableModule": "board",
+      "jobId": "boardjob_11a4d46257984e"
+    },
+    {
+      "kind": "assembly",
+      "path": "C:\\Users\\xl100\\Documents\\Codex\\2026-06-03\\ava-studio-github-https-github-com\\ava-studio\\backend\\static\\assets\\board_assembly\\assembly_556931ff300a40_original_audio.mp4",
+      "size": 23001494,
+      "mtime": "2026-06-03T23:17:14",
+      "probableModule": "board_assembly"
+    }
+  ],
+  "sceneSummary": {},
+  "mediaFieldPresence": {
+    "sceneCount": 43,
+    "fields": {
+      "videoUrl": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "video_url": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "imageUrl": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "image_url": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "videoApiPath": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "video_api_path": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "imageApiPath": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "image_api_path": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "firstImageApiPath": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "first_image_api_path": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "lastImageApiPath": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      },
+      "last_image_api_path": {
+        "present": 43,
+        "nonEmpty": 0,
+        "examples": []
+      }
+    }
+  },
+  "warnings": []
+}

@@ -28,6 +28,7 @@ from app.core.storage import store
 
 
 router = APIRouter(tags=["ltx-board"])
+print("[BOARD ASSEMBLY PATCH ACTIVE] sparse_placeholders_v2", flush=True)
 
 APP_DIR = Path(__file__).resolve().parents[2]
 BACKEND_DIR = APP_DIR.parent
@@ -558,6 +559,154 @@ def _settings_static_path() -> Path:
         return BACKEND_DIR / "static"
 
 
+def _settings_storage_path() -> Path:
+    try:
+        settings = get_settings()
+        return Path(getattr(settings, "storage_path"))
+    except Exception:
+        return BACKEND_DIR / "storage"
+
+
+def _asset_file_path_from_record(asset: dict[str, Any] | None) -> Path | None:
+    if not isinstance(asset, dict):
+        return None
+    raw = str(asset.get("storage_path") or asset.get("storagePath") or "").strip()
+    if not raw:
+        return None
+
+    candidates: list[Path] = []
+    raw_path = Path(raw)
+    candidates.append(raw_path)
+
+    normalized_raw = raw.replace("\\", "/")
+    normalized_path = Path(normalized_raw)
+    if normalized_path not in candidates:
+        candidates.append(normalized_path)
+
+    if not normalized_path.is_absolute():
+        candidates.append(BACKEND_DIR / normalized_path)
+        candidates.append(_settings_storage_path().parent / normalized_path)
+
+    for candidate in candidates:
+        try:
+            if candidate.exists() and candidate.is_file():
+                return candidate
+        except Exception:
+            continue
+    return candidates[0] if candidates else None
+
+
+def _guess_output_mime(path: Path, kind: str) -> str:
+    guessed = mimetypes.guess_type(str(path))[0]
+    if guessed:
+        return guessed
+    if kind == "image":
+        return "image/png"
+    if kind == "video":
+        return "video/mp4"
+    return "application/octet-stream"
+
+
+def _asset_public_ref(asset: dict[str, Any]) -> dict[str, Any]:
+    asset_id = str(asset.get("id") or "")
+    api_path = f"/assets/{asset_id}/file"
+    base = _settings_public_base_url()
+    return {
+        "asset_id": asset_id,
+        "assetId": asset_id,
+        "asset_api_path": api_path,
+        "assetApiPath": api_path,
+        "asset_url": f"{base}/api{api_path}" if base else f"/api{api_path}",
+        "assetUrl": f"{base}/api{api_path}" if base else f"/api{api_path}",
+        "kind": asset.get("kind"),
+        "stage": asset.get("stage"),
+        "project_id": asset.get("project_id"),
+        "projectId": asset.get("project_id"),
+        "original_name": asset.get("original_name"),
+        "originalName": asset.get("original_name"),
+        "name": asset.get("original_name"),
+        "size_bytes": asset.get("size_bytes", 0),
+        "sizeBytes": asset.get("size_bytes", 0),
+        "mime_type": asset.get("mime_type"),
+        "mimeType": asset.get("mime_type"),
+        "duration_sec": asset.get("duration_sec", 0),
+        "durationSec": asset.get("duration_sec", 0),
+        "width": asset.get("width", 0),
+        "height": asset.get("height", 0),
+    }
+
+
+def _register_board_output_asset(
+    source_path: Path,
+    *,
+    job: dict[str, Any],
+    kind: str,
+    stage: str,
+    original_name: str | None = None,
+) -> dict[str, Any]:
+    if not source_path.exists() or not source_path.is_file():
+        return {}
+
+    user_id = str(job.get("userId") or job.get("user_id") or job.get("creditUserId") or "").strip()
+    if not user_id:
+        return {}
+
+    project_id = str(job.get("projectId") or job.get("project_id") or "").strip() or None
+    asset_id = make_id("asset")
+    suffix = source_path.suffix.lower() or (".png" if kind == "image" else ".mp4")
+    scope_dir = Path("projects") / project_id if project_id else Path("workspace")
+    target_dir = _settings_storage_path() / "users" / user_id / scope_dir / "assets" / stage
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / f"{asset_id}{suffix}"
+    shutil.copy2(source_path, target_path)
+
+    size_bytes = target_path.stat().st_size if target_path.exists() else 0
+    if size_bytes <= 0:
+        target_path.unlink(missing_ok=True)
+        return {}
+
+    asset = {
+        "id": asset_id,
+        "user_id": user_id,
+        "project_id": project_id,
+        "stage": stage,
+        "kind": kind,
+        "original_name": _safe_name(original_name or source_path.name, source_path.name),
+        "mime_type": _guess_output_mime(target_path, kind),
+        "size_bytes": size_bytes,
+        "storage_path": target_path.as_posix(),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "source_static_path": str(source_path),
+        "scene_id": job.get("sceneId") or job.get("scene_id") or "",
+    }
+
+    if kind == "video":
+        duration = _ffprobe_duration(target_path)
+        if duration:
+            asset["duration_sec"] = duration
+    try:
+        # Width/height are optional; keep the job resilient if ffprobe is missing.
+        pass
+    except Exception:
+        pass
+
+    def op(db):
+        db.setdefault("assets", {})[asset_id] = asset
+        return _asset_public_ref(asset)
+
+    public = store.update(op)
+    print("[BOARD OUTPUT ASSET REGISTERED]", {
+        "jobId": job.get("jobId"),
+        "sceneId": asset.get("scene_id"),
+        "assetId": asset_id,
+        "apiPath": public.get("asset_api_path"),
+        "kind": kind,
+        "stage": stage,
+    }, flush=True)
+    return public
+
+
 def _workflow_info(path: Path) -> dict[str, Any]:
     exists = path.exists() and path.is_file()
     return {
@@ -599,8 +748,8 @@ def _resolve_local_file(value: str | None = None, *, asset_id: str | None = None
     explicit_asset_id = asset_id or _asset_id_from_text(value)
     asset = _asset_by_id(explicit_asset_id)
     if asset:
-        path = Path(asset.get("storage_path") or "")
-        if path.exists() and path.is_file():
+        path = _asset_file_path_from_record(asset)
+        if path and path.exists() and path.is_file():
             return path
 
     if not value:
@@ -630,8 +779,8 @@ def _resolve_local_file(value: str | None = None, *, asset_id: str | None = None
         asset_id_from_url = _asset_id_from_text(tail)
         asset = _asset_by_id(asset_id_from_url)
         if asset:
-            path = Path(asset.get("storage_path") or "")
-            if path.exists() and path.is_file():
+            path = _asset_file_path_from_record(asset)
+            if path and path.exists() and path.is_file():
                 return path
 
     path = Path(raw)
@@ -1205,7 +1354,7 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     main_url = _main_comfy_url()
     if not main_url:
         status = "blocked_missing_comfy_base_url"
-        job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
+        job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
         _ava_credit_attach_job_user(job, user)
         BOARD_VIDEO_JOBS[job_id] = job
         return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", **job}
@@ -1290,7 +1439,7 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "promptId": prompt_id, "promptSubmit": submit_data, "workflowPatches": patches, "uploadedMedia": {"image": uploaded_image, "start": uploaded_start, "end": uploaded_end, "audio": uploaded_audio}, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "comfyBaseUrlConfigured": True, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "not_charged_until_result_success", "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
     _ava_credit_attach_job_user(job, user)
     BOARD_VIDEO_JOBS[job_id] = job
-    return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", "promptId": prompt_id, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "preflight_ok_charge_after_success", "workflowPatchCount": len(patches), "uploadedMedia": job["uploadedMedia"], "jobStored": True}
+    return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "promptId": prompt_id, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "preflight_ok_charge_after_success", "workflowPatchCount": len(patches), "uploadedMedia": job["uploadedMedia"], "jobStored": True}
 
 
 
@@ -1452,6 +1601,32 @@ def _finalize_video_job_from_outputs(job: dict[str, Any], outputs: list[dict[str
         final["selectedOutput"] = chosen
         final["preferredOutputNodeIds"] = preferred_node_ids
         final["image_status"] = "ready"
+
+        final_path = Path(str(final.get("localPath") or ""))
+        asset_ref = _register_board_output_asset(
+            final_path,
+            job=job,
+            kind="image",
+            stage="board_images",
+            original_name=final.get("imageName") or final.get("image_name") or final_path.name,
+        )
+        asset_id = asset_ref.get("asset_id") or asset_ref.get("assetId")
+        asset_api_path = asset_ref.get("asset_api_path") or asset_ref.get("assetApiPath")
+        if asset_id and asset_api_path:
+            final.update({
+                "staticImageUrl": final.get("imageUrl") or final.get("image_url") or "",
+                "static_image_url": final.get("imageUrl") or final.get("image_url") or "",
+                "staticImageApiPath": final.get("imageApiPath") or final.get("image_api_path") or "",
+                "static_image_api_path": final.get("imageApiPath") or final.get("image_api_path") or "",
+                "imageAssetId": asset_id,
+                "image_asset_id": asset_id,
+                "imageApiPath": asset_api_path,
+                "image_api_path": asset_api_path,
+                "imageUrl": asset_api_path,
+                "image_url": asset_api_path,
+                "resultUrl": asset_api_path,
+                "result_url": asset_api_path,
+            })
         return final
 
     try:
@@ -1466,6 +1641,33 @@ def _finalize_video_job_from_outputs(job: dict[str, Any], outputs: list[dict[str
 
     final["selectedOutput"] = chosen
     final["preferredOutputNodeIds"] = preferred_node_ids
+
+    final_path = Path(str(final.get("localPath") or ""))
+    asset_ref = _register_board_output_asset(
+        final_path,
+        job=job,
+        kind="video",
+        stage="board_videos",
+        original_name=final.get("videoName") or final.get("video_name") or final_path.name,
+    )
+    asset_id = asset_ref.get("asset_id") or asset_ref.get("assetId")
+    asset_api_path = asset_ref.get("asset_api_path") or asset_ref.get("assetApiPath")
+    if asset_id and asset_api_path:
+        final.update({
+            "staticVideoUrl": final.get("videoUrl") or final.get("video_url") or "",
+            "static_video_url": final.get("videoUrl") or final.get("video_url") or "",
+            "staticVideoApiPath": final.get("videoApiPath") or final.get("video_api_path") or "",
+            "static_video_api_path": final.get("videoApiPath") or final.get("video_api_path") or "",
+            "videoAssetId": asset_id,
+            "video_asset_id": asset_id,
+            "videoApiPath": asset_api_path,
+            "video_api_path": asset_api_path,
+            "videoUrl": asset_api_path,
+            "video_url": asset_api_path,
+            "resultUrl": asset_api_path,
+            "result_url": asset_api_path,
+        })
+
     return final
 
 
@@ -2087,6 +2289,45 @@ def _assembly_float(value: Any, default: float) -> float:
         return default
 
 
+def _assembly_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _assembly_item_is_placeholder(item: dict[str, Any]) -> bool:
+    return (
+        _assembly_bool(item.get("placeholder"))
+        or _assembly_bool(item.get("missing_video"))
+        or _assembly_bool(item.get("missingVideo"))
+        or str(item.get("route") or "").strip().lower() in {"black_placeholder", "black_gap", "placeholder"}
+    )
+
+
+def _assembly_item_claims_video(item: dict[str, Any]) -> bool:
+    return (
+        _assembly_bool(item.get("has_video"))
+        or _assembly_bool(item.get("hasVideo"))
+        or _assembly_bool(item.get("ready"))
+        or _assembly_bool(item.get("isReady"))
+        or _assembly_bool(item.get("video_ready"))
+        or _assembly_bool(item.get("videoReady"))
+        or bool(str(item.get("video_job_id") or item.get("videoJobId") or "").strip())
+        or bool(str(item.get("video_status_endpoint") or item.get("videoStatusEndpoint") or "").strip())
+    )
+
+
+def _log_board_assembly(label: str, payload: dict[str, Any]) -> None:
+    try:
+        print(f"{label} {json.dumps(payload, ensure_ascii=False, default=str)}", flush=True)
+    except Exception:
+        print(f"{label} {payload}", flush=True)
+
+
 def _assembly_music_audio_path(payload: dict[str, Any]) -> Path | None:
     music = payload.get("music") if isinstance(payload.get("music"), dict) else {}
     value = str(
@@ -2209,6 +2450,46 @@ def _normalize_assembly_clip(
     }
 
 
+def _create_black_assembly_clip(
+    out_path: Path,
+    *,
+    width: int,
+    height: int,
+    fps: int,
+    duration: float,
+    audio_volume: float = 0.0,
+) -> dict[str, Any]:
+    safe_duration = max(float(duration or 0.0), 0.1)
+    _run_ffmpeg([
+        "-y",
+        "-f", "lavfi",
+        "-t", f"{safe_duration:.3f}",
+        "-i", f"color=c=black:s={width}x{height}:r={fps}",
+        "-f", "lavfi",
+        "-t", f"{safe_duration:.3f}",
+        "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-af", f"volume={max(0.0, float(audio_volume)):.4f}",
+        "-shortest",
+        str(out_path),
+    ])
+    return {
+        "sourcePath": "",
+        "normalizedPath": str(out_path),
+        "sourceDurationSec": 0.0,
+        "durationSec": _ffprobe_duration(out_path) or safe_duration,
+        "hadAudio": False,
+        "placeholder": True,
+    }
+
+
 
 def _assembly_scene_audio_volume_for_item(item: dict[str, Any], audio_mode: str, scene_volume: float) -> float:
     mode = str(audio_mode or "").lower()
@@ -2265,27 +2546,141 @@ def _run_board_assembly_job(job_id: str) -> None:
         prepared_items: list[dict[str, Any]] = []
         missing_items: list[dict[str, Any]] = []
 
+        timeline_items: list[tuple[float, int, dict[str, Any]]] = []
         for index, item in enumerate(raw_items):
-            if not isinstance(item, dict):
+            if isinstance(item, dict):
+                timeline_items.append((
+                    _assembly_float(item.get("start_sec") or item.get("startSec") or item.get("start"), float(index)),
+                    index,
+                    item,
+                ))
+        timeline_items.sort(key=lambda value: (value[0], value[1]))
+
+        timeline_cursor = 0.0
+        for sequence_index, (target_start, index, item) in enumerate(timeline_items):
+            scene_id = str(item.get("scene_id") or item.get("sceneId") or item.get("id") or f"scene_{index + 1}")
+            duration = _assembly_float(item.get("duration_sec") or item.get("durationSec"), 0.0)
+            if duration <= 0:
+                end_sec = _assembly_float(item.get("end_sec") or item.get("endSec") or item.get("end"), 0.0)
+                duration = max(0.1, end_sec - max(0.0, target_start))
+
+            if target_start > timeline_cursor + 0.025:
+                gap_duration = target_start - timeline_cursor
+                gap_path = work_dir / f"{sequence_index + 1:04d}_gap_{timeline_cursor:.3f}_{target_start:.3f}.mp4"
+                gap_prepared = _create_black_assembly_clip(
+                    gap_path,
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    duration=gap_duration,
+                    audio_volume=0.0,
+                )
+                gap_prepared.update({
+                    "sceneId": f"gap_before_{scene_id}",
+                    "index": index,
+                    "title": "timeline gap",
+                    "route": "black_gap",
+                    "targetStartSec": timeline_cursor,
+                    "targetEndSec": target_start,
+                    "missingVideo": True,
+                })
+                normalized_paths.append(gap_path)
+                prepared_items.append(gap_prepared)
+                timeline_cursor = target_start
+
+            is_placeholder_item = _assembly_item_is_placeholder(item)
+            video_value = _assembly_item_video_value(item)
+            _log_board_assembly("[BOARD ASSEMBLY ITEM]", {
+                "scene_id": scene_id,
+                "placeholder": is_placeholder_item,
+                "missing_video": _assembly_bool(item.get("missing_video") or item.get("missingVideo")),
+                "has_video_url": bool(video_value),
+                "start_sec": target_start,
+                "duration_sec": duration,
+            })
+
+            if is_placeholder_item:
+                missing_items.append({"sceneId": scene_id, "reason": "missing_video_url"})
+                _log_board_assembly("[BOARD ASSEMBLY PLACEHOLDER ACCEPTED]", {
+                    "scene_id": scene_id,
+                    "start_sec": target_start,
+                    "duration_sec": duration,
+                })
+                normalized_path = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}_black.mp4"
+                prepared = _create_black_assembly_clip(
+                    normalized_path,
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    duration=duration,
+                    audio_volume=0.0,
+                )
+                prepared.update({
+                    "sceneId": scene_id,
+                    "index": index,
+                    "title": item.get("title") or scene_id,
+                    "route": item.get("route") or "black_placeholder",
+                    "targetStartSec": target_start,
+                    "targetEndSec": target_start + duration,
+                    "missingVideo": True,
+                })
+                normalized_paths.append(normalized_path)
+                prepared_items.append(prepared)
+                timeline_cursor = max(timeline_cursor, target_start + duration)
                 continue
 
-            scene_id = str(item.get("scene_id") or item.get("sceneId") or item.get("id") or f"scene_{index + 1}")
-            video_value = _assembly_item_video_value(item)
             if not video_value:
                 missing_items.append({"sceneId": scene_id, "reason": "missing_video_url"})
-                if skip_missing:
-                    continue
-                raise HTTPException(status_code=400, detail={"code": "scene_missing_video", "sceneId": scene_id})
+                if _assembly_item_claims_video(item):
+                    raise HTTPException(status_code=400, detail={"code": "scene_missing_video", "sceneId": scene_id})
+                _log_board_assembly("[BOARD ASSEMBLY PLACEHOLDER ACCEPTED]", {
+                    "scene_id": scene_id,
+                    "start_sec": target_start,
+                    "duration_sec": duration,
+                })
+                normalized_path = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}_black.mp4"
+                prepared = _create_black_assembly_clip(
+                    normalized_path,
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    duration=duration,
+                    audio_volume=0.0,
+                )
+                prepared.update({
+                    "sceneId": scene_id,
+                    "index": index,
+                    "title": item.get("title") or scene_id,
+                    "route": item.get("route") or "black_placeholder",
+                    "targetStartSec": target_start,
+                    "targetEndSec": target_start + duration,
+                    "missingVideo": True,
+                })
+                normalized_paths.append(normalized_path)
+                prepared_items.append(prepared)
+                timeline_cursor = max(timeline_cursor, target_start + duration)
+                continue
+
+            _log_board_assembly("[BOARD ASSEMBLY VIDEO ITEM]", {
+                "scene_id": scene_id,
+                "video_url": video_value,
+                "start_sec": target_start,
+                "duration_sec": duration,
+            })
 
             try:
                 source_path = _resolve_local_file(video_value)
-            except HTTPException:
-                if skip_missing:
-                    missing_items.append({"sceneId": scene_id, "reason": "file_not_found", "video": video_value})
-                    continue
+            except HTTPException as exc:
+                missing_items.append({"sceneId": scene_id, "reason": "file_not_found", "video": video_value})
+                if _assembly_item_claims_video(item):
+                    raise HTTPException(status_code=400, detail={
+                        "code": "scene_missing_video",
+                        "sceneId": scene_id,
+                        "reason": "file_not_found",
+                        "video": video_value,
+                    })
                 raise
 
-            duration = _assembly_float(item.get("duration_sec") or item.get("durationSec"), 0.0)
             normalized_path = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}.mp4"
             prepared = _normalize_assembly_clip(
                 source_path,
@@ -2301,9 +2696,39 @@ def _run_board_assembly_job(job_id: str) -> None:
                 "index": index,
                 "title": item.get("title") or scene_id,
                 "route": item.get("route") or "",
+                "targetStartSec": target_start,
+                "targetEndSec": target_start + duration,
+                "missingVideo": False,
             })
             normalized_paths.append(normalized_path)
             prepared_items.append(prepared)
+            timeline_cursor = max(timeline_cursor, target_start + duration)
+
+        original_audio_duration = _ffprobe_duration(original_audio_path) if original_audio_path else 0.0
+        payload_duration = _assembly_float(payload.get("duration_sec") or payload.get("durationSec") or payload.get("timeline_duration_sec") or payload.get("timelineDurationSec"), 0.0)
+        target_timeline_duration = max(timeline_cursor, original_audio_duration, payload_duration)
+        if target_timeline_duration > timeline_cursor + 0.025:
+            tail_path = work_dir / f"9999_trailing_black_{timeline_cursor:.3f}_{target_timeline_duration:.3f}.mp4"
+            tail_prepared = _create_black_assembly_clip(
+                tail_path,
+                width=width,
+                height=height,
+                fps=fps,
+                duration=target_timeline_duration - timeline_cursor,
+                audio_volume=0.0,
+            )
+            tail_prepared.update({
+                "sceneId": "trailing_black",
+                "index": len(timeline_items),
+                "title": "trailing black",
+                "route": "black_gap",
+                "targetStartSec": timeline_cursor,
+                "targetEndSec": target_timeline_duration,
+                "missingVideo": True,
+            })
+            normalized_paths.append(tail_path)
+            prepared_items.append(tail_prepared)
+            timeline_cursor = target_timeline_duration
 
         if not normalized_paths:
             raise HTTPException(status_code=400, detail={"code": "no_ready_videos_for_assembly", "missing": missing_items})

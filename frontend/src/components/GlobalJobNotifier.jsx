@@ -8,8 +8,8 @@ import {
   pickVideoUrl,
   upsertGlobalJob,
 } from '../services/generatorJobs'
+import { buildApiUrl } from '../services/api.js'
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 const GLOBAL_JOB_TOAST_AUTO_HIDE_MS = 5000
 
 function authHeaders(extra = {}) {
@@ -24,12 +24,12 @@ function normalizeUrl(value) {
   const s = String(value || '').trim()
   if (!s) return ''
   if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('blob:') || s.startsWith('data:')) return s
-  if (s.startsWith('/')) return `${API_BASE}${s}`
+  if (s.startsWith('/')) return buildApiUrl(s)
   return s
 }
 
 async function fetchJson(path) {
-  const url = path.startsWith('http') ? path : `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
+  const url = buildApiUrl(path)
   const response = await fetch(url, { headers: authHeaders() })
   const text = await response.text()
   let data = null

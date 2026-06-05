@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Clapperboard, Download, Music, RefreshCcw, SlidersHorizontal, UploadCloud, Volume2, Wand2 } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { apiRequest, fetchProtectedBlobUrl, uploadAudioAsset } from '../services/apiClient.js'
+import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, normalizeAssetFileUrl, registerStaticMediaAsset, uploadAudioAsset } from '../services/apiClient.js'
 import '../styles/ava-board.css'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
 import { AVA_BOARD_ASSEMBLY_CLEARED_KEY } from '../utils/workflowNavigation.js'
@@ -110,6 +110,59 @@ function durationOf(scene) {
   const direct = toNumber(scene?.duration_sec ?? scene?.durationSec, 0)
   if (direct > 0) return direct
   return Math.max(0, toNumber(scene?.end_sec ?? scene?.end, 0) - toNumber(scene?.start_sec ?? scene?.start, 0))
+}
+
+function isLocalBrowserPath(value = '') {
+  const raw = String(value || '').trim()
+  return /^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\') || raw.startsWith('file:')
+}
+
+function normalizePlayableVideoUrl(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw || isLocalBrowserPath(raw)) return ''
+  const apiOrigin = getApiOrigin()
+  if (/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::(?:8000|8010))?(\/static\/.*)$/i.test(raw)) {
+    return raw.replace(/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::(?:8000|8010))?/i, apiOrigin)
+  }
+  if (/^https?:\/\//i.test(raw) || raw.startsWith('blob:') || raw.startsWith('data:')) return raw
+  if (raw.startsWith('/static/')) return `${apiOrigin}${raw}`
+  if (raw.startsWith('static/')) return `${apiOrigin}/${raw}`
+  if (raw.startsWith('/assets/')) return buildApiUrl(raw)
+  if (raw.startsWith('/api/')) return buildApiUrl(raw)
+  if (raw.startsWith('/')) return buildApiUrl(raw)
+  return buildApiUrl(raw)
+}
+
+function pickSceneVideoApiPath(scene = {}, preferMmaudio = true) {
+  if (preferMmaudio) {
+    const mmaudioPath = scene?.mmaudio_video_api_path || scene?.mmaudioVideoApiPath || scene?.mmaudio_result?.video_api_path || scene?.mmaudioResult?.videoApiPath
+    if (mmaudioPath) return String(mmaudioPath).trim()
+  }
+  return String(
+    scene?.video_api_path ||
+    scene?.videoApiPath ||
+    scene?.result_video_api_path ||
+    scene?.resultVideoApiPath ||
+    scene?.video_result?.video_api_path ||
+    scene?.videoResult?.videoApiPath ||
+    ''
+  ).trim()
+}
+
+function pickSceneVideoJobId(scene = {}, preferMmaudio = true) {
+  if (preferMmaudio) {
+    const mmaudioJobId = scene?.mmaudio_video_job_id || scene?.mmaudioVideoJobId || scene?.mmaudio_job_id || scene?.mmaudioJobId
+    if (mmaudioJobId) return String(mmaudioJobId).trim()
+  }
+  return String(scene?.video_job_id || scene?.videoJobId || scene?.job_id || scene?.jobId || '').trim()
+}
+
+function pickSceneVideoStatusEndpoint(scene = {}, preferMmaudio = true) {
+  if (preferMmaudio) {
+    const mmaudioStatus = scene?.mmaudio_video_status_endpoint || scene?.mmaudioVideoStatusEndpoint || scene?.mmaudio_status_endpoint || scene?.mmaudioStatusEndpoint
+    if (mmaudioStatus) return String(mmaudioStatus).trim()
+  }
+  return String(scene?.video_status_endpoint || scene?.videoStatusEndpoint || scene?.status_endpoint || scene?.statusEndpoint || '').trim()
 }
 
 
@@ -227,14 +280,33 @@ function AvaAssemblyLoading({ title = 'Загрузка видео монтаж�
 }
 
 function sceneVideoUrl(scene, preferMmaudio = true) {
-  if (preferMmaudio && (scene?.mmaudio_video_url || scene?.mmaudioVideoUrl)) {
-    return scene.mmaudio_video_url || scene.mmaudioVideoUrl
+  const apiPath = pickSceneVideoApiPath(scene, preferMmaudio)
+  if (apiPath) return normalizePlayableVideoUrl(apiPath)
+  if (preferMmaudio) {
+    const mmaudioUrl = scene?.mmaudio_video_url || scene?.mmaudioVideoUrl || scene?.mmaudio_result?.video_url || scene?.mmaudioResult?.videoUrl
+    const normalizedMmaudioUrl = normalizePlayableVideoUrl(mmaudioUrl)
+    if (normalizedMmaudioUrl) return normalizedMmaudioUrl
   }
-  return scene?.video_url || scene?.videoUrl || ''
+  return normalizePlayableVideoUrl(
+    scene?.video_url ||
+    scene?.videoUrl ||
+    scene?.result_video_url ||
+    scene?.resultVideoUrl ||
+    scene?.video_result?.video_url ||
+    scene?.videoResult?.videoUrl ||
+    ''
+  )
+}
+
+function sceneVideoAssetApiPath(scene, preferMmaudio = true) {
+  const asset = normalizeAssetFileUrl(pickSceneVideoApiPath(scene, preferMmaudio))
+  return asset.assetId ? asset.apiPath : ''
 }
 
 function sceneHasSound(scene) {
   return Boolean(
+    scene?.mmaudio_video_api_path ||
+    scene?.mmaudioVideoApiPath ||
     scene?.mmaudio_video_url ||
     scene?.mmaudioVideoUrl ||
     scene?.audio_slice_url ||
@@ -278,9 +350,13 @@ function isGeneratorAssemblyBoard(board = {}) {
 
 function buildSceneItems(board, preferMmaudio = true) {
   return asArray(board.scenes).map((scene, index) => {
+    const videoApiPath = pickSceneVideoApiPath(scene, preferMmaudio)
+    const videoAssetApiPath = sceneVideoAssetApiPath(scene, preferMmaudio)
+    const videoJobId = pickSceneVideoJobId(scene, preferMmaudio)
+    const videoStatusEndpoint = pickSceneVideoStatusEndpoint(scene, preferMmaudio)
     const videoUrl = sceneVideoUrl(scene, preferMmaudio)
-    const hasBaseVideo = Boolean(scene?.video_url || scene?.videoUrl)
-    const hasMmaudio = Boolean(scene?.mmaudio_video_url || scene?.mmaudioVideoUrl)
+    const hasBaseVideo = Boolean(scene?.video_api_path || scene?.videoApiPath || scene?.video_url || scene?.videoUrl)
+    const hasMmaudio = Boolean(scene?.mmaudio_video_api_path || scene?.mmaudioVideoApiPath || scene?.mmaudio_video_url || scene?.mmaudioVideoUrl)
     const hasVideo = Boolean(videoUrl)
     const hasSound = sceneHasSound(scene)
     const duration = durationOf(scene)
@@ -289,6 +365,15 @@ function buildSceneItems(board, preferMmaudio = true) {
       index,
       title: sceneTitle(scene, index),
       videoUrl,
+      video_url: videoUrl,
+      videoApiPath,
+      video_api_path: videoApiPath,
+      videoAssetApiPath,
+      video_asset_api_path: videoAssetApiPath,
+      videoJobId,
+      video_job_id: videoJobId,
+      videoStatusEndpoint,
+      video_status_endpoint: videoStatusEndpoint,
       hasVideo,
       hasBaseVideo,
       hasMmaudio,
@@ -307,7 +392,7 @@ function buildSceneItems(board, preferMmaudio = true) {
 export default function BoardAssemblyPage() {
   const { projectId } = useParams()
   const workspaceMode = !projectId
-  const { loadStage, loadWorkspaceStage } = useProjects()
+  const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
 
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -322,6 +407,7 @@ export default function BoardAssemblyPage() {
   const [musicFile, setMusicFile] = useState(null)
   const [musicAsset, setMusicAsset] = useState(null)
   const [musicPreviewUrl, setMusicPreviewUrl] = useState('')
+  const [selectedVideoBlobUrl, setSelectedVideoBlobUrl] = useState('')
   const [musicUploading, setMusicUploading] = useState(false)
   const [musicLoop, setMusicLoop] = useState(true)
   const [musicFadeOut, setMusicFadeOut] = useState(true)
@@ -375,7 +461,7 @@ export default function BoardAssemblyPage() {
     setMusicPanelOpen(savedSettings.musicPanelOpen ?? true)
     setWatermarkPanelOpen(savedSettings.watermarkPanelOpen ?? true)
 
-    setFinalVideoUrl(savedSettings.finalVideoUrl || '')
+    setFinalVideoUrl(normalizePlayableVideoUrl(savedSettings.finalVideoUrl || ''))
     setFinalDirty(Boolean(savedSettings.finalDirty))
     setSelectedSceneId(savedSettings.selectedSceneId || '')
     setAssemblyJob(savedSettings.assemblyJob || null)
@@ -401,6 +487,29 @@ export default function BoardAssemblyPage() {
   const boardRoute = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
   const sceneItems = useMemo(() => buildSceneItems(board || {}, preferMmaudio), [board, preferMmaudio])
   const selectedItem = sceneItems.find((item) => item.id === selectedSceneId) || sceneItems[0] || null
+  const selectedItemVideoAssetApiPath = selectedItem?.videoAssetApiPath || ''
+
+  useEffect(() => {
+    let cancelled = false
+    let objectUrl = ''
+    setSelectedVideoBlobUrl('')
+    if (!selectedItemVideoAssetApiPath) return undefined
+    async function loadSelectedVideoBlob() {
+      try {
+        objectUrl = await fetchProtectedBlobUrl(selectedItemVideoAssetApiPath)
+        if (!cancelled) setSelectedVideoBlobUrl(objectUrl)
+      } catch (error) {
+        if (!cancelled) setStatus(`Видео сцены недоступно: ${error?.message || 'asset_fetch_failed'}`)
+      }
+    }
+    loadSelectedVideoBlob()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [selectedItemVideoAssetApiPath])
+
+  const selectedItemPlayableVideoUrl = selectedItemVideoAssetApiPath ? selectedVideoBlobUrl : (selectedItem?.videoUrl || '')
   const watermarkPreviewStyle = {
     opacity: Math.max(0.05, Math.min(1, watermarkOpacity / 100)),
     fontSize: `${Math.max(10, Math.round(watermarkSize * 0.42))}px`,
@@ -411,17 +520,19 @@ export default function BoardAssemblyPage() {
     const ready = sceneItems.filter((item) => item.hasVideo).length
     const withSound = sceneItems.filter((item) => item.hasSound || item.hasMmaudio).length
     const missing = total - ready
-    const duration = sceneItems.reduce((sum, item) => sum + item.duration, 0)
+    const duration = sceneItems.reduce((maxEnd, item) => Math.max(maxEnd, item.end || item.start + item.duration || 0), 0)
     const originalAudio = boardOriginalAudio(board || {})
     const hasOriginalAudio = Boolean(originalAudio.url || originalAudio.assetId)
-    return { total, ready, withSound, missing, duration, hasOriginalAudio }
+    const canAssemble = total > 0 && (ready > 0 || hasOriginalAudio)
+    return { total, ready, withSound, missing, duration, hasOriginalAudio, canAssemble }
   }, [sceneItems, board])
 
   const warnings = useMemo(() => {
     const list = []
     const generatorAssemblyBoard = isGeneratorAssemblyBoard(board || {})
     if (!stats.total) list.push('В Board пока нет сцен.')
-    if (stats.missing > 0) list.push(`Нет видео у сцен: ${stats.missing}. Вернись в доску и перегенерируй.`)
+    if (stats.missing > 0) list.push(`Нет видео у ${stats.missing} сцен — они будут собраны как пустые участки / black frame.`)
+    if (stats.total > 0 && stats.ready === 0 && !stats.hasOriginalAudio) list.push('Нет master audio и нет готовых video-сцен для сборки.')
     if (!generatorAssemblyBoard && !stats.hasOriginalAudio && ['original_only', 'original_plus_scene', 'original_plus_music_scene'].includes(audioMode)) {
       list.push('В Board не найдено оригинальное audio. Для этого режима понадобится master audio.')
     }
@@ -537,7 +648,7 @@ export default function BoardAssemblyPage() {
         motion: watermarkMotion,
       },
       selectedSceneId,
-      finalVideoUrl,
+      finalVideoUrl: normalizePlayableVideoUrl(finalVideoUrl),
       finalDirty,
       assemblyJob: assemblyJob
         ? {
@@ -545,8 +656,10 @@ export default function BoardAssemblyPage() {
             job_id: assemblyJob.job_id || assemblyJob.jobId || '',
             status: assemblyJob.status || '',
             statusEndpoint: assemblyJob.statusEndpoint || '',
-            videoUrl: assemblyJob.videoUrl || assemblyJob.video_url || '',
-            video_url: assemblyJob.video_url || assemblyJob.videoUrl || '',
+            videoUrl: normalizePlayableVideoUrl(assemblyJob.videoUrl || assemblyJob.video_url || ''),
+            video_url: normalizePlayableVideoUrl(assemblyJob.video_url || assemblyJob.videoUrl || ''),
+            videoApiPath: assemblyJob.videoApiPath || assemblyJob.video_api_path || '',
+            video_api_path: assemblyJob.video_api_path || assemblyJob.videoApiPath || '',
             videoName: assemblyJob.videoName || assemblyJob.video_name || '',
             video_name: assemblyJob.video_name || assemblyJob.videoName || '',
             audioMode: assemblyJob.audioMode || '',
@@ -582,28 +695,102 @@ export default function BoardAssemblyPage() {
 
 
   function boardAssemblyVideoUrl(data) {
-    return data?.videoUrl || data?.video_url || data?.resultVideoUrl || data?.result_video_url || ''
+    return normalizePlayableVideoUrl(
+      data?.videoApiPath ||
+      data?.video_api_path ||
+      data?.resultVideoApiPath ||
+      data?.result_video_api_path ||
+      data?.videoUrl ||
+      data?.video_url ||
+      data?.resultVideoUrl ||
+      data?.result_video_url ||
+      ''
+    )
+  }
+
+  async function persistBoardAssemblyResult(data = {}, videoUrl = '') {
+    const rawUrl = data?.videoApiPath || data?.video_api_path || data?.videoUrl || data?.video_url || videoUrl || ''
+    let assemblyAssetId = data?.assemblyAssetId || data?.assembly_asset_id || data?.assetId || data?.asset_id || ''
+    let assemblyApiPath = data?.assemblyApiPath || data?.assembly_api_path || data?.videoApiPath || data?.video_api_path || ''
+    const normalizedUrl = normalizePlayableVideoUrl(assemblyApiPath || rawUrl)
+
+    if (!assemblyAssetId && normalizedUrl.includes('/static/assets/')) {
+      try {
+        const asset = await registerStaticMediaAsset({
+          url: normalizedUrl,
+          projectId: projectId || null,
+          kind: 'assembly',
+          stage: 'board_assembly',
+          originalName: data?.videoName || data?.video_name || 'board-assembly.mp4',
+        })
+        assemblyAssetId = asset.asset_id || asset.assetId || ''
+        assemblyApiPath = asset.asset_api_path || asset.assetApiPath || assemblyApiPath
+      } catch (error) {
+        console.warn('[BOARD ASSEMBLY STATIC REGISTER]', { url: normalizedUrl, success: false, error: error?.message || error })
+      }
+    }
+
+    const snapshot = {
+      stage: 'board_assembly',
+      source: 'board_assembly_result',
+      boardVersion: board?.boardVersion || board?.board_version || '',
+      assembly_asset_id: assemblyAssetId,
+      assemblyAssetId: assemblyAssetId,
+      assembly_api_path: assemblyApiPath,
+      assemblyApiPath: assemblyApiPath,
+      assemblyUrl: assemblyApiPath || normalizedUrl,
+      finalVideoUrl: assemblyApiPath || normalizedUrl,
+      video_url: assemblyApiPath || normalizedUrl,
+      videoUrl: assemblyApiPath || normalizedUrl,
+      video_api_path: assemblyApiPath,
+      videoApiPath: assemblyApiPath,
+      video_name: data?.videoName || data?.video_name || 'board-assembly.mp4',
+      videoName: data?.videoName || data?.video_name || 'board-assembly.mp4',
+      jobId: data?.jobId || data?.job_id || assemblyJob?.jobId || assemblyJob?.job_id || '',
+      job_id: data?.job_id || data?.jobId || assemblyJob?.job_id || assemblyJob?.jobId || '',
+      audioMode,
+      preferMmaudio,
+      skipMissing,
+      stats,
+      updatedAt: new Date().toISOString(),
+    }
+
+    try {
+      if (projectId) await saveStage(projectId, 'board_assembly', snapshot, 'safe_merge')
+      else await saveWorkspaceStage('board_assembly', snapshot)
+      console.log('[BOARD ASSEMBLY RESULT SAVED]', { assemblyAssetId, assemblyApiPath, videoUrl: snapshot.finalVideoUrl })
+    } catch (error) {
+      console.warn('[BOARD ASSEMBLY RESULT SAVE_FAILED]', { error: error?.message || error })
+    }
   }
 
   function buildAssemblyPayload() {
     const items = sceneItems
-      .filter((item) => item.hasVideo || !skipMissing)
+      .slice()
+      .sort((a, b) => (a.start - b.start) || (a.index - b.index))
       .map((item) => {
         const raw = item.raw || {}
-        const usesMmaudioVideo = preferMmaudio && Boolean(raw.mmaudio_video_url || raw.mmaudioVideoUrl)
+        const usesMmaudioVideo = preferMmaudio && Boolean(raw.mmaudio_video_api_path || raw.mmaudioVideoApiPath || raw.mmaudio_video_url || raw.mmaudioVideoUrl)
         return {
           scene_id: item.id,
+          sceneId: item.id,
           title: item.title,
           route: item.route,
           duration_sec: item.duration,
           start_sec: item.start,
           end_sec: item.end,
           video_url: item.videoUrl,
-          video_api_path: usesMmaudioVideo
-            ? (raw.mmaudio_video_api_path || raw.mmaudioVideoApiPath || '')
-            : (raw.video_api_path || raw.videoApiPath || ''),
+          videoUrl: item.videoUrl,
+          video_api_path: item.videoApiPath || '',
+          videoApiPath: item.videoApiPath || '',
+          video_job_id: item.videoJobId || '',
+          videoJobId: item.videoJobId || '',
+          video_status_endpoint: item.videoStatusEndpoint || '',
+          videoStatusEndpoint: item.videoStatusEndpoint || '',
           source_is_mmaudio: usesMmaudioVideo,
           has_sound: item.hasSound || item.hasMmaudio,
+          placeholder: !item.hasVideo,
+          missing_video: !item.hasVideo,
         }
       })
 
@@ -621,6 +808,8 @@ export default function BoardAssemblyPage() {
       width: 1280,
       height: 720,
       fps: 30,
+      duration_sec: stats.duration,
+      timeline_duration_sec: stats.duration,
       volumes: {
         original: originalVolume / 100,
         scene: sceneVolume / 100,
@@ -668,6 +857,7 @@ export default function BoardAssemblyPage() {
           setFinalVideoUrl(videoUrl)
           setFinalDirty(false)
           setAssemblyRunning(false)
+          await persistBoardAssemblyResult(data, videoUrl)
           setStatus(`Финальный MP4 готов: ${data?.videoName || data?.video_name || jobId || ''}`)
           return
         }
@@ -698,7 +888,7 @@ export default function BoardAssemblyPage() {
   }
 
   async function startAssembly() {
-    if (!sceneItems.some((item) => item.hasVideo)) {
+    if (!stats.canAssemble) {
       setStatus('Нет готовых видео для сборки')
       return
     }
@@ -710,6 +900,18 @@ export default function BoardAssemblyPage() {
 
     try {
       const payload = buildAssemblyPayload()
+      console.log('[BOARD ASSEMBLY FINAL PAYLOAD SUMMARY]', {
+        totalItems: payload.items.length,
+        videoItems: payload.items.filter((item) => item.video_url || item.video_api_path).length,
+        placeholderItems: payload.items.filter((item) => item.placeholder || item.missing_video).length,
+        firstItems: payload.items.slice(0, 8).map((item) => ({
+          scene_id: item.scene_id,
+          start_sec: item.start_sec,
+          duration_sec: item.duration_sec,
+          placeholder: Boolean(item.placeholder || item.missing_video),
+          hasVideo: Boolean(item.video_url || item.video_api_path),
+        })),
+      })
       console.log('[AVA ASSEMBLY PAYLOAD watermark]', payload.watermark)
       setStatus(`Отправляем сборку в FFmpeg… watermark: ${payload.watermark?.enabled ? 'ON' : 'OFF'}`)
       const data = await apiRequest('/board-assembly/start', {
@@ -724,6 +926,30 @@ export default function BoardAssemblyPage() {
       setAssemblyRunning(false)
       setStatus(error?.message || 'Не удалось отправить сборку')
     }
+  }
+
+  function stopAssemblyActionEvent(event) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+  }
+
+  function openVideoExplicitly(event, url) {
+    stopAssemblyActionEvent(event)
+    const normalizedUrl = normalizePlayableVideoUrl(url)
+    if (!normalizedUrl) return
+    window.open(normalizedUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  function downloadVideoExplicitly(event, url, filename = 'ava-video.mp4') {
+    stopAssemblyActionEvent(event)
+    const normalizedUrl = normalizePlayableVideoUrl(url)
+    if (!normalizedUrl) return
+    const link = document.createElement('a')
+    link.href = normalizedUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
   async function handleMusicSelect(event) {
@@ -842,14 +1068,18 @@ export default function BoardAssemblyPage() {
           </div>
 
           <div className="avaAssemblyPreview">
-            {selectedItem?.videoUrl ? (
+            {selectedItemPlayableVideoUrl ? (
               <div className="avaAssemblyVideoWithWatermark">
-                <video src={selectedItem.videoUrl} controls />
+                <video src={selectedItemPlayableVideoUrl} controls preload="metadata" playsInline />
                 {watermarkEnabled && String(watermarkText || '').trim() && (
                   <span className={`avaAssemblyLiveWatermark ${watermarkPosition}`} style={watermarkPreviewStyle}>
                     {watermarkText}
                   </span>
                 )}
+                <div className="avaBoardVideoActions">
+                  <button type="button" onClick={(event) => openVideoExplicitly(event, selectedItemPlayableVideoUrl)}>Смотреть видео</button>
+                  <button type="button" onClick={(event) => downloadVideoExplicitly(event, selectedItemPlayableVideoUrl, `${selectedItem.id || 'scene'}.mp4`)}>Скачать видео</button>
+                </div>
               </div>
             ) : (
               <div className="avaAssemblyEmptyPreview">
@@ -868,12 +1098,12 @@ export default function BoardAssemblyPage() {
               <span>
                 {assemblyRunning
                   ? 'FFmpeg собирает финальный файл…'
-                  : stats.ready
+                  : stats.canAssemble
                     ? 'Сцены, звук и музыка уйдут в один MP4. Watermark пока показывается как preview-overlay.'
                     : 'Сначала подготовь хотя бы одну сцену с видео.'}
               </span>
             </div>
-            <button type="button" className="avaBoardPrimary avaAssemblyBuildButton" onClick={startAssembly} disabled={assemblyRunning || !stats.ready}>
+            <button type="button" className="avaBoardPrimary avaAssemblyBuildButton" onClick={startAssembly} disabled={assemblyRunning || !stats.canAssemble}>
               <Download size={16} /> {assemblyRunning ? 'Собирается…' : finalDirty ? 'Пересобрать MP4' : 'Собрать MP4'}
             </button>
           </div>
@@ -892,15 +1122,19 @@ export default function BoardAssemblyPage() {
                   <p className="avaEyebrow">final output</p>
                   <h3>Финальный MP4</h3>
                 </div>
-                <a href={finalVideoUrl} target="_blank" rel="noreferrer">Открыть файл</a>
+                <button type="button" onClick={(event) => openVideoExplicitly(event, finalVideoUrl)}>Открыть файл</button>
               </div>
               <div className="avaAssemblyVideoWithWatermark avaAssemblyFinalVideoWithWatermark">
-                <video src={finalVideoUrl} controls />
+                <video src={finalVideoUrl} controls preload="metadata" playsInline />
                 {watermarkEnabled && String(watermarkText || '').trim() && (
                   <span className={`avaAssemblyLiveWatermark ${watermarkPosition}`} style={watermarkPreviewStyle}>
                     {watermarkText}
                   </span>
                 )}
+                <div className="avaBoardVideoActions">
+                  <button type="button" onClick={(event) => openVideoExplicitly(event, finalVideoUrl)}>Смотреть видео</button>
+                  <button type="button" onClick={(event) => downloadVideoExplicitly(event, finalVideoUrl, 'ava-board-assembly.mp4')}>Скачать MP4</button>
+                </div>
               </div>
               {assemblyJob?.watermarkApplied ? <p>Водный знак запечён в MP4.</p> : watermarkEnabled ? <p>Watermark показан как preview-overlay. В MP4 export он временно отключён, чтобы сборка не падала.</p> : null}
               {false ? <p /> : null}

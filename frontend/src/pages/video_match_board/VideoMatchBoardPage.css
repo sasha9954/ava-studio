@@ -1678,3 +1678,943 @@
   color: rgba(213, 226, 255, 0.72);
 }
 /* PATCH v13: compact audio ready notice + styled audio mix END */
+
+
+/* PATCH 18A: compact 2-source video lanes */
+.videoMatchBtnUploadVideo2 {
+  border-color: rgba(56, 189, 248, 0.32) !important;
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.28), rgba(30, 41, 59, 0.36)) !important;
+}
+
+.videoMatchSourceLanes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 8px;
+}
+
+.videoMatchSourceLaneChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  max-width: 260px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--source-color, #facc15) 45%, rgba(255,255,255,0.12));
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--source-color, #facc15) 18%, rgba(15,23,42,0.76)),
+      rgba(15,23,42,0.62));
+  color: rgba(235, 245, 255, 0.92);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.videoMatchSourceLaneChip span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.videoMatchSourceLaneDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--source-color, #facc15);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--source-color, #facc15) 70%, transparent);
+  flex: 0 0 auto;
+}
+
+.videoMatchSourceRelinkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  margin: -2px 0 10px;
+}
+
+.videoMatchSourceRelinkCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--source-color, #facc15) 30%, rgba(148, 163, 184, 0.20));
+  background: rgba(15, 23, 42, 0.40);
+}
+
+.videoMatchSourceRelinkCard.needsRelink {
+  border-color: rgba(250, 204, 21, 0.45);
+  background: rgba(120, 53, 15, 0.20);
+}
+
+.videoMatchSourceRelinkTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.videoMatchSourceRelinkActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.videoMatchSourceLaneAction {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  color: rgba(226, 232, 240, 0.90);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1;
+  padding: 6px 7px;
+}
+
+.videoMatchSourceLaneAction:hover {
+  border-color: color-mix(in srgb, var(--source-color, #facc15) 48%, rgba(255, 255, 255, 0.22));
+  color: #ffffff;
+}
+
+.videoMatchSourceMiniBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--source-color, #facc15) 28%, rgba(15,23,42,0.72));
+  border: 1px solid color-mix(in srgb, var(--source-color, #facc15) 52%, rgba(255,255,255,0.12));
+  color: #f8fbff;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.videoMatchTimelineMarker {
+  border-color: color-mix(in srgb, var(--source-color, #facc15) 55%, rgba(255,255,255,0.24)) !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--source-color, #facc15) 34%, transparent);
+}
+
+.videoMatchStripSegment {
+  border-color: color-mix(in srgb, var(--source-color, #facc15) 46%, rgba(255,255,255,0.14)) !important;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--source-color, #facc15) 22%, rgba(15,23,42,0.84)),
+      rgba(15,23,42,0.58)) !important;
+}
+
+
+/* PATCH 18C: compact source lanes per video */
+.videoMatchSourceSceneLanes {
+  display: grid;
+  gap: 9px;
+  margin: 8px 0 12px;
+}
+
+.videoMatchSourceSceneLane {
+  border: 1px solid color-mix(in srgb, var(--source-color, #facc15) 34%, rgba(148, 163, 184, 0.18));
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--source-color, #facc15) 10%, rgba(15, 23, 42, 0.78)),
+      rgba(2, 6, 23, 0.44));
+  border-radius: 16px;
+  padding: 8px 10px 10px;
+}
+
+.videoMatchSourceSceneLane.isBoardLane {
+  background:
+    linear-gradient(135deg,
+      rgba(88, 28, 135, 0.24),
+      rgba(2, 6, 23, 0.54));
+}
+
+.videoMatchSourceSceneLaneHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 7px;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.videoMatchSourceSceneLaneHead b {
+  color: #ffffff;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+}
+
+.videoMatchSourceSceneLaneHead span:not(.videoMatchSourceLaneDot) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.videoMatchSourceSceneLaneHead small {
+  margin-left: auto;
+  color: rgba(203, 213, 225, 0.72);
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.videoMatchSourceSceneLaneTrack {
+  position: relative;
+  height: 38px;
+  border-radius: 13px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.42)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(148, 163, 184, 0.10) 0,
+      rgba(148, 163, 184, 0.10) 1px,
+      transparent 1px,
+      transparent 12.5%
+    );
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.videoMatchSourceSceneLaneEmpty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(148, 163, 184, 0.56);
+  font-size: 11px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.videoMatchSourceScenePill {
+  position: absolute;
+  top: 7px;
+  height: 24px;
+  min-width: 46px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--source-color, #facc15) 68%, rgba(255,255,255,0.18));
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--source-color, #facc15) 54%, rgba(15,23,42,0.70)),
+      color-mix(in srgb, var(--source-color, #facc15) 18%, rgba(15,23,42,0.96)));
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 950;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--source-color, #facc15) 18%, transparent);
+}
+
+.videoMatchSourceScenePill.isSelected {
+  outline: 2px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 1px;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--source-color, #facc15) 26%, transparent),
+    0 0 22px color-mix(in srgb, var(--source-color, #facc15) 34%, transparent);
+}
+
+.videoMatchSourceScenePill.isLipSync i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(216, 70, 239, 0.78);
+  color: #fff;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+/* The old single proof strip is kept in code as fallback, but hidden after 18C. */
+.videoMatchTimelineScroller {
+  display: none;
+}
+
+/* Draft strip remains the final audio order and uses the same source colors. */
+.videoMatchBlocksStrip {
+  gap: 5px;
+}
+
+.videoMatchStripSegment {
+  min-width: 82px;
+}
+
+
+/* PATCH 18E: right panel scene/candidate source colors */
+.videoMatchSegmentCard,
+.videoMatchCandidateCard,
+.videoMatchBlockCard {
+  --source-color: var(--source-color, #facc15);
+}
+
+.videoMatchSegmentCard {
+  border-color: color-mix(in srgb, var(--source-color, #facc15) 34%, rgba(255,255,255,0.12)) !important;
+}
+
+.videoMatchSegmentCard.isSelected {
+  border-color: color-mix(in srgb, var(--source-color, #facc15) 72%, rgba(255,255,255,0.20)) !important;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--source-color, #facc15) 16%, rgba(15,23,42,0.86)),
+      rgba(15,23,42,0.68)) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--source-color, #facc15) 18%, transparent),
+    0 0 22px color-mix(in srgb, var(--source-color, #facc15) 14%, transparent);
+}
+
+.videoMatchCandidateCard {
+  border-color: color-mix(in srgb, var(--source-color, #facc15) 30%, rgba(255,255,255,0.11)) !important;
+}
+
+.videoMatchCandidateCard.isSelected {
+  border-color: color-mix(in srgb, var(--source-color, #facc15) 76%, rgba(255,255,255,0.20)) !important;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--source-color, #facc15) 18%, rgba(15,23,42,0.84)),
+      rgba(15,23,42,0.62)) !important;
+  box-shadow:
+    inset 3px 0 0 color-mix(in srgb, var(--source-color, #facc15) 86%, #fff 0%),
+    0 0 24px color-mix(in srgb, var(--source-color, #facc15) 14%, transparent);
+}
+
+.videoMatchCandidateCard.isPreview {
+  outline: 2px solid color-mix(in srgb, var(--source-color, #facc15) 70%, rgba(255,255,255,0.25));
+  outline-offset: 2px;
+}
+
+.videoMatchBlockCard {
+  border-color: color-mix(in srgb, var(--source-color, #facc15) 42%, rgba(255,255,255,0.13)) !important;
+}
+
+.videoMatchBlockCard.isSelected {
+  border-color: color-mix(in srgb, var(--source-color, #facc15) 74%, rgba(255,255,255,0.20)) !important;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--source-color, #facc15) 18%, rgba(15,23,42,0.82)),
+      rgba(15,23,42,0.60)) !important;
+}
+
+.videoMatchRightSourceBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 19px;
+  margin-right: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--source-color, #facc15) 62%, rgba(255,255,255,0.16));
+  background: color-mix(in srgb, var(--source-color, #facc15) 28%, rgba(15,23,42,0.70));
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+.videoMatchSegmentTitle .videoMatchRightSourceBadge {
+  margin-left: 8px;
+  margin-right: 0;
+}
+
+
+/* PATCH 18F: force visible right-panel candidates to source color */
+.videoMatchSegmentCard,
+.videoMatchCandidateCard,
+.videoMatchVariantCard,
+.videoMatchChoiceCard,
+.videoMatchCandidateOption,
+.videoMatchBlockCard {
+  --vm-source-color: var(--vm-source-color, #facc15);
+}
+
+.videoMatchSegmentCard[data-source-video-id],
+.videoMatchCandidateCard[data-source-video-id],
+.videoMatchVariantCard[data-source-video-id],
+.videoMatchChoiceCard[data-source-video-id],
+.videoMatchCandidateOption[data-source-video-id],
+.videoMatchBlockCard[data-source-video-id] {
+  border-color: color-mix(in srgb, var(--vm-source-color, #facc15) 52%, rgba(255,255,255,0.14)) !important;
+}
+
+.videoMatchSegmentCard[data-source-video-id].isSelected,
+.videoMatchCandidateCard[data-source-video-id].isSelected,
+.videoMatchVariantCard[data-source-video-id].isSelected,
+.videoMatchChoiceCard[data-source-video-id].isSelected,
+.videoMatchCandidateOption[data-source-video-id].isSelected,
+.videoMatchBlockCard[data-source-video-id].isSelected {
+  border-color: color-mix(in srgb, var(--vm-source-color, #facc15) 86%, rgba(255,255,255,0.22)) !important;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--vm-source-color, #facc15) 22%, rgba(15,23,42,0.84)),
+      rgba(15,23,42,0.64)) !important;
+  box-shadow:
+    inset 4px 0 0 color-mix(in srgb, var(--vm-source-color, #facc15) 92%, #fff 0%),
+    0 0 26px color-mix(in srgb, var(--vm-source-color, #facc15) 18%, transparent) !important;
+}
+
+.videoMatchCandidateCard[data-source-video-id="src_02"].isSelected,
+.videoMatchVariantCard[data-source-video-id="src_02"].isSelected,
+.videoMatchChoiceCard[data-source-video-id="src_02"].isSelected,
+.videoMatchCandidateOption[data-source-video-id="src_02"].isSelected {
+  border-color: #38bdf8 !important;
+  box-shadow:
+    inset 4px 0 0 #38bdf8,
+    0 0 28px rgba(56, 189, 248, 0.24) !important;
+}
+
+.videoMatchCandidateCard[data-source-video-id="src_01"].isSelected,
+.videoMatchVariantCard[data-source-video-id="src_01"].isSelected,
+.videoMatchChoiceCard[data-source-video-id="src_01"].isSelected,
+.videoMatchCandidateOption[data-source-video-id="src_01"].isSelected {
+  border-color: #facc15 !important;
+  box-shadow:
+    inset 4px 0 0 #facc15,
+    0 0 28px rgba(250, 204, 21, 0.20) !important;
+}
+
+.videoMatchRightSourceBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--vm-source-color, var(--source-color, #facc15)) 64%, rgba(255,255,255,0.16));
+  background: color-mix(in srgb, var(--vm-source-color, var(--source-color, #facc15)) 30%, rgba(15,23,42,0.70));
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+.videoMatchCandidateSourceLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+  color: rgba(203, 213, 225, 0.78);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+
+/* PATCH 18G: clean right panel labels */
+.videoMatchCandidateCleanMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.videoMatchCandidateCleanMeta > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 19px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.46);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.videoMatchCandidateCleanMeta .videoMatchRightSourceBadge {
+  margin-right: 0;
+}
+
+.videoMatchCandidateSourceLine {
+  display: none !important;
+}
+
+.videoMatchWarnings {
+  display: none !important;
+}
+
+.videoMatchCandidateCard small {
+  line-height: 1.28;
+}
+
+/* keep right-panel variant cards compact */
+.videoMatchCandidateBody > small:not(.videoMatchWarnings) {
+  display: none;
+}
+
+
+/* PATCH 18H: one add-video button and auto source slots */
+.videoMatchBtnAddVideo {
+  border-color: rgba(96, 165, 250, 0.44) !important;
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.70), rgba(56, 189, 248, 0.52)) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.20);
+}
+
+.videoMatchBtnAddVideo:hover {
+  border-color: rgba(147, 197, 253, 0.78) !important;
+  box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.26), 0 16px 30px rgba(37, 99, 235, 0.26);
+}
+
+.videoMatchSourceCountHint {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  margin: 7px 0 2px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.42);
+  color: rgba(203, 213, 225, 0.76);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+
+/* PATCH 18P: Video Node MP4 result cleanup */
+.videoMatchRemovedPanel {
+  display: none !important;
+}
+
+.videoMatchReadyMp4Panel {
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(124, 255, 221, 0.55);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(71, 255, 225, 0.30), transparent 34%),
+    radial-gradient(circle at 90% 20%, rgba(168, 85, 247, 0.26), transparent 34%),
+    linear-gradient(135deg, rgba(7, 26, 42, 0.96), rgba(20, 15, 43, 0.96));
+  box-shadow:
+    0 0 0 1px rgba(132, 255, 237, 0.10) inset,
+    0 0 28px rgba(45, 244, 214, 0.22),
+    0 18px 45px rgba(0, 0, 0, 0.35);
+  animation: videoMatchReadyGlow 1.9s ease-in-out infinite alternate;
+}
+
+.videoMatchReadyMp4Header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.videoMatchReadyMp4Header strong {
+  display: block;
+  font-size: 18px;
+  color: #effffb;
+  letter-spacing: 0.02em;
+}
+
+.videoMatchReadyMp4Header span {
+  display: block;
+  margin-top: 4px;
+  color: rgba(226, 255, 250, 0.78);
+  font-size: 13px;
+}
+
+.videoMatchReadyMp4Eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(74, 222, 128, 0.15);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  color: #a7f3d0;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.videoMatchReadyMp4Pulse {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: grid !important;
+  place-items: center;
+  border-radius: 999px;
+  color: #071827 !important;
+  font-weight: 900;
+  font-size: 22px !important;
+  background: linear-gradient(135deg, #67e8f9, #86efac);
+  box-shadow: 0 0 30px rgba(103, 232, 249, 0.55);
+}
+
+.videoMatchReadyMp4Actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.videoMatchReadyMp4Button,
+.videoMatchReadyMp4Download,
+.videoMatchReadyMp4Rebuild {
+  appearance: none;
+  border: 0;
+  border-radius: 16px;
+  padding: 13px 18px;
+  min-height: 46px;
+  cursor: pointer;
+  text-decoration: none;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: #071827;
+  background: linear-gradient(135deg, #5eead4, #60a5fa 54%, #c084fc);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.24) inset,
+    0 10px 28px rgba(96, 165, 250, 0.34),
+    0 0 22px rgba(94, 234, 212, 0.28);
+  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
+}
+
+.videoMatchReadyMp4Button:hover,
+.videoMatchReadyMp4Download:hover,
+.videoMatchReadyMp4Rebuild:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.34) inset,
+    0 14px 34px rgba(96, 165, 250, 0.44),
+    0 0 32px rgba(94, 234, 212, 0.38);
+}
+
+.videoMatchReadyMp4Download {
+  background: linear-gradient(135deg, #34d399, #a7f3d0);
+}
+
+.videoMatchReadyMp4Rebuild {
+  color: rgba(226, 232, 240, 0.94);
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: none;
+}
+
+.videoMatchReadyMp4Rebuild.isDirty {
+  color: #06111f;
+  background: linear-gradient(135deg, #fde68a, #fbbf24);
+}
+
+.videoMatchReadyMp4Rebuild:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.videoMatchAssemblyDirtyNotice {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(250, 204, 21, 0.38);
+  background: rgba(120, 53, 15, 0.22);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.videoMatchReadyMp4Warning {
+  margin-top: 12px;
+}
+
+@keyframes videoMatchReadyGlow {
+  from {
+    box-shadow:
+      0 0 0 1px rgba(132, 255, 237, 0.10) inset,
+      0 0 22px rgba(45, 244, 214, 0.16),
+      0 18px 45px rgba(0, 0, 0, 0.35);
+  }
+  to {
+    box-shadow:
+      0 0 0 1px rgba(132, 255, 237, 0.18) inset,
+      0 0 36px rgba(45, 244, 214, 0.34),
+      0 18px 45px rgba(0, 0, 0, 0.35);
+  }
+}
+
+
+/* PATCH 18Q: click scene to preview */
+.videoMatchClickPreviewHint {
+  margin: 8px 0 6px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(94, 234, 212, 0.26);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(20, 184, 166, 0.08));
+  color: rgba(226, 255, 250, 0.82);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.videoMatchTimelineMarker,
+.videoMatchAssemblyBlock,
+.videoMatchBlockCard {
+  cursor: pointer;
+}
+
+
+/* PATCH 18R: exact scene click preview */
+.videoMatchExactPreviewHint {
+  margin: 8px 0 6px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(20, 184, 166, 0.08));
+  color: rgba(226, 255, 250, 0.84);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.videoMatchSourceScenePill,
+.videoMatchTimelineMarker,
+.videoMatchStripSegment,
+.videoMatchBlockCard {
+  cursor: pointer;
+}
+
+
+/* PATCH 18S: exact scene click preview */
+.videoMatchExactClickHint {
+  margin: 8px 0 6px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(20, 184, 166, 0.08));
+  color: rgba(226, 255, 250, 0.84);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.videoMatchSourceScenePill,
+.videoMatchTimelineMarker,
+.videoMatchStripSegment,
+.videoMatchBlockCard {
+  cursor: pointer;
+}
+
+
+/* PATCH 18V: single scene preview hint */
+.videoMatchClickPreviewHint,
+.videoMatchExactPreviewHint,
+.videoMatchExactClickHint {
+  display: none !important;
+}
+
+.videoMatchScenePreviewHint {
+  margin: 8px 0 6px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(20, 184, 166, 0.08));
+  color: rgba(226, 255, 250, 0.84);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+
+/* PATCH 18W: clearer background music state */
+.videoMatchAudioMixPurpose {
+  grid-column: 1 / -1;
+  margin-bottom: 6px;
+  padding: 9px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  background: rgba(8, 47, 73, 0.34);
+  color: rgba(226, 255, 250, 0.82);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.videoMatchAudioMixReady,
+.videoMatchAudioMixUploading {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.videoMatchAudioMixReady {
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  background: rgba(22, 101, 52, 0.24);
+  color: #bbf7d0;
+}
+
+.videoMatchAudioMixUploading {
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  background: rgba(30, 64, 175, 0.24);
+  color: #bfdbfe;
+}
+
+
+/* PATCH 18X: background-only MP4 mode explanation */
+.videoMatchAudioModeExplanation {
+  margin: 8px 0 6px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  background: linear-gradient(135deg, rgba(113, 63, 18, 0.16), rgba(8, 47, 73, 0.18));
+  color: rgba(254, 249, 195, 0.88);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+
+/* PATCH 18Z: background assembly temporarily disabled */
+.videoMatchBackgroundDisabledNotice {
+  margin: 8px 0 6px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.20), rgba(8, 47, 73, 0.14));
+  color: rgba(254, 226, 226, 0.90);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+
+/* PATCH 18AB: background music enabled */
+.videoMatchBackgroundEnabledNotice {
+  margin: 8px 0 6px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(74, 222, 128, 0.32);
+  background: linear-gradient(135deg, rgba(22, 101, 52, 0.18), rgba(8, 47, 73, 0.16));
+  color: rgba(220, 252, 231, 0.92);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+
+/* PATCH 18AD: background backend-ready status */
+.videoMatchAudioMixNeedsBackend {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  background: rgba(113, 63, 18, 0.24);
+  color: #fef3c7;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+
+/* PATCH 18AE: simple audio/background assembly mode */
+.videoMatchAudioSimpleNotice {
+  margin: 8px 0 6px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(20, 184, 166, 0.08));
+  color: rgba(226, 255, 250, 0.86);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+
+/* PATCH 18AJ: Video Node cleanup + magic MP4 button */
+.videoMatchBackgroundDisabledNotice,
+.videoMatchAudioModeExplanation,
+.videoMatchAudioMixNeedsBackend {
+  display: none !important;
+}
+
+/* Hide old audio checkbox rows if their older classnames are present */
+.videoMatchAudioToggle,
+.videoMatchIncludeAudioToggle,
+.videoMatchAudioCheckboxRow,
+.videoMatchMainAudioCheckbox {
+  display: none !important;
+}
+
+.videoMatchCreateMp4MagicBtn {
+  min-width: 230px !important;
+  min-height: 48px !important;
+  padding: 13px 24px !important;
+  border-radius: 18px !important;
+  font-size: 15px !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.02em !important;
+  color: #06111f !important;
+  border: 1px solid rgba(255, 255, 255, 0.38) !important;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.75), transparent 20%),
+    linear-gradient(135deg, #67e8f9 0%, #34d399 38%, #a78bfa 74%, #f0abfc 100%) !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.25) inset,
+    0 0 24px rgba(94, 234, 212, 0.42),
+    0 0 46px rgba(168, 85, 247, 0.28),
+    0 14px 34px rgba(0, 0, 0, 0.36) !important;
+  transform-origin: center;
+  animation: videoMatchMp4MagicPulse 1.65s ease-in-out infinite alternate;
+}
+
+.videoMatchCreateMp4MagicBtn.isHiddenAfterMp4 {
+  display: none !important;
+}
+
+.videoMatchCreateMp4MagicBtn:hover:not(:disabled) {
+  filter: brightness(1.12) saturate(1.08);
+  transform: translateY(-1px) scale(1.015);
+}
+
+.videoMatchCreateMp4MagicBtn:disabled {
+  opacity: 0.65 !important;
+  filter: grayscale(0.2) !important;
+  animation: none !important;
+}
+
+@keyframes videoMatchMp4MagicPulse {
+  0% {
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.20) inset,
+      0 0 16px rgba(94, 234, 212, 0.30),
+      0 0 30px rgba(168, 85, 247, 0.20),
+      0 12px 30px rgba(0, 0, 0, 0.32);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.36) inset,
+      0 0 32px rgba(94, 234, 212, 0.58),
+      0 0 64px rgba(168, 85, 247, 0.42),
+      0 16px 38px rgba(0, 0, 0, 0.38);
+  }
+}
+
+
+/* PATCH 18AK: hide selected clip technical label near Create MP4 */
+.videoMatchSelectedClipTechnicalLabel,
+.videoMatchSelectedBlockTechnicalLabel,
+.videoMatchAssemblySelectedClipLabel {
+  display: none !important;
+}
+

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { Clock3, Film, Pause, Play, RotateCcw, Save, StepBack, StepForward, Undo2, UploadCloud } from 'lucide-react'
+import { Clock3, Film, Pause, Play, Save, StepBack, StepForward, Trash2, Undo2, UploadCloud } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { fetchProtectedBlobUrl, getAuthHeaders, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
+import { buildApiUrl, cutAudioAssetRange, fetchProtectedBlobUrl, getAuthHeaders, normalizeAssetFileUrl, normalizeStaticMediaUrl, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
 import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, makeWorkflowEntry, navigateWithWorkflowEntry, rememberWorkflowEntry, readWorkflowEntry } from '../utils/workflowNavigation.js'
 
@@ -10,12 +10,144 @@ const STAGE = 'manual_timing'
 const DRAFT_VERSION = 'manual_timing_single_timeline_v6_handoff_manifest'
 const MIN_SCENE_SEC = 0.18
 const MAX_UNDO = 30
+const MT_PLAYHEAD_DIAG_STORAGE_KEY = 'ava:mt-playhead-diag'
+const MT_BLOCK_DIAG_STORAGE_KEY = 'ava:mt-block-diag'
 
 
 const AVA_PODCAST_TO_TIMING_KEY_STAGE95 = 'ava:podcast-to-timing:v1'
 const AVA_DOWNSTREAM_RESET_KEY_STAGE95 = 'ava:downstream-reset:v1'
 const AVA_ACTIVE_JOBS_KEY_STAGE95 = 'ava:active-jobs:v1'
 const AVA_COMPLETED_JOBS_KEY_STAGE95 = 'ava:completed-jobs:v1'
+
+const MANUAL_TIMING_VIDEO_FIELD_KEYS = new Set([
+  'videoUrl',
+  'video_url',
+  'resultUrl',
+  'result_url',
+  'resultVideoUrl',
+  'result_video_url',
+  'videoApiPath',
+  'video_api_path',
+  'resultVideoApiPath',
+  'result_video_api_path',
+  'boardVideoUrl',
+  'board_video_url',
+  'boardjobId',
+  'boardjob_id',
+  'boardJobId',
+  'board_job_id',
+  'mediaPreviewUrl',
+  'media_preview_url',
+  'previewUrl',
+  'preview_url',
+  'mediaUrl',
+  'media_url',
+  'videoPreviewUrl',
+  'video_preview_url',
+  'videoResult',
+  'video_result',
+  'mmaudioResult',
+  'mmaudio_result',
+  'assemblyJob',
+  'assembly_job',
+  'boardAssembly',
+  'board_assembly',
+])
+
+function isManualTimingPlayheadDiagEnabled() {
+  if (typeof window === 'undefined') return false
+  return window.localStorage?.getItem(MT_PLAYHEAD_DIAG_STORAGE_KEY) === '1'
+}
+
+function logManualTimingPlayheadDiag(label, payload) {
+  if (!isManualTimingPlayheadDiagEnabled()) return
+  console.log(label, payload)
+}
+
+function isManualTimingBlockDiagEnabled() {
+  if (typeof window === 'undefined') return false
+  return window.localStorage?.getItem(MT_BLOCK_DIAG_STORAGE_KEY) === '1'
+}
+
+function logManualTimingBlockDiag(label, payload) {
+  if (!isManualTimingBlockDiagEnabled()) return
+  console.log(label, payload)
+}
+
+function timeToTimelinePct(timeSec, durationSec) {
+  const duration = Number(durationSec) || 0
+  if (duration <= 0) return 0
+  return Math.min(100, Math.max(0, ((Number(timeSec) || 0) / duration) * 100))
+}
+
+function avaManualTimingContainsStaleBoardVideo(value = '') {
+  const raw = String(value || '')
+  return /board_videos|boardjob_|\/static\/assets\/board_videos/i.test(raw)
+}
+
+function avaManualTimingStripVideoRefs(value, depth = 0) {
+  if (depth > 24) return value
+  if (typeof value === 'string') return avaManualTimingContainsStaleBoardVideo(value) ? '' : value
+  if (!value || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.map((item) => avaManualTimingStripVideoRefs(item, depth + 1))
+
+  const out = {}
+  Object.entries(value).forEach(([key, item]) => {
+    if (MANUAL_TIMING_VIDEO_FIELD_KEYS.has(key)) return
+    if (/video|boardjob|board_video|media_preview|preview_media/i.test(key)) return
+    out[key] = avaManualTimingStripVideoRefs(item, depth + 1)
+  })
+  return out
+}
+
+
+function avaStage16SafeAudioFilename(name = 'ava_audio.mp3') {
+  const raw = String(name || 'ava_audio.mp3').trim() || 'ava_audio.mp3'
+  const cleaned = raw.replace(/[\\/:*?"<>|]+/g, '_')
+  if (/\.(mp3|wav|m4a|aac|ogg|flac|webm)$/i.test(cleaned)) return cleaned
+  return `${cleaned}.mp3`
+}
+
+async function avaStage16DownloadAudioSource({ source = '', filename = 'ava_audio.mp3', fetchProtectedBlobUrl, getAuthHeaders, setStatus }) {
+  const raw = String(source || '').trim()
+  if (!raw) throw new Error('empty_audio_source')
+
+  let objectUrl = ''
+  let shouldRevoke = false
+
+  if (raw.startsWith('blob:') || raw.startsWith('data:')) {
+    objectUrl = raw
+  } else if (raw.startsWith('/api/assets/')) {
+    objectUrl = await fetchProtectedBlobUrl(raw.replace(/^\/api/, ''))
+    shouldRevoke = true
+  } else if (raw.startsWith('/assets/')) {
+    objectUrl = await fetchProtectedBlobUrl(raw)
+    shouldRevoke = true
+  } else {
+    const response = await fetch(raw, {
+      credentials: 'include',
+      headers: getAuthHeaders ? getAuthHeaders() : {},
+    })
+    if (!response.ok) throw new Error(`download_failed_${response.status}`)
+    const blob = await response.blob()
+    objectUrl = URL.createObjectURL(blob)
+    shouldRevoke = true
+  }
+
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = avaStage16SafeAudioFilename(filename)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+
+  if (shouldRevoke) {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 4000)
+  }
+
+  setStatus?.(`аудио сохранено: ${avaStage16SafeAudioFilename(filename)}`)
+}
+
 
 function avaStage95JsonReadOnce(key) {
   let value = null
@@ -140,6 +272,8 @@ function avaStage117AssetIdFromAudioDraft(sourceDraft = {}, useVocalStem = false
 }
 
 function avaStage116AssetApiPathFromUrl(value = '') {
+  const normalized = normalizeAssetFileUrl(value)
+  if (normalized.apiPath) return normalized.apiPath
   const raw = String(value || '').trim()
   if (!raw || raw.startsWith('blob:') || raw.startsWith('data:')) return ''
 
@@ -164,10 +298,13 @@ function avaStage116ShouldAuthFetch(value = '') {
 function avaStage95AudioUrlToPreview(value = '') {
   const raw = String(value || '').trim()
   if (!raw) return ''
+  const normalizedAsset = normalizeAssetFileUrl(raw)
+  if (normalizedAsset.assetId && normalizedAsset.url) return normalizedAsset.url
+  const normalizedStatic = normalizeStaticMediaUrl(raw)
+  if (normalizedStatic !== raw) return normalizedStatic
   if (raw.startsWith('blob:') || raw.startsWith('data:') || /^https?:\/\//i.test(raw)) return raw
-  const base = String(window.location.origin || '').replace(/:\d+$/, ':8000')
-  if (raw.startsWith('/api/')) return `${base}${raw.slice(4)}`
-  if (raw.startsWith('/static/') || raw.startsWith('/assets/')) return `${base}${raw}`
+  if (raw.startsWith('/api/') || raw.startsWith('/assets/')) return buildApiUrl(raw)
+  if (raw.startsWith('/static/')) return buildApiUrl(raw)
   return raw
 }
 
@@ -176,10 +313,11 @@ function avaStage95PickHandoffAudio(handoff = {}) {
 }
 
 function avaStage95SceneFromHandoff(scene = {}, index = 0, durationSec = 0) {
+  const audioOnlyScene = avaManualTimingStripVideoRefs(scene || {})
   const start = Number(scene.start ?? scene.start_sec ?? scene.t0 ?? 0)
   const end = Number(scene.end ?? scene.end_sec ?? scene.t1 ?? Math.min(durationSec, start + 1))
   return makeScene(index, Math.max(0, start), Math.max(start + 0.05, end), {
-    ...scene,
+    ...audioOnlyScene,
     id: formatSceneId(index),
     title: scene.title || scene.id || formatSceneId(index),
     route: scene.route || 'auto',
@@ -342,10 +480,11 @@ function avaStage110ForcePodcastBlockScenes(handoff = {}) {
 }
 
 function avaStage95DraftFromPodcastHandoff(handoff = {}) {
-  const audio = avaStage95PickHandoffAudio(handoff)
+  const cleanHandoff = avaManualTimingStripVideoRefs(handoff || {})
+  const audio = avaStage95PickHandoffAudio(cleanHandoff)
   const audioUrl = String(audio.url || audio.audioUrl || audio.audio_url || audio.assetUrl || audio.asset_url || audio.publicUrl || audio.public_url || '').trim()
-  const duration = Math.max(0, Number(audio.durationSec || audio.duration_sec || handoff.finalDurationSec || handoff.final_duration_sec || 0))
-  const rawScenes = Array.isArray(handoff.scenes) ? handoff.scenes : []
+  const duration = Math.max(0, Number(audio.durationSec || audio.duration_sec || cleanHandoff.finalDurationSec || cleanHandoff.final_duration_sec || 0))
+  const rawScenes = Array.isArray(cleanHandoff.scenes) ? cleanHandoff.scenes : []
   const scenes = rawScenes.length
     ? rawScenes.map((scene, index) => avaStage95SceneFromHandoff(scene, index, duration))
     : makeSingleScene(duration)
@@ -374,10 +513,10 @@ function avaStage95DraftFromPodcastHandoff(handoff = {}) {
     vocalAudioDurationSec: 0,
     vocalOffsetSec: 0,
     handoffSource: 'podcast_audio_composer',
-    podcastEditManifest: handoff.podcast_edit_manifest || handoff.podcastEditManifest || null,
-    podcast_edit_manifest: handoff.podcast_edit_manifest || handoff.podcastEditManifest || null,
-    podcastBlocks: handoff.blocks || [],
-    podcastActorAudios: handoff.actorAudios || [],
+    podcastEditManifest: cleanHandoff.podcast_edit_manifest || cleanHandoff.podcastEditManifest || null,
+    podcast_edit_manifest: cleanHandoff.podcast_edit_manifest || cleanHandoff.podcastEditManifest || null,
+    podcastBlocks: cleanHandoff.blocks || [],
+    podcastActorAudios: cleanHandoff.actorAudios || [],
     historySnapshots: [],
     notes: 'Получено из Podcast / Audio Composer',
   })
@@ -480,7 +619,7 @@ function buildEvenScenes(count, duration) {
 
 function normalizeScenes(data, duration) {
   const safeDuration = Math.max(0, Number(duration) || 0)
-  const rawScenes = Array.isArray(data?.scenes) ? data.scenes : []
+  const rawScenes = Array.isArray(data?.scenes) ? avaManualTimingStripVideoRefs(data.scenes) : []
 
   if (rawScenes.length) {
     const maxEnd = Math.max(safeDuration, ...rawScenes.map((scene) => Number(scene?.end) || 0), 1)
@@ -505,38 +644,64 @@ function normalizeScenes(data, duration) {
   return makeSingleScene(safeDuration)
 }
 
+function repairManualTimingAudioAssetFields(data = {}) {
+  const audioUrl = String(data?.audioUrl || data?.audio_url || data?.assetUrl || data?.asset_url || data?.url || '').trim()
+  const audioApiPath = String(data?.audioApiPath || data?.audio_api_path || data?.asset_api_path || '').trim()
+  const assetUrl = normalizeAssetFileUrl(audioUrl || audioApiPath)
+  const normalizedStaticUrl = assetUrl.assetId ? '' : normalizeStaticMediaUrl(audioUrl)
+  const audioAssetId = String(
+    data?.audioAssetId ||
+    data?.audio_asset_id ||
+    data?.asset_id ||
+    data?.assetId ||
+    assetUrl.assetId ||
+    ''
+  ).trim()
+  const repaired = {
+    audioAssetId,
+    audioApiPath: audioApiPath || assetUrl.apiPath || '',
+    audioUrl: assetUrl.url || normalizedStaticUrl || audioUrl,
+  }
+  if (assetUrl.assetId && (!data?.audioAssetId || assetUrl.url !== audioUrl)) {
+    console.log('[AUDIO ASSET RESTORE]', repaired)
+  }
+  return repaired
+}
+
 function normalizeDraft(data) {
-  const parsedStep = Number(data?.stepSec)
-  const parsedDuration = Number(data?.audioDurationSec)
+  const cleanData = avaManualTimingStripVideoRefs(data || {})
+  const repairedAudio = repairManualTimingAudioAssetFields(cleanData)
+  const parsedStep = Number(cleanData?.stepSec)
+  const parsedDuration = Number(cleanData?.audioDurationSec)
   const duration = Number.isFinite(parsedDuration) ? Math.max(0, parsedDuration) : 0
-  const scenes = normalizeScenes(data || {}, duration)
-  const selectedIndex = Number.isFinite(Number(data?.selectedSceneIndex)) ? Number(data.selectedSceneIndex) : 0
+  const scenes = normalizeScenes(cleanData || {}, duration)
+  const selectedIndex = Number.isFinite(Number(cleanData?.selectedSceneIndex)) ? Number(cleanData.selectedSceneIndex) : 0
 
   return {
     ...emptyDraft,
-    ...(data || {}),
-    timingDraftVersion: data?.timingDraftVersion || DRAFT_VERSION,
-    audioName: data?.audioName || data?.audio_name || '',
-    audioAssetId: data?.audioAssetId || data?.audio_asset_id || data?.asset_id || '',
-    audioApiPath: data?.audioApiPath || data?.asset_api_path || '',
-    audioUrl: data?.audioUrl || data?.asset_url || '',
-    audioSizeBytes: Number.isFinite(Number(data?.audioSizeBytes)) ? Math.max(0, Number(data.audioSizeBytes)) : Number(data?.audio_size_bytes) || 0,
+    ...(cleanData || {}),
+    timingDraftVersion: cleanData?.timingDraftVersion || DRAFT_VERSION,
+    audioName: cleanData?.audioName || cleanData?.audio_name || '',
+    audioAssetId: repairedAudio.audioAssetId,
+    audioApiPath: repairedAudio.audioApiPath,
+    audioUrl: repairedAudio.audioUrl,
+    audioSizeBytes: Number.isFinite(Number(cleanData?.audioSizeBytes)) ? Math.max(0, Number(cleanData.audioSizeBytes)) : Number(cleanData?.audio_size_bytes) || 0,
     audioDurationSec: duration,
-    vocalAudioName: data?.vocalAudioName || data?.vocal_audio_name || '',
-    vocalAudioAssetId: data?.vocalAudioAssetId || data?.vocal_audio_asset_id || '',
-    vocalAudioApiPath: data?.vocalAudioApiPath || data?.vocal_audio_api_path || '',
-    vocalAudioSizeBytes: Number(data?.vocalAudioSizeBytes || data?.vocal_audio_size_bytes || 0),
-    vocalAudioDurationSec: Number(data?.vocalAudioDurationSec || data?.vocal_audio_duration_sec || 0),
-    vocalOffsetSec: Number(data?.vocalOffsetSec || data?.vocal_offset_sec || 0),
+    vocalAudioName: cleanData?.vocalAudioName || cleanData?.vocal_audio_name || '',
+    vocalAudioAssetId: cleanData?.vocalAudioAssetId || cleanData?.vocal_audio_asset_id || '',
+    vocalAudioApiPath: cleanData?.vocalAudioApiPath || cleanData?.vocal_audio_api_path || '',
+    vocalAudioSizeBytes: Number(cleanData?.vocalAudioSizeBytes || cleanData?.vocal_audio_size_bytes || 0),
+    vocalAudioDurationSec: Number(cleanData?.vocalAudioDurationSec || cleanData?.vocal_audio_duration_sec || 0),
+    vocalOffsetSec: Number(cleanData?.vocalOffsetSec || cleanData?.vocal_offset_sec || 0),
     scenes,
-    storyBlocks: Array.isArray(data?.storyBlocks) ? data.storyBlocks : [],
-    roles: Array.isArray(data?.roles) ? data.roles : [],
-    speechSegments: normalizeSpeechSegments(data?.speechSegments || data?.speech_segments || []),
-    audioPhrases: Array.isArray(data?.audioPhrases) ? data.audioPhrases : Array.isArray(data?.audio_phrases) ? data.audio_phrases : [],
-    missingSpeechHints: normalizeMissingSpeechHints(data?.missingSpeechHints || data?.missing_speech_hints || []),
-    silentSegments: Array.isArray(data?.silentSegments) ? data.silentSegments : [],
-    handoffSource: data?.handoffSource || data?.source || '',
-    historySnapshots: Array.isArray(data?.historySnapshots) ? data.historySnapshots.slice(-MAX_UNDO) : [],
+    storyBlocks: Array.isArray(cleanData?.storyBlocks) ? cleanData.storyBlocks : [],
+    roles: Array.isArray(cleanData?.roles) ? cleanData.roles : [],
+    speechSegments: normalizeSpeechSegments(cleanData?.speechSegments || cleanData?.speech_segments || []),
+    audioPhrases: Array.isArray(cleanData?.audioPhrases) ? cleanData.audioPhrases : Array.isArray(cleanData?.audio_phrases) ? cleanData.audio_phrases : [],
+    missingSpeechHints: normalizeMissingSpeechHints(cleanData?.missingSpeechHints || cleanData?.missing_speech_hints || []),
+    silentSegments: Array.isArray(cleanData?.silentSegments) ? cleanData.silentSegments : [],
+    handoffSource: cleanData?.handoffSource || cleanData?.source || '',
+    historySnapshots: Array.isArray(cleanData?.historySnapshots) ? cleanData.historySnapshots.slice(-MAX_UNDO) : [],
     scenesCount: scenes.length,
     selectedSceneIndex: Math.min(Math.max(0, selectedIndex), scenes.length - 1),
     stepSec: Number.isFinite(parsedStep) ? Math.max(0.05, parsedStep) : 0.5,
@@ -833,7 +998,7 @@ function clipSegmentTextToScene(scene, segment) {
   })
   const wordText = joinUniqueText(wordsInside.map(getWordText))
   return {
-    text: wordText || compactText(segment?.text || segment?.originalText || segment?.original_text || ''),
+    text: wordText || (words.length ? '' : compactText(segment?.text || segment?.originalText || segment?.original_text || '')),
     ruText: compactText(segment?.ruText || segment?.text_ru || segment?.translation_ru || ''),
     meaningText: compactText(segment?.meaningText || segment?.meaning_hint_ru || segment?.meaning_ru || ''),
     isPartial,
@@ -869,6 +1034,7 @@ function buildSceneSpeechExport(scene, speechSegments = []) {
   const sceneWordText = joinUniqueText(sceneItems.map((item) => item.clipped.text))
   const phraseTranslationRu = joinUniqueText(sceneItems.map((item) => item.clipped.ruText))
   const phraseMeaningRu = joinMeaningParts(sceneItems.map((item) => item.clipped.meaningText))
+  const phraseCutWarning = sceneItems.some((item) => item.clipped.isPartial)
   const storedBasis = compactText(scene?.asr_scene_word_text || '')
   const storedTranslationRu = compactText(scene?.translated_text_ru || scene?.translation_ru || scene?.text_ru || '')
   const storedMeaningRu = compactText(scene?.meaning_hint_ru || scene?.meaning_ru || scene?.meaningText || '')
@@ -878,14 +1044,36 @@ function buildSceneSpeechExport(scene, speechSegments = []) {
     && sceneWordText
     && storedBasis.toLowerCase() === sceneWordText.toLowerCase()
   )
+  const sceneTranslatedTextRu = canUseSceneSliceTranslation && storedTranslationRu
+    ? storedTranslationRu
+    : (phraseCutWarning ? sceneWordText : (phraseTranslationRu || sceneWordText))
+  const sceneMeaningHintRu = canUseSceneSliceTranslation && storedMeaningRu
+    ? storedMeaningRu
+    : (phraseCutWarning ? '' : phraseMeaningRu)
 
   return {
     source_phrase_ids: [...new Set(sourcePhraseIds)],
     scene_word_text: sceneWordText,
     lyrics_text: sceneWordText,
-    translated_text_ru: canUseSceneSliceTranslation && storedTranslationRu ? storedTranslationRu : phraseTranslationRu,
-    meaning_hint_ru: canUseSceneSliceTranslation && storedMeaningRu ? storedMeaningRu : phraseMeaningRu,
-    phrase_cut_warning: sceneItems.some((item) => item.clipped.isPartial),
+    translated_text_ru: sceneTranslatedTextRu,
+    meaning_hint_ru: sceneMeaningHintRu,
+    phrase_cut_warning: phraseCutWarning,
+  }
+}
+
+function buildSceneDisplayText(scene = {}, speechExport = {}) {
+  const sceneWordText = compactText(scene?.scene_word_text || scene?.lyrics_text || speechExport.scene_word_text || '')
+  const translatedTextRu = compactText(scene?.translated_text_ru || scene?.translation_ru || scene?.text_ru || speechExport.translated_text_ru || '')
+  const meaningHintRu = compactText(scene?.meaning_hint_ru || scene?.meaning_ru || scene?.meaningText || speechExport.meaning_hint_ru || '')
+  const phraseCutWarning = Boolean(scene?.phrase_cut_warning || scene?.phraseCutWarning || speechExport.phrase_cut_warning)
+
+  return {
+    source_phrase_ids: speechExport.source_phrase_ids || scene?.source_phrase_ids || scene?.sourcePhraseIds || [],
+    scene_word_text: sceneWordText,
+    lyrics_text: sceneWordText,
+    translated_text_ru: translatedTextRu,
+    meaning_hint_ru: meaningHintRu,
+    phrase_cut_warning: phraseCutWarning,
   }
 }
 
@@ -952,6 +1140,7 @@ export default function ManualTimingPage() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadingVocal, setUploadingVocal] = useState(false)
+  const [deletingSceneAudio, setDeletingSceneAudio] = useState(false)
   const [asrRunning, setAsrRunning] = useState(false)
   const [translationRunning, setTranslationRunning] = useState(false)
   const [showSceneTranslator, setShowSceneTranslator] = useState(true)
@@ -972,8 +1161,12 @@ export default function ManualTimingPage() {
   const translatorPreviewRangeRef = useRef(null)
   const scenePreviewRangeRef = useRef(null)
   const sceneStopTimerRef = useRef(null)
+  const currentAudioScopeRef = useRef('')
   const fileInputRef = useRef(null)
   const jsonInputRef = useRef(null)
+  const timelineScaleRef = useRef(null)
+  const timelineContentRef = useRef(null)
+  const segmentsRowRef = useRef(null)
 
   const hasAudio = Boolean(draft.audioAssetId || draft.audioApiPath || draft.audioUrl)
   const narratorAsrAssetId = avaStage118AsrAssetId(draft, false)
@@ -981,7 +1174,12 @@ export default function ManualTimingPage() {
   const scenes = useMemo(() => normalizeScenes(draft, draft.audioDurationSec), [draft.scenes, draft.scenesCount, draft.audioDurationSec])
   const selectedScene = scenes[Math.min(draft.selectedSceneIndex, scenes.length - 1)] || scenes[0] || makeScene(0, 0, 0)
   const scopeTitle = workspaceMode ? 'Рабочая область' : activeProject?.name || 'Проект'
-  const cursorPct = draft.audioDurationSec > 0 ? Math.min(100, Math.max(0, (cursorSec / draft.audioDurationSec) * 100)) : 0
+  const timelineDurationSec = Math.max(
+    Number(draft.audioDurationSec) || 0,
+    Number(cursorSec) || 0,
+    ...scenes.map((scene) => Number(scene.end) || 0),
+  )
+  const cursorPct = timeToTimelinePct(cursorSec, timelineDurationSec)
   const roleMap = useMemo(() => new Map((draft.roles || []).map((role) => [role.roleId || role.id, role])), [draft.roles])
   function speechSegmentBelongsToScene(scene, segment) {
     const start = Number(segment?.start || 0)
@@ -1026,6 +1224,64 @@ export default function ManualTimingPage() {
   const selectedSceneSpeechExport = useMemo(() => (
     buildSceneSpeechExport(selectedScene, draft.speechSegments || [])
   ), [selectedScene.start, selectedScene.end, draft.speechSegments])
+
+  const selectedSceneDisplayText = useMemo(() => (
+    buildSceneDisplayText(selectedScene, selectedSceneSpeechExport)
+  ), [selectedScene, selectedSceneSpeechExport])
+
+  function getSceneSelectionId(scene) {
+    return String(scene?.id || scene?.scene_id || scene?.title || scene?.index || '')
+  }
+
+  function isSceneInBlockSelection(scene, selection = blockSelection) {
+    const sceneId = getSceneSelectionId(scene)
+    return selection.some((item) => String(item) === sceneId || Number(item) === Number(scene?.index))
+  }
+
+  function sortSceneSelectionIds(selection = []) {
+    const selected = new Set(selection.map((item) => String(item)))
+    return scenes
+      .filter((scene) => selected.has(getSceneSelectionId(scene)) || selected.has(String(scene.index)))
+      .map(getSceneSelectionId)
+  }
+
+  function getSelectedBlockScenes(selection = blockSelection) {
+    return scenes.filter((scene) => isSceneInBlockSelection(scene, selection))
+  }
+
+  const selectedBlockSceneCount = getSelectedBlockScenes(blockSelection).length
+
+  useEffect(() => {
+    if (!isManualTimingPlayheadDiagEnabled()) return
+
+    const timeline = timelineScaleRef.current
+    const content = timelineContentRef.current
+    const row = segmentsRowRef.current
+    const duration = timelineDurationSec
+    const contentWidth = content?.scrollWidth || content?.clientWidth || row?.scrollWidth || row?.clientWidth || timeline?.scrollWidth || timeline?.clientWidth || 0
+    const viewportWidth = timeline?.clientWidth || 0
+    const scrollLeft = timeline?.scrollLeft || 0
+    const leftPadding = timeline ? (Number.parseFloat(window.getComputedStyle(timeline).paddingLeft) || 0) : 0
+    const pxPerSecond = duration > 0 && contentWidth > 0 ? contentWidth / duration : 0
+    const selectedSceneStart = Number(selectedScene?.start) || 0
+    const selectedSceneEnd = Math.max(selectedSceneStart, Number(selectedScene?.end) || selectedSceneStart)
+
+    console.log('[MT PLAYHEAD DIAG RENDER]', {
+      currentTime: cursorSec,
+      audioDuration: Number(draft.audioDurationSec) || 0,
+      timelineDuration: duration,
+      scrollLeft,
+      viewportWidth,
+      contentWidth,
+      leftPadding,
+      pxPerSecond,
+      playheadLeftPx: timeToTimelinePct(cursorSec, duration) * contentWidth / 100,
+      selectedSceneLeftPx: timeToTimelinePct(selectedSceneStart, duration) * contentWidth / 100,
+      selectedSceneRightPx: timeToTimelinePct(selectedSceneEnd, duration) * contentWidth / 100,
+      selectedSceneStart,
+      selectedSceneEnd,
+    })
+  }, [cursorSec, draft.audioDurationSec, timelineDurationSec, selectedScene?.id, selectedScene?.start, selectedScene?.end])
 
 
   function getSceneTooltip(scene) {
@@ -1211,6 +1467,25 @@ export default function ManualTimingPage() {
     let objectUrl = ''
 
     async function loadAudioBlob() {
+      const nextAudioScope = [
+        draft.audioAssetId || '',
+        draft.audioApiPath || '',
+        draft.audioUrl || draft.asset_url || '',
+      ].join('|')
+      if (currentAudioScopeRef.current !== nextAudioScope) {
+        currentAudioScopeRef.current = nextAudioScope
+        clearSceneStopTimer()
+        scenePreviewRangeRef.current = null
+        translatorPreviewRangeRef.current = null
+        setTranslatorPlayingId('')
+        setPlayingMode(null)
+        const audio = audioRef.current
+        if (audio) {
+          audio.pause()
+          audio.removeAttribute('src')
+          audio.load()
+        }
+      }
       setAudioSrc('')
 
       const directUrl = String(draft.audioUrl || draft.asset_url || '').trim()
@@ -1454,9 +1729,21 @@ export default function ManualTimingPage() {
 
   function selectScene(sceneIndex) {
     const nextScene = scenes[Math.min(sceneIndex, scenes.length - 1)] || scenes[0]
-    stopAudio(nextScene?.start || 0)
+    const sceneStart = Number(nextScene?.start) || 0
+    const sceneEnd = Math.max(sceneStart, Number(nextScene?.end) || sceneStart)
+    const audioCurrentTimeBefore = audioRef.current ? audioRef.current.currentTime : null
+    stopAudio(sceneStart)
     stopTranslationTts()
     setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
+    logManualTimingPlayheadDiag('[MT PLAYHEAD DIAG SELECT]', {
+      sceneId: nextScene?.id || nextScene?.title || sceneIndex,
+      sceneStart,
+      sceneEnd,
+      selectedSceneStart: sceneStart,
+      audioCurrentTimeBefore,
+      audioCurrentTimeAfter: audioRef.current ? audioRef.current.currentTime : sceneStart,
+      shouldSeekOnSelect: true,
+    })
   }
 
   function handleSceneClick(event, sceneIndex) {
@@ -1467,19 +1754,31 @@ export default function ManualTimingPage() {
 
     event?.stopPropagation?.()
     if (event?.ctrlKey || event?.metaKey) {
-      toggleBlockScene(sceneIndex)
+      const nextScene = scenes[Math.min(sceneIndex, scenes.length - 1)] || scenes[0]
+      const sceneStart = Number(nextScene?.start) || 0
+      logManualTimingPlayheadDiag('[MT PLAYHEAD DIAG SELECT]', {
+        sceneId: nextScene?.id || nextScene?.title || sceneIndex,
+        sceneStart,
+        sceneEnd: Math.max(sceneStart, Number(nextScene?.end) || sceneStart),
+        selectedSceneStart: Number(selectedScene?.start) || 0,
+        audioCurrentTimeBefore: audioRef.current ? audioRef.current.currentTime : null,
+        audioCurrentTimeAfter: audioRef.current ? audioRef.current.currentTime : null,
+        shouldSeekOnSelect: false,
+      })
+      toggleBlockScene(sceneIndex, event)
       return
     }
     selectScene(sceneIndex)
   }
 
   function seekTimeline(event) {
-    if (!hasAudio || draft.audioDurationSec <= 0) return
+    if (!hasAudio || timelineDurationSec <= 0) return
     if (event.target.closest('button')) return
-    const rect = event.currentTarget.getBoundingClientRect()
-    const x = event.clientX - rect.left + event.currentTarget.scrollLeft
-    const totalWidth = event.currentTarget.scrollWidth || rect.width
-    const at = clampCursor((x / totalWidth) * draft.audioDurationSec, draft.audioDurationSec)
+    const content = timelineContentRef.current || event.currentTarget
+    const rect = content.getBoundingClientRect()
+    const x = event.clientX - rect.left
+    const totalWidth = content.scrollWidth || rect.width
+    const at = clampCursor((x / totalWidth) * timelineDurationSec, timelineDurationSec)
     const sceneIndex = findSceneIndexAtTime(scenes, at)
     stopAudio(at)
     setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
@@ -1570,6 +1869,195 @@ export default function ManualTimingPage() {
     applyDraftChange({ ...draft, scenes: nextScenes, scenesCount: nextScenes.length, selectedSceneIndex: index }, 'сцены соединены', merged.start)
   }
 
+
+  function shiftTimingItemAfterDeletedRange(item, start, end, delta) {
+    const itemStart = Number(item?.start ?? item?.start_sec ?? item?.t0 ?? 0)
+    const itemEnd = Math.max(itemStart, Number(item?.end ?? item?.end_sec ?? item?.t1 ?? itemStart))
+    if (itemEnd <= start + 0.001) return item
+    if (itemStart >= end - 0.001) {
+      const nextStart = Math.max(0, itemStart - delta)
+      const nextEnd = Math.max(nextStart, itemEnd - delta)
+      return {
+        ...item,
+        start: Number(nextStart.toFixed(3)),
+        end: Number(nextEnd.toFixed(3)),
+        start_sec: item.start_sec !== undefined ? Number(nextStart.toFixed(3)) : item.start_sec,
+        end_sec: item.end_sec !== undefined ? Number(nextEnd.toFixed(3)) : item.end_sec,
+        t0: item.t0 !== undefined ? Number(nextStart.toFixed(3)) : item.t0,
+        t1: item.t1 !== undefined ? Number(nextEnd.toFixed(3)) : item.t1,
+      }
+    }
+    return null
+  }
+
+  function shiftTimingListAfterDeletedRange(items = [], start, end, delta) {
+    if (!Array.isArray(items)) return []
+    return items
+      .map((item) => shiftTimingItemAfterDeletedRange(item, start, end, delta))
+      .filter(Boolean)
+  }
+
+  async function deleteSelectedSceneFromAudio() {
+    if (!hasAudio || draft.audioDurationSec <= 0) {
+      setStatus('сначала загрузите аудио')
+      return
+    }
+
+    const index = Math.min(draft.selectedSceneIndex, scenes.length - 1)
+    const scene = scenes[index]
+    if (!scene) {
+      setStatus('выберите сцену для удаления')
+      return
+    }
+
+    const start = Math.max(0, Number(scene.start || 0))
+    const end = Math.min(Number(draft.audioDurationSec || 0), Math.max(start, Number(scene.end || start)))
+    const cutLen = end - start
+    if (cutLen <= 0.03) {
+      setStatus('выбранный отрезок слишком короткий для удаления')
+      return
+    }
+
+    const nextDuration = Math.max(0, Number(draft.audioDurationSec || 0) - cutLen)
+    if (nextDuration < MIN_SCENE_SEC) {
+      setStatus('нельзя удалить весь аудиофайл')
+      return
+    }
+
+    const repairedAudio = repairManualTimingAudioAssetFields(draft)
+    if (!repairedAudio.audioAssetId && !repairedAudio.audioApiPath && !repairedAudio.audioUrl) {
+      setStatus('нет assetId/audioApiPath для серверного удаления')
+      return
+    }
+    if (!repairedAudio.audioAssetId) {
+      console.warn('[AUDIO CUT BLOCKED MISSING_ASSET_ID]', repairedAudio)
+      setStatus('нет audio asset_id для удаления: заново передайте audio из Podcast или загрузите файл')
+      return
+    }
+    if (
+      repairedAudio.audioAssetId !== draft.audioAssetId ||
+      repairedAudio.audioApiPath !== draft.audioApiPath ||
+      repairedAudio.audioUrl !== draft.audioUrl
+    ) {
+      setDraft((prev) => normalizeDraft({ ...prev, ...repairedAudio }))
+    }
+
+    setDeletingSceneAudio(true)
+    setStatus(`удаляю из аудио: ${formatTime(start, true)} → ${formatTime(end, true)}`)
+
+    try {
+      const result = await cutAudioAssetRange({
+        assetId: repairedAudio.audioAssetId,
+        assetApiPath: repairedAudio.audioApiPath,
+        audioUrl: repairedAudio.audioUrl,
+        projectId: workspaceMode ? null : projectId,
+        stage: STAGE,
+        startSec: start,
+        endSec: end,
+        durationSec: draft.audioDurationSec,
+        label: scene.title || scene.id || '',
+      })
+
+      const shiftedScenes = scenes
+        .map((item, itemIndex) => {
+          if (itemIndex === index) return null
+          if (Number(item.end || 0) <= start + 0.001) return item
+          if (Number(item.start || 0) >= end - 0.001) {
+            return {
+              ...item,
+              start: Math.max(0, Number((Number(item.start || 0) - cutLen).toFixed(3))),
+              end: Math.max(0, Number((Number(item.end || 0) - cutLen).toFixed(3))),
+            }
+          }
+          return null
+        })
+        .filter(Boolean)
+
+      const nextScenes = shiftedScenes.length
+        ? renumberScenes(shiftedScenes)
+        : makeSingleScene(result.new_duration_sec || nextDuration)
+
+      pushHistorySnapshot()
+      const selectedIndex = Math.min(index, nextScenes.length - 1)
+      const nextDraft = normalizeDraft({
+        ...draft,
+        audioName: result.audio_name || result.audioName || draft.audioName,
+        audioAssetId: result.asset_id || result.assetId || '',
+        audioApiPath: result.asset_api_path || result.assetApiPath || '',
+        audioUrl: result.asset_url || result.assetUrl || '',
+        audioSizeBytes: result.audio_size_bytes || result.audioSizeBytes || 0,
+        audioDurationSec: Number(result.audio_duration_sec || result.audioDurationSec || result.new_duration_sec || nextDuration),
+        scenes: nextScenes,
+        scenesCount: nextScenes.length,
+        selectedSceneIndex: selectedIndex,
+        speechSegments: shiftTimingListAfterDeletedRange(draft.speechSegments || [], start, end, cutLen),
+        audioPhrases: shiftTimingListAfterDeletedRange(draft.audioPhrases || [], start, end, cutLen),
+        missingSpeechHints: shiftTimingListAfterDeletedRange(draft.missingSpeechHints || [], start, end, cutLen),
+        silentSegments: shiftTimingListAfterDeletedRange(draft.silentSegments || [], start, end, cutLen),
+      })
+
+      stopAudio(nextScenes[selectedIndex]?.start || 0)
+      setDraft(nextDraft)
+      await saveDraft(nextDraft, 'delete_selected_audio_range')
+      setBlockSelection([])
+      setStatus(`отрезок удалён из аудио: -${formatTime(cutLen, true)} · новая длительность ${formatTime(nextDraft.audioDurationSec, true)}`)
+    } catch (err) {
+      console.error('[ManualTiming] delete selected scene from audio failed', err)
+      setStatus(`ошибка удаления аудио: ${err.message}`)
+    } finally {
+      setDeletingSceneAudio(false)
+    }
+  }
+
+
+
+  async function saveCurrentTimingAudio() {
+    if (!hasAudio) {
+      setStatus('сначала загрузите аудио')
+      return
+    }
+
+    const filename = avaStage16SafeAudioFilename(
+      draft.audioName ||
+      draft.audio_name ||
+      draft.filename ||
+      draft.name ||
+      'ava_timing_audio.mp3'
+    )
+
+    const repairedAudio = repairManualTimingAudioAssetFields(draft)
+    const source = String(
+      repairedAudio.audioApiPath ||
+      repairedAudio.audioUrl ||
+      draft.audio_api_path ||
+      draft.audio_url ||
+      draft.assetUrl ||
+      draft.asset_url ||
+      draft.url ||
+      ''
+    ).trim()
+
+    if (!source) {
+      setStatus('не найден путь к текущему аудио')
+      return
+    }
+
+    try {
+      setStatus('сохраняю текущее аудио…')
+      await avaStage16DownloadAudioSource({
+        source,
+        filename,
+        fetchProtectedBlobUrl,
+        getAuthHeaders,
+        setStatus,
+      })
+    } catch (error) {
+      console.error('[ManualTiming] save current audio failed', error)
+      setStatus(`не удалось сохранить аудио: ${error?.message || 'ошибка'}`)
+    }
+  }
+
+
   function resetScenes() {
     if (!hasAudio || draft.audioDurationSec <= 0) {
       setStatus('сначала загрузите аудио')
@@ -1596,24 +2084,45 @@ export default function ManualTimingPage() {
     setStatus('возвращено')
   }
 
-  function toggleBlockScene(sceneIndex) {
+  function toggleBlockScene(sceneIndex, event = null) {
     const scene = scenes[Math.min(sceneIndex, scenes.length - 1)]
     if (!scene) return
+    const sceneId = getSceneSelectionId(scene)
+    const beforeSelectedIds = sortSceneSelectionIds(blockSelection)
     stopAudio(scene.start)
     setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
     setBlockDraft((prev) => ({ title: prev.title || scene.blockTitle || '' }))
     setBlockSelection((items) => {
-      const exists = items.includes(sceneIndex)
-      const next = exists ? items.filter((item) => item !== sceneIndex) : [...items, sceneIndex].sort((a, b) => a - b)
+      const exists = items.some((item) => String(item) === sceneId || Number(item) === Number(scene.index))
+      const nextRaw = exists
+        ? items.filter((item) => String(item) !== sceneId && Number(item) !== Number(scene.index))
+        : [...items, sceneId]
+      const next = sortSceneSelectionIds(nextRaw)
       setStatus(next.length ? `выбрано сцен для блока: ${next.length}` : 'выбор блока очищен')
+      logManualTimingBlockDiag('[MT BLOCK DIAG CTRL_CLICK]', {
+        sceneId,
+        ctrlKey: Boolean(event?.ctrlKey),
+        metaKey: Boolean(event?.metaKey),
+        beforeSelectedIds,
+        afterSelectedIds: next,
+        selectedSceneId: sceneId,
+      })
       return next
     })
   }
 
   function markSemanticBlock() {
     const index = Math.min(draft.selectedSceneIndex, scenes.length - 1)
+    const fallbackScene = scenes[index] || selectedScene
+    const fallbackId = getSceneSelectionId(fallbackScene)
+    const currentSelection = sortSceneSelectionIds(blockSelection)
+    logManualTimingBlockDiag('[MT BLOCK DIAG OPEN]', {
+      selectedSceneId: fallbackId,
+      semanticBlockSelectedSceneIds: currentSelection,
+      countUsedForBlock: currentSelection.length || (fallbackId ? 1 : 0),
+    })
     setBlockSelection((items) => {
-      const next = items.length ? items : [index]
+      const next = sortSceneSelectionIds(items.length ? items : [fallbackId])
       setStatus(`выбрано сцен для блока: ${next.length}`)
       return next
     })
@@ -1621,7 +2130,8 @@ export default function ManualTimingPage() {
   }
 
   function applyStoryBlock() {
-    if (!blockSelection.length) {
+    const selectedScenesForBlock = getSelectedBlockScenes(blockSelection)
+    if (!selectedScenesForBlock.length) {
       setStatus('выберите сцены через Ctrl+клик')
       return
     }
@@ -1629,13 +2139,14 @@ export default function ManualTimingPage() {
     const title = (blockDraft.title || '').trim() || `Блок ${existingBlocks.length + 1}`
     const blockId = `block_${Date.now().toString(36)}`
     const blockColor = sceneHue(existingBlocks.length + 8)
-    const selectedSet = new Set(blockSelection)
+    const selectedIds = selectedScenesForBlock.map(getSceneSelectionId)
+    const selectedSet = new Set(selectedIds)
     const nextScenes = scenes.map((scene) => (
-      selectedSet.has(scene.index)
+      selectedSet.has(getSceneSelectionId(scene))
         ? { ...scene, semanticBlock: true, blockId, blockTitle: title, blockColor }
         : scene
     ))
-    const selectedScenes = nextScenes.filter((scene) => selectedSet.has(scene.index))
+    const selectedScenes = nextScenes.filter((scene) => selectedSet.has(getSceneSelectionId(scene)))
     const nextBlocks = [
       ...existingBlocks,
       {
@@ -1648,6 +2159,12 @@ export default function ManualTimingPage() {
         end: selectedScenes[selectedScenes.length - 1]?.end ?? 0,
       },
     ]
+    logManualTimingBlockDiag('[MT BLOCK DIAG SAVE]', {
+      blockId,
+      title,
+      sceneIds: selectedScenes.map((scene) => scene.id),
+      color: blockColor,
+    })
     pushHistorySnapshot()
     applyDraftChange({ ...draft, scenes: nextScenes, storyBlocks: nextBlocks, selectedSceneIndex: selectedScenes[0]?.index ?? 0 }, `блок создан: ${title}`, selectedScenes[0]?.start ?? cursorSec)
     setBlockSelection([])
@@ -1720,7 +2237,7 @@ export default function ManualTimingPage() {
   async function uploadPickedAudio(file) {
     setUploading(true)
     stopAudio(0)
-    setStatus('загрузка аудио…')
+    setStatus('загрузка аудио… если это видео, сервер извлечёт MP3')
     try {
       const result = await uploadAudioAsset({ file, projectId: workspaceMode ? null : projectId, stage: STAGE })
       const duration = Math.max(0, Number(result.audio_duration_sec) || 0)
@@ -1760,7 +2277,7 @@ export default function ManualTimingPage() {
       setDraft(nextDraft)
       setCursorSec(0)
       await saveDraft(nextDraft, 'audio_upload')
-      setStatus('аудио загружено')
+      setStatus(result.converted_from_video ? 'видео загружено, аудио извлечено в MP3' : 'аудио загружено')
     } catch (err) {
       setStatus(`ошибка загрузки аудио: ${err.message}`)
     } finally {
@@ -2144,6 +2661,7 @@ const clearedDraft = normalizeDraft({
       silentSegments: draft.silentSegments || [],
       scenes: scenes.map((scene) => {
         const speechExport = buildSceneSpeechExport(scene, draft.speechSegments || [])
+        const sceneDisplay = buildSceneDisplayText(scene, speechExport)
         return {
           id: scene.id,
           scene_id: scene.id,
@@ -2160,7 +2678,7 @@ const clearedDraft = normalizeDraft({
           block_id: scene.blockId || '',
           block_title: scene.blockTitle || '',
           roleLabels: typeof getSceneRoleLabels === 'function' ? getSceneRoleLabels(scene) : (scene.roleLabels || []),
-          ...speechExport,
+          ...sceneDisplay,
         }
       }),
       storyBlocks: draft.storyBlocks || [],
@@ -2193,11 +2711,12 @@ const clearedDraft = normalizeDraft({
       const durationSec = Math.max(0, Number((endSec - startSec).toFixed(3)))
       const sceneId = String(scene.id || scene.scene_id || `seg_${String(index + 1).padStart(3, '0')}`)
       const speechExport = buildSceneSpeechExport(scene, draft.speechSegments || [])
+      const sceneDisplay = buildSceneDisplayText(scene, speechExport)
       const roleLabels = typeof getSceneRoleLabels === 'function' ? getSceneRoleLabels(scene) : (scene.roleLabels || [])
       const title = scene.title || `Сцена ${index + 1}`
       const note = scene.note || ''
       const isSilence = Boolean(scene.isSilence || scene.is_silence || scene.silence || String(title || '').trim() === '[тишина]')
-      const text = speechExport.scene_word_text || note || title || ''
+      const text = sceneDisplay.scene_word_text || note || title || ''
       const route = String(scene.route || scene.videoRoute || scene.route_key || (isSilence ? 'silence' : 'auto')).trim() || 'auto'
       const routeLower = route.toLowerCase()
       const roleText = Array.isArray(roleLabels) ? roleLabels.join(' ').toLowerCase() : String(roleLabels || '').toLowerCase()
@@ -2231,13 +2750,13 @@ const clearedDraft = normalizeDraft({
         durationSec,
         title,
         text,
-        original_text: speechExport.scene_word_text || '',
-        translated_text_ru: speechExport.translated_text_ru || scene.translatedTextRu || scene.translationText || scene.text_ru || '',
-        meaning_hint_ru: speechExport.meaning_hint_ru || scene.meaningText || scene.meaning_hint_ru || '',
-        scene_word_text: speechExport.scene_word_text || '',
-        lyrics_text: speechExport.lyrics_text || speechExport.scene_word_text || '',
-        source_phrase_ids: speechExport.source_phrase_ids || [],
-        phrase_cut_warning: Boolean(speechExport.phrase_cut_warning),
+        original_text: sceneDisplay.scene_word_text || '',
+        translated_text_ru: sceneDisplay.translated_text_ru || '',
+        meaning_hint_ru: sceneDisplay.meaning_hint_ru || '',
+        scene_word_text: sceneDisplay.scene_word_text || '',
+        lyrics_text: sceneDisplay.lyrics_text || sceneDisplay.scene_word_text || '',
+        source_phrase_ids: sceneDisplay.source_phrase_ids || [],
+        phrase_cut_warning: Boolean(sceneDisplay.phrase_cut_warning),
         roleLabels,
         role_labels: roleLabels,
         route,
@@ -2703,7 +3222,9 @@ const clearedDraft = normalizeDraft({
     }
   }
 
-  async function toggleScenePlay() {
+  async function toggleScenePlay(event) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
     const audio = audioRef.current
     if (!audio || !hasAudio) return
     clearSceneStopTimer()
@@ -2719,8 +3240,15 @@ const clearedDraft = normalizeDraft({
       return
     }
 
-    const startAt = clampCursor(Number(selectedScene?.start || 0), draft.audioDurationSec)
-    const endAt = clampCursor(Math.max(startAt + 0.05, Number(selectedScene?.end || startAt)), draft.audioDurationSec)
+    const sceneStart = clampCursor(Number(selectedScene?.start || 0), draft.audioDurationSec)
+    const sceneEnd = clampCursor(Math.max(sceneStart + 0.05, Number(selectedScene?.end || sceneStart)), draft.audioDurationSec)
+    const currentCursor = clampCursor(
+      Number.isFinite(Number(cursorSec)) ? Number(cursorSec) : Number(audio.currentTime || 0),
+      draft.audioDurationSec,
+    )
+    const cursorInsideScene = currentCursor > sceneStart + 0.01 && currentCursor < sceneEnd - 0.01
+    const startAt = cursorInsideScene ? currentCursor : sceneStart
+    const endAt = sceneEnd
     const fixedRange = {
       id: selectedScene?.id || selectedScene?.title || 'scene',
       start: startAt,
@@ -2755,7 +3283,9 @@ const clearedDraft = normalizeDraft({
     }
   }
 
-  async function toggleAllPlay() {
+  async function toggleAllPlay(event) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
     const audio = audioRef.current
     if (!audio || !hasAudio) return
     clearSceneStopTimer()
@@ -2866,7 +3396,7 @@ const clearedDraft = normalizeDraft({
           <h1>Загрузка Manual Timing...</h1>
           <p>Возвращаем таймкоды, блоки, аудио и разрезы. Дождись восстановления проекта перед правками.</p>
           <div className="avaTimingLoadingSteps">
-            <span className="isActive">Timing</span>
+            <span className="isActive">Prompt</span>
             <i />
             <span>Audio</span>
             <i />
@@ -2953,7 +3483,7 @@ const clearedDraft = normalizeDraft({
   return (
     <div className="avaPage avaTimingFlatPage">
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
-      <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm" hidden onChange={handleAudioUpload} />
+      <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov,.mkv,.avi,.m4v" hidden onChange={handleAudioUpload} />
       <input ref={jsonInputRef} type="file" accept="application/json,.json" hidden onChange={importTimingJson} />
 
       {/* AVA08D_MANUAL_TIMING_CONTROLS */}
@@ -2977,8 +3507,8 @@ const clearedDraft = normalizeDraft({
             <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Аудио'}
           </button>
           <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Экспорт</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchSeedJson} disabled={loading || !scenes.length}>📷 Видео JSON</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Prompt</button>
+          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchSeedJson} disabled={loading || !scenes.length}>📷 Video</button>
           <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchCodexJobJson} disabled={loading || !scenes.length}>🧠 Codex</button>
 
           <button
@@ -3044,7 +3574,7 @@ const clearedDraft = normalizeDraft({
           <div>
             <strong>ASR / перевод · {selectedScene.title}</strong>
             <span>{formatTime(selectedScene.start)} → {formatTime(selectedScene.end)}</span>
-            {selectedSceneSpeechExport.phrase_cut_warning && <em>фраза разрезана — проверь границу</em>}
+            {selectedSceneDisplayText.phrase_cut_warning && <em>фраза разрезана — проверь границу</em>}
           </div>
           <div className="avaTimingAsrStripActions">
             <button type="button" onClick={runAsrTranslation} disabled={translationRunning || asrRunning || !(draft.speechSegments || []).length}>
@@ -3061,15 +3591,15 @@ const clearedDraft = normalizeDraft({
             <div className="avaTimingTranslatorSummary">
               <div>
                 <span>слова сцены</span>
-                <strong>{selectedSceneSpeechExport.scene_word_text || '—'}</strong>
+                <strong>{selectedSceneDisplayText.scene_word_text || '—'}</strong>
               </div>
               <div>
                 <span>перевод</span>
-                <strong>{selectedSceneSpeechExport.translated_text_ru || 'перевода пока нет'}</strong>
+                <strong>{selectedSceneDisplayText.translated_text_ru || 'перевода пока нет'}</strong>
               </div>
               <div>
                 <span>смысл</span>
-                <strong>{selectedSceneSpeechExport.meaning_hint_ru || 'смысл пока не заполнен'}</strong>
+                <strong>{selectedSceneDisplayText.meaning_hint_ru || 'смысл пока не заполнен'}</strong>
               </div>
             </div>
 
@@ -3077,8 +3607,8 @@ const clearedDraft = normalizeDraft({
               <button
                 type="button"
                 className={translationTtsPlayingId === `scene-translation-${selectedScene.id}` ? 'isPlaying' : ''}
-                onClick={() => speakTranslationText(selectedSceneSpeechExport.translated_text_ru, `scene-translation-${selectedScene.id}`)}
-                disabled={!selectedSceneSpeechExport.translated_text_ru}
+                onClick={() => speakTranslationText(selectedSceneDisplayText.translated_text_ru, `scene-translation-${selectedScene.id}`)}
+                disabled={!selectedSceneDisplayText.translated_text_ru}
                 title="Озвучить русский перевод выбранной сцены браузерным голосом"
               >
                 {translationTtsPlayingId === `scene-translation-${selectedScene.id}` ? '■ стоп' : '🔊 перевод сцены'}
@@ -3086,8 +3616,8 @@ const clearedDraft = normalizeDraft({
               <button
                 type="button"
                 className={translationTtsPlayingId === `scene-meaning-${selectedScene.id}` ? 'isPlaying' : ''}
-                onClick={() => speakTranslationText(selectedSceneSpeechExport.meaning_hint_ru, `scene-meaning-${selectedScene.id}`)}
-                disabled={!selectedSceneSpeechExport.meaning_hint_ru}
+                onClick={() => speakTranslationText(selectedSceneDisplayText.meaning_hint_ru, `scene-meaning-${selectedScene.id}`)}
+                disabled={!selectedSceneDisplayText.meaning_hint_ru}
                 title="Озвучить краткий смысл сцены"
               >
                 {translationTtsPlayingId === `scene-meaning-${selectedScene.id}` ? '■ стоп' : '🔊 смысл'}
@@ -3108,26 +3638,30 @@ const clearedDraft = normalizeDraft({
                   const clipEnd = Math.min(selectedScene.end, segmentEnd)
                   const fullPreviewId = `phrase-full-${segmentKey}`
                   const clipPreviewId = `phrase-clip-${segmentKey}`
+                  const useSceneScopedPreview = Boolean(selectedSceneDisplayText.phrase_cut_warning)
+                  const visibleOriginalText = useSceneScopedPreview ? selectedSceneDisplayText.scene_word_text : (clipped.text || segment.text || '')
+                  const visibleTranslationRu = useSceneScopedPreview ? selectedSceneDisplayText.translated_text_ru : clipped.ruText
+                  const visibleMeaningRu = useSceneScopedPreview ? selectedSceneDisplayText.meaning_hint_ru : clipped.meaningText
                   return (
                     <div key={segmentKey} className={`avaTimingSpeechItem ${clipped.isPartial ? 'isPartialCut' : ''}`}>
                       <div className="avaTimingSpeechItemTop">
                         <span>{label} · {formatTime(clipStart, true)} → {formatTime(clipEnd, true)}{clipped.isPartial ? ' · частично' : ''}</span>
                       </div>
-                      <p>{clipped.text || segment.text || '...'}</p>
-                      {clipped.ruText && (
+                      <p>{visibleOriginalText || '...'}</p>
+                      {visibleTranslationRu && (
                         <div className="avaTimingSpeechTranslationLine">
-                          <em>{clipped.ruText}</em>
+                          <em>{visibleTranslationRu}</em>
                           <button
                             type="button"
                             className={translationTtsPlayingId === `phrase-translation-${segmentKey}` ? 'isPlaying' : ''}
-                            onClick={() => speakTranslationText(clipped.ruText, `phrase-translation-${segmentKey}`)}
+                            onClick={() => speakTranslationText(visibleTranslationRu, `phrase-translation-${segmentKey}`)}
                             title="Озвучить русский перевод этой ASR-фразы"
                           >
                             {translationTtsPlayingId === `phrase-translation-${segmentKey}` ? '■' : '🔊'}
                           </button>
                         </div>
                       )}
-                      {clipped.meaningText && <small>{clipped.meaningText}</small>}
+                      {visibleMeaningRu && <small>{visibleMeaningRu}</small>}
                     </div>
                   )
                 })}
@@ -3138,7 +3672,8 @@ const clearedDraft = normalizeDraft({
           </div>
         )}
 
-        <div className="avaTimingTimelineScale" onClick={seekTimeline} onDoubleClick={splitAtCursor}>
+        <div ref={timelineScaleRef} className="avaTimingTimelineScale" onClick={seekTimeline} onDoubleClick={splitAtCursor}>
+          <div ref={timelineContentRef} className="avaTimingTimelineContent">
           <div className="avaTimingCursorLabel" style={{ left: `${cursorPct}%` }}>{formatTime(cursorSec, true)}</div>
           <div className="avaTimingWaveLong">
             {Array.from({ length: 180 }).map((_, index) => <i key={index} style={{ '--h': `${14 + ((index * 19) % 74)}%` }} />)}
@@ -3149,8 +3684,8 @@ const clearedDraft = normalizeDraft({
             <div className="avaTimingAsrPhraseMap">
               {(draft.speechSegments || []).map((segment) => {
                 const visualStart = Math.max(0, Number(segment.start || 0) + asrVisualOffsetSec)
-                const left = draft.audioDurationSec > 0 ? Math.max(0, (visualStart / draft.audioDurationSec) * 100) : 0
-                const width = draft.audioDurationSec > 0 ? Math.max(0.12, ((segment.end - segment.start) / draft.audioDurationSec) * 100) : 0.4
+                const left = timeToTimelinePct(visualStart, timelineDurationSec)
+                const width = timelineDurationSec > 0 ? Math.max(0.12, ((segment.end - segment.start) / timelineDurationSec) * 100) : 0.4
                 const role = roleMap.get(segment.roleId || segment.role_id)
                 const label = role?.label || segment.label || normalizeRoleLabel(segment.roleId || segment.role_id || 'voice')
                 return (
@@ -3172,8 +3707,8 @@ const clearedDraft = normalizeDraft({
 
               {asrGapSegments.map((gap) => {
                 const visualGapStart = Math.max(0, Number(gap.start || 0) + asrVisualOffsetSec)
-                const left = draft.audioDurationSec > 0 ? Math.max(0, (visualGapStart / draft.audioDurationSec) * 100) : 0
-                const width = draft.audioDurationSec > 0 ? Math.max(0.8, ((gap.end - gap.start) / draft.audioDurationSec) * 100) : 2
+                const left = timeToTimelinePct(visualGapStart, timelineDurationSec)
+                const width = timelineDurationSec > 0 ? Math.max(0.8, ((gap.end - gap.start) / timelineDurationSec) * 100) : 2
                 return (
                   <button
                     key={gap.id}
@@ -3193,9 +3728,10 @@ const clearedDraft = normalizeDraft({
             </div>
           )}
 
-        <div className="avaTimingSegmentsRow">
+        <div ref={segmentsRowRef} className="avaTimingSegmentsRow">
             {scenes.map((scene) => {
-              const sceneWidth = draft.audioDurationSec > 0 ? `${Math.max(0.5, ((scene.end - scene.start) / draft.audioDurationSec) * 100)}%` : `${100 / scenes.length}%`
+              const sceneLeft = timelineDurationSec > 0 ? timeToTimelinePct(scene.start, timelineDurationSec) : ((scene.index || 0) / Math.max(1, scenes.length)) * 100
+              const sceneWidth = timelineDurationSec > 0 ? Math.max(0.5, ((scene.end - scene.start) / timelineDurationSec) * 100) : (100 / Math.max(1, scenes.length))
               const roleLabels = getSceneRoleLabels(scene)
               const podcastRoleLabel = String(
                 scene.roleLabel ||
@@ -3213,8 +3749,9 @@ const clearedDraft = normalizeDraft({
                 <button
                   key={`${scene.id}-${scene.start}-${scene.end}`}
                   type="button"
-                  style={{ width: sceneWidth, '--scene-hue': sceneBlockHue(scene, scene.index) }}
-                  className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${blockSelection.includes(scene.index) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''}`}
+                  data-scene-id={scene.id || scene.title || scene.index}
+                  style={{ left: `${sceneLeft}%`, width: `${sceneWidth}%`, '--scene-hue': sceneBlockHue(scene, scene.index) }}
+                  className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${isSceneInBlockSelection(scene) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''}`}
                   onClick={(event) => handleSceneClick(event, scene.index)}
                   onDoubleClick={(event) => {
                     event?.stopPropagation?.()
@@ -3228,6 +3765,7 @@ const clearedDraft = normalizeDraft({
                 </button>
               )
             })}
+          </div>
           </div>
         </div>
 
@@ -3293,7 +3831,9 @@ const clearedDraft = normalizeDraft({
             />
 
             <div className="avaTimingMissingPhraseActions">
-              <button type="button" onClick={() => {
+              <button type="button" onClick={(event) => {
+                event?.preventDefault?.()
+                event?.stopPropagation?.()
                 stopAudio(missingPhraseEditor.start || 0)
                 setCursorSec(missingPhraseEditor.start || 0)
                 audioRef.current.currentTime = missingPhraseEditor.start || 0
@@ -3310,7 +3850,7 @@ const clearedDraft = normalizeDraft({
           </div>
         )}
 
-        {blockSelection.length > 0 && (
+        {selectedBlockSceneCount > 0 && (
           <div className="avaTimingBlockEditor">
             <div>
               <strong>Смысловой блок</strong>
@@ -3371,7 +3911,8 @@ const clearedDraft = normalizeDraft({
           <button type="button" onClick={splitAtCursor} disabled={!hasAudio}>✂ Разрезать</button>
           <button type="button" onClick={mergeSelectedWithNext} disabled={scenes.length <= 1}>🔗 Соединить</button>
           <button type="button" onClick={markSemanticBlock} disabled={!hasAudio}>+ Смысловой блок</button>
-<button className="isReset" type="button" onClick={resetScenes} disabled={!hasAudio}><RotateCcw size={15} /> сброс</button>
+<button className="isReset" type="button" onClick={deleteSelectedSceneFromAudio} disabled={!hasAudio || deletingSceneAudio || !selectedScene} title="Удалить выбранную сцену из общего аудио и сдвинуть всё дальше влево"><Trash2 size={15} /> {deletingSceneAudio ? 'удаляю…' : 'удалить'}</button>
+            <button className="isSaveAudio" type="button" onClick={saveCurrentTimingAudio} disabled={!hasAudio}>💾 сохранить аудио</button>
           <button type="button" onClick={undoLastChange} disabled={!history.length}><Undo2 size={15} /> вернуть</button>
 
           <button
@@ -3442,7 +3983,7 @@ const clearedDraft = normalizeDraft({
                   id="avaTimingVocalStemInput"
                   className="avaHiddenFileInput"
                   type="file"
-                  accept="audio/*"
+                  accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov,.mkv,.avi,.m4v"
                   onChange={handleVocalUpload}
                 />
                 <button

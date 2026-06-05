@@ -168,3 +168,270 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* AVA_SETTINGS_COMPACT_V2_START */
+.avaSettingsPageV2 {
+  width: min(100%, 1420px);
+  max-width: 1420px;
+}
+
+/* Верх страницы — меньше воздуха, больше собранности */
+.avaSettingsPageV2 > .avaSectionHeader:first-child {
+  align-items: center;
+  margin: 0 0 16px !important;
+  padding: 24px 28px;
+  border: 1px solid rgba(119, 141, 255, .16);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 86% 12%, rgba(69,216,255,.13), transparent 32%),
+    radial-gradient(circle at 18% 0%, rgba(143,124,255,.12), transparent 38%),
+    linear-gradient(135deg, rgba(12, 18, 40, .76), rgba(7, 11, 24, .58));
+  box-shadow:
+    0 22px 60px rgba(0,0,0,.22),
+    inset 0 1px 0 rgba(255,255,255,.045);
+}
+
+.avaSettingsPageV2 > .avaSectionHeader:first-child h2 {
+  margin: 0 0 8px !important;
+  font-size: clamp(28px, 2.4vw, 38px);
+  line-height: 1.08;
+  letter-spacing: -.045em;
+}
+
+.avaSettingsPageV2 > .avaSectionHeader:first-child p {
+  margin: 0;
+  max-width: 720px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.avaSettingsPageV2 .avaSettingsHeaderActions {
+  gap: 10px;
+}
+
+.avaSettingsPageV2 .avaSettingsHeaderActions .avaSecondaryButton {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 16px;
+}
+
+/* Status / error полоски */
+.avaSettingsPageV2 .avaInfoBox,
+.avaSettingsPageV2 .avaError {
+  margin: 12px 0 16px;
+  min-height: 0;
+  padding: 14px 18px;
+  border-radius: 18px;
+}
+
+/* Основные 2-колоночные блоки */
+.avaSettingsPageV2 .avaSettingsGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+  align-items: stretch;
+}
+
+.avaSettingsPageV2 .avaSettingsPanel {
+  width: 100% !important;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 26px !important;
+  border-radius: 24px !important;
+  background:
+    radial-gradient(circle at 90% 5%, rgba(69,216,255,.07), transparent 35%),
+    linear-gradient(180deg, rgba(15, 22, 47, .78), rgba(8, 13, 30, .92));
+  border: 1px solid rgba(255,255,255,.105);
+  box-shadow:
+    0 20px 54px rgba(0,0,0,.22),
+    inset 0 1px 0 rgba(255,255,255,.045);
+  overflow: hidden;
+}
+
+.avaSettingsPageV2 .avaSettingsPanel .avaEyebrow {
+  margin: 0 0 18px;
+  color: #aebbd8;
+  letter-spacing: .08em;
+}
+
+.avaSettingsPageV2 .avaSettingsPanel h3 {
+  margin: 0 0 14px;
+  font-size: 23px;
+  line-height: 1.15;
+  letter-spacing: -.03em;
+}
+
+.avaSettingsPageV2 .avaSettingsPanel p {
+  margin-top: 0;
+  color: #aebbd8;
+  line-height: 1.55;
+}
+
+/* Account / Storage table inside cards */
+.avaSettingsPageV2 .avaSettingsMiniList {
+  margin: 16px 0 18px;
+  padding: 14px 16px;
+  border-radius: 17px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.058), rgba(255,255,255,.035));
+  border: 1px solid rgba(255,255,255,.09);
+  gap: 9px 14px;
+}
+
+.avaSettingsPageV2 .avaSettingsMiniList span {
+  font-size: 14px;
+}
+
+.avaSettingsPageV2 .avaSettingsMiniList strong {
+  font-size: 14px;
+}
+
+.avaSettingsPageV2 .avaSettingsActionRow {
+  gap: 9px;
+}
+
+.avaSettingsPageV2 .avaSettingsActionRow .avaSecondaryButton,
+.avaSettingsPageV2 .avaSettingsPanel > .avaPrimaryButton,
+.avaSettingsPageV2 .avaSettingsPanel > .avaDangerButton {
+  min-height: 44px;
+  padding: 0 17px;
+  border-radius: 16px;
+}
+
+/* Stats row — компактные карточки */
+.avaSettingsPageV2 .avaSettingsStatsGrid {
+  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.avaSettingsPageV2 .avaSettingsStatCard {
+  min-height: 92px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(69,216,255,.08), transparent 44%),
+    linear-gradient(180deg, rgba(15, 22, 47, .76), rgba(8, 13, 30, .9));
+  border-color: rgba(255,255,255,.095);
+  box-shadow:
+    0 16px 42px rgba(0,0,0,.2),
+    inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.avaSettingsPageV2 .avaSettingsStatCard strong {
+  font-size: 30px;
+  line-height: .95;
+}
+
+.avaSettingsPageV2 .avaSettingsStatCard span {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.avaSettingsPageV2 .avaSettingsStatCard small {
+  font-size: 11px;
+}
+
+/* Списки workspace/jobs/projects — меньше высота, аккуратный scroll */
+.avaSettingsPageV2 .avaSettingsList {
+  gap: 9px;
+  margin: 14px 0;
+  max-height: 230px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+}
+
+.avaSettingsPageV2 .avaSettingsList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.avaSettingsPageV2 .avaSettingsList::-webkit-scrollbar-track {
+  background: rgba(255,255,255,.035);
+  border-radius: 999px;
+}
+
+.avaSettingsPageV2 .avaSettingsList::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(139,124,255,.72), rgba(69,216,255,.56));
+  border-radius: 999px;
+}
+
+.avaSettingsPageV2 .avaSettingsListItem {
+  padding: 12px 14px;
+  border-radius: 15px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.034));
+  border: 1px solid rgba(255,255,255,.09);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.032);
+}
+
+.avaSettingsPageV2 .avaSettingsListItem strong {
+  font-size: 14px;
+}
+
+.avaSettingsPageV2 .avaSettingsListItem span,
+.avaSettingsPageV2 .avaSettingsListItem small {
+  font-size: 12px;
+}
+
+/* System check block */
+.avaSettingsPageV2 > .avaSettingsPanel {
+  margin: 14px 0 !important;
+}
+
+.avaSettingsPageV2 .avaSystemCheckList {
+  gap: 8px;
+}
+
+.avaSettingsPageV2 .avaSystemCheckRow {
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
+/* Последний блок проектов — не должен быть гигантским */
+.avaSettingsPageV2 > .avaSettingsPanel:last-of-type .avaSettingsList {
+  max-height: 260px;
+}
+
+/* Небольшое выравнивание нижних action buttons */
+.avaSettingsPageV2 .avaDangerButton {
+  box-shadow: 0 14px 34px rgba(255, 80, 112, .12);
+}
+
+@media (max-width: 1280px) {
+  .avaSettingsPageV2 .avaSettingsStatsGrid {
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .avaSettingsPageV2 > .avaSectionHeader:first-child {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .avaSettingsPageV2 .avaSettingsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .avaSettingsPageV2 .avaSettingsStatsGrid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .avaSettingsPageV2 > .avaSectionHeader:first-child {
+    padding: 20px;
+  }
+
+  .avaSettingsPageV2 .avaSettingsStatsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .avaSettingsPageV2 .avaSettingsPanel {
+    padding: 20px !important;
+  }
+}
+/* AVA_SETTINGS_COMPACT_V2_END */
+

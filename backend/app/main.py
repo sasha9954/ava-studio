@@ -7,6 +7,7 @@ from app.core.config import get_settings
 settings = get_settings()
 settings.storage_path.mkdir(parents=True, exist_ok=True)
 settings.static_path.mkdir(parents=True, exist_ok=True)
+print(f"[CORS CONFIG ACTIVE] allowed_origins={settings.cors_origin_list}", flush=True)
 
 app = FastAPI(title=settings.app_name, version='0.1.0')
 

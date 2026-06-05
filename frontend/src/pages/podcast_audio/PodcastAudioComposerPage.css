@@ -1316,3 +1316,34 @@ button.podcastSavePhraseDone {
   background: linear-gradient(135deg, #67e8f9, #60a5fa);
   box-shadow: 0 14px 34px rgba(56, 189, 248, 0.26);
 }
+
+
+/* PATCH 15: visible delete button in Podcast controls */
+.podcastComposerDeleteButton {
+  border-color: rgba(248, 113, 113, 0.36) !important;
+  background:
+    linear-gradient(135deg, rgba(127, 29, 29, 0.48), rgba(59, 18, 28, 0.36)) !important;
+  color: #fecaca !important;
+  font-weight: 900;
+}
+
+.podcastComposerDeleteButton:hover:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.72) !important;
+  box-shadow: 0 0 20px rgba(248, 113, 113, 0.18);
+}
+
+
+/* PATCH 16: save current audio buttons */
+.podcastComposerSaveAudioButton {
+  border-color: rgba(94, 234, 212, 0.34) !important;
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.28), rgba(59, 130, 246, 0.24)) !important;
+  color: #d9fffb !important;
+  font-weight: 900;
+}
+
+.podcastComposerSaveAudioButton:hover:not(:disabled) {
+  border-color: rgba(94, 234, 212, 0.72) !important;
+  box-shadow: 0 0 22px rgba(45, 212, 191, 0.16);
+}
+

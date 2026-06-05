@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.deps import ensure_project_access, get_current_user
+from app.core.snapshot_media import media_refs_summary, preserve_media_refs, sanitize_snapshot_runtime_media
 from app.core.security import make_id, now_iso
 from app.core.storage import store
 from app.schemas import ProjectCreateRequest, ProjectUpdateRequest, SnapshotSaveRequest
@@ -202,7 +203,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
     def op(db):
         db['snapshots'].setdefault(project_id, {})
         current = db['snapshots'][project_id].get(stage)
-        incoming_data = payload.data or {}
+        incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
         if payload.guard_mode == 'safe_merge' and current:
             old_score = state_richness(current.get('data') or {})
             new_score = state_richness(incoming_data)
@@ -214,6 +215,17 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     'new_score': new_score,
                     'snapshot': current,
                 }
+            incoming_data, preserved_media_refs = preserve_media_refs(current.get('data') or {}, incoming_data)
+        else:
+            preserved_media_refs = 0
+        print('[PROJECT SAVE MEDIA REFS SUMMARY]', {
+            'scope': 'project',
+            'project_id': project_id,
+            'stage': stage,
+            **media_refs_summary(incoming_data),
+            'removedRuntimeBlobCount': removed_runtime,
+            'preservedAssetRefsCount': preserved_media_refs,
+        })
         snapshot = {
             'stage': stage,
             'data': incoming_data,
