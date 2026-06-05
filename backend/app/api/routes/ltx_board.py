@@ -318,9 +318,17 @@ def _ava_credit_ensure_job_owner(job: dict, user: dict) -> None:
         raise HTTPException(status_code=404, detail="Job not found")
 
 
+def _clean_project_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"none", "null", "undefined"}:
+        return None
+    return text
+
+
 def _ava_credit_project_from_job(job: dict) -> str | None:
-    value = job.get("projectId") or job.get("project_id")
-    return str(value).strip() or None
+    return _clean_project_id(job.get("projectId")) or _clean_project_id(job.get("project_id"))
 
 
 def _ava_credit_existing_debit(db: dict, *, user_id: str, job_id: str, action_type: str) -> dict | None:
@@ -651,7 +659,7 @@ def _register_board_output_asset(
     if not user_id:
         return {}
 
-    project_id = str(job.get("projectId") or job.get("project_id") or "").strip() or None
+    project_id = _clean_project_id(job.get("projectId")) or _clean_project_id(job.get("project_id"))
     asset_id = make_id("asset")
     suffix = source_path.suffix.lower() or (".png" if kind == "image" else ".mp4")
     scope_dir = Path("projects") / project_id if project_id else Path("workspace")
@@ -1345,7 +1353,7 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     target_duration = _target_duration(payload)
     generation_duration = _generation_duration(route, target_duration)
     credit_cost = _video_credit_cost_for_payload(route, payload)
-    project_id_for_credit = payload.project_id or payload.projectId
+    project_id_for_credit = _clean_project_id(payload.project_id) or _clean_project_id(payload.projectId)
     if project_id_for_credit:
         ensure_project_access(project_id_for_credit, user)
     _ava_credit_require_balance(user, credit_cost)
@@ -1354,7 +1362,7 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     main_url = _main_comfy_url()
     if not main_url:
         status = "blocked_missing_comfy_base_url"
-        job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
+        job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": project_id_for_credit, "project_id": project_id_for_credit, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
         _ava_credit_attach_job_user(job, user)
         BOARD_VIDEO_JOBS[job_id] = job
         return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", **job}
@@ -1387,7 +1395,8 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
             "createdAt": now,
             "updatedAt": now,
             "sceneId": payload.scene_id or payload.sceneId,
-            "projectId": payload.project_id or payload.projectId,
+            "projectId": project_id_for_credit,
+            "project_id": project_id_for_credit,
             "route": route,
             "workflowKey": workflow_key,
             "workflowExists": workflow_path.exists(),
@@ -1436,10 +1445,10 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     submit_data = _submit_prompt(main_url, prompt)
     prompt_id = submit_data.get("prompt_id") or submit_data.get("promptId")
     status = "queued" if prompt_id else "queued_no_prompt_id"
-    job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "promptId": prompt_id, "promptSubmit": submit_data, "workflowPatches": patches, "uploadedMedia": {"image": uploaded_image, "start": uploaded_start, "end": uploaded_end, "audio": uploaded_audio}, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "comfyBaseUrlConfigured": True, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "not_charged_until_result_success", "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
+    job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": project_id_for_credit, "project_id": project_id_for_credit, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "promptId": prompt_id, "promptSubmit": submit_data, "workflowPatches": patches, "uploadedMedia": {"image": uploaded_image, "start": uploaded_start, "end": uploaded_end, "audio": uploaded_audio}, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "comfyBaseUrlConfigured": True, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "not_charged_until_result_success", "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
     _ava_credit_attach_job_user(job, user)
     BOARD_VIDEO_JOBS[job_id] = job
-    return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", "sceneId": payload.scene_id or payload.sceneId, "projectId": payload.project_id or payload.projectId, "promptId": prompt_id, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "preflight_ok_charge_after_success", "workflowPatchCount": len(patches), "uploadedMedia": job["uploadedMedia"], "jobStored": True}
+    return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", "sceneId": payload.scene_id or payload.sceneId, "projectId": project_id_for_credit, "project_id": project_id_for_credit, "promptId": prompt_id, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "preflight_ok_charge_after_success", "workflowPatchCount": len(patches), "uploadedMedia": job["uploadedMedia"], "jobStored": True}
 
 
 
@@ -2102,7 +2111,7 @@ def start_mmaudio(payload: dict[str, Any], user: dict = Depends(get_current_user
     job_id = f"mmaudio_{uuid4().hex[:14]}"
     now = datetime.utcnow().isoformat() + "Z"
 
-    project_id_for_credit = str(_payload_get(payload_data, "project_id", "projectId", default="") or "")
+    project_id_for_credit = _clean_project_id(_payload_get(payload_data, "project_id", "projectId", default=""))
     if project_id_for_credit:
         ensure_project_access(project_id_for_credit, user)
     _ava_credit_require_balance(user, MMAUDIO_CREDIT_COST)
@@ -2116,7 +2125,8 @@ def start_mmaudio(payload: dict[str, Any], user: dict = Depends(get_current_user
         "createdAt": now,
         "updatedAt": now,
         "sceneId": _payload_get(payload_data, "scene_id", "sceneId", default=""),
-        "projectId": _payload_get(payload_data, "project_id", "projectId", default=""),
+        "projectId": project_id_for_credit,
+        "project_id": project_id_for_credit,
         "workflowKey": workflow_key,
         "workflowExists": workflow_path.exists(),
         "targetComfy": "mmaudio_lab",
@@ -2907,7 +2917,7 @@ def start_board_assembly(payload: dict[str, Any], user: dict = Depends(get_curre
     if isinstance(raw_items, list):
         ready_count = sum(1 for item in raw_items if isinstance(item, dict) and _assembly_item_video_value(item))
 
-    project_id_for_credit = str(payload_data.get("project_id") or payload_data.get("projectId") or "").strip()
+    project_id_for_credit = _clean_project_id(payload_data.get("project_id")) or _clean_project_id(payload_data.get("projectId"))
     if project_id_for_credit:
         ensure_project_access(project_id_for_credit, user)
 
@@ -2923,7 +2933,8 @@ def start_board_assembly(payload: dict[str, Any], user: dict = Depends(get_curre
         "statusEndpoint": f"/api/board-assembly/status/{job_id}",
         "createdAt": now,
         "updatedAt": now,
-        "projectId": payload_data.get("project_id") or payload_data.get("projectId") or "",
+        "projectId": project_id_for_credit,
+        "project_id": project_id_for_credit,
         "audioMode": payload_data.get("audio_mode") or payload_data.get("audioMode") or "scene_only",
         "readyItemsCount": ready_count,
         "creditCost": assembly_credit_cost,

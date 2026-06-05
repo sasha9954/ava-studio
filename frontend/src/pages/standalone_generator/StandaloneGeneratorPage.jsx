@@ -136,6 +136,21 @@ function upsertGlobalJob(job = {}) {
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
+function cleanGeneratorProjectId(value = '') {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const lowered = text.toLowerCase()
+  if (lowered === 'none' || lowered === 'null' || lowered === 'undefined') return ''
+  return text
+}
+
+function generatorProjectIdFromPath(pathname = '') {
+  const path = String(pathname || (typeof window !== 'undefined' ? window.location.pathname : '') || '')
+  const match = path.match(/\/app\/projects\/([^/]+)/)
+  return cleanGeneratorProjectId(match?.[1] || '')
+}
+
+
 const GENERATOR_SETTINGS_KEY = 'ava:standalone_generator:settings:v1'
 const GENERATOR_LEGACY_DRAFT_KEYS = [
   'ava:standalone_generator:v6',
@@ -717,6 +732,36 @@ function normalizeGeneratorGalleryItem(item) {
   }
 }
 
+
+function generatorComparableRef(...values) {
+  const canonical = generatorCanonicalApiPath(...values)
+  if (canonical) return canonical
+  for (const value of values) {
+    const raw = normalizeUrl(value || '')
+    if (raw) return raw
+  }
+  return ''
+}
+
+function upsertGeneratorGalleryResult(items = [], url = '', meta = {}) {
+  const cleanUrl = normalizeUrl(url)
+  if (!cleanUrl || isBlockedGeneratorPreviewUrl(cleanUrl)) {
+    return Array.isArray(items) ? items.map(normalizeGeneratorGalleryItem).filter(Boolean).slice(0, GENERATOR_GALLERY_HARD_LIMIT) : []
+  }
+  const canonicalUrl = generatorCanonicalApiPath(cleanUrl) || cleanUrl
+  const key = generatorComparableRef(canonicalUrl)
+  const current = createGeneratorGalleryItem(canonicalUrl, {
+    ...meta,
+    apiPath: meta.apiPath || meta.api_path || generatorCanonicalApiPath(canonicalUrl),
+    assetId: meta.assetId || meta.asset_id || generatorAssetIdFromRef(canonicalUrl),
+  })
+  const old = Array.isArray(items) ? items.map(normalizeGeneratorGalleryItem).filter(Boolean) : []
+  const withoutDuplicate = old.filter((item) => generatorComparableRef(item.apiPath || item.api_path || item.url) !== key)
+  // Gallery order is left-to-right: oldest -> newest.
+  // Keep existing items in their original order and append the completed result to the right.
+  return [...withoutDuplicate, current].slice(-GENERATOR_GALLERY_HARD_LIMIT)
+}
+
 function pickGeneratorCreditBalance(value) {
   if (!value || typeof value !== 'object') return null
 
@@ -819,6 +864,28 @@ function statusLooksFailed(status = '') {
   return ['failed', 'error', 'blocked', 'missing', 'not_found'].some((x) => s.includes(x))
 }
 
+function generatorJobStatusValue(job = {}) {
+  return String(job?.status || job?.rawStatus || job?.video_status || job?.videoStatus || '').trim()
+}
+
+function generatorJobLooksActive(job = {}) {
+  const jobId = String(job?.jobId || job?.job_id || '').replace(/^generator:/, '').trim()
+  if (!jobId) return false
+  const status = generatorJobStatusValue(job).toLowerCase()
+  if (statusLooksDone(status) || statusLooksFailed(status)) return false
+  if (!status) return true
+  return ['queued', 'pending', 'running', 'processing', 'submitted', 'started', 'in_progress', 'created'].some((item) => status.includes(item))
+}
+
+function generatorStatusBaseFromJob(job = {}, fallback = '') {
+  const jobId = String(job?.jobId || job?.job_id || '').replace(/^generator:/, '').trim()
+  const direct = String(job?.statusBase || '').trim()
+  if (direct) return direct
+  const endpoint = String(job?.statusEndpoint || '').trim()
+  if (endpoint && jobId && endpoint.endsWith(jobId)) return endpoint.slice(0, -jobId.length)
+  return String(fallback || '').trim()
+}
+
 function safeJson(value) {
   try {
     return JSON.stringify(value, null, 2)
@@ -898,6 +965,26 @@ function createGeneratorGalleryItem(url, meta = {}) {
     durationSec: meta.durationSec || meta.duration_sec || meta.targetDurationSec || meta.target_duration_sec || 0,
     createdAt: now,
   }
+}
+
+function generatorGalleryIdentity(value = '') {
+  const canonical = generatorCanonicalApiPath(value)
+  return canonical || normalizeUrl(value || '')
+}
+
+function mergeGeneratorGalleryItem(list, url, meta = {}) {
+  const cleanUrl = normalizeUrl(url || '')
+  if (!cleanUrl) return Array.isArray(list) ? list : []
+  const nextItem = createGeneratorGalleryItem(cleanUrl, meta)
+  const nextIdentity = generatorGalleryIdentity(nextItem.apiPath || nextItem.url)
+  const oldItems = Array.isArray(list) ? list : []
+  const withoutDuplicate = oldItems.filter((item) => {
+    const itemIdentity = generatorGalleryIdentity(item?.apiPath || item?.api_path || item?.url || '')
+    return itemIdentity && nextIdentity ? itemIdentity !== nextIdentity : normalizeUrl(item?.url || '') !== cleanUrl
+  })
+  // Gallery order is left-to-right: oldest -> newest.
+  // Existing cards keep their order; the new result is appended to the right.
+  return [...withoutDuplicate, nextItem].slice(-GENERATOR_GALLERY_HARD_LIMIT)
 }
 
 function formatGeneratorGalleryTime(value) {
@@ -1319,11 +1406,25 @@ async function saveGeneratorProjectSnapshot(projectId = '', snapshot = {}, guard
   return response.json().catch(() => null)
 }
 
+
+function avaGeneratorRouteProjectIdFallback() {
+  if (typeof window === 'undefined') return ''
+  try {
+    const match = String(window.location?.pathname || '').match(/\/app\/projects\/([^/]+)\/generator(?:\/|$)?/i)
+    return match?.[1] ? decodeURIComponent(match[1]) : ''
+  } catch {
+    return ''
+  }
+}
+
 export default function StandaloneGeneratorPage() {
   const navigate = useNavigate()
   const { projectId } = useParams()
-  const routeProjectId = String(projectId || '').trim()
+  const routeProjectId = cleanGeneratorProjectId(projectId) || generatorProjectIdFromPath()
   const generatorPagePath = routeProjectId ? `/app/projects/${routeProjectId}/generator` : '/app/workspace/generator'
+  useEffect(() => {
+    console.log('[GENERATOR PROJECT CONTEXT]', { routeProjectId, pathname: typeof window !== 'undefined' ? window.location.pathname : '' })
+  }, [routeProjectId])
   const [route, setRoute] = useState(() => readGeneratorSettingsDraft().route || readAnyGeneratorDraft().route || 'i2v')
   const [aspect, setAspect] = useState(() => readGeneratorSettingsDraft().aspect || readAnyGeneratorDraft().aspect || '16:9')
   const [durationSec, setDurationSec] = useState(() => Number(readGeneratorSettingsDraft().durationSec || readAnyGeneratorDraft().durationSec || 5))
@@ -1434,8 +1535,10 @@ export default function StandaloneGeneratorPage() {
   const mmaudioPollingRef = useRef(null)
   const audioRef = useRef(null)
   const rememberedGalleryUrlsRef = useRef(new Set())
+  const restoredGalleryAutoAddSkipRef = useRef(new Set())
   const generatorSnapshotHydratedRef = useRef(false)
   const generatorSnapshotSaveTimerRef = useRef(null)
+  const pendingGeneratorResumeJobRef = useRef(null)
   useEffect(() => {
     let cancelled = false
 
@@ -1514,13 +1617,42 @@ export default function StandaloneGeneratorPage() {
         if (gallery.length) setGeneratedVideos(gallery.map(normalizeGeneratorGalleryItem).filter(Boolean))
 
         const resultRef = snapshot.result?.apiPath || snapshot.result?.url || snapshot.resultUrl || ''
-        if (resultRef) setResultUrl(generatorCanonicalApiPath(resultRef) || normalizeUrl(resultRef))
-        if (snapshot.job) setJob(snapshot.job)
-        if (snapshot.statusText) setStatusText(snapshot.statusText)
+        const restoredSkipKeys = new Set()
+        if (resultRef) {
+          const restoredResultUrl = generatorCanonicalApiPath(resultRef) || normalizeUrl(resultRef)
+          restoredSkipKeys.add(`${route === 'txt2img' ? 'image' : 'video'}:${normalizeUrl(restoredResultUrl)}`)
+          setResultUrl(restoredResultUrl)
+        }
+        const restoredJob = compactGeneratorJob(snapshot.job)
+        if (generatorJobLooksActive(restoredJob)) {
+          setJob(restoredJob)
+          setBusy(true)
+          setStatusText(generatorJobStatusValue(restoredJob) || snapshot.statusText || 'running')
+          pendingGeneratorResumeJobRef.current = restoredJob
+          window.setTimeout(() => {
+            if (cancelled) return
+            const resumeJob = pendingGeneratorResumeJobRef.current
+            if (!generatorJobLooksActive(resumeJob)) return
+            const resumeJobId = String(resumeJob.jobId || resumeJob.job_id || '').replace(/^generator:/, '').trim()
+            const resumeStatusBase = generatorStatusBaseFromJob(resumeJob, routeInfo?.statusBase)
+            if (!resumeJobId || !resumeStatusBase) return
+            console.log('[GENERATOR ACTIVE JOB RESUME]', { projectId: routeProjectId, jobId: resumeJobId, statusBase: resumeStatusBase })
+            pendingGeneratorResumeJobRef.current = null
+            pollStatus(resumeJobId, resumeStatusBase)
+          }, 350)
+        } else {
+          setJob(null)
+          if (snapshot.statusText) setStatusText(snapshot.statusText)
+        }
 
         if (snapshot.mmaudioPrompt) setMmaudioPrompt(snapshot.mmaudioPrompt)
         if (snapshot.mmaudioNegativePrompt) setMmaudioNegativePrompt(snapshot.mmaudioNegativePrompt)
-        if (snapshot.mmaudioResultUrl) setMmaudioResultUrl(normalizeUrl(snapshot.mmaudioResultUrl))
+        if (snapshot.mmaudioResultUrl) {
+          const restoredMmaudioUrl = generatorCanonicalApiPath(snapshot.mmaudioResultUrl) || normalizeUrl(snapshot.mmaudioResultUrl)
+          restoredSkipKeys.add(`mmaudio:${normalizeUrl(restoredMmaudioUrl)}`)
+          setMmaudioResultUrl(restoredMmaudioUrl)
+        }
+        restoredGalleryAutoAddSkipRef.current = restoredSkipKeys
         if (snapshot.mmaudioJob) setMmaudioJob(snapshot.mmaudioJob)
         if (snapshot.mmaudioStatus) setMmaudioStatus(snapshot.mmaudioStatus)
 
@@ -1595,7 +1727,7 @@ export default function StandaloneGeneratorPage() {
   )
   const imageQualityPayloadValue = selectedImageQuality?.payloadValue || selectedImageQuality?.value || TXT2IMG_DEFAULT_QUALITY
   const hasEndThumb = !!(endPreview || routeInfo.needsEnd)
-  const displayedResultUrl = selectedGalleryVideoUrl || mmaudioResultUrl || resultUrl
+  const displayedResultUrl = selectedGalleryVideoUrl || resultUrl || mmaudioResultUrl
   const displayedGalleryItem = useMemo(() => {
     const selected = normalizeUrl(selectedGalleryVideoUrl || '')
     const current = normalizeUrl(resultUrl || '')
@@ -1650,18 +1782,13 @@ export default function StandaloneGeneratorPage() {
     const cleanUrl = normalizeUrl(url)
     if (!cleanUrl) return
 
-    setGeneratedVideos((old) => {
-      const withoutDuplicate = old.filter((item) => item.url !== cleanUrl)
-      return [
-        createGeneratorGalleryItem(cleanUrl, meta),
-        ...withoutDuplicate,
-      ].slice(0, GENERATOR_GALLERY_HARD_LIMIT)
-    })
+    setGeneratedVideos((old) => mergeGeneratorGalleryItem(old, cleanUrl, meta))
   }, [])
 
   const saveGeneratorSnapshot = useCallback((reason = 'autosave', overrides = {}) => {
     if (!routeProjectId) return
     if (!generatorSnapshotHydratedRef.current && reason === 'autosave') return
+    if (reason === 'autosave' && busy) return
     if (generatorSnapshotSaveTimerRef.current) clearTimeout(generatorSnapshotSaveTimerRef.current)
 
     const run = async () => {
@@ -1679,10 +1806,21 @@ export default function StandaloneGeneratorPage() {
         audioName,
         audioDurationSec,
       }
-      const gallery = (Array.isArray(overrides.gallery) ? overrides.gallery : generatedVideos)
-        .map(normalizeGeneratorGalleryItem)
-        .filter(Boolean)
-        .slice(0, GENERATOR_GALLERY_HARD_LIMIT)
+      const completedResultUrl = resultRefs.url || normalizeUrl(overrides.resultUrl || resultUrl || '')
+      const baseGallery = Array.isArray(overrides.gallery) ? overrides.gallery : generatedVideos
+      const gallery = (reason === 'generator_completed' && completedResultUrl)
+        ? upsertGeneratorGalleryResult(baseGallery, completedResultUrl, {
+            kind: routeInfo.kind === 'image' ? 'image' : 'video',
+            label: routeInfo?.label || (routeInfo.kind === 'image' ? 'Фото' : 'Фото → видео'),
+            route,
+            durationSec: routeInfo.kind === 'image' ? 0 : targetDurationSec,
+            apiPath: resultRefs.apiPath,
+            assetId: resultRefs.assetId,
+          })
+        : (Array.isArray(baseGallery) ? baseGallery : [])
+            .map(normalizeGeneratorGalleryItem)
+            .filter(Boolean)
+            .slice(0, GENERATOR_GALLERY_HARD_LIMIT)
 
       const snapshot = {
         stage: 'generator',
@@ -1702,12 +1840,12 @@ export default function StandaloneGeneratorPage() {
         media,
         gallery,
         result: {
-          url: resultRefs.url || normalizeUrl(overrides.resultUrl || resultUrl || ''),
-          apiPath: resultRefs.apiPath,
-          assetId: resultRefs.assetId,
+          url: completedResultUrl,
+          apiPath: resultRefs.apiPath || generatorCanonicalApiPath(completedResultUrl),
+          assetId: resultRefs.assetId || generatorAssetIdFromRef(completedResultUrl),
           kind: routeInfo.kind === 'image' ? 'image' : 'video',
         },
-        resultUrl: resultRefs.url || normalizeUrl(overrides.resultUrl || resultUrl || ''),
+        resultUrl: completedResultUrl,
         job: compactGeneratorJob(overrides.job || job),
         statusText: overrides.statusText || statusText,
         rawResponse: null,
@@ -1726,13 +1864,112 @@ export default function StandaloneGeneratorPage() {
       }
     }
 
-    const delay = reason === 'generator_completed' || reason === 'media_upload' ? 0 : 700
+    const delay = ['generator_completed', 'media_upload', 'gallery_remove', 'job_started', 'job_polling'].includes(reason) ? 0 : 700
     generatorSnapshotSaveTimerRef.current = setTimeout(run, delay)
   }, [
     routeProjectId, rawResponse, job, resultUrl, startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview,
     audioPersistedDataUrl, audioPreviewUrl, audioName, audioDurationSec, generatedVideos, route, aspect, prompt, negativePrompt,
     imageQuality, durationSec, targetDurationSec, generationDurationSec, routeInfo.kind, statusText, mmaudioPrompt, mmaudioNegativePrompt,
     mmaudioResultUrl, mmaudioJob, mmaudioStatus,
+  ])
+
+
+  const saveCompletedGeneratorResultNow = useCallback(async (completedUrl = '', completedData = {}, completedJobId = '') => {
+    const cleanCompletedUrl = normalizeUrl(completedUrl)
+    if (!routeProjectId || !cleanCompletedUrl) return
+
+    const refs = generatorResultRefs(completedData || {}, cleanCompletedUrl)
+    const canonicalUrl = refs.apiPath || cleanCompletedUrl
+    const canonicalKey = generatorCanonicalApiPath(canonicalUrl) || canonicalUrl
+    const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
+
+    const completedItem = createGeneratorGalleryItem(normalizeUrl(canonicalUrl), {
+      kind: resultKind,
+      label: routeInfo?.label || (resultKind === 'image' ? 'Фото' : 'Видео'),
+      route,
+      durationSec: resultKind === 'image' ? 0 : targetDurationSec,
+      apiPath: refs.apiPath || generatorCanonicalApiPath(canonicalUrl),
+      assetId: refs.assetId || generatorAssetIdFromRef(canonicalUrl),
+    })
+
+    const existingGallery = (Array.isArray(generatedVideos) ? generatedVideos : [])
+      .map(normalizeGeneratorGalleryItem)
+      .filter(Boolean)
+    const nextGallery = [
+      ...existingGallery.filter((item) => {
+        const itemKey = generatorCanonicalApiPath(item?.apiPath, item?.api_path, item?.url) || normalizeUrl(item?.url || '')
+        return itemKey !== canonicalKey
+      }),
+      completedItem,
+    ].slice(-GENERATOR_GALLERY_HARD_LIMIT)
+
+    setGeneratedVideos(nextGallery)
+
+    const media = {
+      startImageUrl: normalizeUrl(startPersistedDataUrl || startPreview || ''),
+      startImageApiPath: generatorCanonicalApiPath(startPersistedDataUrl, startPreview),
+      startImageAssetId: generatorAssetIdFromRef(startPersistedDataUrl, startPreview),
+      endImageUrl: normalizeUrl(endPersistedDataUrl || endPreview || ''),
+      endImageApiPath: generatorCanonicalApiPath(endPersistedDataUrl, endPreview),
+      endImageAssetId: generatorAssetIdFromRef(endPersistedDataUrl, endPreview),
+      audioUrl: normalizeUrl(audioPersistedDataUrl || audioPreviewUrl || ''),
+      audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
+      audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
+      audioName,
+      audioDurationSec,
+    }
+
+    const snapshot = {
+      stage: 'generator',
+      source: 'standalone_generator',
+      schema: 'ava_generator_snapshot_v1',
+      projectId: routeProjectId,
+      updatedAt: new Date().toISOString(),
+      reason: 'generator_completed_direct_v10',
+      route,
+      aspect,
+      prompt,
+      negativePrompt,
+      imageQuality,
+      durationSec,
+      targetDurationSec,
+      generationDurationSec,
+      media,
+      gallery: nextGallery,
+      result: {
+        url: refs.url || normalizeUrl(canonicalUrl),
+        apiPath: refs.apiPath || generatorCanonicalApiPath(canonicalUrl),
+        assetId: refs.assetId || generatorAssetIdFromRef(canonicalUrl),
+        kind: resultKind,
+      },
+      resultUrl: refs.url || normalizeUrl(canonicalUrl),
+      job: null,
+      statusText: 'completed',
+      rawResponse: null,
+      mmaudioPrompt,
+      mmaudioNegativePrompt,
+      mmaudioResultUrl,
+      mmaudioJob: compactGeneratorJob(mmaudioJob),
+      mmaudioStatus,
+      lastCompletedJobId: String(completedJobId || completedData?.jobId || completedData?.job_id || ''),
+    }
+
+    try {
+      await saveGeneratorProjectSnapshot(routeProjectId, snapshot, 'replace')
+      console.log('[GENERATOR COMPLETED SNAPSHOT SAVED DIRECT]', {
+        projectId: routeProjectId,
+        resultRef: snapshot.result?.apiPath || snapshot.resultUrl,
+        gallery: nextGallery.length,
+        jobId: completedJobId,
+      })
+    } catch (error) {
+      console.warn('[GENERATOR COMPLETED SNAPSHOT SAVE FAILED DIRECT]', error?.message || error)
+    }
+  }, [
+    routeProjectId, generatedVideos, startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview,
+    audioPersistedDataUrl, audioPreviewUrl, audioName, audioDurationSec, routeInfo?.kind, routeInfo?.label,
+    route, aspect, prompt, negativePrompt, imageQuality, durationSec, targetDurationSec, generationDurationSec,
+    mmaudioPrompt, mmaudioNegativePrompt, mmaudioResultUrl, mmaudioJob, mmaudioStatus,
   ])
 
   useEffect(() => {
@@ -1751,6 +1988,11 @@ export default function StandaloneGeneratorPage() {
     if (!cleanUrl) return
     const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
     const key = `${resultKind}:${cleanUrl}`
+    if (restoredGalleryAutoAddSkipRef.current.has(key)) {
+      restoredGalleryAutoAddSkipRef.current.delete(key)
+      rememberedGalleryUrlsRef.current.add(key)
+      return
+    }
     if (rememberedGalleryUrlsRef.current.has(key)) return
     rememberedGalleryUrlsRef.current.add(key)
     rememberGeneratedVideo(cleanUrl, {
@@ -1767,6 +2009,11 @@ export default function StandaloneGeneratorPage() {
     const cleanUrl = normalizeUrl(mmaudioResultUrl)
     if (!cleanUrl) return
     const key = `mmaudio:${cleanUrl}`
+    if (restoredGalleryAutoAddSkipRef.current.has(key)) {
+      restoredGalleryAutoAddSkipRef.current.delete(key)
+      rememberedGalleryUrlsRef.current.add(key)
+      return
+    }
     if (rememberedGalleryUrlsRef.current.has(key)) return
     rememberedGalleryUrlsRef.current.add(key)
     rememberGeneratedVideo(cleanUrl, {
@@ -1789,11 +2036,26 @@ export default function StandaloneGeneratorPage() {
   const removeGeneratedVideo = useCallback((event, item) => {
     event?.stopPropagation?.()
     if (!item?.id) return
-    setGeneratedVideos((old) => old.filter((video) => video.id !== item.id))
+    const removedKey = generatorComparableRef(item?.apiPath || item?.api_path || item?.url)
+    const resultKey = generatorComparableRef(resultUrl)
+    const mmaudioKey = generatorComparableRef(mmaudioResultUrl)
+
+    setGeneratedVideos((old) => {
+      const nextGallery = (Array.isArray(old) ? old : []).filter((video) => video.id !== item.id)
+      saveGeneratorSnapshot('gallery_remove', { gallery: nextGallery })
+      return nextGallery
+    })
+
+    if (removedKey && removedKey === resultKey) setResultUrl('')
+    if (removedKey && removedKey === mmaudioKey) {
+      setMmaudioResultUrl('')
+      setMmaudioJob(null)
+      setMmaudioStatus('')
+    }
     if (selectedGalleryVideoUrl === item.url) {
       setSelectedGalleryVideoUrl('')
     }
-  }, [selectedGalleryVideoUrl])
+  }, [mmaudioResultUrl, resultUrl, saveGeneratorSnapshot, selectedGalleryVideoUrl])
 
   const useImageResultAsFrame = useCallback(async (event, item, target = 'start') => {
     event?.stopPropagation?.()
@@ -2342,19 +2604,47 @@ export default function StandaloneGeneratorPage() {
         const data = await fetchJson(`${statusBase}${jobId}`)
         updateCreditSummaryFromJobResponse(data)
         setRawResponse(data)
-        setJob((old) => compactGeneratorJob({ ...(old || {}), ...data, jobId }))
-        setStatusText(data.status || data.video_status || 'running')
+        const polledStatus = data.status || data.video_status || 'running'
+        const polledJob = compactGeneratorJob({
+          ...data,
+          jobId,
+          projectId: routeProjectId,
+          pagePath: generatorPagePath,
+          stage: 'generator',
+          status: polledStatus,
+          statusBase,
+          statusEndpoint: `${statusBase}${jobId}`,
+          route,
+        })
+        setJob((old) => compactGeneratorJob({ ...(old || {}), ...(polledJob || {}), ...data, jobId }))
+        setStatusText(polledStatus)
         const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
         const pickedResultUrl = normalizeUrl(pickVideoUrl(data))
         const resultAssetUrl = isBlockedGeneratorPreviewUrl(pickedResultUrl) ? '' : pickedResultUrl
         const refs = resultAssetUrl ? generatorResultRefs(data, resultAssetUrl) : { apiPath: '', assetId: '', url: '' }
+        if (!resultAssetUrl && !statusLooksDone(polledStatus) && !statusLooksFailed(polledStatus) && generatorJobLooksActive(polledJob)) {
+          saveGeneratorSnapshot('job_polling', { job: polledJob, statusText: polledStatus })
+        }
         if (resultAssetUrl) {
           const refs = generatorResultRefs(data, resultAssetUrl)
           const canonicalResultUrl = refs.apiPath || resultAssetUrl
+          const resultMeta = {
+            kind: resultKind,
+            label: routeInfo?.label || (resultKind === 'image' ? 'Фото' : 'Видео'),
+            route,
+            durationSec: resultKind === 'image' ? 0 : targetDurationSec,
+            apiPath: refs.apiPath || generatorCanonicalApiPath(canonicalResultUrl),
+            assetId: refs.assetId || generatorAssetIdFromRef(canonicalResultUrl),
+          }
           setSelectedGalleryVideoUrl('')
           setImageActionMenuId('')
           setResultUrl(normalizeUrl(canonicalResultUrl))
-          saveGeneratorSnapshot('generator_completed', { resultUrl: canonicalResultUrl, resultData: data, job: { ...data, jobId } })
+          setGeneratedVideos((old) => {
+            const nextGallery = mergeGeneratorGalleryItem(old, canonicalResultUrl, resultMeta)
+            saveGeneratorSnapshot('generator_completed', { resultUrl: canonicalResultUrl, resultData: data, job: { ...data, jobId }, gallery: nextGallery })
+            return nextGallery
+          })
+          await saveCompletedGeneratorResultNow(canonicalResultUrl, data, jobId)
         }
         if (jobId) {
           upsertGlobalJob({
@@ -2403,7 +2693,7 @@ export default function StandaloneGeneratorPage() {
     }
     tick()
     pollingRef.current = setInterval(tick, 2200)
-  }, [refreshCreditSummaryNow, updateCreditSummaryFromJobResponse, currentCreditCost, routeInfo?.kind, generatorPagePath, routeProjectId, saveGeneratorSnapshot])
+  }, [refreshCreditSummaryNow, updateCreditSummaryFromJobResponse, currentCreditCost, routeInfo?.kind, routeInfo?.label, route, targetDurationSec, generatorPagePath, routeProjectId, saveGeneratorSnapshot, saveCompletedGeneratorResultNow])
 
   useEffect(() => {
     // Hotfix: do not restore old generator jobs from global storage.
@@ -2597,11 +2887,13 @@ export default function StandaloneGeneratorPage() {
       const endImageDataUrlForBackend = endIsDataUrl ? endRef : ''
 
       const sceneId = `generator_${Date.now()}`
+      const effectiveProjectId = routeProjectId || generatorProjectIdFromPath()
       const payload = {
         scene_id: sceneId,
         sceneId,
-        project_id: routeProjectId || undefined,
-        projectId: routeProjectId || undefined,
+        project_id: effectiveProjectId || undefined,
+        projectId: effectiveProjectId || undefined,
+        workspaceMode: !effectiveProjectId,
         route,
         image_quality: routeInfo.kind === 'image' ? imageQualityPayloadValue : undefined,
         imageQuality: routeInfo.kind === 'image' ? imageQualityPayloadValue : undefined,
@@ -2658,18 +2950,47 @@ export default function StandaloneGeneratorPage() {
       })
       setRawResponse(data)
       const jobId = data.jobId || data.job_id || data.id
-      setJob(compactGeneratorJob({ ...data, jobId, projectId: routeProjectId, pagePath: generatorPagePath, stage: 'generator' }))
-      setStatusText(data.status || 'queued')
+      const startedStatus = data.status || 'queued'
+      const startedJob = compactGeneratorJob({
+        ...data,
+        jobId,
+        projectId: effectiveProjectId,
+        pagePath: generatorPagePath,
+        stage: 'generator',
+        status: startedStatus,
+        statusBase: routeInfo.statusBase,
+        statusEndpoint: jobId ? `${routeInfo.statusBase}${jobId}` : '',
+        route,
+      })
+      setJob(startedJob)
+      setStatusText(startedStatus)
+      if (jobId && generatorJobLooksActive(startedJob)) {
+        saveGeneratorSnapshot('job_started', { job: startedJob, statusText: startedStatus })
+      }
       const pickedVideo = normalizeUrl(pickVideoUrl(data))
       const video = isBlockedGeneratorPreviewUrl(pickedVideo) ? '' : pickedVideo
       const refs = video ? generatorResultRefs(data, video) : { apiPath: '', assetId: '', url: '' }
       if (video) {
         const refs = generatorResultRefs(data, video)
         const canonicalVideo = refs.apiPath || video
+        const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
+        const resultMeta = {
+          kind: resultKind,
+          label: routeInfo?.label || (resultKind === 'image' ? 'Фото' : 'Видео'),
+          route,
+          durationSec: resultKind === 'image' ? 0 : targetDurationSec,
+          apiPath: refs.apiPath || generatorCanonicalApiPath(canonicalVideo),
+          assetId: refs.assetId || generatorAssetIdFromRef(canonicalVideo),
+        }
         setSelectedGalleryVideoUrl('')
         setImageActionMenuId('')
         setResultUrl(normalizeUrl(canonicalVideo))
-        saveGeneratorSnapshot('generator_completed', { resultUrl: canonicalVideo, resultData: data, job: { ...data, jobId } })
+        setGeneratedVideos((old) => {
+          const nextGallery = mergeGeneratorGalleryItem(old, canonicalVideo, resultMeta)
+          saveGeneratorSnapshot('generator_completed', { resultUrl: canonicalVideo, resultData: data, job: { ...data, jobId }, gallery: nextGallery })
+          return nextGallery
+        })
+        await saveCompletedGeneratorResultNow(canonicalVideo, data, jobId || '')
       }
       if (jobId) {
         upsertGlobalJob({
@@ -2680,11 +3001,11 @@ export default function StandaloneGeneratorPage() {
           toastTitle: routeInfo.kind === 'image' ? 'Фото готово' : 'Видео готово',
           toastMessage: 'Генерация завершена. Перейти в генератор?',
           pagePath: generatorPagePath,
-          projectId: routeProjectId,
+          projectId: effectiveProjectId || routeProjectId,
           stage: 'generator',
           jobId,
-          status: data.status || 'queued',
-          rawStatus: data.status || 'queued',
+          status: startedStatus,
+          rawStatus: startedStatus,
           statusBase: routeInfo.statusBase,
           statusEndpoint: `${routeInfo.statusBase}${jobId}`,
           route,
@@ -2702,7 +3023,7 @@ export default function StandaloneGeneratorPage() {
       setError(String(exc?.message || exc))
       setBusy(false)
     }
-  }, [audioDurationSec, audioFile, audioPersistedDataUrl, audioPreviewUrl, aspectInfo.value, currentCreditCost, renderSize.height, renderSize.width, endFile, endPersistedDataUrl, endPreview, generationDurationSec, negativePrompt, pollStatus, prompt, route, routeInfo, startFile, startPersistedDataUrl, startPreview, targetDurationSec, generatorPagePath, routeProjectId, saveGeneratorSnapshot])
+  }, [audioDurationSec, audioFile, audioPersistedDataUrl, audioPreviewUrl, aspectInfo.value, currentCreditCost, renderSize.height, renderSize.width, endFile, endPersistedDataUrl, endPreview, generationDurationSec, negativePrompt, pollStatus, prompt, route, routeInfo, startFile, startPersistedDataUrl, startPreview, targetDurationSec, generatorPagePath, routeProjectId, saveGeneratorSnapshot, saveCompletedGeneratorResultNow])
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current)
@@ -2999,7 +3320,14 @@ export default function StandaloneGeneratorPage() {
 
             <div className="avaGeneratorResultCol">
               <div className="avaGeneratorCanvas">
-                {displayedResultUrl && displayedResultIsImage && displayedResultPreviewUrl ? (
+                {busy ? (
+                  <div className="avaGeneratorCanvasState isBusy">
+                    <div className="avaGeneratorSpinner" />
+                    <strong>Идёт генерация</strong>
+                    <span>{statusText || 'running'}</span>
+                    {job?.jobId ? <em>job: {job.jobId}</em> : null}
+                  </div>
+                ) : displayedResultUrl && displayedResultIsImage && displayedResultPreviewUrl ? (
                   <div className="avaGeneratorImageResultWrap">
                     <button type="button" className="avaGeneratorImageResultButton" onClick={() => openZoom(displayedResultPreviewUrl || displayedResultUrl, 'Generated image')}>
                       <img className="avaGeneratorResultImage" src={displayedResultPreviewUrl || displayedResultUrl} alt="generated result" />
@@ -3026,12 +3354,6 @@ export default function StandaloneGeneratorPage() {
                   <div className="avaGeneratorCanvasState isPlaceholder">
                     <strong>Старый static-result заблокирован</strong>
                     <span>Очисти старый результат и сгенерируй новое видео. Прямой localhost/static preview отключён.</span>
-                  </div>
-                ) : busy ? (
-                  <div className="avaGeneratorCanvasState isBusy">
-                    <div className="avaGeneratorSpinner" />
-                    <strong>Идёт генерация</strong>
-                    <span>{statusText}</span>
                   </div>
                 ) : routeInfo.kind === 'image' ? (
                   <div className="avaGeneratorCanvasState isPlaceholder">
@@ -3167,7 +3489,7 @@ export default function StandaloneGeneratorPage() {
                 </div>
 
                 <div className="avaGeneratorHistoryMeta">
-                  <strong>{item.label || 'Видео'} #{visibleHistoryItems.length - index}</strong>
+                  <strong>{item.label || 'Видео'} #{index + 1}</strong>
                   <span>{item.kind === 'image' ? 'картинка' : item.kind === 'mmaudio' ? 'со звуком' : 'видео'} · {formatGeneratorGalleryTime(item.createdAt)}</span>
                   {item.kind === 'image' ? (
                     <div className="avaGeneratorHistoryImageActions">
