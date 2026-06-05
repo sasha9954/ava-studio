@@ -3388,29 +3388,29 @@ const clearedDraft = normalizeDraft({
   }
 
   if (loading) return (
-    <div className="avaPage avaTimingFlatPage avaTimingLoadingPage">
+    <div className="avaPage avaTimingFlatPage avaTimingLoadingPage isAvaTimingWaveLoading">
       <div className="avaTimingLoadingShell">
         <div className="avaTimingLoadingMain">
           <div className="avaTimingLoadingIcon"><Clock3 size={32} /></div>
           <p className="avaEyebrow">Storyboard → Timing</p>
           <h1>Загрузка Manual Timing...</h1>
           <p>Возвращаем таймкоды, блоки, аудио и разрезы. Дождись восстановления проекта перед правками.</p>
-          <div className="avaTimingLoadingSteps">
-            <span className="isActive">Prompt</span>
-            <i />
-            <span>Audio</span>
-            <i />
-            <span>Blocks</span>
-            <i />
-            <span>Ready</span>
+          <div className="avaTimingWaveLoader" aria-hidden="true">
+            <div className="avaTimingWaveTrack">
+              <span className="avaTimingMovingNote">♪</span>
+              <i style={{ '--bar': 0 }} />
+              <i style={{ '--bar': 1 }} />
+              <i style={{ '--bar': 2 }} />
+              <i style={{ '--bar': 3 }} />
+              <i style={{ '--bar': 4 }} />
+              <i style={{ '--bar': 5 }} />
+              <i style={{ '--bar': 6 }} />
+              <i style={{ '--bar': 7 }} />
+              <i style={{ '--bar': 8 }} />
+            </div>
+            <div className="avaTimingLoadingLine"><span /></div>
+            <small>{status || 'Синхронизируем аудио, разрезы и блоки'}</small>
           </div>
-          <small>{status || 'загрузка snapshot…'}</small>
-        </div>
-        <div className="avaTimingLoadingSide" aria-hidden="true">
-          <b />
-          <b />
-          <b />
-          <b />
         </div>
       </div>
     </div>

@@ -3674,43 +3674,28 @@ async function importTimingJson(event) {
 
   if (loading) {
     return (
-      <div className="avaPage avaStoryboardLoadingPage">
-        <section className="avaLoadingHero">
-          <div className="avaLoadingCard">
+      <div className="avaPage avaStoryboardLoadingPage isAvaStudioWaveLoading">
+        <section className="avaLoadingHero avaStudioLoadingHero">
+          <div className="avaLoadingCard avaStudioLoadingCard">
             <div className="avaLoadingOrb"><Film size={28} /></div>
             <p className="avaEyebrow"><Sparkles size={14} /> Ava Studio pipeline</p>
             <h2>Загрузка Storyboard...</h2>
             <p>Проверяем сцены, промты, видео, звук, блоки и готовим доску к работе.</p>
-            <div className="avaLoadingPipeline" aria-hidden="true">
-              <span className="isDone">Timing</span>
-              <i />
-              <span className="isActive">Storyboard</span>
-              <i />
-              <span>Media</span>
-              <i />
-              <span>Queue</span>
-            </div>
-          </div>
-          <div className="avaLoadingStatusPanel" aria-hidden="true">
-            <div className="avaLoadingStatusCard isDone">
-              <span>01</span>
-              <strong>Timing</strong>
-              <small>таймкоды и блоки получены</small>
-            </div>
-            <div className="avaLoadingStatusCard isActive">
-              <span>02</span>
-              <strong>Storyboard</strong>
-              <small>сцены и промты загружаются</small>
-            </div>
-            <div className="avaLoadingStatusCard">
-              <span>03</span>
-              <strong>Media</strong>
-              <small>проверяем видео и звук</small>
-            </div>
-            <div className="avaLoadingStatusCard">
-              <span>04</span>
-              <strong>Ready</strong>
-              <small>готовим доску к работе</small>
+            <div className="avaStudioWaveLoader" aria-hidden="true">
+              <div className="avaStudioWaveTrack">
+                <span className="avaStudioMovingNote">♪</span>
+                <i style={{ '--bar': 0 }} />
+                <i style={{ '--bar': 1 }} />
+                <i style={{ '--bar': 2 }} />
+                <i style={{ '--bar': 3 }} />
+                <i style={{ '--bar': 4 }} />
+                <i style={{ '--bar': 5 }} />
+                <i style={{ '--bar': 6 }} />
+                <i style={{ '--bar': 7 }} />
+                <i style={{ '--bar': 8 }} />
+              </div>
+              <div className="avaStudioLoadingLine"><span /></div>
+              <small>Синхронизируем тайминг, сцены и медиа</small>
             </div>
           </div>
         </section>

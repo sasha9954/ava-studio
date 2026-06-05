@@ -3858,3 +3858,146 @@
   55% { transform: translateX(70%); }
   100% { transform: translateX(245%); }
 }
+
+/* AVA_GLOBAL_LOADING_WAVE_POLISH: centered one-card loading with Ava audio-wave motion. */
+.avaStoryboardLoadingPage.isAvaStudioWaveLoading {
+  min-height: calc(100vh - 72px);
+  display: grid;
+  place-items: center;
+  align-items: center;
+  padding: clamp(18px, 4vw, 46px);
+}
+
+.avaStudioLoadingHero,
+.avaAssemblyLoadingHero.avaStudioLoadingHero {
+  width: min(860px, calc(100vw - 48px));
+  display: grid;
+  grid-template-columns: 1fr !important;
+  margin: 0 auto;
+}
+
+.avaStudioLoadingCard,
+.avaAssemblyLoadingCard.avaStudioLoadingCard {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(28px, 4vw, 48px);
+}
+
+.avaStudioWaveLoader {
+  position: relative;
+  z-index: 2;
+  margin-top: 20px;
+  display: grid;
+  gap: 12px;
+  max-width: 540px;
+}
+
+.avaStudioWaveTrack {
+  position: relative;
+  height: 74px;
+  border-radius: 22px;
+  border: 1px solid rgba(125, 225, 255, .16);
+  background:
+    radial-gradient(circle at 18% 50%, rgba(69,216,255,.15), transparent 32%),
+    linear-gradient(135deg, rgba(255,255,255,.075), rgba(255,255,255,.035));
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 18px 48px rgba(0,0,0,.18);
+}
+
+.avaStudioWaveTrack::before {
+  content: "";
+  position: absolute;
+  inset: 50% 18px auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(69,216,255,.42), rgba(255,210,104,.34), transparent);
+}
+
+.avaStudioWaveTrack i {
+  width: 6px;
+  min-height: 18px;
+  height: calc(18px + (var(--bar, 0) % 5) * 6px);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255,231,166,.95), rgba(69,216,255,.78));
+  opacity: .82;
+  animation: avaStudioWave 1.05s ease-in-out infinite;
+  animation-delay: calc(var(--bar, 0) * .07s);
+}
+
+.avaStudioMovingNote {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  color: #fff1b8;
+  font-size: 22px;
+  text-shadow: 0 0 22px rgba(255,210,104,.38);
+  animation: avaStudioNoteMove 2.5s ease-in-out infinite;
+}
+
+.avaStudioLoadingLine {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.075);
+  overflow: hidden;
+}
+
+.avaStudioLoadingLine span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(69,216,255,.2), rgba(255,224,144,.95), rgba(143,124,255,.7));
+  animation: avaStudioProgressMove 1.45s ease-in-out infinite;
+}
+
+.avaStudioWaveLoader small {
+  color: #9fb0cc;
+  font-size: 12px;
+  letter-spacing: .02em;
+}
+
+@keyframes avaStudioWave {
+  0%, 100% { transform: scaleY(.72); opacity: .58; }
+  50% { transform: scaleY(1.35); opacity: 1; }
+}
+
+@keyframes avaStudioNoteMove {
+  0% { transform: translateX(0) translateY(10px) rotate(-7deg); opacity: .4; }
+  18% { opacity: 1; }
+  50% { transform: translateX(220px) translateY(-6px) rotate(6deg); opacity: 1; }
+  100% { transform: translateX(460px) translateY(8px) rotate(-4deg); opacity: .35; }
+}
+
+@keyframes avaStudioProgressMove {
+  0% { transform: translateX(-105%); }
+  55% { transform: translateX(70%); }
+  100% { transform: translateX(245%); }
+}
+
+@media (max-width: 680px) {
+  .avaStudioLoadingHero,
+  .avaAssemblyLoadingHero.avaStudioLoadingHero {
+    width: min(100%, calc(100vw - 28px));
+  }
+
+  .avaStudioLoadingCard,
+  .avaAssemblyLoadingCard.avaStudioLoadingCard {
+    min-height: 330px;
+    padding: 26px 22px;
+  }
+
+  .avaStudioWaveTrack {
+    height: 66px;
+    gap: 6px;
+  }
+
+  .avaStudioNoteMove,
+  .avaStudioMovingNote {
+    font-size: 19px;
+  }
+}

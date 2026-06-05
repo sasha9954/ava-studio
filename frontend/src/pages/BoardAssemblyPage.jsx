@@ -235,16 +235,16 @@ function assemblySceneBlockLabel(scene = {}) {
 
 function AvaAssemblyLoading({ title = 'Загрузка видео монтажа…', subtitle = 'Подключаем сцены, видео, звук и блоки.' }) {
   return (
-    <div className="avaPage avaStoryboardLoadingPage isAssemblyAudioLoading">
-      <section className="avaLoadingHero avaAssemblyLoadingHero">
-        <div className="avaLoadingCard avaAssemblyLoadingCard">
+    <div className="avaPage avaStoryboardLoadingPage isAvaStudioWaveLoading isAssemblyAudioLoading">
+      <section className="avaLoadingHero avaStudioLoadingHero avaAssemblyLoadingHero">
+        <div className="avaLoadingCard avaStudioLoadingCard avaAssemblyLoadingCard">
           <div className="avaLoadingOrb"><Clapperboard size={28} /></div>
           <p className="avaEyebrow">Ava Studio montage</p>
           <h2>{title}</h2>
           <p>{subtitle}</p>
-          <div className="avaAssemblyAudioLoader" aria-hidden="true">
-            <div className="avaAssemblyAudioTrack">
-              <span className="avaAssemblyMovingNote">♪</span>
+          <div className="avaStudioWaveLoader" aria-hidden="true">
+            <div className="avaStudioWaveTrack">
+              <span className="avaStudioMovingNote">♪</span>
               <i style={{ '--bar': 0 }} />
               <i style={{ '--bar': 1 }} />
               <i style={{ '--bar': 2 }} />
@@ -255,7 +255,7 @@ function AvaAssemblyLoading({ title = 'Загрузка видео монтаж�
               <i style={{ '--bar': 7 }} />
               <i style={{ '--bar': 8 }} />
             </div>
-            <div className="avaAssemblyLoadingLine"><span /></div>
+            <div className="avaStudioLoadingLine"><span /></div>
             <small>Синхронизируем сцены и медиа</small>
           </div>
         </div>
