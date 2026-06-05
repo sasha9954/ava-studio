@@ -690,6 +690,170 @@ function getAvaAudioServerUrl(row = {}) {
 }
 
 
+function getPodcastAudioAssetId(row = {}) {
+  if (!row || typeof row !== "object") return "";
+  return String(
+    row.assetId ||
+    row.asset_id ||
+    row.audioAssetId ||
+    row.audio_asset_id ||
+    row.podcastAudioAssetId ||
+    row.podcast_audio_asset_id ||
+    row.id ||
+    ""
+  ).trim();
+}
+
+function getPodcastAudioAssetApiPath(row = {}) {
+  if (!row || typeof row !== "object") return "";
+  const direct = String(
+    row.assetApiPath ||
+    row.asset_api_path ||
+    row.audioApiPath ||
+    row.audio_api_path ||
+    row.podcastAudioApiPath ||
+    row.podcast_audio_api_path ||
+    ""
+  ).trim();
+  if (direct) {
+    if (/^\/api\/assets\/[^/]+\/file/i.test(direct)) return direct.replace(/^\/api/i, "");
+    return direct;
+  }
+  const assetId = getPodcastAudioAssetId(row);
+  return assetId ? `/assets/${assetId}/file` : "";
+}
+
+function cleanPodcastAudioForSnapshot(row = {}) {
+  const source = row && typeof row === "object" ? row : {};
+  const assetId = getPodcastAudioAssetId(source);
+  const assetApiPath = getPodcastAudioAssetApiPath(source);
+  const rawServerUrl = String(
+    source.server_url ||
+    source.asset_url ||
+    source.assetUrl ||
+    source.public_url ||
+    source.publicUrl ||
+    source.url ||
+    ""
+  ).trim();
+  const normalizedServerUrl = rawServerUrl && !isBlobUrl(rawServerUrl) && !String(rawServerUrl).startsWith("data:")
+    ? normalizePodcastAudioSourceUrl(rawServerUrl)
+    : "";
+  const durableUrl = assetApiPath || normalizedServerUrl;
+  const filename = source.filename || source.name || source.audio_name || source.audioName || "podcast_audio";
+  const durationSec = normalizeNumber(source.duration_sec || source.durationSec || source.audio_duration_sec || source.audioDurationSec, 0);
+  return {
+    ...source,
+    url: durableUrl,
+    audioUrl: durableUrl,
+    audio_url: durableUrl,
+    assetUrl: durableUrl,
+    asset_url: durableUrl,
+    publicUrl: durableUrl,
+    public_url: durableUrl,
+    server_url: durableUrl,
+    assetApiPath,
+    asset_api_path: assetApiPath,
+    audioApiPath: assetApiPath,
+    audio_api_path: assetApiPath,
+    assetId,
+    asset_id: assetId,
+    audioAssetId: assetId,
+    audio_asset_id: assetId,
+    playbackUrl: "",
+    playback_url: "",
+    localUrl: "",
+    local_url: "",
+    objectUrl: "",
+    object_url: "",
+    filename,
+    name: source.name || filename,
+    duration_sec: durationSec,
+    durationSec,
+  };
+}
+
+function getPodcastSnapshotAudio(snapshot = {}) {
+  if (!snapshot || typeof snapshot !== "object") return normalizeManualTimingAudio(null);
+  const raw = snapshot.audio || snapshot.currentAudio || snapshot.current_audio || snapshot.finalAudio || snapshot.final_audio || {};
+  const fallback = {
+    ...raw,
+    assetId: raw.assetId || raw.asset_id || snapshot.audioAssetId || snapshot.audio_asset_id || snapshot.podcastAudioAssetId || snapshot.podcast_audio_asset_id,
+    asset_id: raw.asset_id || raw.assetId || snapshot.audio_asset_id || snapshot.audioAssetId || snapshot.podcast_audio_asset_id || snapshot.podcastAudioAssetId,
+    assetApiPath: raw.assetApiPath || raw.asset_api_path || snapshot.audioApiPath || snapshot.audio_api_path || snapshot.podcastAudioApiPath || snapshot.podcast_audio_api_path,
+    asset_api_path: raw.asset_api_path || raw.assetApiPath || snapshot.audio_api_path || snapshot.audioApiPath || snapshot.podcast_audio_api_path || snapshot.podcastAudioApiPath,
+    url: raw.url || snapshot.audioUrl || snapshot.audio_url || snapshot.podcastAudioUrl || snapshot.podcast_audio_url,
+    filename: raw.filename || raw.name || snapshot.audioName || snapshot.audio_name || "podcast_audio",
+    duration_sec: raw.duration_sec || raw.durationSec || snapshot.duration_sec || snapshot.durationSec,
+    durationSec: raw.durationSec || raw.duration_sec || snapshot.durationSec || snapshot.duration_sec,
+  };
+  return normalizeManualTimingAudio(cleanPodcastAudioForSnapshot(fallback));
+}
+
+function buildPodcastStageSnapshot({
+  sourceNodeId = "",
+  audio = {},
+  durationSec = 0,
+  audioSignature = "",
+  blocks = [],
+  selectedBlockId = "",
+  deletionMarkers = [],
+  savedClips = [],
+  actorAudios = [],
+  microStepSec = DEFAULT_MICRO_STEP_SEC,
+} = {}) {
+  const cleanAudio = cleanPodcastAudioForSnapshot(audio);
+  const safeDuration = roundSeconds(durationSec || cleanAudio.duration_sec || cleanAudio.durationSec || 0);
+  const safeBlocks = serializeBlocksForStorage(blocks);
+  const safeSavedClips = serializeSavedClipsForStorage(savedClips);
+  const safeActorAudios = serializeActorAudiosForStorage(actorAudios);
+  return {
+    schema: "ava_podcast_stage_snapshot_v1",
+    source: PODCAST_AUDIO_HANDOFF_SOURCE,
+    nodeId: sourceNodeId,
+    sourceNodeId,
+    mainAudioSignature: audioSignature || getAudioSignature(cleanAudio, safeDuration),
+    podcast_audio_asset_id: cleanAudio.asset_id || cleanAudio.assetId || "",
+    podcastAudioAssetId: cleanAudio.assetId || cleanAudio.asset_id || "",
+    podcast_audio_api_path: cleanAudio.asset_api_path || cleanAudio.assetApiPath || "",
+    podcastAudioApiPath: cleanAudio.assetApiPath || cleanAudio.asset_api_path || "",
+    podcast_audio_url: cleanAudio.url || "",
+    podcastAudioUrl: cleanAudio.url || "",
+    audioAssetId: cleanAudio.assetId || cleanAudio.asset_id || "",
+    audio_asset_id: cleanAudio.asset_id || cleanAudio.assetId || "",
+    audioApiPath: cleanAudio.assetApiPath || cleanAudio.asset_api_path || "",
+    audio_api_path: cleanAudio.asset_api_path || cleanAudio.assetApiPath || "",
+    audioUrl: cleanAudio.url || "",
+    audio_url: cleanAudio.url || "",
+    audio: cleanAudio,
+    currentAudio: cleanAudio,
+    current_audio: cleanAudio,
+    audioName: cleanAudio.filename || cleanAudio.name || "podcast_audio",
+    audio_name: cleanAudio.filename || cleanAudio.name || "podcast_audio",
+    durationSec: safeDuration,
+    duration_sec: safeDuration,
+    blocks: safeBlocks,
+    selectedBlockId,
+    selected_block_id: selectedBlockId,
+    deletionMarkers: Array.isArray(deletionMarkers) ? deletionMarkers : [],
+    deletion_markers: Array.isArray(deletionMarkers) ? deletionMarkers : [],
+    savedClips: safeSavedClips,
+    saved_clips: safeSavedClips,
+    actorAudios: safeActorAudios,
+    actor_audios: safeActorAudios,
+    microStepSec,
+    micro_step_sec: microStepSec,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function hasRestorablePodcastStageSnapshot(snapshot = {}) {
+  if (!snapshot || typeof snapshot !== "object") return false;
+  const audio = getPodcastSnapshotAudio(snapshot);
+  return Boolean(audio.url || audio.assetApiPath || audio.asset_api_path || audio.assetId || audio.asset_id || (Array.isArray(snapshot.blocks) && snapshot.blocks.length));
+}
+
+
 const BUILD_ID = "blocks-v46-separated-playback";
 const COMPOSER_STORAGE_VERSION = 44;
 const RESTORABLE_STORAGE_VERSIONS = new Set([30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]);
@@ -2610,7 +2774,7 @@ export default function PodcastAudioComposerPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { projectId } = useParams();
-  const { saveStage, saveWorkspaceStage } = useProjects();
+  const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects();
   const [searchParams] = useSearchParams();
   const routeProjectId = String(projectId || searchParams.get("projectId") || "").trim();
   const fallbackSourceNodeId = routeProjectId ? `ava_project_${routeProjectId}_podcast_audio` : "ava_workspace_podcast_audio";
@@ -2625,14 +2789,17 @@ export default function PodcastAudioComposerPage() {
       return normalizeManualTimingAudio(null);
     }
   });
+  const [backendPodcastSnapshot, setBackendPodcastSnapshot] = useState(null);
+  const [backendPodcastAudio, setBackendPodcastAudio] = useState(() => normalizeManualTimingAudio(null));
   const stateAudio = normalizeManualTimingAudio(location.state?.audio);
   const storedManualTimingProject = useMemo(() => readManualTimingProjectForNode(sourceNodeId), [sourceNodeId]);
   const audio = useMemo(() => {
     if (podcastStageCleared) return normalizeManualTimingAudio({});
     if (standaloneAudio.url) return standaloneAudio;
     if (stateAudio.url) return stateAudio;
+    if (backendPodcastAudio.url) return backendPodcastAudio;
     return normalizeManualTimingAudio(storedManualTimingProject?.audio);
-  }, [standaloneAudio, stateAudio, storedManualTimingProject, podcastStageCleared]);
+  }, [standaloneAudio, stateAudio, backendPodcastAudio, storedManualTimingProject, podcastStageCleared]);
 
   const audioRef = useRef(null);
   const runtimeAudioBlobCacheRef = useRef({});
@@ -2651,6 +2818,9 @@ export default function PodcastAudioComposerPage() {
   const blocksRef = useRef([]);
   const currentBlockIndexRef = useRef(0);
   const hydratedRef = useRef(false);
+  const podcastBackendSnapshotRef = useRef(null);
+  const podcastBackendSnapshotHydratedRef = useRef(false);
+  const podcastBackendSaveTimerRef = useRef(null);
 
   const [durationSec, setDurationSec] = useState(() => normalizeNumber(audio.duration_sec, 0));
   const [currentTimeSec, setCurrentTimeSec] = useState(0);
@@ -2861,6 +3031,56 @@ export default function PodcastAudioComposerPage() {
   }, []);
 
   useEffect(() => {
+    if (podcastStageCleared) {
+      podcastBackendSnapshotRef.current = null;
+      podcastBackendSnapshotHydratedRef.current = true;
+      setBackendPodcastSnapshot(null);
+      setBackendPodcastAudio(normalizeManualTimingAudio(null));
+      return undefined;
+    }
+
+    let cancelled = false;
+    podcastBackendSnapshotHydratedRef.current = false;
+
+    (async () => {
+      try {
+        const snapshot = routeProjectId
+          ? await loadStage(routeProjectId, "podcast")
+          : await loadWorkspaceStage("podcast");
+        if (cancelled) return;
+        const data = snapshot && typeof snapshot === "object" ? snapshot : {};
+        if (hasRestorablePodcastStageSnapshot(data)) {
+          const restoredAudio = getPodcastSnapshotAudio(data);
+          podcastBackendSnapshotRef.current = migratePodcastStoredAudioUrls(data);
+          setBackendPodcastSnapshot(podcastBackendSnapshotRef.current);
+          if (restoredAudio.url || restoredAudio.assetApiPath || restoredAudio.asset_api_path) {
+            setBackendPodcastAudio(restoredAudio);
+          }
+          console.log("[PODCAST PROJECT SNAPSHOT RESTORED]", {
+            projectId: routeProjectId || "",
+            sourceNodeId,
+            blocks: Array.isArray(data.blocks) ? data.blocks.length : 0,
+            audioAssetId: restoredAudio.assetId || restoredAudio.asset_id || "",
+            audioApiPath: restoredAudio.assetApiPath || restoredAudio.asset_api_path || "",
+          });
+        } else {
+          podcastBackendSnapshotRef.current = null;
+          setBackendPodcastSnapshot(null);
+          setBackendPodcastAudio(normalizeManualTimingAudio(null));
+        }
+      } catch (error) {
+        if (!cancelled) console.warn("[PODCAST PROJECT SNAPSHOT LOAD_FAILED]", { error: error?.message || error });
+      } finally {
+        if (!cancelled) podcastBackendSnapshotHydratedRef.current = true;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeProjectId, sourceNodeId, podcastStageCleared]);
+
+  useEffect(() => {
     const safeDuration = normalizeNumber(audio.duration_sec, 0);
     setDurationSec(safeDuration);
     setCurrentTimeSec(0);
@@ -2899,6 +3119,49 @@ export default function PodcastAudioComposerPage() {
       updatedAt: Date.now(),
     });
   }, [audio.url, audioSignature, blocks, selectedBlockId, deletionMarkers, savedClips, actorAudios, microStepSec, hasHydrated, sourceNodeId]);
+
+  useEffect(() => {
+    if (podcastStageCleared) return undefined;
+    if (!hasHydrated || !audio.url) return undefined;
+    if (!podcastBackendSnapshotHydratedRef.current && !routeProjectId) return undefined;
+
+    const snapshot = buildPodcastStageSnapshot({
+      sourceNodeId,
+      audio,
+      durationSec: durationSec || audio.duration_sec || audio.durationSec || 0,
+      audioSignature,
+      blocks,
+      selectedBlockId,
+      deletionMarkers,
+      savedClips,
+      actorAudios,
+      microStepSec,
+    });
+
+    if (!snapshot.audioAssetId && !snapshot.audioApiPath && !snapshot.audioUrl) return undefined;
+
+    podcastBackendSnapshotRef.current = snapshot;
+    if (podcastBackendSaveTimerRef.current) window.clearTimeout(podcastBackendSaveTimerRef.current);
+    podcastBackendSaveTimerRef.current = window.setTimeout(async () => {
+      try {
+        if (routeProjectId) await saveStage(routeProjectId, "podcast", snapshot, "safe_merge");
+        else await saveWorkspaceStage("podcast", snapshot);
+        console.log("[PODCAST PROJECT SNAPSHOT AUTOSAVED]", {
+          projectId: routeProjectId || "",
+          sourceNodeId,
+          audioAssetId: snapshot.audioAssetId,
+          audioApiPath: snapshot.audioApiPath,
+          blocks: Array.isArray(snapshot.blocks) ? snapshot.blocks.length : 0,
+        });
+      } catch (error) {
+        console.warn("[PODCAST PROJECT SNAPSHOT AUTOSAVE_FAILED]", { error: error?.message || error });
+      }
+    }, 700);
+
+    return () => {
+      if (podcastBackendSaveTimerRef.current) window.clearTimeout(podcastBackendSaveTimerRef.current);
+    };
+  }, [podcastStageCleared, routeProjectId, sourceNodeId, audio.url, audio.assetId, audio.asset_id, audio.assetApiPath, audio.asset_api_path, audioSignature, durationSec, blocks, selectedBlockId, deletionMarkers, savedClips, actorAudios, microStepSec, hasHydrated]);
   useEffect(() => {
     if (podcastStageCleared) return;
     if (!hasHydrated || !actorAudios.length) return;
@@ -2930,28 +3193,35 @@ export default function PodcastAudioComposerPage() {
     }
 
     if (!audio.url || safeDuration <= 0) return;
-    const saved = readComposerStorage(sourceNodeId);
     const signature = getAudioSignature(audio, safeDuration);
-    const canRestore = RESTORABLE_STORAGE_VERSIONS.has(Number(saved?.version)) && saved?.mainAudioSignature === signature;
+    const backendSaved = podcastBackendSnapshotRef.current;
+    const backendSnapshotAudio = getPodcastSnapshotAudio(backendSaved || {});
+    const backendSignature = backendSaved?.mainAudioSignature || getAudioSignature(backendSnapshotAudio, safeDuration);
+    const canRestoreBackend = hasRestorablePodcastStageSnapshot(backendSaved) && (!backendSignature || backendSignature === signature || Boolean(backendSnapshotAudio.url));
+    const saved = canRestoreBackend ? backendSaved : readComposerStorage(sourceNodeId);
+    const canRestore = canRestoreBackend || (RESTORABLE_STORAGE_VERSIONS.has(Number(saved?.version)) && saved?.mainAudioSignature === signature);
     if (canRestore) {
-      const restoredActorAudios = await restoreActorAudiosFromStorage(sourceNodeId, saved.actorAudios || []);
-      const restoredSavedClips = serializeSavedClipsForStorage(Array.isArray(saved.savedClips) ? saved.savedClips : []).map((clip) => {
+      const useBackendRows = Boolean(canRestoreBackend);
+      const restoredActorAudios = useBackendRows
+        ? migratePodcastStoredAudioUrls(serializeActorAudiosForStorage(Array.isArray(saved.actorAudios || saved.actor_audios) ? (saved.actorAudios || saved.actor_audios) : []))
+        : await restoreActorAudiosFromStorage(sourceNodeId, saved.actorAudios || []);
+      const migratedSavedClips = migratePodcastStoredAudioUrls(serializeSavedClipsForStorage(Array.isArray(saved.savedClips || saved.saved_clips) ? (saved.savedClips || saved.saved_clips) : [])).map((clip) => {
         const actor = restoredActorAudios.find((item) => item.id === clip.source_audio_id);
         const actorServerUrl = getActorServerSourceUrl(actor || {});
         return actor ? { ...clip, source_url: actor.url || actorServerUrl || undefined, asset_url: actorServerUrl || clip.asset_url || clip.assetUrl || undefined, server_url: actorServerUrl || clip.server_url || undefined, source_name: clip.source_name || actor.name || actor.filename } : clip;
       });
-      const restoredBlocks = normalizeBlocks(saved.blocks, safeDuration, restoredSavedClips).map((block) => {
+      const restoredBlocks = normalizeBlocks(saved.blocks, safeDuration, migratedSavedClips).map((block) => {
         const actor = restoredActorAudios.find((item) => item.id === block.source_audio_id);
         const actorServerUrl = getActorServerSourceUrl(actor || {});
         return actor ? { ...block, source_url: actor.url || actorServerUrl || undefined, asset_url: actorServerUrl || block.asset_url || block.assetUrl || undefined, server_url: actorServerUrl || block.server_url || undefined, source_name: block.source_name || actor.name || actor.filename } : block;
       });
       setBlocks(restoredBlocks);
-      setSelectedBlockId(String(saved.selectedBlockId || restoredBlocks[0]?.id || ""));
-      setDeletionMarkers(Array.isArray(saved.deletionMarkers) ? saved.deletionMarkers : []);
-      setSavedClips(restoredSavedClips);
+      setSelectedBlockId(String(saved.selectedBlockId || saved.selected_block_id || restoredBlocks[0]?.id || ""));
+      setDeletionMarkers(Array.isArray(saved.deletionMarkers || saved.deletion_markers) ? (saved.deletionMarkers || saved.deletion_markers) : []);
+      setSavedClips(migratedSavedClips);
       setActorAudios(restoredActorAudios);
-      setMicroStepSec(clampSeconds(saved.microStepSec, 0.01, 30) || DEFAULT_MICRO_STEP_SEC);
-      setMessage(restoredActorAudios.length ? "Монтаж восстановлен после перезагрузки, включая дополнительные аудио актёров." : "Монтаж восстановлен после перезагрузки.");
+      setMicroStepSec(clampSeconds(saved.microStepSec || saved.micro_step_sec, 0.01, 30) || DEFAULT_MICRO_STEP_SEC);
+      setMessage(useBackendRows ? "Podcast восстановлен из проекта." : (restoredActorAudios.length ? "Монтаж восстановлен после перезагрузки, включая дополнительные аудио актёров." : "Монтаж восстановлен после перезагрузки."));
     } else {
       const initialBlocks = createInitialBlocks(safeDuration);
       setBlocks(initialBlocks);
