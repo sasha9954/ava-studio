@@ -1541,6 +1541,9 @@ export default function StandaloneGeneratorPage() {
   const pendingGeneratorResumeJobRef = useRef(null)
   const activeGeneratorPollTokenRef = useRef('')
   const completedGeneratorJobsRef = useRef(new Set())
+  const pendingMmaudioResumeJobRef = useRef(null)
+  const activeMmaudioPollTokenRef = useRef('')
+  const completedMmaudioJobsRef = useRef(new Set())
   useEffect(() => {
     let cancelled = false
 
@@ -1655,8 +1658,27 @@ export default function StandaloneGeneratorPage() {
           setMmaudioResultUrl(restoredMmaudioUrl)
         }
         restoredGalleryAutoAddSkipRef.current = restoredSkipKeys
-        if (snapshot.mmaudioJob) setMmaudioJob(snapshot.mmaudioJob)
-        if (snapshot.mmaudioStatus) setMmaudioStatus(snapshot.mmaudioStatus)
+
+        const restoredMmaudioJob = compactGeneratorJob(snapshot.mmaudioJob)
+        if (generatorJobLooksActive(restoredMmaudioJob)) {
+          setMmaudioJob(restoredMmaudioJob)
+          setMmaudioBusy(true)
+          setMmaudioStatus(generatorJobStatusValue(restoredMmaudioJob) || snapshot.mmaudioStatus || 'running')
+          pendingMmaudioResumeJobRef.current = restoredMmaudioJob
+          window.setTimeout(() => {
+            if (cancelled) return
+            const resumeJob = pendingMmaudioResumeJobRef.current
+            if (!generatorJobLooksActive(resumeJob)) return
+            const resumeJobId = String(resumeJob.jobId || resumeJob.job_id || '').replace(/^generator-mmaudio:/, '').replace(/^mmaudio:/, '').trim()
+            if (!resumeJobId) return
+            console.log('[GENERATOR MMAUDIO ACTIVE JOB RESUME]', { projectId: routeProjectId, jobId: resumeJobId })
+            pendingMmaudioResumeJobRef.current = null
+            pollMmaudioStatus(resumeJobId, resumeJob)
+          }, 450)
+        } else {
+          setMmaudioJob(null)
+          if (snapshot.mmaudioStatus) setMmaudioStatus(snapshot.mmaudioStatus)
+        }
 
         console.log('[GENERATOR PROJECT SNAPSHOT RESTORED]', { projectId: routeProjectId, gallery: gallery.length, resultRef })
       } catch (error) {
@@ -1853,9 +1875,9 @@ export default function StandaloneGeneratorPage() {
         rawResponse: null,
         mmaudioPrompt,
         mmaudioNegativePrompt,
-        mmaudioResultUrl,
-        mmaudioJob: compactGeneratorJob(mmaudioJob),
-        mmaudioStatus,
+        mmaudioResultUrl: overrides.mmaudioResultUrl !== undefined ? overrides.mmaudioResultUrl : mmaudioResultUrl,
+        mmaudioJob: compactGeneratorJob(overrides.mmaudioJob !== undefined ? overrides.mmaudioJob : mmaudioJob),
+        mmaudioStatus: overrides.mmaudioStatus || mmaudioStatus,
       }
 
       try {
@@ -1866,7 +1888,7 @@ export default function StandaloneGeneratorPage() {
       }
     }
 
-    const delay = ['generator_completed', 'media_upload', 'gallery_remove', 'job_started', 'job_polling'].includes(reason) ? 0 : 700
+    const delay = ['generator_completed', 'media_upload', 'gallery_remove', 'job_started', 'job_polling', 'mmaudio_job_started', 'mmaudio_job_polling', 'mmaudio_completed', 'mmaudio_failed'].includes(reason) ? 0 : 700
     generatorSnapshotSaveTimerRef.current = setTimeout(run, delay)
   }, [
     routeProjectId, rawResponse, job, resultUrl, startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview,
@@ -2747,48 +2769,139 @@ export default function StandaloneGeneratorPage() {
     } catch {}
   }, [])
 
-  const pollMmaudioStatus = useCallback((jobId) => {
-    if (!jobId) return
+  const pollMmaudioStatus = useCallback((jobId, restoredJob = null) => {
+    const cleanJobId = String(jobId || '').replace(/^generator-mmaudio:/, '').replace(/^mmaudio:/, '').trim()
+    if (!cleanJobId) return
+
     if (mmaudioPollingRef.current) clearInterval(mmaudioPollingRef.current)
+
+    const pollToken = `mmaudio:${cleanJobId}:${Date.now()}`
+    activeMmaudioPollTokenRef.current = pollToken
+    let stopped = false
+    let tickInFlight = false
+
+    const stopMmaudioPollingRun = () => {
+      stopped = true
+      if (mmaudioPollingRef.current) clearInterval(mmaudioPollingRef.current)
+      mmaudioPollingRef.current = null
+      if (activeMmaudioPollTokenRef.current === pollToken) activeMmaudioPollTokenRef.current = ''
+    }
+
     const tick = async () => {
+      if (stopped || tickInFlight || activeMmaudioPollTokenRef.current !== pollToken) return
+      tickInFlight = true
       try {
-        const data = await fetchJson(`/clip/mmaudio/status/${jobId}`)
+        const data = await fetchJson(`/clip/mmaudio/status/${cleanJobId}`)
+        if (stopped || activeMmaudioPollTokenRef.current !== pollToken) return
+
         updateCreditSummaryFromJobResponse(data)
         setMmaudioRawResponse(data)
-        setMmaudioJob((old) => ({ ...(old || {}), ...data }))
-        setMmaudioStatus(data.status || data.audio_status || data.video_status || 'running')
+
+        const polledStatus = data.status || data.audio_status || data.video_status || 'running'
         const video = pickMmaudioOutputUrl(data)
-        if (video) {
-          setSelectedGalleryVideoUrl('')
-          setImageActionMenuId('')
-          setMmaudioResultUrl(video)
+        const isCompletedPoll = statusLooksDone(polledStatus) || Boolean(video)
+        const isFailedPoll = statusLooksFailed(polledStatus)
+        const canonicalVideo = video ? (generatorCanonicalApiPath(video) || normalizeUrl(video)) : ''
+        const nextJob = compactGeneratorJob({
+          ...(restoredJob || {}),
+          ...data,
+          id: `generator-mmaudio:${cleanJobId}`,
+          key: `generator-mmaudio:${cleanJobId}`,
+          jobId: cleanJobId,
+          job_id: cleanJobId,
+          projectId: routeProjectId,
+          stage: 'generator',
+          kind: 'mmaudio',
+          source: 'standalone_generator_mmaudio',
+          pagePath: generatorPagePath,
+          to: generatorPagePath,
+          status: isCompletedPoll ? 'completed' : (polledStatus || 'running'),
+          rawStatus: polledStatus || 'running',
+          statusBase: '/clip/mmaudio/status/',
+          statusEndpoint: `/clip/mmaudio/status/${cleanJobId}`,
+          resultUrl: canonicalVideo || '',
+          videoUrl: canonicalVideo || '',
+          apiPath: generatorCanonicalApiPath(canonicalVideo),
+          assetId: generatorAssetIdFromRef(canonicalVideo),
+          updatedAt: new Date().toISOString(),
+        })
+
+        setMmaudioJob(nextJob)
+        setMmaudioStatus(polledStatus || 'running')
+
+        if (!isCompletedPoll && !isFailedPoll) {
+          saveGeneratorSnapshot('mmaudio_job_polling', { mmaudioJob: nextJob, mmaudioStatus: polledStatus || 'running' })
+          return
         }
-        if (statusLooksDone(data.status || data.audio_status || data.video_status) || video) {
+
+        if (isCompletedPoll) {
+          if (completedMmaudioJobsRef.current.has(cleanJobId)) {
+            stopMmaudioPollingRun()
+            setMmaudioBusy(false)
+            setMmaudioJob(null)
+            return
+          }
+          completedMmaudioJobsRef.current.add(cleanJobId)
           updateCreditSummaryFromJobResponse(data)
           refreshCreditSummaryNow('mmaudio_completed')
           try { window.dispatchEvent(new CustomEvent('ava:credits-changed', { detail: data })) } catch {}
-          if (mmaudioPollingRef.current) clearInterval(mmaudioPollingRef.current)
-          mmaudioPollingRef.current = null
+
+          if (canonicalVideo) {
+            const refs = generatorResultRefs(data, canonicalVideo)
+            const mmaudioMeta = {
+              kind: 'mmaudio',
+              label: 'MMAudio',
+              route: 'mmaudio',
+              durationSec: targetDurationSec,
+              apiPath: refs.apiPath || generatorCanonicalApiPath(canonicalVideo),
+              assetId: refs.assetId || generatorAssetIdFromRef(canonicalVideo),
+            }
+            rememberedGalleryUrlsRef.current.add(`mmaudio:${normalizeUrl(canonicalVideo)}`)
+            setSelectedGalleryVideoUrl(canonicalVideo)
+            setImageActionMenuId('')
+            setMmaudioResultUrl(canonicalVideo)
+            setGeneratedVideos((old) => {
+              const nextGallery = upsertGeneratorGalleryResult(old, canonicalVideo, mmaudioMeta)
+              saveGeneratorSnapshot('mmaudio_completed', {
+                gallery: nextGallery,
+                mmaudioResultUrl: canonicalVideo,
+                mmaudioJob: null,
+                mmaudioStatus: 'completed',
+              })
+              return nextGallery
+            })
+          } else {
+            saveGeneratorSnapshot('mmaudio_completed', {
+              mmaudioJob: null,
+              mmaudioStatus: 'completed',
+            })
+          }
+
+          stopMmaudioPollingRun()
           setMmaudioBusy(false)
+          setMmaudioJob(null)
+          setMmaudioStatus('completed')
+          return
         }
-        if (statusLooksDone(data.status || data.audio_status || data.video_status)) {
+
+        if (isFailedPoll) {
+          saveGeneratorSnapshot('mmaudio_failed', { mmaudioJob: null, mmaudioStatus: polledStatus || 'failed' })
+          stopMmaudioPollingRun()
           setMmaudioBusy(false)
-        }
-        if (statusLooksFailed(data.status || data.audio_status || data.video_status)) {
-          if (mmaudioPollingRef.current) clearInterval(mmaudioPollingRef.current)
-          mmaudioPollingRef.current = null
-          setMmaudioBusy(false)
+          setMmaudioJob(null)
         }
       } catch (exc) {
         setMmaudioError(String(exc?.message || exc))
         setMmaudioBusy(false)
-        if (mmaudioPollingRef.current) clearInterval(mmaudioPollingRef.current)
-        mmaudioPollingRef.current = null
+        stopMmaudioPollingRun()
+      } finally {
+        tickInFlight = false
       }
     }
+
     tick()
     mmaudioPollingRef.current = setInterval(tick, 2200)
-  }, [refreshCreditSummaryNow, updateCreditSummaryFromJobResponse])
+  }, [generatorPagePath, refreshCreditSummaryNow, routeProjectId, saveGeneratorSnapshot, targetDurationSec, updateCreditSummaryFromJobResponse])
 
   const submitMmaudio = useCallback(async () => {
     setMmaudioError('')
@@ -2808,6 +2921,8 @@ export default function StandaloneGeneratorPage() {
         scene_id: sceneId,
         sceneId,
         source: 'standalone_generator_mmaudio',
+        project_id: routeProjectId,
+        projectId: routeProjectId,
         credit_cost_hint: mmaudioCreditCost,
         creditCostHint: mmaudioCreditCost,
         client_mmaudio_credit_cost: mmaudioCreditCost,
@@ -2839,24 +2954,69 @@ export default function StandaloneGeneratorPage() {
         body: JSON.stringify(payload),
       })
       setMmaudioRawResponse(data)
-      const jobId = data.jobId || data.job_id || data.id
-      setMmaudioJob({ ...data, jobId })
-      setMmaudioStatus(data.status || 'queued')
+      const jobId = String(data.jobId || data.job_id || data.id || '').trim()
+      const startedStatus = data.status || 'queued'
+      const startedJob = compactGeneratorJob({
+        ...data,
+        id: jobId ? `generator-mmaudio:${jobId}` : '',
+        key: jobId ? `generator-mmaudio:${jobId}` : '',
+        jobId,
+        job_id: jobId,
+        projectId: routeProjectId,
+        stage: 'generator',
+        kind: 'mmaudio',
+        source: 'standalone_generator_mmaudio',
+        pagePath: generatorPagePath,
+        to: generatorPagePath,
+        status: startedStatus,
+        rawStatus: startedStatus,
+        statusBase: '/clip/mmaudio/status/',
+        statusEndpoint: jobId ? `/clip/mmaudio/status/${jobId}` : '',
+        route: 'mmaudio',
+      })
+      if (jobId) completedMmaudioJobsRef.current.delete(jobId)
+      setMmaudioJob(startedJob)
+      setMmaudioStatus(startedStatus)
+      if (jobId) {
+        saveGeneratorSnapshot('mmaudio_job_started', { mmaudioJob: startedJob, mmaudioStatus: startedStatus })
+        upsertGlobalJob({
+          id: `generator-mmaudio:${jobId}`,
+          key: `generator-mmaudio:${jobId}`,
+          source: 'standalone_generator_mmaudio',
+          kind: 'mmaudio',
+          title: 'MMAudio',
+          toastTitle: 'MMAudio готово',
+          toastMessage: 'Звук готов. Перейти в генератор?',
+          pagePath: generatorPagePath,
+          to: generatorPagePath,
+          projectId: routeProjectId,
+          stage: 'generator',
+          sceneId,
+          jobId,
+          status: startedStatus,
+          rawStatus: startedStatus,
+          statusBase: '/clip/mmaudio/status/',
+          statusEndpoint: `/clip/mmaudio/status/${jobId}`,
+          route: 'mmaudio',
+        })
+      }
       const video = pickMmaudioOutputUrl(data)
       if (video) {
-        setSelectedGalleryVideoUrl('')
+        const canonicalVideo = generatorCanonicalApiPath(video) || normalizeUrl(video)
+        rememberedGalleryUrlsRef.current.add(`mmaudio:${normalizeUrl(canonicalVideo)}`)
+        setSelectedGalleryVideoUrl(canonicalVideo)
         setImageActionMenuId('')
-        setMmaudioResultUrl(video)
+        setMmaudioResultUrl(canonicalVideo)
         setMmaudioBusy(false)
         setMmaudioStatus(data.status || 'ready')
       }
-      if (jobId) pollMmaudioStatus(jobId)
+      if (jobId) pollMmaudioStatus(jobId, startedJob)
       else setMmaudioBusy(false)
     } catch (exc) {
       setMmaudioError(String(exc?.message || exc))
       setMmaudioBusy(false)
     }
-  }, [aspectInfo.value, durationSec, mmaudioPrompt, mmaudioNegativePrompt, pollMmaudioStatus, resultUrl, routeProjectId])
+  }, [aspectInfo.value, durationSec, generatorPagePath, mmaudioCreditCost, mmaudioPrompt, mmaudioNegativePrompt, pollMmaudioStatus, resultUrl, routeProjectId, saveGeneratorSnapshot])
 
   const submitGeneration = useCallback(async () => {
     setError('')
@@ -3076,6 +3236,8 @@ export default function StandaloneGeneratorPage() {
     if (mmaudioPollingRef.current) clearInterval(mmaudioPollingRef.current)
     pollingRef.current = null
     mmaudioPollingRef.current = null
+    activeGeneratorPollTokenRef.current = ''
+    activeMmaudioPollTokenRef.current = ''
     setBusy(false)
     setMmaudioBusy(false)
     setStatusText('polling остановлен')

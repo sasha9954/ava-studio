@@ -188,6 +188,92 @@ function avaJobIsStale(status, data = {}) {
 }
 
 
+function avaJobStatusLooksDone(status = '') {
+  const normalized = String(status || '').toLowerCase()
+  if (!normalized) return false
+  return ['completed', 'complete', 'ready', 'done', 'success', 'succeeded', 'finished'].some((item) => normalized.includes(item))
+}
+
+function avaGeneratorJobLooksActive(job = {}) {
+  const jobId = String(job?.jobId || job?.job_id || '').replace(/^generator-mmaudio:/, '').replace(/^mmaudio:/, '').replace(/^generator:/, '').trim()
+  if (!jobId) return false
+  const status = String(job?.status || job?.rawStatus || job?.lastStatus || '').toLowerCase()
+  if (avaJobStatusLooksDone(status) || avaJobIsError(status) || avaJobIsStale(status, job)) return false
+  if (!status) return true
+  return ['queued', 'pending', 'running', 'processing', 'submitted', 'started', 'in_progress', 'created'].some((item) => status.includes(item))
+}
+
+function avaShellProjectIdFromProject(project = {}) {
+  return String(project?.id || project?.project_id || project?.projectId || project?.key || '').trim()
+}
+
+function avaShellProjectIds({ activeProject = null, projects = null } = {}) {
+  const ids = new Set()
+  const pathProjectId = avaProjectIdFromPath()
+  if (pathProjectId) ids.add(pathProjectId)
+  const activeId = avaShellProjectIdFromProject(activeProject)
+  if (activeId) ids.add(activeId)
+  const list = Array.isArray(projects) ? projects : (projects && typeof projects === 'object' ? Object.values(projects) : [])
+  for (const project of list) {
+    const id = avaShellProjectIdFromProject(project)
+    if (id) ids.add(id)
+  }
+  return [...ids]
+}
+
+function avaGeneratorGalleryComparableRef(item = {}) {
+  const assetId = avaAssetIdFromRef(item?.assetId, item?.asset_id, item?.apiPath, item?.api_path, item?.url)
+  if (assetId) return `asset:${assetId}`
+  return String(item?.apiPath || item?.api_path || item?.url || '').trim()
+}
+
+function avaGeneratorGalleryItemFromMmaudio(data = {}, job = {}) {
+  const url = avaJobVideoUrl('mmaudio', data)
+  const assetId = avaAssetIdFromRef(url, data?.assetId, data?.asset_id, data?.mmaudioVideoAssetId, data?.mmaudio_video_asset_id)
+  const apiPath = avaAssetApiPath(assetId) || data?.mmaudioVideoApiPath || data?.mmaudio_video_api_path || data?.videoApiPath || data?.video_api_path || url
+  return {
+    label: 'MMAudio',
+    title: 'MMAudio',
+    kind: 'mmaudio',
+    route: 'mmaudio',
+    url: apiPath || url,
+    apiPath: apiPath || url,
+    assetId,
+    durationSec: data?.durationSec || data?.duration_sec || job?.durationSec || job?.duration_sec || null,
+    jobId: data?.jobId || data?.job_id || job?.jobId || job?.job_id || '',
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function normalizeGeneratorMmaudioJobForShell(job = {}, projectId = '') {
+  const jobId = String(job?.jobId || job?.job_id || job?.id || '').replace(/^generator-mmaudio:/, '').replace(/^mmaudio:/, '').trim()
+  if (!jobId) return null
+  const cleanProjectId = String(projectId || job?.projectId || job?.project_id || '').trim()
+  const pagePath = job?.pagePath || job?.to || (cleanProjectId ? `/app/projects/${cleanProjectId}/generator` : '/app/workspace/generator')
+  return {
+    ...job,
+    id: `generator-mmaudio:${jobId}`,
+    key: `generator-mmaudio:${jobId}`,
+    source: job?.source || 'standalone_generator_mmaudio',
+    kind: 'mmaudio',
+    title: job?.title || 'MMAudio',
+    projectId: cleanProjectId,
+    project_id: cleanProjectId,
+    stage: 'generator',
+    pagePath,
+    to: pagePath,
+    workspaceMode: !cleanProjectId,
+    jobId,
+    job_id: jobId,
+    status: job?.status || job?.rawStatus || 'running',
+    rawStatus: job?.rawStatus || job?.status || 'running',
+    statusBase: job?.statusBase || '/clip/mmaudio/status/',
+    statusEndpoint: job?.statusEndpoint || `/clip/mmaudio/status/${jobId}`,
+    route: 'mmaudio',
+  }
+}
+
+
 function boardSnapshotEndpointForJob(job = {}) {
   const explicitProjectId = job.projectId || ''
   if (explicitProjectId) return `/projects/${explicitProjectId}/snapshots/board`
@@ -534,11 +620,83 @@ export default function AvaShellLayout() {
     }
   }
 
+  async function discoverGeneratorMmaudioJobsFromSnapshots(existingJobs = []) {
+    const existingKeys = new Set((Array.isArray(existingJobs) ? existingJobs : []).map((job) => String(job?.key || job?.id || '').trim()).filter(Boolean))
+    const discovered = []
+    const projectIds = avaShellProjectIds({ activeProject, projects })
+
+    for (const projectId of projectIds) {
+      try {
+        const response = await apiRequest(`/projects/${projectId}/snapshots/generator`)
+        const snapshot = response?.snapshot?.data || response?.data || {}
+        const mmaudioJob = normalizeGeneratorMmaudioJobForShell(snapshot?.mmaudioJob, projectId)
+        if (!mmaudioJob || !avaGeneratorJobLooksActive(mmaudioJob)) continue
+        const key = String(mmaudioJob.key || mmaudioJob.id || '').trim()
+        if (!key || existingKeys.has(key)) continue
+        existingKeys.add(key)
+        discovered.push(mmaudioJob)
+      } catch (error) {
+        // Snapshot discovery is best-effort; normal global job polling still works.
+      }
+    }
+
+    if (discovered.length) {
+      const nextJobs = [...discovered, ...(Array.isArray(existingJobs) ? existingJobs : [])]
+      writeAvaGlobalJobs(nextJobs)
+      console.log('[AvaShell] discovered generator MMAudio jobs from snapshots', discovered.map((job) => job.jobId))
+      return nextJobs
+    }
+
+    return Array.isArray(existingJobs) ? existingJobs : []
+  }
+
+  async function persistFinishedGeneratorMmaudioSnapshot(job = {}, data = {}) {
+    const projectId = String(job?.projectId || job?.project_id || avaProjectIdFromPath(job?.to || job?.pagePath || '') || '').trim()
+    if (!projectId) return
+
+    const videoUrl = avaJobVideoUrl('mmaudio', data)
+    if (!videoUrl) return
+
+    const endpoint = `/projects/${projectId}/snapshots/generator`
+
+    try {
+      const response = await apiRequest(endpoint)
+      const currentData = response?.snapshot?.data || response?.data || {}
+      const oldGallery = Array.isArray(currentData.gallery) ? currentData.gallery : []
+      const newItem = avaGeneratorGalleryItemFromMmaudio(data, job)
+      const newKey = avaGeneratorGalleryComparableRef(newItem)
+      const nextGallery = [
+        ...oldGallery.filter((item) => avaGeneratorGalleryComparableRef(item) !== newKey),
+        newItem,
+      ].slice(-80)
+
+      const nextData = {
+        ...currentData,
+        gallery: nextGallery,
+        mmaudioResultUrl: newItem.apiPath || newItem.url || videoUrl,
+        mmaudioJob: null,
+        mmaudioStatus: 'completed',
+        updatedAt: new Date().toISOString(),
+      }
+
+      await apiRequest(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({
+          data: nextData,
+          guard_mode: 'replace',
+          client_version: 'ava-shell-generator-mmaudio-v1',
+        }),
+      })
+    } catch (error) {
+      console.warn('[AvaShell] failed to persist finished Generator MMAudio snapshot', error)
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
 
     async function checkGlobalJobs() {
-      const jobs = readAvaGlobalJobs()
+      const jobs = await discoverGeneratorMmaudioJobsFromSnapshots(readAvaGlobalJobs())
       if (!jobs.length) return
 
       const nextJobs = []
@@ -572,7 +730,11 @@ export default function AvaShellLayout() {
               continue
             }
             rememberCompletedAvaJob(job, data)
-            await persistFinishedJobToBoardSnapshot(job, data)
+            if (job.kind === 'mmaudio' && String(job.stage || '').replace(/_/g, '-') === 'generator') {
+              await persistFinishedGeneratorMmaudioSnapshot(job, data)
+            } else {
+              await persistFinishedJobToBoardSnapshot(job, data)
+            }
             pushGlobalToast({
               type: 'success',
               title: job.kind === 'mmaudio' ? 'MMAudio готово' : 'Видео готово',
@@ -618,7 +780,7 @@ export default function AvaShellLayout() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [refreshShellCredits])
+  }, [refreshShellCredits, activeProject, projects])
 
   function handleLogout() {
     logout()
