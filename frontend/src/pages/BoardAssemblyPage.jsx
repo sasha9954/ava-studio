@@ -235,45 +235,30 @@ function assemblySceneBlockLabel(scene = {}) {
 
 function AvaAssemblyLoading({ title = 'Загрузка видео монтажа…', subtitle = 'Подключаем сцены, видео, звук и блоки.' }) {
   return (
-    <div className="avaPage avaStoryboardLoadingPage">
-      <section className="avaLoadingHero">
-        <div className="avaLoadingCard">
+    <div className="avaPage avaStoryboardLoadingPage isAssemblyAudioLoading">
+      <section className="avaLoadingHero avaAssemblyLoadingHero">
+        <div className="avaLoadingCard avaAssemblyLoadingCard">
           <div className="avaLoadingOrb"><Clapperboard size={28} /></div>
-          <p className="avaEyebrow">Ava Studio pipeline</p>
+          <p className="avaEyebrow">Ava Studio montage</p>
           <h2>{title}</h2>
           <p>{subtitle}</p>
-          <div className="avaLoadingPipeline" aria-hidden="true">
-            <span className="isDone">Timing</span>
-            <i />
-            <span className="isActive">Board</span>
-            <i />
-            <span>Media</span>
-            <i />
-            <span>Montage</span>
+          <div className="avaAssemblyAudioLoader" aria-hidden="true">
+            <div className="avaAssemblyAudioTrack">
+              <span className="avaAssemblyMovingNote">♪</span>
+              <i style={{ '--bar': 0 }} />
+              <i style={{ '--bar': 1 }} />
+              <i style={{ '--bar': 2 }} />
+              <i style={{ '--bar': 3 }} />
+              <i style={{ '--bar': 4 }} />
+              <i style={{ '--bar': 5 }} />
+              <i style={{ '--bar': 6 }} />
+              <i style={{ '--bar': 7 }} />
+              <i style={{ '--bar': 8 }} />
+            </div>
+            <div className="avaAssemblyLoadingLine"><span /></div>
+            <small>Синхронизируем сцены и медиа</small>
           </div>
         </div>
-        <div className="avaLoadingStatusPanel" aria-hidden="true">
-            <div className="avaLoadingStatusCard isDone">
-              <span>01</span>
-              <strong>Timing</strong>
-              <small>таймкоды и блоки получены</small>
-            </div>
-            <div className="avaLoadingStatusCard isActive">
-              <span>02</span>
-              <strong>Storyboard</strong>
-              <small>сцены и промты загружаются</small>
-            </div>
-            <div className="avaLoadingStatusCard">
-              <span>03</span>
-              <strong>Media</strong>
-              <small>проверяем видео и звук</small>
-            </div>
-            <div className="avaLoadingStatusCard">
-              <span>04</span>
-              <strong>Ready</strong>
-              <small>готовим доску к работе</small>
-            </div>
-          </div>
       </section>
     </div>
   )
