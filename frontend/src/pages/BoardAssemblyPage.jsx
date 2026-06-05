@@ -1059,11 +1059,14 @@ export default function BoardAssemblyPage() {
                 className={`avaAssemblySceneItem ${selectedItem?.id === item.id ? 'isActive' : ''} ${item.hasVideo ? 'isReady' : 'isMissing'} ${item.blockLabel ? 'hasBlock' : ''}`}
                 style={{ '--scene-hue': item.hue }}
                 onClick={() => setSelectedSceneId(item.id)}
+                aria-pressed={selectedItem?.id === item.id}
+                title={selectedItem?.id === item.id ? `${item.title} — выбрана` : `Выбрать ${item.title}`}
               >
                 <strong>{item.title}</strong>
                 <span>{formatTime(item.start)} → {formatTime(item.end || item.start + item.duration)}</span>
                 <small>{item.route} · {item.hasVideo ? 'video' : 'нет видео'}{item.hasMmaudio ? ' · MMAudio' : item.hasSound ? ' · sound' : ''}</small>
                 {item.blockLabel && <em className="avaAssemblyBlockBadge">{item.blockLabel}</em>}
+                {selectedItem?.id === item.id && <em className="avaAssemblySelectedBadge">выбрано</em>}
               </button>
             ))}
             {!sceneItems.length && <div className="avaInfoBox">Сцен нет. Вернись в Board или Manual Timing.</div>}
