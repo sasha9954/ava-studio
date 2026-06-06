@@ -4311,3 +4311,187 @@
 }
 
 /* AVA_ASSEMBLY_BOARD_HANDOFF_SOURCE_OF_TRUTH_V8 */
+
+
+/* AVA_TIMING_TO_BOARD_CONFIRM_MODAL_V14B */
+.avaBoardTimingConfirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2400;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 30% 15%, rgba(168, 85, 247, 0.28), transparent 34%),
+    radial-gradient(circle at 72% 72%, rgba(34, 211, 238, 0.16), transparent 36%),
+    rgba(5, 8, 18, 0.76);
+  backdrop-filter: blur(18px);
+}
+
+.avaBoardTimingConfirmCard {
+  position: relative;
+  width: min(560px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 28px;
+  padding: 28px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: #e5eefb;
+}
+
+.avaBoardTimingConfirmGlow {
+  position: absolute;
+  inset: -80px -80px auto auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.28);
+  filter: blur(22px);
+  pointer-events: none;
+}
+
+.avaBoardTimingConfirmBadge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #bae6fd;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.avaBoardTimingConfirmCard h3 {
+  position: relative;
+  margin: 18px 0 10px;
+  font-size: 25px;
+  line-height: 1.1;
+}
+
+.avaBoardTimingConfirmCard p {
+  position: relative;
+  margin: 0;
+  color: rgba(226, 232, 240, 0.82);
+  line-height: 1.55;
+}
+
+.avaBoardTimingConfirmWarning {
+  position: relative;
+  margin-top: 16px;
+  padding: 13px 14px;
+  border: 1px solid rgba(251, 191, 36, 0.26);
+  border-radius: 18px;
+  background: rgba(251, 191, 36, 0.09);
+  color: #fde68a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.avaBoardTimingConfirmActions {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+}
+
+.avaBoardTimingConfirmPrimary,
+.avaBoardTimingConfirmSecondary {
+  border: 0;
+  border-radius: 16px;
+  padding: 12px 16px;
+  font-weight: 850;
+  cursor: pointer;
+  color: #e5eefb;
+}
+
+.avaBoardTimingConfirmPrimary {
+  background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+  box-shadow: 0 14px 34px rgba(6, 182, 212, 0.20);
+}
+
+.avaBoardTimingConfirmSecondary {
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.avaBoardTimingConfirmPrimary:disabled,
+.avaBoardTimingConfirmSecondary:disabled {
+  opacity: 0.62;
+  cursor: wait;
+}
+
+/* AVA_BOARD_MEDIA_LOADING_SPINNERS_V15: compact loaders for Board media restore and video generation */
+.avaBoardTinyMediaSpinner,
+.avaBoardButtonSpinnerV15,
+.avaBoardStatusBadge.isRunning::before {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(207, 226, 255, .24);
+  border-top-color: rgba(151, 231, 255, .95);
+  box-shadow: 0 0 18px rgba(79, 208, 255, .22);
+  animation: avaBoardMediaSpinV15 .85s linear infinite;
+}
+
+.avaBoardTinyMediaSpinner.isGold,
+.avaBoardButtonSpinnerV15,
+.avaBoardStatusBadge.isRunning::before {
+  border-color: rgba(255, 225, 150, .28);
+  border-top-color: rgba(255, 229, 155, .98);
+  box-shadow: 0 0 18px rgba(255, 198, 71, .28);
+}
+
+.avaBoardButtonSpinnerV15 {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.avaBoardStatusBadge.isRunning {
+  gap: 5px;
+}
+
+.avaBoardStatusBadge.isRunning::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-width: 1.5px;
+  box-shadow: 0 0 10px rgba(255, 198, 71, .34);
+}
+
+.avaBoardMediaSpinnerOverlayV15 .avaBoardTinyMediaSpinner,
+.avaBoardVideoEmpty.isGeneratingVideoV15 .avaBoardTinyMediaSpinner {
+  width: 24px;
+  height: 24px;
+}
+
+.avaBoardMediaLoaderText {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  color: rgba(229, 239, 255, .82);
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy,
+.avaBoardWorkflowButton.isVideo.isQueued {
+  position: relative;
+  border-color: rgba(255, 229, 155, .48) !important;
+  box-shadow: 0 0 0 1px rgba(255, 215, 120, .12), 0 12px 26px rgba(0,0,0,.18) !important;
+}
+
+.avaBoardVideoEmpty.isBusy {
+  gap: 9px;
+}
+
+@keyframes avaBoardMediaSpinV15 {
+  to { transform: rotate(360deg); }
+}
+

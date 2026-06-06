@@ -1,3 +1,5 @@
+/* AVA_VIDEO_NODE_CANDIDATES_PERSIST_V33: persist visible candidates across computers by restoring/saving candidate totals and ids. */
+/* AVA_VIDEO_NODE_TAKE_BOARD_BUTTON_FEEDBACK_V32 */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -22,6 +24,8 @@ import {
   sanitizeVideoMatchProjectForStorage,
 } from "../clip_nodes/video_match/videoMatchBoardDomain.js";
 import "./VideoMatchBoardPage.css";
+/* AVA_VIDEO_NODE_SIMPLE_SLOT_CANDIDATE_FLOW_V24: scene slots stay fixed; add variants without applying; checkmark applies selected candidate and preview/assembly uses it. */
+/* AVA_VIDEO_NODE_SCENE_SLOT_APPLY_PREVIEW_V25: scene click and assembly use the selected candidate, not the original source by accident. */
 import { WORKFLOW_PRESETS, getPresetById } from "../../data/codex_jobs/index.js";
 import WorkflowStageControls from "../../components/WorkflowStageControls.jsx";
 
@@ -123,6 +127,11 @@ const VIDEO_MATCH_SOURCE_COLORS = {
   src_03: "#34d399",
   src_04: "#a78bfa",
   src_05: "#fb7185",
+  board: "#a855f7",
+  ls: "#a855f7",
+  upload: "#fb923c",
+  override: "#fb923c",
+  user_override: "#fb923c",
 };
 
 function getVideoNodeSourceVideoId(item = {}) {
@@ -137,22 +146,56 @@ function getVideoNodeSourceVideoId(item = {}) {
 }
 
 function getVideoNodeSourceColor(sourceId = "src_01") {
-  return VIDEO_MATCH_SOURCE_COLORS[String(sourceId || "src_01").trim()] || VIDEO_MATCH_SOURCE_COLORS.src_01;
+  const normalized = String(sourceId || "src_01").trim().toLowerCase();
+  return VIDEO_MATCH_SOURCE_COLORS[normalized] || VIDEO_MATCH_SOURCE_COLORS[String(sourceId || "src_01").trim()] || VIDEO_MATCH_SOURCE_COLORS.src_01;
 }
 
 function getVideoNodeSourceShortLabel(sourceId = "src_01") {
   const raw = String(sourceId || "src_01").trim();
+  const lowered = raw.toLowerCase();
+  if (lowered === "board" || lowered === "ls") return "BOARD";
+  if (lowered === "upload" || lowered === "override" || lowered === "user_override") return "UPLOAD";
   const match = raw.match(/(\d+)/);
   return match ? `V${Number(match[1])}` : raw.toUpperCase();
 }
 
+function getVideoNodeSelectedCandidate(segment = {}, candidates = []) {
+  const list = Array.isArray(candidates) ? candidates : (Array.isArray(segment?.candidates) ? segment.candidates : []);
+  const selectedCandidateId = String(segment?.selectedCandidateId || segment?.selected_candidate_id || "").trim();
+  return list.find((candidate) => getCandidateKey(candidate) === selectedCandidateId) || list[0] || null;
+}
+
+function getVideoNodeHomeCandidate(segment = {}, candidates = []) {
+  const list = Array.isArray(candidates) ? candidates : (Array.isArray(segment?.candidates) ? segment.candidates : []);
+  return list.find((candidate) => !isBoardClipCandidate(candidate) && !isOverrideCandidate(candidate)) || list[0] || null;
+}
+
+function getVideoNodeCandidateVisualSourceId(candidate = {}) {
+  if (isBoardClipCandidate(candidate)) return "board";
+  if (isOverrideCandidate(candidate)) return "upload";
+  return getVideoNodeSourceVideoId(candidate);
+}
 
 function getVideoNodeSegmentSourceVideoId(segment = {}, candidates = []) {
-  const selectedCandidateId = String(segment?.selectedCandidateId || segment?.selected_candidate_id || "").trim();
-  const selectedCandidate = Array.isArray(candidates)
-    ? (candidates.find((candidate) => String(candidate?.id || "") === selectedCandidateId) || candidates[0])
-    : null;
-  return getVideoNodeSourceVideoId(selectedCandidate || segment);
+  const selectedCandidate = getVideoNodeSelectedCandidate(segment, candidates);
+  return getVideoNodeCandidateVisualSourceId(selectedCandidate || segment);
+}
+
+function getVideoNodeTimelineLaneSourceId(segment = {}, candidates = []) {
+  const explicit = String(segment?.timelineSourceVideoId || segment?.timeline_source_video_id || "").trim();
+  if (explicit && !["board", "ls", "upload", "override", "user_override"].includes(explicit.toLowerCase())) return explicit;
+  const homeCandidate = getVideoNodeHomeCandidate(segment, candidates);
+  const homeSource = getVideoNodeSourceVideoId(homeCandidate || segment);
+  return ["board", "ls", "upload", "override", "user_override"].includes(String(homeSource || "").toLowerCase()) ? "src_01" : homeSource;
+}
+
+function getVideoNodeTimelineSourceRange(segment = {}, candidates = []) {
+  const homeCandidate = getVideoNodeHomeCandidate(segment, candidates) || segment;
+  const start = Number(homeCandidate?.sourceVideoStartSec ?? homeCandidate?.video_t0 ?? homeCandidate?.source_video_start_sec ?? 0) || 0;
+  const rawEnd = Number(homeCandidate?.sourceVideoEndSec ?? homeCandidate?.video_t1 ?? homeCandidate?.source_video_end_sec ?? start) || start;
+  const fallbackDuration = Math.max(0.05, Number((segment?.targetEndSec ?? segment?.target_t1 ?? 0) - (segment?.targetStartSec ?? segment?.target_t0 ?? 0)) || 0.1);
+  const end = rawEnd > start ? rawEnd : start + fallbackDuration;
+  return { start: Math.max(0, start), end: Math.max(start + 0.05, end) };
 }
 
 
@@ -485,6 +528,17 @@ function resolveOutputUrl(outputUrl = "") {
   return normalizePlayableVideoUrl(outputUrl);
 }
 
+function isVideoNodeProtectedAssetUrl(url = "") {
+  const raw = String(url || "").trim();
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw, typeof window !== "undefined" ? window.location.href : "http://localhost");
+    return parsed.pathname.includes("/api/assets/") || parsed.pathname.startsWith("/assets/");
+  } catch {
+    return raw.startsWith("/assets/") || raw.startsWith("/api/assets/");
+  }
+}
+
 
 function getVideoNodeAuthHeaders(extraHeaders = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("ava_token") : "";
@@ -778,14 +832,55 @@ function buildBoardClipCandidate(segment = {}, boardClip = {}) {
   };
 }
 
-async function fetchBoardGeneratedClipsFromWorkspace() {
-  const response = await fetch(`${API_BASE}/api/workspace/snapshots/board`, {
-    method: "GET",
-    headers: getVideoNodeAuthHeaders(),
-  });
-  if (!response.ok) throw new Error(`board snapshot load failed ${response.status}`);
-  const data = await response.json().catch(() => null);
-  return extractBoardGeneratedClips(data || {});
+async function fetchBoardGeneratedClipsFromWorkspace(projectId = "") {
+  // AVA_VIDEO_NODE_BOARD_BUTTON_AND_CANDIDATES_V31:
+  // Prefer the current project board snapshot, then fall back to workspace snapshot.
+  const endpoints = [];
+  const cleanProjectId = String(projectId || "").trim();
+  if (cleanProjectId) {
+    endpoints.push(`${API_BASE}/api/projects/${encodeURIComponent(cleanProjectId)}/snapshots/board`);
+  }
+  endpoints.push(`${API_BASE}/api/workspace/snapshots/board`);
+
+  const collected = [];
+  let lastError = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers: getVideoNodeAuthHeaders(),
+      });
+      if (!response.ok) {
+        lastError = new Error(`board snapshot load failed ${response.status}`);
+        continue;
+      }
+      const data = await response.json().catch(() => null);
+      const clips = extractBoardGeneratedClips(data || {});
+      if (Array.isArray(clips) && clips.length) collected.push(...clips);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const seen = new Set();
+  const unique = [];
+  for (const clip of collected) {
+    const key = [
+      clip.sceneId,
+      clip.videoApiPath,
+      clip.videoUrl,
+      clip.localPath,
+      clip.title,
+    ].map((item) => String(item || "").trim()).filter(Boolean).join("|");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(clip);
+  }
+
+  if (unique.length) return unique;
+  if (lastError) throw lastError;
+  return [];
 }
 
 function isBrowserSafeThumbnail(thumbnail = "") {
@@ -894,6 +989,7 @@ export default function VideoMatchBoardPage() {
   const sourceVideoObjectUrlByIdRef = useRef({});
   const audioObjectUrlRef = useRef("");
   const backgroundAudioObjectUrlRef = useRef("");
+  const overrideVideoObjectUrlRef = useRef("");
   const videoPlayTokenRef = useRef(0);
   const overrideUploadInputRef = useRef(null);
   const videoErrorHandledRef = useRef({});
@@ -1020,7 +1116,7 @@ export default function VideoMatchBoardPage() {
 
   const refreshBoardGeneratedClips = useCallback(async (reason = "auto") => {
     try {
-      const clips = await fetchBoardGeneratedClipsFromWorkspace();
+      const clips = await fetchBoardGeneratedClipsFromWorkspace(projectId);
       setBoardGeneratedClips(clips);
       setBoardGeneratedClipsStatus(clips.length ? `Клипы с доски: ${clips.length}` : "На доске пока нет готовых видео");
       console.info("[VIDEO MATCH BOARD CLIPS LOADED]", { reason, count: clips.length, clips });
@@ -1334,6 +1430,8 @@ export default function VideoMatchBoardPage() {
         const currentUpdatedAt = Number(project?.updatedAt || 0);
         const backendUpdatedAt = Number(workspaceProject?.updatedAt || workspaceProject?.savedAt || 0);
         const shouldRestore = Number(backendStats.matchSegmentsCount || 0) > Number(currentStats.matchSegmentsCount || 0)
+          || Number(backendStats.candidatesTotal || 0) > Number(currentStats.candidatesTotal || 0)
+          || Number(backendStats.videoBlocksCount || 0) > Number(currentStats.videoBlocksCount || 0)
           || (Number(backendStats.matchSegmentsCount || 0) > 0 && backendUpdatedAt >= currentUpdatedAt);
         if (!shouldRestore) return;
         const restoredProject = persistVideoMatchBoardProject({
@@ -1376,6 +1474,14 @@ export default function VideoMatchBoardPage() {
       sourcePath: String(payload?.project?.sourceVideoPath || payload?.project?.sourceVideo?.path || ""),
       importSignature: String(payload?.project?.importSignature || ""),
       selectedBlockId: String(payload?.project?.selectedBlockId || ""),
+      selectedSegmentId: String(payload?.project?.selectedSegmentId || ""),
+      selectedCandidateId: String(payload?.project?.selectedCandidateId || ""),
+      candidatesTotal: Number(payload?.stats?.candidatesTotal || 0),
+      candidateIds: (Array.isArray(payload?.project?.matchSegments) ? payload.project.matchSegments : []).map((segment) => [
+        String(segment?.id || segment?.audioSceneId || segment?.audio_scene_id || ""),
+        String(segment?.selectedCandidateId || segment?.selected_candidate_id || ""),
+        ...(Array.isArray(segment?.candidates) ? segment.candidates.map((candidate) => String(candidate?.id || candidate?.candidateId || candidate?.candidate_id || "")) : []),
+      ].join(":")).join("|"),
       updatedAt: Number(payload?.project?.updatedAt || 0),
     });
     if (signature === backendSaveSignatureRef.current) return () => {};
@@ -1691,6 +1797,26 @@ export default function VideoMatchBoardPage() {
     return String(sourceVideoUrl || runtimeSourceVideoUrlRef.current || project.sourceVideoUrl || "").trim();
   };
 
+  const fetchVideoNodeOverridePreviewUrl = async (url = "") => {
+    const resolvedUrl = resolveOutputUrl(url);
+    if (!resolvedUrl) return "";
+    if (!isVideoNodeProtectedAssetUrl(resolvedUrl)) return resolvedUrl;
+    const response = await fetch(resolvedUrl, {
+      method: "GET",
+      credentials: "include",
+      headers: getVideoMatchAuthHeaders(),
+    });
+    if (!response.ok) throw new Error(`asset preview fetch failed ${response.status}`);
+    const blob = await response.blob();
+    if (overrideVideoObjectUrlRef.current) {
+      try { URL.revokeObjectURL(overrideVideoObjectUrlRef.current); } catch {}
+      overrideVideoObjectUrlRef.current = "";
+    }
+    const blobUrl = URL.createObjectURL(blob);
+    overrideVideoObjectUrlRef.current = blobUrl;
+    return blobUrl;
+  };
+
   const playOverrideRange = async (block = {}, { muted = false } = {}) => {
     const overrideUrl = getResolvedOverrideUrl(block);
     if (!overrideUrl || !videoRef.current) return false;
@@ -1700,11 +1826,13 @@ export default function VideoMatchBoardPage() {
     applyPreviewVideoAudioMix(Boolean(muted));
     safePauseVideo(videoRef.current, "override_before_src_change");
     videoPlayTokenRef.current = requestToken;
-    logVideoPlayerAction("src_change", "override_src_set", { src: overrideUrl, sceneId: block?.id || "" });
-    videoRef.current.src = overrideUrl;
-    videoRef.current.currentTime = 0;
-    videoRef.current.load();
     try {
+      const playableOverrideUrl = await fetchVideoNodeOverridePreviewUrl(overrideUrl);
+      if (!playableOverrideUrl) return false;
+      logVideoPlayerAction("src_change", "override_src_set", { src: overrideUrl, playable: playableOverrideUrl.startsWith("blob:") ? "blob" : "direct", sceneId: block?.id || "" });
+      videoRef.current.src = playableOverrideUrl;
+      videoRef.current.currentTime = 0;
+      videoRef.current.load();
       await waitForVideoReady(videoRef.current);
       if (videoPlayTokenRef.current !== requestToken) {
         console.info("[VIDEO PLAYER REQUEST CANCELLED BEFORE PLAY]", { reason: "token_changed_before_play", sceneId: block?.id || "" });
@@ -2106,6 +2234,36 @@ export default function VideoMatchBoardPage() {
     window.setTimeout(() => syncAssemblyAudioPlaybackNow("start_timeout"), 80);
   };
 
+
+  const buildSelectedBlockForSegmentV25 = (segment = {}) => {
+    const segmentKey = getSegmentKey(segment);
+    const candidates = Array.isArray(segment.candidates) ? segment.candidates : [];
+    const selectedCandidate = getVideoNodeSelectedCandidate(segment, candidates);
+    const candidateKey = getCandidateKey(selectedCandidate || {});
+    const existingExact = assemblyBlocks.find((block) => getSegmentKey(block) === segmentKey && getCandidateKey(block) === candidateKey);
+    if (existingExact) return existingExact;
+    const rebuilt = buildVideoBlocksFromMatchSegments([{
+      ...segment,
+      selectedCandidateId: candidateKey || segment.selectedCandidateId || segment.selected_candidate_id || "",
+      selected_candidate_id: candidateKey || segment.selected_candidate_id || segment.selectedCandidateId || "",
+      selectedCandidate: selectedCandidate || segment.selectedCandidate,
+      selected_candidate: selectedCandidate || segment.selected_candidate,
+    }], sourceVideoUrl);
+    return rebuilt[0] || assemblyBlocks.find((block) => getSegmentKey(block) === segmentKey) || segment;
+  };
+
+  const onSelectSegmentAndPreviewV25 = (segment = {}, reason = "scene_click") => {
+    const segmentKey = getSegmentKey(segment);
+    const block = buildSelectedBlockForSegmentV25(segment);
+    const candidateKey = getCandidateKey(block) || String(segment.selectedCandidateId || segment.selected_candidate_id || "").trim();
+    patchProject({
+      selectedSegmentId: segmentKey,
+      selectedCandidateId: candidateKey,
+      selectedBlockId: block?.id || "",
+    }, { lastGood: false });
+    void startAudioSyncedBlock(block, reason);
+  };
+
   const onSelectBlockAndPreview = (block = {}, reason = "scene_click") => {
     if (!block) return;
     void startAudioSyncedBlock(block, reason);
@@ -2353,19 +2511,38 @@ export default function VideoMatchBoardPage() {
     backgroundAudioRef.current.volume = Number(project?.audioMix?.backgroundAudioVolume ?? 0.6);
   }, [project?.audioMix?.backgroundAudioVolume]);
 
+  // AVA_VIDEO_NODE_SLOT_CANDIDATE_FLOW_V24: only ✓ applies a candidate to the fixed scene slot.
   const onSelectCandidate = (segmentId = "", candidateId = "") => {
     const targetSegmentKey = String(segmentId || "").trim();
     const targetCandidateKey = String(candidateId || "").trim();
     const nextSegments = matchSegments.map((segment) => {
       if (getSegmentKey(segment) !== targetSegmentKey) return segment;
+      const candidates = Array.isArray(segment.candidates) ? segment.candidates : [];
+      const selectedCandidate = candidates.find((candidate) => getCandidateKey(candidate) === targetCandidateKey) || null;
       return {
         ...segment,
         selectedCandidateId: targetCandidateKey,
         selected_candidate_id: targetCandidateKey,
+        selectedCandidate: selectedCandidate || undefined,
+        selected_candidate: selectedCandidate || undefined,
       };
     });
     const nextBlocks = buildVideoBlocksFromMatchSegments(nextSegments, sourceVideoUrl);
+    const targetSegmentAfterSelect = nextSegments.find((segment) => getSegmentKey(segment) === targetSegmentKey) || null;
+    const selectedCandidateAfterSelect = targetSegmentAfterSelect
+      ? (Array.isArray(targetSegmentAfterSelect.candidates) ? targetSegmentAfterSelect.candidates : []).find((candidate) => getCandidateKey(candidate) === targetCandidateKey)
+      : null;
+    const rebuiltSelectedBlock = targetSegmentAfterSelect
+      ? (buildVideoBlocksFromMatchSegments([{
+          ...targetSegmentAfterSelect,
+          selectedCandidateId: targetCandidateKey,
+          selected_candidate_id: targetCandidateKey,
+          selectedCandidate: selectedCandidateAfterSelect || targetSegmentAfterSelect.selectedCandidate,
+          selected_candidate: selectedCandidateAfterSelect || targetSegmentAfterSelect.selected_candidate,
+        }], sourceVideoUrl)[0] || null)
+      : null;
     const nextBlock = nextBlocks.find((block) => getSegmentKey(block) === targetSegmentKey && getCandidateKey(block) === targetCandidateKey)
+      || rebuiltSelectedBlock
       || nextBlocks.find((block) => getSegmentKey(block) === targetSegmentKey)
       || nextBlocks[0]
       || null;
@@ -2375,6 +2552,7 @@ export default function VideoMatchBoardPage() {
       selectedSegmentId: targetSegmentKey,
       selectedCandidateId: targetCandidateKey,
       selectedBlockId: nextBlock?.id || "",
+      jsonError: "",
     });
     if (nextBlock) {
       window.setTimeout(() => {
@@ -2496,67 +2674,95 @@ export default function VideoMatchBoardPage() {
           shot_type: "custom",
           warnings: [],
         };
+        const oldCandidates = Array.isArray(segment.candidates) ? segment.candidates : [];
+        const currentCandidateId = String(segment.selectedCandidateId || segment.selected_candidate_id || getCandidateKey(oldCandidates[0]) || "").trim();
+        const currentSelectedCandidate = oldCandidates.find((candidate) => getCandidateKey(candidate) === currentCandidateId) || segment.selectedCandidate || segment.selected_candidate || null;
         return {
           ...segment,
-          candidates: [...(Array.isArray(segment.candidates) ? segment.candidates : []), overrideCandidate],
-          selectedCandidateId: candidateId,
-          selected_candidate_id: candidateId,
-          selectedCandidate: overrideCandidate,
-          selected_candidate: overrideCandidate,
+          candidates: [...oldCandidates, overrideCandidate],
+          selectedCandidateId: currentCandidateId,
+          selected_candidate_id: currentCandidateId,
+          selectedCandidate: currentSelectedCandidate || undefined,
+          selected_candidate: currentSelectedCandidate || undefined,
         };
       });
       const nextBlocks = buildVideoBlocksFromMatchSegments(nextSegments, sourceVideoUrl);
-      const nextBlock = nextBlocks.find((block) => getSegmentKey(block) === segmentId && getCandidateKey(block) === candidateId) || null;
-      patchProject({ matchSegments: nextSegments, videoBlocks: nextBlocks, selectedSegmentId: segmentId, selectedCandidateId: candidateId, selectedBlockId: nextBlock?.id || "", jsonError: "" });
-      if (nextBlock?.overrideVideoUrl) setTimeout(() => {
-        const shouldMutePreview = isTruthyFlag(nextBlock?.forceMuteVideoAudio ?? nextBlock?.force_mute_video_audio);
-        void playOverrideRange(nextBlock, { muted: shouldMutePreview });
-      }, 50);
+      const selectedStill = nextBlocks.find((block) => getSegmentKey(block) === segmentId && getCandidateKey(block) === (selectedSegment?.selectedCandidateId || selectedSegment?.selected_candidate_id))
+        || nextBlocks.find((block) => getSegmentKey(block) === segmentId)
+        || null;
+      patchProject({
+        matchSegments: nextSegments,
+        videoBlocks: nextBlocks,
+        selectedSegmentId: segmentId,
+        selectedCandidateId: project.selectedCandidateId || selectedSegment?.selectedCandidateId || selectedSegment?.selected_candidate_id || "",
+        selectedBlockId: selectedStill?.id || project.selectedBlockId || "",
+        jsonError: "Загружен новый вариант. Нажмите ✓ на кандидате, чтобы применить его к сцене.",
+      }, { lastGood: false });
+      setPreviewCandidateId(candidateId);
     } catch (error) {
       patchProject({ jsonError: `Не удалось загрузить override: ${String(error?.message || error)}` }, { lastGood: false });
     }
   };
 
-  const onUseBoardClipForSelectedSegment = () => {
+  // AVA_VIDEO_NODE_BOARD_BUTTON_AND_CANDIDATES_V31: +Взять с доски stays enabled and refreshes Board before adding a candidate.
+  const onUseBoardClipForSelectedSegment = async () => {
     if (!selectedSegment) return;
     const segmentId = getSegmentKey(selectedSegment);
     if (!segmentId) return;
-    const boardClip = selectedBoardClip;
+
+    let boardClip = selectedBoardClip;
     if (!boardClip) {
-      patchProject({ jsonError: "Для этой сцены нет готового видео на Доске. Проверь scene_id/audio_scene_id." }, { lastGood: false });
-      void refreshBoardGeneratedClips("missing_for_selected_scene");
+      setBoardGeneratedClipsStatus("Проверяю Доску для этой сцены...");
+      const freshClips = await refreshBoardGeneratedClips("manual_take_from_board");
+      boardClip = findBoardClipForSegment(selectedSegment, freshClips);
+    }
+
+    if (!boardClip) {
+      patchProject({
+        jsonError: "Для этой сцены нет готового видео на Доске. Проверь, что в Доске у этой же scene_id есть готовое видео.",
+      }, { lastGood: false });
+      setBoardGeneratedClipsStatus("В Доске не найдено видео для выбранной сцены.");
       return;
     }
+
     const boardCandidate = buildBoardClipCandidate(selectedSegment, boardClip);
     const nextSegments = matchSegments.map((segment) => {
       if (getSegmentKey(segment) !== segmentId) return segment;
       const oldCandidates = Array.isArray(segment.candidates) ? segment.candidates : [];
-      const cleanedCandidates = oldCandidates.filter((candidate) => !isBoardClipCandidate(candidate));
+      const baseCandidates = oldCandidates.filter((candidate) => !isBoardClipCandidate(candidate));
+      const currentCandidateId = String(segment.selectedCandidateId || segment.selected_candidate_id || getCandidateKey(baseCandidates[0] || oldCandidates[0]) || "").trim();
+      const currentSelectedCandidate = baseCandidates.find((candidate) => getCandidateKey(candidate) === currentCandidateId)
+        || oldCandidates.find((candidate) => getCandidateKey(candidate) === currentCandidateId)
+        || segment.selectedCandidate
+        || segment.selected_candidate
+        || null;
       return {
         ...segment,
-        candidates: [...cleanedCandidates, boardCandidate],
-        selectedCandidateId: boardCandidate.id,
-        selected_candidate_id: boardCandidate.id,
-        selectedCandidate: boardCandidate,
-        selected_candidate: boardCandidate,
+        candidates: [...baseCandidates, boardCandidate],
+        selectedCandidateId: currentCandidateId,
+        selected_candidate_id: currentCandidateId,
+        selectedCandidate: currentSelectedCandidate || undefined,
+        selected_candidate: currentSelectedCandidate || undefined,
       };
     });
+
     const nextBlocks = buildVideoBlocksFromMatchSegments(nextSegments, sourceVideoUrl);
-    const nextBlock = nextBlocks.find((block) => getSegmentKey(block) === segmentId && getCandidateKey(block) === boardCandidate.id) || null;
+    const selectedStill = nextBlocks.find((block) => getSegmentKey(block) === segmentId && getCandidateKey(block) === (selectedSegment?.selectedCandidateId || selectedSegment?.selected_candidate_id))
+      || nextBlocks.find((block) => getSegmentKey(block) === segmentId)
+      || null;
+
     patchProject({
       matchSegments: nextSegments,
       videoBlocks: nextBlocks,
       selectedSegmentId: segmentId,
-      selectedCandidateId: boardCandidate.id,
-      selectedBlockId: nextBlock?.id || "",
+      selectedCandidateId: project.selectedCandidateId || selectedSegment?.selectedCandidateId || selectedSegment?.selected_candidate_id || "",
+      selectedBlockId: selectedStill?.id || project.selectedBlockId || "",
       jsonError: "",
-    });
-    setBoardGeneratedClipsStatus(`Взято с доски: ${boardClip.sceneId || segmentId}`);
-    console.info("[VIDEO MATCH TAKE_FROM_BOARD_APPLIED]", { segmentId, boardClip, candidateId: boardCandidate.id, hasLocalPath: Boolean(boardCandidate.overrideVideoPath) });
-    if (nextBlock?.overrideVideoUrl) setTimeout(() => {
-      const shouldMutePreview = isTruthyFlag(nextBlock?.forceMuteVideoAudio ?? nextBlock?.force_mute_video_audio);
-      void playOverrideRange(nextBlock, { muted: shouldMutePreview });
-    }, 80);
+    }, { lastGood: false });
+
+    setPreviewCandidateId(boardCandidate.id);
+    setBoardGeneratedClipsStatus(`Добавлен вариант с Доски: ${boardClip.sceneId || segmentId}. Нажмите ✓ на кандидате, чтобы применить.`);
+    console.info("[VIDEO MATCH TAKE_FROM_BOARD_ADDED_CANDIDATE_V31]", { segmentId, boardClip, candidateId: boardCandidate.id, hasLocalPath: Boolean(boardCandidate.overrideVideoPath) });
   };
 
   const onVideoFileChange = async (file, sourceVideoId = "src_01") => {
@@ -4157,62 +4363,57 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
           </div>
           {sourceRelinkWarnings.length ? <div className="videoMatchWarnings">{sourceRelinkWarnings.join("; ")}</div> : null}
           <div className="videoMatchSourceSceneLanes" aria-label="source video scene lanes">
-            {[
-              ...sourceVideos.slice(0, 5),
-              ...(assemblyBlocks.some((block) => ["board", "ls"].includes(getVideoNodeSourceVideoId(block))) ? [{
-                id: "board",
-                label: "BOARD / LS",
-                filename: "клипы с Доски и lip-sync",
-                duration_sec: Math.max(assemblyDurationSec || 0, ...assemblyBlocks.map((block) => getBlockTargetEnd(block) || 0), 1),
-              }] : []),
-            ].map((source, sourceIndex) => {
+            {sourceVideos.slice(0, 5).map((source, sourceIndex) => {
               const sourceId = String(source.id || source.sourceVideoId || source.source_video_id || `src_${String(sourceIndex + 1).padStart(2, "0")}`).trim();
-              const isBoardLane = sourceId === "board" || sourceId === "ls";
-              const laneBlocks = assemblyBlocks.filter((block) => {
-                const blockSourceId = getVideoNodeSourceVideoId(block);
-                return isBoardLane
-                  ? ["board", "ls"].includes(blockSourceId)
-                  : blockSourceId === sourceId;
+              const laneSegments = matchSegments.filter((segment) => {
+                const candidates = Array.isArray(segment.candidates) ? segment.candidates : [];
+                return getVideoNodeTimelineLaneSourceId(segment, candidates) === sourceId;
               });
+              const laneRanges = laneSegments.map((segment) => getVideoNodeTimelineSourceRange(segment, Array.isArray(segment.candidates) ? segment.candidates : []));
               const laneDuration = Math.max(
                 Number(source.duration_sec || source.durationSec || 0) || 0,
-                ...laneBlocks.map((block) => isBoardLane ? getBlockTargetEnd(block) : Number(block.sourceVideoEndSec || block.videoEndSec || 0)),
+                ...laneRanges.map((range) => Number(range.end || 0)),
                 1,
               );
               return (
                 <div
                   key={sourceId}
-                  className={`videoMatchSourceSceneLane ${isBoardLane ? "isBoardLane" : ""}`}
+                  className="videoMatchSourceSceneLane"
                   style={{ "--source-color": getVideoNodeSourceColor(sourceId) }}
                 >
                   <div className="videoMatchSourceSceneLaneHead">
                     <span className="videoMatchSourceLaneDot" />
                     <b>{getVideoNodeSourceShortLabel(sourceId)}</b>
                     <span>{source.filename || source.name || source.label || (sourceIndex === 0 ? "source.mp4" : "не загружено")}</span>
-                    <small>{laneBlocks.length ? `${laneBlocks.length} сцен` : "нет сцен"}</small>
+                    <small>{laneSegments.length ? `${laneSegments.length} сцен` : "нет сцен"}</small>
                   </div>
                   <div className="videoMatchSourceSceneLaneTrack">
-                    {laneBlocks.length === 0 ? <span className="videoMatchSourceSceneLaneEmpty">Codex пока не выбрал сцен из этого источника</span> : null}
-                    {laneBlocks.map((block, blockIndex) => {
-                      const blockSourceId = getVideoNodeSourceVideoId(block);
-                      const laneStart = isBoardLane ? getBlockTargetStart(block) : Number(block.sourceVideoStartSec || block.videoStartSec || 0);
-                      const laneEnd = isBoardLane ? getBlockTargetEnd(block) : Number(block.sourceVideoEndSec || block.videoEndSec || laneStart + 0.1);
-                      const safeStart = Math.max(0, laneStart);
-                      const safeEnd = Math.max(safeStart + 0.05, laneEnd);
+                    {laneSegments.length === 0 ? <span className="videoMatchSourceSceneLaneEmpty">Codex пока не выбрал сцен из этого источника</span> : null}
+                    {laneSegments.map((segment, segmentIndex) => {
+                      const candidates = Array.isArray(segment.candidates) ? segment.candidates : [];
+                      const selectedCandidate = getVideoNodeSelectedCandidate(segment, candidates);
+                      const activeVisualSourceId = getVideoNodeCandidateVisualSourceId(selectedCandidate || segment);
+                      const segmentKey = getSegmentKey(segment);
+                      const activeBlock = assemblyBlocks.find((block) => getSegmentKey(block) === segmentKey) || segment;
+                      const { start: safeStart, end: safeEnd } = getVideoNodeTimelineSourceRange(segment, candidates);
                       const left = Math.max(0, Math.min(98, (safeStart / laneDuration) * 100));
                       const width = Math.max(4.2, Math.min(60, ((safeEnd - safeStart) / laneDuration) * 100));
-                      const isSelected = block.id === project.selectedBlockId;
+                      const isSelected = activeBlock.id === project.selectedBlockId || segmentKey === project.selectedSegmentId;
+                      const isBoardApplied = isBoardClipCandidate(selectedCandidate);
+                      const isUploadApplied = !isBoardApplied && isOverrideCandidate(selectedCandidate);
                       return (
                         <button
-                          key={`${sourceId}_${block.id}_${blockIndex}`}
+                          key={`${sourceId}_${segmentKey}_${segmentIndex}`}
                           type="button"
-                          className={`videoMatchSourceScenePill ${isSelected ? "isSelected" : ""} ${isLipSyncScene(block) ? "isLipSync" : ""}`}
-                          style={{ left: `${left}%`, width: `${width}%`, "--source-color": getVideoNodeSourceColor(blockSourceId) }}
-                          onClick={() => onSelectBlockAndPreview(block, "source_lane_click")}
-                          title={`${block.audioSceneId || block.segmentId || block.id} · ${getVideoNodeSourceShortLabel(blockSourceId)} · source ${formatSec(safeStart)}–${formatSec(safeEnd)}с · final ${formatSec(getBlockTargetStart(block))}–${formatSec(getBlockTargetEnd(block))}с`}
+                          className={`videoMatchSourceScenePill ${isSelected ? "isSelected" : ""} ${isLipSyncScene(activeBlock) ? "isLipSync" : ""} ${isBoardApplied ? "isBoardApplied" : ""} ${isUploadApplied ? "isUploadApplied" : ""}`}
+                          style={{ left: `${left}%`, width: `${width}%`, "--source-color": getVideoNodeSourceColor(activeVisualSourceId) }}
+                          onClick={() => onSelectSegmentAndPreviewV25(segment, "source_lane_click")}
+                          title={`${segment.audioSceneId || segment.id || segmentKey} · выбран ${getVideoNodeSourceShortLabel(activeVisualSourceId)} · source ${formatSec(safeStart)}–${formatSec(safeEnd)}с · final ${formatSec(getBlockTargetStart(activeBlock))}–${formatSec(getBlockTargetEnd(activeBlock))}с`}
                         >
-                          <span>{block.audioSceneId || block.segmentId || `seg_${String(blockIndex + 1).padStart(2, "0")}`}</span>
-                          {isLipSyncScene(block) ? <i>LS</i> : null}
+                          <span>{segment.audioSceneId || segment.id || `seg_${String(segmentIndex + 1).padStart(2, "0")}`}</span>
+                          {isBoardApplied ? <i title="Клип с Доски">B</i> : null}
+                          {isUploadApplied ? <i title="Клип с компьютера">U</i> : null}
+                          {!isBoardApplied && !isUploadApplied && isLipSyncScene(activeBlock) ? <i>LS</i> : null}
                         </button>
                       );
                     })}
@@ -4282,8 +4483,8 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
               <button
                 key={block.id}
                 type="button"
-                className={`videoMatchStripSegment ${block.id === project.selectedBlockId ? "isSelected" : ""} ${block.id === currentPlayingBlockId ? "isCurrent" : ""} ${isAssemblyPlaying && block.id === project.selectedBlockId ? "isPlaying" : ""} ${block.sourceKind === "override_video" ? "isOverride" : ""} ${isLipSyncScene(block) ? "isLipSync" : ""}`}
-                style={{ "--strip-color-index": index % 8, "--source-color": getVideoNodeSourceColor(getVideoNodeSourceVideoId(block)) }}
+                className={`videoMatchStripSegment ${block.id === project.selectedBlockId ? "isSelected" : ""} ${block.id === currentPlayingBlockId ? "isCurrent" : ""} ${isAssemblyPlaying && block.id === project.selectedBlockId ? "isPlaying" : ""} ${isOverrideBlock(block) ? "isOverride" : ""} ${isBoardClipCandidate(block) ? "isBoardApplied" : ""} ${isLipSyncScene(block) ? "isLipSync" : ""}`}
+                style={{ "--strip-color-index": index % 8, "--source-color": getVideoNodeSourceColor(getVideoNodeCandidateVisualSourceId(block)) }}
                 onClick={() => onSelectBlockAndPreview(block, "scene_click")}
                 title={`${block.audioSceneId || block.segmentId}: video ${formatSec(block.sourceVideoStartSec)}–${formatSec(block.sourceVideoEndSec)}с · candidate ${block.candidateId || block.id}`}
               >
@@ -4420,7 +4621,15 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
           </div>
           <input ref={overrideUploadInputRef} type="file" accept="video/*" hidden onChange={(event) => { onUploadOverrideVideo(event.target.files?.[0]); event.target.value = ""; }} />
           <button className="clipSB_btn clipSB_btnSecondary videoMatchOverrideUploadBtn videoMatchBtnReplaceVideo" type="button" disabled={!selectedSegment} onClick={() => overrideUploadInputRef.current?.click()}>🎭 Заменить видео</button>
-          <button className="clipSB_btn clipSB_btnSecondary videoMatchOverrideUploadBtn" type="button" disabled={!selectedSegment || !selectedBoardClip} title={selectedBoardClip ? `Взять видео из Доски: ${selectedBoardClip.sceneId}` : (boardGeneratedClipsStatus || "Для этой сцены нет видео на Доске")} onClick={onUseBoardClipForSelectedSegment}>➕ Взять с доски</button>
+          <button
+            className={`clipSB_btn clipSB_btnSecondary videoMatchOverrideUploadBtn videoMatchTakeBoardBtnV32 ${String(boardGeneratedClipsStatus || "").includes("Проверяю") ? "isChecking" : ""} ${String(boardGeneratedClipsStatus || "").includes("Добавлен вариант") ? "isAdded" : ""} ${(String(boardGeneratedClipsStatus || "").includes("не найден") || String(boardGeneratedClipsStatus || "").includes("нет готов")) ? "isMissing" : ""}`}
+            type="button"
+            disabled={!selectedSegment}
+            title={selectedSegment ? (selectedBoardClip ? `Взять видео из Доски: ${selectedBoardClip.sceneId}` : "Проверить Доску и добавить клип этой сцены") : "Сначала выберите сцену"}
+            onClick={onUseBoardClipForSelectedSegment}
+          >
+            {String(boardGeneratedClipsStatus || "").includes("Проверяю") ? "⏳ Проверяю Доску..." : (String(boardGeneratedClipsStatus || "").includes("Добавлен вариант") ? "✓ Вариант добавлен" : "➕ Взять с доски")}
+          </button>
           {boardGeneratedClipsStatus ? <div className="videoMatchWarnings">{boardGeneratedClipsStatus}</div> : null}
           {selectedSegment ? (
             <>
@@ -4449,13 +4658,13 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                   });
                   const effectiveForceMute = getEffectiveForceMuteVideoAudio(candidateBlock, selectedSegment, candidate);
                   return (
-                    <div key={candidate.id} className={`videoMatchCandidateCard ${isCandidateSelected ? "isSelected" : ""} ${isPreviewCandidate ? "isPreview" : ""} ${isOverrideCandidate(candidate) ? "isOverride" : ""}`} data-source-video-id={candidateSourceId} style={{ "--vm-source-color": getVideoNodeSourceColor(candidateSourceId), "--source-color": getVideoNodeSourceColor(candidateSourceId) }}>
+                    <div key={candidate.id} className={`videoMatchCandidateCard ${isCandidateSelected ? "isSelected" : ""} ${isPreviewCandidate ? "isPreview" : ""} ${isOverrideCandidate(candidate) ? "isOverride" : ""} ${isBoardClipCandidate(candidate) ? "isBoardCandidate" : ""}`} data-source-video-id={candidateSourceId} style={{ "--vm-source-color": getVideoNodeSourceColor(getVideoNodeCandidateVisualSourceId(candidate)), "--source-color": getVideoNodeSourceColor(getVideoNodeCandidateVisualSourceId(candidate)) }}>
                       {isBrowserSafeThumbnail(candidate.thumbnail) ? <img src={candidate.thumbnail} alt={`${candidate.id} thumbnail`} /> : null}
                       <div className="videoMatchCandidateBody">
                         <b>{candidate.id}{isCandidateSelected ? " · выбрано" : ""}{isPreviewCandidate ? " · просмотр" : ""}</b>
                         <span>видео: {formatSec(getBlockSourceStart(candidate))}–{formatSec(getBlockSourceEnd(candidate))} · уверенность: {candidate.confidence ?? "—"}</span>
-                        {isOverrideCandidate(candidate) ? <span className="videoMatchCandidateBadge">свой клип · lip-sync override</span> : null}
-                        {isBoardClipCandidate(candidate) ? <span className="videoMatchCandidateBadge">клип с доски</span> : null}
+                        {isBoardClipCandidate(candidate) ? <span className="videoMatchCandidateBadge">BOARD</span> : null}
+                        {!isBoardClipCandidate(candidate) && isOverrideCandidate(candidate) ? <span className="videoMatchCandidateBadge">UPLOAD</span> : null}
                         {isOverrideCandidate(candidate) ? <small>длина клипа: {formatSec(candidate.overrideDurationSec || candidate.sourceVideoEndSec)}с / цель: {formatSec((selectedSegment?.targetEndSec || 0) - (selectedSegment?.targetStartSec || 0))}с</small> : null}
                         {candidate.matchReason && !String(candidate.matchReason).toLowerCase().includes("ui layout test") ? null : null}
                         {false && candidate.warnings?.length ? <small className="videoMatchWarnings">Предупреждения: {candidate.warnings.join("; ")}</small> : null}
@@ -4652,7 +4861,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
                           const candidateSourceId = getVideoNodeSourceVideoId(candidate);
                           const isPreviewCandidate = candidate.id === previewCandidateId;
   return (
-                            <div key={candidate.id} className={`videoMatchCandidateCard ${isCandidateSelected ? "isSelected" : ""} ${isPreviewCandidate ? "isPreview" : ""}`} style={{ "--source-color": getVideoNodeSourceColor(getVideoNodeSourceVideoId(candidate)) }} data-source-video-id={candidateSourceId} style={{ "--vm-source-color": getVideoNodeSourceColor(candidateSourceId), "--source-color": getVideoNodeSourceColor(candidateSourceId) }}>
+                            <div key={candidate.id} className={`videoMatchCandidateCard ${isCandidateSelected ? "isSelected" : ""} ${isPreviewCandidate ? "isPreview" : ""} ${isOverrideCandidate(candidate) ? "isOverride" : ""} ${isBoardClipCandidate(candidate) ? "isBoardCandidate" : ""}`} data-source-video-id={candidateSourceId} style={{ "--vm-source-color": getVideoNodeSourceColor(getVideoNodeCandidateVisualSourceId(candidate)), "--source-color": getVideoNodeSourceColor(getVideoNodeCandidateVisualSourceId(candidate)) }}>
                               {isBrowserSafeThumbnail(candidate.thumbnail) ? <img src={candidate.thumbnail} alt={`${candidate.id} thumbnail`} /> : null}
                               <div className="videoMatchCandidateBody">
                                 <b>{segment.audioSceneId || segment.id} · {getVideoNodeSourceShortLabel(candidateSourceId)}{isCandidateSelected ? " · выбрано" : ""}{isPreviewCandidate ? " · просмотр" : ""}</b>

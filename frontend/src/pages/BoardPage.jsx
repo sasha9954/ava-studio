@@ -24,7 +24,7 @@ import {
 import { useProjects } from '../context/ProjectContext.jsx'
 import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, normalizeAssetFileUrl, normalizeStaticMediaUrl, registerStaticMediaAsset, uploadMediaAsset } from '../services/apiClient.js'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
-import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, readWorkflowEntry, makeWorkflowEntry, rememberWorkflowEntry } from '../utils/workflowNavigation.js'
+import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, clearWorkflowEntry, readWorkflowEntry, makeWorkflowEntry, rememberWorkflowEntry } from '../utils/workflowNavigation.js'
 import '../styles/ava-board.css'
 
 const STAGE = 'board'
@@ -1403,9 +1403,10 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
               />
             ) : null}
             {imageLoading ? (
-              <div className="avaMediaLoadingOverlay">
-                <RefreshCcw className="avaMediaSpinIcon" size={30} />
-                <span>Загружаем фото…</span>
+              <div className="avaMediaLoadingOverlay avaBoardMediaSpinnerOverlayV15">
+                {/* AVA_BOARD_MEDIA_LOADING_SPINNERS_V15: small loader for restored image assets */}
+                <span className="avaBoardTinyMediaSpinner" aria-hidden="true" />
+                <span className="avaBoardMediaLoaderText">Загружаем фото…</span>
               </div>
             ) : null}
             {imageFailed ? (
@@ -1543,6 +1544,102 @@ function buildBoardAssemblySnapshotFromBoard(board = {}, { projectId = '', sourc
   }
 }
 
+
+
+function cleanBoardSceneMediaForTimingImportV14B(scene = {}) {
+  // AVA_TIMING_TO_BOARD_CLEAN_IMPORT_V14B:
+  // Timing -> Board is a destructive replacement. Keep timing/notes/blocks/colors,
+  // but never preserve old Board media, audio slices, video jobs or generated clips.
+  return {
+    ...scene,
+    start_image_url: '',
+    startImageUrl: '',
+    start_image_api_path: '',
+    startImageApiPath: '',
+    first_frame_url: '',
+    firstFrameUrl: '',
+    first_image_api_path: '',
+    firstImageApiPath: '',
+    first_frame_name: '',
+    last_frame_url: '',
+    lastFrameUrl: '',
+    last_image_api_path: '',
+    lastImageApiPath: '',
+    end_image_url: '',
+    endImageUrl: '',
+    end_image_api_path: '',
+    endImageApiPath: '',
+    last_frame_name: '',
+    image_url: '',
+    imageUrl: '',
+    image_api_path: '',
+    imageApiPath: '',
+    image_name: '',
+    imageName: '',
+    video_url: '',
+    videoUrl: '',
+    video_api_path: '',
+    videoApiPath: '',
+    video_name: '',
+    videoName: '',
+    original_video_url: '',
+    originalVideoUrl: '',
+    video_result: null,
+    videoResult: null,
+    video_status: '',
+    videoStatus: '',
+    video_job_id: '',
+    videoJobId: '',
+    video_status_endpoint: '',
+    videoStatusEndpoint: '',
+    video_error: '',
+    videoError: '',
+    video_queue_position: 0,
+    audio_slice_url: '',
+    audioSliceUrl: '',
+    audio_slice_name: '',
+    audioSliceName: '',
+    audio_slice_duration: 0,
+    audioSliceDuration: 0,
+    audio_slice_status: '',
+    previous_frame_status: 'empty',
+    mmaudio_status: '',
+    mmaudioStatus: '',
+    mmaudio_job_id: '',
+    mmaudioJobId: '',
+    mmaudio_status_endpoint: '',
+    mmaudioStatusEndpoint: '',
+    mmaudio_video_url: '',
+    mmaudioVideoUrl: '',
+    mmaudio_video_api_path: '',
+    mmaudioVideoApiPath: '',
+    mmaudio_error: '',
+    mmaudioError: '',
+  }
+}
+
+function buildCleanBoardFromTimingV14B(timingData = {}) {
+  const next = buildBoardFromTiming(timingData, {
+    ...emptyBoard,
+    boardVersion: BOARD_VERSION,
+    source: 'timing_to_board_imported_v14b',
+    importedFrom: 'manual_timing',
+    scenes: [],
+    audio: null,
+    selectedSceneId: '',
+  })
+  const cleanScenes = asSceneArray(next.scenes).map(cleanBoardSceneMediaForTimingImportV14B)
+  return {
+    ...emptyBoard,
+    ...next,
+    source: 'timing_to_board_imported_v14b',
+    importedFrom: 'manual_timing',
+    scenes: cleanScenes,
+    selectedSceneId: cleanScenes[0]?.id || cleanScenes[0]?.scene_id || next.selectedSceneId || '',
+    updatedAt: new Date().toISOString(),
+  }
+}
+
 export default function BoardPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -1555,7 +1652,25 @@ export default function BoardPage() {
   const [manualSceneDurationSec, setManualSceneDurationSec] = useState(6)
 
 
-  function isBoardVideoDoneStatus(status) {
+    const [showTimingToBoardConfirm, setShowTimingToBoardConfirm] = useState(false)
+  const [timingToBoardImporting, setTimingToBoardImporting] = useState(false)
+
+  useEffect(() => {
+    // AVA_TIMING_TO_BOARD_NO_RELOAD_MODAL_V16:
+    // The destructive question is shown in Timing before navigation. Board must not
+    // show it again on F5, because that could erase freshly edited Board work.
+    if (!openedFromTiming) return
+    const entrySource = String(boardWorkflowEntry?.source || '')
+    if (entrySource === 'manual_timing_to_board_confirmed_v16') {
+      confirmTimingToBoardImportV14B()
+      return
+    }
+    clearWorkflowEntry('board')
+    setShowTimingToBoardConfirm(false)
+    setStatus('Открыта Доска. Повторное окно переноса из Тайминга отключено после перезагрузки.')
+  }, [openedFromTiming, boardWorkflowEntry?.source])
+
+function isBoardVideoDoneStatus(status) {
     return ['completed', 'done', 'ready', 'success'].includes(String(status || '').toLowerCase())
   }
 
@@ -2160,9 +2275,9 @@ export default function BoardPage() {
         const rawBoardData = chooseBoardDataForLoad(serverBoardData, localBoardData)
         const boardData = openedFromTiming || !workspaceMode ? rawBoardData : boardDataForStandaloneEntry(rawBoardData)
 
-        const timingData = openedFromTiming
-          ? (workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing'))
-          : {}
+        // AVA_TIMING_TO_BOARD_NO_AUTO_MERGE_V14B:
+        // Navigation from Timing only opens a confirm dialog. The old Board is not merged.
+        const timingData = {}
 
         if (!active) return
         // AVA09D2_STANDALONE_BOARD_DOES_NOT_PULL_TIMING
@@ -2186,7 +2301,9 @@ export default function BoardPage() {
           sessionStorage.removeItem(AVA_OPEN_BOARD_SCENE_KEY)
         }
         setBoard(nextBoard)
-        setStatus(nextBoard.scenes.length ? 'Storyboard собран из Manual Timing' : 'Сцен пока нет — импортируй JSON или вернись в Тайминг')
+        setStatus(openedFromTiming
+          ? 'Открыта старая Доска. Подтверди перенос из Тайминга, чтобы заменить сцены и аудио.'
+          : (nextBoard.scenes.length ? 'Storyboard загружен' : 'Сцен пока нет — импортируй JSON или вернись в Тайминг')) // AVA_TIMING_TO_BOARD_CONFIRM_STATUS_V14B
       } catch (err) {
         if (!active) return
         setStatus(`Ошибка загрузки Storyboard: ${err.message}`)
@@ -2695,15 +2812,44 @@ export default function BoardPage() {
   }
 
 
-  async function refreshFromTiming() {
-    setStatus('Обновляем сцены из Manual Timing…')
+  async function confirmTimingToBoardImportV14B() {
+    if (timingToBoardImporting) return
+    setTimingToBoardImporting(true)
+    setStatus('Переносим свежий Тайминг в Доску…')
     try {
       const timingData = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
-      setBoard((current) => buildBoardFromTiming(timingData, current))
-      setStatus('Сцены обновлены из Manual Timing')
+      const nextBoard = buildCleanBoardFromTimingV14B(timingData)
+      if (!asSceneArray(nextBoard.scenes).length) {
+        setStatus('В Тайминге нет сцен для переноса в Доску')
+        return
+      }
+      setBoard(nextBoard)
+      if (workspaceMode) {
+        await saveWorkspaceStage(STAGE, nextBoard, 'replace')
+      } else {
+        await saveStage(projectId, STAGE, nextBoard, 'replace')
+      }
+      clearWorkflowEntry('board')
+      setShowTimingToBoardConfirm(false)
+      setStatus(`Доска заменена свежим Таймингом: ${asSceneArray(nextBoard.scenes).length} сцен`)
     } catch (err) {
-      setStatus(`Не удалось обновить из Timing: ${err.message}`)
+      setStatus(`Не удалось перенести Тайминг в Доску: ${err?.message || err}`)
+    } finally {
+      setTimingToBoardImporting(false)
     }
+  }
+
+  function cancelTimingToBoardImportV14B() {
+    clearWorkflowEntry('board')
+    setShowTimingToBoardConfirm(false)
+    setStatus('Переход из Тайминга отменён. Старая Доска оставлена без изменений.')
+  }
+
+  async function refreshFromTiming() {
+    // AVA_TIMING_TO_BOARD_REFRESH_CONFIRM_V14B:
+    // Explicit Timing refresh is destructive, so ask first in the same style.
+    setShowTimingToBoardConfirm(true)
+    setStatus('Подтверди замену Доски свежим Таймингом.')
   }
 
   function selectScene(sceneId) {
@@ -4043,6 +4189,32 @@ async function importTimingJson(event) {
 
       <input ref={importRef} className="avaHiddenInput" type="file" accept="application/json,.json" onChange={importTimingJson} />
 
+      {showTimingToBoardConfirm ? (
+        <div className="avaBoardTimingConfirmOverlay" role="dialog" aria-modal="true">
+          <div className="avaBoardTimingConfirmCard">
+            <div className="avaBoardTimingConfirmGlow" />
+            <div className="avaBoardTimingConfirmBadge">Timing → Board</div>
+            <h3>Перенести Тайминг в Доску?</h3>
+            <p>
+              Сейчас в Доске могут быть старые сцены, видео и аудио. Если продолжить, Доска будет очищена
+              и заменена свежими сценами, цветами, блоками и главным аудио из Тайминга.
+            </p>
+            <div className="avaBoardTimingConfirmWarning">
+              Старые видео/кадры Доски будут отвязаны от сцен. Загруженные asset-файлы на диске не удаляются.
+            </div>
+            <div className="avaBoardTimingConfirmActions">
+              <button type="button" className="avaBoardTimingConfirmSecondary" onClick={cancelTimingToBoardImportV14B} disabled={timingToBoardImporting}>
+                Оставить старую Доску
+              </button>
+              <button type="button" className="avaBoardTimingConfirmPrimary" onClick={confirmTimingToBoardImportV14B} disabled={timingToBoardImporting}>
+                {timingToBoardImporting ? 'Переносим…' : 'Да, заменить Доску'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}{/* AVA_TIMING_TO_BOARD_CONFIRM_MODAL_V14B */}
+
+
       <section className="avaBoardSceneStrip" aria-label="Сцены">
         {boardScenes.map((scene, index) => {
           const statusInfo = sceneStatus(scene)
@@ -4332,8 +4504,9 @@ async function importTimingJson(event) {
                   </div>
                 </>
               ) : selectedPreviewVideoLoading ? (
-                <div className="avaBoardVideoEmpty isBusy">
-                  <Film size={34} />
+                <div className="avaBoardVideoEmpty isBusy avaBoardMediaSpinnerOverlayV15">
+                  {/* AVA_BOARD_VIDEO_PREVIEW_LOADING_SPINNER_V15 */}
+                  <span className="avaBoardTinyMediaSpinner isGold" aria-hidden="true" />
                   <span>Загружаем видео</span>
                   <small>Получаем protected asset preview.</small>
                 </div>
@@ -4344,11 +4517,16 @@ async function importTimingJson(event) {
                   <small>{selectedVideoLoadError}</small>
                 </div>
               ) : (
-                <div className={`avaBoardVideoEmpty ${isVideoBusyStatus(selectedScene.video_status) ? 'isBusy' : ''}`}>
-                  <Film size={34} />
+                <div className={`avaBoardVideoEmpty ${isVideoBusyStatus(selectedScene.video_status) ? 'isBusy isGeneratingVideoV15' : ''}`}>
+                  {/* AVA_BOARD_VIDEO_GENERATION_SPINNER_V15 */}
+                  {isVideoBusyStatus(selectedScene.video_status) ? (
+                    <span className="avaBoardTinyMediaSpinner isGold" aria-hidden="true" />
+                  ) : (
+                    <Film size={34} />
+                  )}
                   <span>{isVideoBusyStatus(selectedScene.video_status) ? sceneStatus(selectedScene).label : 'Видео ещё не создано'}</span>
                   {isVideoBusyStatus(selectedScene.video_status) && (
-                    <small>Старый preview скрыт, ждём новый результат.</small>
+                    <small>Генерация активна: ждём новый результат.</small>
                   )}
                 </div>
               )}
@@ -4418,7 +4596,11 @@ async function importTimingJson(event) {
                   }}
                   disabled={sceneVideoActionState(selectedScene).disabled}
                 >
-                  <Film size={16} />
+                  {sceneVideoActionState(selectedScene).disabled ? (
+                    <span className="avaBoardButtonSpinnerV15" aria-hidden="true" />
+                  ) : (
+                    <Film size={16} />
+                  )}
                   <span>{sceneVideoActionState(selectedScene).label}</span>
                   <small>{sceneVideoActionState(selectedScene).hint}</small>
                 </button>

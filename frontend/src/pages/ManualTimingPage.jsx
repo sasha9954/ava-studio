@@ -1150,6 +1150,7 @@ export default function ManualTimingPage() {
   const [asrVisualOffsetSec, setAsrVisualOffsetSec] = useState(0)
   const [pendingAudioFile, setPendingAudioFile] = useState(null)
   const [showReplaceAudioConfirm, setShowReplaceAudioConfirm] = useState(false)
+  const [showTimingToBoardConfirmV16, setShowTimingToBoardConfirmV16] = useState(false)
   const [showDev, setShowDev] = useState(false)
   const [blockSelection, setBlockSelection] = useState([])
   const [blockDraft, setBlockDraft] = useState({ title: '' })
@@ -1655,7 +1656,33 @@ export default function ManualTimingPage() {
     const voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : []
     if (!Array.isArray(voices) || !voices.length) return null
     const ruVoices = voices.filter((voice) => String(voice.lang || '').toLowerCase().startsWith('ru'))
-    return (
+  
+  function openTimingToBoardConfirmV16() {
+    // AVA_TIMING_TO_BOARD_CONFIRM_ON_TIMING_V16:
+    // Ask while user is still in Timing. Board must not show this dialog later on reload.
+    setShowTimingToBoardConfirmV16(true)
+    setStatus('Подтверди перенос в Доску: старая Доска будет заменена свежим Таймингом.')
+  }
+
+  function cancelTimingToBoardConfirmV16() {
+    setShowTimingToBoardConfirmV16(false)
+    setStatus('Переход в Доску отменён. Тайминг оставлен без изменений.')
+  }
+
+  function confirmTimingToBoardNavigateV16() {
+    const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+    setShowTimingToBoardConfirmV16(false)
+    navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
+      from: 'manual_timing',
+      to: 'board',
+      fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+      toPath,
+      projectId,
+      source: 'manual_timing_to_board_confirmed_v16',
+    }))
+  }
+
+  return (
       ruVoices.find((voice) => /google/i.test(voice.name || ''))
       || ruVoices.find((voice) => /microsoft|irina|pavel/i.test(voice.name || ''))
       || ruVoices[0]
@@ -3486,6 +3513,32 @@ const clearedDraft = normalizeDraft({
       <input ref={fileInputRef} type="file" accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov,.mkv,.avi,.m4v" hidden onChange={handleAudioUpload} />
       <input ref={jsonInputRef} type="file" accept="application/json,.json" hidden onChange={importTimingJson} />
 
+      {showTimingToBoardConfirmV16 ? (
+        <div className="avaBoardTimingConfirmOverlay" role="dialog" aria-modal="true">
+          <div className="avaBoardTimingConfirmCard">
+            <div className="avaBoardTimingConfirmGlow" />
+            <div className="avaBoardTimingConfirmBadge">Timing → Board</div>
+            <h3>Перенести Тайминг в Доску?</h3>
+            <p>
+              Сейчас в Доске могут быть старые сцены, видео и аудио. Если продолжить, Доска будет очищена
+              и заменена свежими сценами, цветами, блоками и главным аудио из Тайминга.
+            </p>
+            <div className="avaBoardTimingConfirmWarning">
+              Старые видео/кадры Доски будут отвязаны от сцен. Загруженные asset-файлы на диске не удаляются.
+            </div>
+            <div className="avaBoardTimingConfirmActions">
+              <button type="button" className="avaBoardTimingConfirmSecondary" onClick={cancelTimingToBoardConfirmV16}>
+                Оставить старую Доску
+              </button>
+              <button type="button" className="avaBoardTimingConfirmPrimary" onClick={confirmTimingToBoardNavigateV16}>
+                Да, заменить Доску
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}{/* AVA_TIMING_TO_BOARD_CONFIRM_MODAL_IN_TIMING_V16 */}
+
+
       {/* AVA08D_MANUAL_TIMING_CONTROLS */}
       <WorkflowStageControls
         stageKey="manual_timing"
@@ -3514,17 +3567,7 @@ const clearedDraft = normalizeDraft({
           <button
             className={`avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink ${hasAudio ? 'isReadyForBoard' : ''}`}
             type="button"
-            onClick={() => {
-              const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
-              navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
-                from: 'manual_timing',
-                to: 'board',
-                fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
-                toPath,
-                projectId,
-                source: 'manual_timing_to_board_button',
-              }))
-            }}
+            onClick={openTimingToBoardConfirmV16}
           >
             <Film size={16} /> В доску
           </button>
