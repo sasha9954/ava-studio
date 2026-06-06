@@ -134,6 +134,36 @@ function upsertGlobalJob(job = {}) {
   return nextJob
 }
 
+function removeAvaGeneratorActiveJobsMatching({ refs = [], jobIds = [], projectId = '' } = {}) {
+  if (typeof window === 'undefined') return
+  const cleanRefs = new Set((Array.isArray(refs) ? refs : []).map((item) => String(item || '').trim()).filter(Boolean))
+  const cleanJobIds = new Set((Array.isArray(jobIds) ? jobIds : []).map((item) => String(item || '').replace(/^generator-mmaudio:/, '').replace(/^mmaudio:/, '').replace(/^generator:/, '').trim()).filter(Boolean))
+  const cleanProjectId = String(projectId || '').trim()
+  if (!cleanRefs.size && !cleanJobIds.size && !cleanProjectId) return
+
+  const jobs = readAvaGeneratorActiveJobs()
+  const nextJobs = jobs.filter((job = {}) => {
+    const jobProjectId = String(job.projectId || job.project_id || '').trim()
+    if (cleanProjectId && jobProjectId && jobProjectId !== cleanProjectId) return true
+    if (cleanProjectId && !cleanRefs.size && !cleanJobIds.size) {
+      const jobPath = String(job.pagePath || job.to || '')
+      const jobProjectMatches = jobProjectId === cleanProjectId || jobPath.includes(`/app/projects/${cleanProjectId}/generator`)
+      return !(jobProjectMatches && String(job.stage || '').replace(/_/g, '-') === 'generator')
+    }
+
+    const jobId = String(job.jobId || job.job_id || job.id || '').replace(/^generator-mmaudio:/, '').replace(/^mmaudio:/, '').replace(/^generator:/, '').trim()
+    if (jobId && cleanJobIds.has(jobId)) return false
+
+    const jobRefs = [
+      job.resultUrl, job.videoUrl, job.video_url, job.resultVideoUrl, job.result_video_url,
+      job.apiPath, job.api_path, job.videoApiPath, job.video_api_path,
+    ].map((value) => String(value || '').trim()).filter(Boolean)
+    return !jobRefs.some((value) => cleanRefs.has(value))
+  })
+
+  if (nextJobs.length !== jobs.length) writeAvaGeneratorActiveJobs(nextJobs)
+}
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
 function cleanGeneratorProjectId(value = '') {
@@ -743,6 +773,16 @@ function generatorComparableRef(...values) {
   return ''
 }
 
+function generatorGalleryTombstoneRef(...values) {
+  const assetId = generatorAssetIdFromRef(...values)
+  if (assetId) return `asset:${assetId}`
+  return generatorComparableRef(...values)
+}
+
+function generatorCleanJobId(value = '') {
+  return String(value || '').replace(/^generator-mmaudio:/, '').replace(/^mmaudio:/, '').replace(/^generator:/, '').trim()
+}
+
 function upsertGeneratorGalleryResult(items = [], url = '', meta = {}) {
   const cleanUrl = normalizeUrl(url)
   if (!cleanUrl || isBlockedGeneratorPreviewUrl(cleanUrl)) {
@@ -875,6 +915,28 @@ function generatorJobLooksActive(job = {}) {
   if (statusLooksDone(status) || statusLooksFailed(status)) return false
   if (!status) return true
   return ['queued', 'pending', 'running', 'processing', 'submitted', 'started', 'in_progress', 'created'].some((item) => status.includes(item))
+}
+
+function generatorMmaudioJobId(job = {}) {
+  return String(job?.jobId || job?.job_id || job?.id || '')
+    .replace(/^generator-mmaudio:/, '')
+    .replace(/^mmaudio:/, '')
+    .trim()
+}
+
+function generatorSnapshotCompletedMmaudioIds(snapshot = {}) {
+  const ids = Array.isArray(snapshot?.completedMmaudioJobIds) ? snapshot.completedMmaudioJobIds : []
+  const lastId = snapshot?.lastCompletedMmaudioJobId || snapshot?.last_completed_mmaudio_job_id || ''
+  return new Set([...ids, lastId].map((item) => String(item || '').replace(/^generator-mmaudio:/, '').replace(/^mmaudio:/, '').trim()).filter(Boolean))
+}
+
+function generatorSnapshotHasCompletedMmaudioJob(snapshot = {}, jobId = '') {
+  const cleanJobId = String(jobId || '').replace(/^generator-mmaudio:/, '').replace(/^mmaudio:/, '').trim()
+  if (!cleanJobId) return false
+  if (generatorSnapshotCompletedMmaudioIds(snapshot).has(cleanJobId)) return true
+  const snapshotStatus = String(snapshot?.mmaudioStatus || snapshot?.mmaudio_status || '').toLowerCase()
+  const snapshotJobId = generatorMmaudioJobId(snapshot?.mmaudioJob || {})
+  return statusLooksDone(snapshotStatus) && (!snapshotJobId || snapshotJobId === cleanJobId)
 }
 
 function generatorStatusBaseFromJob(job = {}, fallback = '') {
@@ -1450,7 +1512,7 @@ export default function StandaloneGeneratorPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [rawResponse, setRawResponse] = useState(null)
-  const [generatedVideos, setGeneratedVideos] = useState(() => readGeneratorGalleryDraft())
+  const [generatedVideos, setGeneratedVideos] = useState(() => (routeProjectId ? [] : readGeneratorGalleryDraft()))
   const generatorPreviewObjectUrlsRef = useRef({})
   const [generatorAssetPreviewMap, setGeneratorAssetPreviewMap] = useState({})
 
@@ -1474,7 +1536,16 @@ export default function StandaloneGeneratorPage() {
     if (!raw) return ''
     if (!isGeneratorAssetFileRef(raw)) return normalizeUrl(raw)
     const canonical = generatorCanonicalApiPath(raw) || raw
-    return generatorAssetPreviewMap[canonical] || ''
+    // AVA_GENERATOR_DIRECT_ASSET_PREVIEW_V4:
+    // History cards may stream direct URLs so the page does not fetch every video as a blob.
+    return generatorAssetPreviewMap[canonical] || normalizeUrl(raw)
+  }, [generatorAssetPreviewMap])
+
+  const generatorAssetBlobPreviewUrl = useCallback((value = '') => {
+    const raw = String(value || '').trim()
+    if (!raw || !isGeneratorAssetFileRef(raw)) return ''
+    const canonical = generatorCanonicalApiPath(raw) || raw
+    return generatorPreviewObjectUrlsRef.current[canonical] || generatorAssetPreviewMap[canonical] || ''
   }, [generatorAssetPreviewMap])
 
   useEffect(() => () => {
@@ -1544,6 +1615,9 @@ export default function StandaloneGeneratorPage() {
   const pendingMmaudioResumeJobRef = useRef(null)
   const activeMmaudioPollTokenRef = useRef('')
   const completedMmaudioJobsRef = useRef(new Set())
+  const deletedGeneratorGalleryRefsRef = useRef(new Set())
+  const deletedMmaudioJobIdsRef = useRef(new Set())
+  const generatorPollingSnapshotThrottleRef = useRef({ video: 0, mmaudio: 0 })
   useEffect(() => {
     let cancelled = false
 
@@ -1578,6 +1652,7 @@ export default function StandaloneGeneratorPage() {
 
   useEffect(() => {
     let cancelled = false
+    generatorSnapshotHydratedRef.current = false
 
     async function restoreProjectGeneratorSnapshot() {
       if (!routeProjectId) {
@@ -1618,15 +1693,26 @@ export default function StandaloneGeneratorPage() {
         if (media.audioName || snapshot.audioName) setAudioName(media.audioName || snapshot.audioName || '')
         if (media.audioDurationSec || snapshot.audioDurationSec) setAudioDurationSec(Number(media.audioDurationSec || snapshot.audioDurationSec) || 0)
 
-        const gallery = Array.isArray(snapshot.gallery) ? snapshot.gallery : []
-        if (gallery.length) setGeneratedVideos(gallery.map(normalizeGeneratorGalleryItem).filter(Boolean))
+        const deletedGalleryRefs = new Set((Array.isArray(snapshot.deletedGalleryRefs) ? snapshot.deletedGalleryRefs : []).map((item) => String(item || '').trim()).filter(Boolean))
+        const deletedMmaudioJobIds = new Set((Array.isArray(snapshot.deletedMmaudioJobIds) ? snapshot.deletedMmaudioJobIds : []).map(generatorCleanJobId).filter(Boolean))
+        deletedGeneratorGalleryRefsRef.current = deletedGalleryRefs
+        deletedMmaudioJobIdsRef.current = deletedMmaudioJobIds
+        generatorSnapshotCompletedMmaudioIds(snapshot).forEach((jobId) => completedMmaudioJobsRef.current.add(jobId))
+
+        const gallery = (Array.isArray(snapshot.gallery) ? snapshot.gallery : [])
+          .map(normalizeGeneratorGalleryItem)
+          .filter(Boolean)
+          .filter((item) => !deletedGalleryRefs.has(generatorGalleryTombstoneRef(item.apiPath, item.api_path, item.url)))
+        setGeneratedVideos(gallery)
 
         const resultRef = snapshot.result?.apiPath || snapshot.result?.url || snapshot.resultUrl || ''
         const restoredSkipKeys = new Set()
-        if (resultRef) {
+        if (resultRef && !deletedGalleryRefs.has(generatorGalleryTombstoneRef(resultRef))) {
           const restoredResultUrl = generatorCanonicalApiPath(resultRef) || normalizeUrl(resultRef)
           restoredSkipKeys.add(`${route === 'txt2img' ? 'image' : 'video'}:${normalizeUrl(restoredResultUrl)}`)
           setResultUrl(restoredResultUrl)
+        } else {
+          setResultUrl('')
         }
         const restoredJob = compactGeneratorJob(snapshot.job)
         if (generatorJobLooksActive(restoredJob)) {
@@ -1652,15 +1738,23 @@ export default function StandaloneGeneratorPage() {
 
         if (snapshot.mmaudioPrompt) setMmaudioPrompt(snapshot.mmaudioPrompt)
         if (snapshot.mmaudioNegativePrompt) setMmaudioNegativePrompt(snapshot.mmaudioNegativePrompt)
-        if (snapshot.mmaudioResultUrl) {
+        if (snapshot.mmaudioResultUrl && !deletedGalleryRefs.has(generatorGalleryTombstoneRef(snapshot.mmaudioResultUrl))) {
           const restoredMmaudioUrl = generatorCanonicalApiPath(snapshot.mmaudioResultUrl) || normalizeUrl(snapshot.mmaudioResultUrl)
           restoredSkipKeys.add(`mmaudio:${normalizeUrl(restoredMmaudioUrl)}`)
           setMmaudioResultUrl(restoredMmaudioUrl)
+        } else {
+          setMmaudioResultUrl('')
         }
         restoredGalleryAutoAddSkipRef.current = restoredSkipKeys
 
         const restoredMmaudioJob = compactGeneratorJob(snapshot.mmaudioJob)
-        if (generatorJobLooksActive(restoredMmaudioJob)) {
+        const restoredMmaudioJobId = generatorMmaudioJobId(restoredMmaudioJob)
+        if (restoredMmaudioJobId && generatorSnapshotHasCompletedMmaudioJob(snapshot, restoredMmaudioJobId)) {
+          completedMmaudioJobsRef.current.add(restoredMmaudioJobId)
+          setMmaudioJob(null)
+          setMmaudioBusy(false)
+          setMmaudioStatus(snapshot.mmaudioStatus || 'completed')
+        } else if (generatorJobLooksActive(restoredMmaudioJob)) {
           setMmaudioJob(restoredMmaudioJob)
           setMmaudioBusy(true)
           setMmaudioStatus(generatorJobStatusValue(restoredMmaudioJob) || snapshot.mmaudioStatus || 'running')
@@ -1751,33 +1845,115 @@ export default function StandaloneGeneratorPage() {
   )
   const imageQualityPayloadValue = selectedImageQuality?.payloadValue || selectedImageQuality?.value || TXT2IMG_DEFAULT_QUALITY
   const hasEndThumb = !!(endPreview || routeInfo.needsEnd)
-  const displayedResultUrl = selectedGalleryVideoUrl || resultUrl || mmaudioResultUrl
+  const latestGalleryItem = useMemo(() => (visibleHistoryItems.length ? visibleHistoryItems[visibleHistoryItems.length - 1] : null), [visibleHistoryItems])
+  const displayedResultUrl = selectedGalleryVideoUrl || latestGalleryItem?.url || mmaudioResultUrl || resultUrl
+  // AVA_GENERATOR_LATEST_RESULT_PREVIEW_V6:
+  // The main player should always show the latest completed item from the feed
+  // unless the user explicitly clicked another history card. This keeps MMAudio
+  // completion visible after restore/toast instead of falling back to the silent video.
   const displayedGalleryItem = useMemo(() => {
-    const selected = normalizeUrl(selectedGalleryVideoUrl || '')
-    const current = normalizeUrl(resultUrl || '')
-    const mmaudio = normalizeUrl(mmaudioResultUrl || '')
+    const displayed = normalizeUrl(displayedResultUrl || '')
     return (Array.isArray(generatedVideos) ? generatedVideos : []).find((item) => {
       const url = normalizeUrl(item?.url || '')
-      return url && (url === selected || url === current || url === mmaudio)
-    }) || null
-  }, [generatedVideos, selectedGalleryVideoUrl, resultUrl, mmaudioResultUrl])
+      return url && displayed && url === displayed
+    }) || latestGalleryItem || null
+  }, [generatedVideos, displayedResultUrl, latestGalleryItem])
   const displayedResultIsImage = !!displayedResultUrl && (
     displayedGalleryItem?.kind === 'image'
     || (routeInfo.kind === 'image' && !mmaudioResultUrl)
     || /\.(png|jpe?g|webp)(\?|$)/i.test(String(displayedResultUrl || ''))
   )
   const previousVideoForFrame = normalizeUrl(generatedVideoItems[0]?.url || (!displayedResultIsImage && !isBlockedGeneratorPreviewUrl(selectedGalleryVideoUrl || resultUrl || mmaudioResultUrl || displayedResultUrl) ? (selectedGalleryVideoUrl || resultUrl || mmaudioResultUrl || displayedResultUrl) : '') || '')
-  const startPreviewDisplayUrl = generatorPreviewUrl(startPreview || startPersistedDataUrl)
-  const endPreviewDisplayUrl = generatorPreviewUrl(endPreview || endPersistedDataUrl)
-  const displayedResultPreviewUrl = generatorPreviewUrl(displayedResultUrl)
+  const startPreviewRef = startPreview || startPersistedDataUrl
+  const endPreviewRef = endPreview || endPersistedDataUrl
+  const startPreviewNeedsAuth = !!startPreviewRef && isGeneratorAssetFileRef(startPreviewRef)
+  const endPreviewNeedsAuth = !!endPreviewRef && isGeneratorAssetFileRef(endPreviewRef)
+  const startPreviewBlobUrl = startPreviewNeedsAuth ? generatorAssetBlobPreviewUrl(startPreviewRef) : ''
+  const endPreviewBlobUrl = endPreviewNeedsAuth ? generatorAssetBlobPreviewUrl(endPreviewRef) : ''
+  const startPreviewDisplayUrl = startPreviewNeedsAuth ? startPreviewBlobUrl : generatorPreviewUrl(startPreviewRef)
+  const endPreviewDisplayUrl = endPreviewNeedsAuth ? endPreviewBlobUrl : generatorPreviewUrl(endPreviewRef)
+  const startPreviewIsLoading = !!startPreviewRef && startPreviewNeedsAuth && !startPreviewDisplayUrl
+  const endPreviewIsLoading = !!endPreviewRef && endPreviewNeedsAuth && !endPreviewDisplayUrl
+  const startThumbUrl = startPreviewDisplayUrl || (!startPreviewNeedsAuth ? startPreview : '')
+  const endThumbUrl = endPreviewDisplayUrl || (!endPreviewNeedsAuth ? endPreview : '')
+  // AVA_GENERATOR_INPUT_THUMB_AUTH_LOADING_V6:
+  // Restored Start/End frames may be protected assets. Show a spinner while the
+  // authenticated blob preview is being prepared instead of a broken image.
+  const displayedResultIsProtectedAsset = !!displayedResultUrl && isGeneratorAssetFileRef(displayedResultUrl)
+  const displayedResultBlobPreviewUrl = displayedResultIsProtectedAsset ? generatorAssetBlobPreviewUrl(displayedResultUrl) : ''
+  // AVA_GENERATOR_MAIN_VIDEO_AUTH_BLOB_V5:
+  // Main result preview must use an authenticated blob for /api/assets/.../file.
+  // A plain <video src="/api/assets/..."> cannot carry Authorization headers and can show a black 0:00 player.
+  // We still avoid prefetching every history card; only the selected/main result is hydrated as blob.
+  const displayedResultPreviewUrl = displayedResultIsProtectedAsset ? displayedResultBlobPreviewUrl : generatorPreviewUrl(displayedResultUrl)
 
   useEffect(() => {
-    [startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview, displayedResultUrl, ...visibleHistoryItems.map((item) => item?.url || '')]
+    if (!displayedResultUrl || !displayedResultIsProtectedAsset) return
+    ensureGeneratorAssetPreview(displayedResultUrl)
+  }, [displayedResultUrl, displayedResultIsProtectedAsset, ensureGeneratorAssetPreview])
+
+
+  // AVA_GENERATOR_INPUT_THUMB_SMALL_SPINNER_V7:
+  // Start/End restored input thumbnails show only a compact spinner in the preview area;
+  // the text stays in the card metadata so the thumb does not render huge loading letters.
+
+  const generatorHistoryPreviewNode = useCallback((item = {}) => {
+    const kind = String(item?.kind || '').toLowerCase() === 'image' ? 'image' : 'video'
+    const sourceRef = item?.url || item?.apiPath || item?.api_path || item?.videoUrl || item?.imageUrl || ''
+    const protectedAsset = !!sourceRef && isGeneratorAssetFileRef(sourceRef)
+    const previewUrl = protectedAsset ? generatorAssetBlobPreviewUrl(sourceRef) : generatorPreviewUrl(sourceRef)
+    if (!previewUrl) {
+      return (
+        <span
+          className="avaGeneratorHistoryLoading"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            width: '100%',
+            minHeight: 72,
+            padding: 8,
+            fontSize: 12,
+            lineHeight: 1.25,
+            color: 'rgba(255,255,255,0.72)',
+            textAlign: 'center',
+          }}
+        >
+          <i className="avaGeneratorMmaudioHeaderSpinner" aria-hidden="true" />
+          <span>{kind === 'image' ? 'Загрузка фото…' : 'Загрузка видео…'}</span>
+        </span>
+      )
+    }
+    if (kind === 'image') {
+      return <img src={previewUrl} alt={item?.label || item?.title || 'result'} />
+    }
+    return <video src={previewUrl} muted playsInline preload="metadata" />
+  }, [generatorAssetBlobPreviewUrl, generatorPreviewUrl])
+
+  useEffect(() => {
+    // AVA_GENERATOR_HISTORY_AUTH_THUMBS_V6:
+    // Protected video assets need authenticated blob URLs even in the feed.
+    // Keep the v4/v5 performance fix by warming only visible gallery items, not
+    // every old result source from localStorage.
+    visibleHistoryItems
+      .slice(-GENERATOR_GALLERY_LIMIT)
+      .forEach((item) => {
+        const ref = item?.url || item?.apiPath || item?.api_path || item?.videoUrl || item?.imageUrl || ''
+        if (ref && isGeneratorAssetFileRef(ref)) ensureGeneratorAssetPreview(ref)
+      })
+  }, [visibleHistoryItems, ensureGeneratorAssetPreview])
+
+  useEffect(() => {
+    // AVA_GENERATOR_DIRECT_ASSET_PREVIEW_V4:
+    // Only warm up small start/end images. Do not prefetch result/history videos as
+    // blobs; video tags can stream direct asset URLs and load much faster.
+    [startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview]
       .filter(Boolean)
       .forEach((ref) => {
         if (isGeneratorAssetFileRef(ref)) ensureGeneratorAssetPreview(ref)
       })
-  }, [startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview, displayedResultUrl, visibleHistoryItems, ensureGeneratorAssetPreview])
+  }, [startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview, ensureGeneratorAssetPreview])
 
   const canUseMmaudio = !!resultUrl && ['i2v', 'first_last'].includes(route)
   const targetDurationSec = Number(durationSec) || 1
@@ -1811,13 +1987,32 @@ export default function StandaloneGeneratorPage() {
 
   const saveGeneratorSnapshot = useCallback((reason = 'autosave', overrides = {}) => {
     if (!routeProjectId) return
+    const cleanReason = String(reason || '')
     if (!generatorSnapshotHydratedRef.current && reason === 'autosave') return
     if (reason === 'autosave' && busy) return
+    // AVA_GENERATOR_POLLING_SNAPSHOT_THROTTLE_V4:
+    // Job state is already persisted on start and completion. Polling writes every
+    // 2.2s made Generator restores and MMAudio feel much slower, so only keep a
+    // sparse heartbeat in the project snapshot.
+    if (cleanReason === 'job_polling' || cleanReason === 'mmaudio_job_polling') {
+      const bucket = cleanReason === 'mmaudio_job_polling' ? 'mmaudio' : 'video'
+      const now = Date.now()
+      const lastAt = Number(generatorPollingSnapshotThrottleRef.current?.[bucket] || 0)
+      if (now - lastAt < 20000) return
+      generatorPollingSnapshotThrottleRef.current = {
+        ...(generatorPollingSnapshotThrottleRef.current || {}),
+        [bucket]: now,
+      }
+    }
     if (generatorSnapshotSaveTimerRef.current) clearTimeout(generatorSnapshotSaveTimerRef.current)
 
     const run = async () => {
-      const resultRefs = generatorResultRefs(overrides.resultData || rawResponse || job || {}, overrides.resultUrl || resultUrl || '')
-      const media = {
+      const hasOverride = (key) => Object.prototype.hasOwnProperty.call(overrides, key)
+      const snapshotResultUrl = hasOverride('resultUrl') ? overrides.resultUrl : resultUrl
+      const snapshotResultData = hasOverride('resultData') ? overrides.resultData : rawResponse
+      const snapshotJob = hasOverride('job') ? overrides.job : job
+      const resultRefs = generatorResultRefs(snapshotResultData || snapshotJob || {}, snapshotResultUrl || '')
+      const media = hasOverride('media') ? (overrides.media || {}) : {
         startImageUrl: normalizeUrl(startPersistedDataUrl || startPreview || ''),
         startImageApiPath: generatorCanonicalApiPath(startPersistedDataUrl, startPreview),
         startImageAssetId: generatorAssetIdFromRef(startPersistedDataUrl, startPreview),
@@ -1830,7 +2025,7 @@ export default function StandaloneGeneratorPage() {
         audioName,
         audioDurationSec,
       }
-      const completedResultUrl = resultRefs.url || normalizeUrl(overrides.resultUrl || resultUrl || '')
+      const completedResultUrl = resultRefs.url || normalizeUrl(snapshotResultUrl || '')
       const baseGallery = Array.isArray(overrides.gallery) ? overrides.gallery : generatedVideos
       const gallery = (reason === 'generator_completed' && completedResultUrl)
         ? upsertGeneratorGalleryResult(baseGallery, completedResultUrl, {
@@ -1870,7 +2065,7 @@ export default function StandaloneGeneratorPage() {
           kind: routeInfo.kind === 'image' ? 'image' : 'video',
         },
         resultUrl: completedResultUrl,
-        job: compactGeneratorJob(overrides.job || job),
+        job: compactGeneratorJob(snapshotJob),
         statusText: overrides.statusText || statusText,
         rawResponse: null,
         mmaudioPrompt,
@@ -1878,17 +2073,39 @@ export default function StandaloneGeneratorPage() {
         mmaudioResultUrl: overrides.mmaudioResultUrl !== undefined ? overrides.mmaudioResultUrl : mmaudioResultUrl,
         mmaudioJob: compactGeneratorJob(overrides.mmaudioJob !== undefined ? overrides.mmaudioJob : mmaudioJob),
         mmaudioStatus: overrides.mmaudioStatus || mmaudioStatus,
+        lastCompletedMmaudioJobId: overrides.lastCompletedMmaudioJobId !== undefined
+          ? String(overrides.lastCompletedMmaudioJobId || '')
+          : ([...completedMmaudioJobsRef.current].slice(-1)[0] || ''),
+        completedMmaudioJobIds: Array.isArray(overrides.completedMmaudioJobIds)
+          ? overrides.completedMmaudioJobIds.map(generatorCleanJobId).filter(Boolean).slice(-30)
+          : [...completedMmaudioJobsRef.current].map(generatorCleanJobId).filter(Boolean).slice(-30),
+        deletedGalleryRefs: Array.isArray(overrides.deletedGalleryRefs)
+          ? overrides.deletedGalleryRefs.map((item) => String(item || '').trim()).filter(Boolean).slice(-120)
+          : [...deletedGeneratorGalleryRefsRef.current].map((item) => String(item || '').trim()).filter(Boolean).slice(-120),
+        deletedMmaudioJobIds: Array.isArray(overrides.deletedMmaudioJobIds)
+          ? overrides.deletedMmaudioJobIds.map(generatorCleanJobId).filter(Boolean).slice(-120)
+          : [...deletedMmaudioJobIdsRef.current].map(generatorCleanJobId).filter(Boolean).slice(-120),
       }
 
       try {
-        await saveGeneratorProjectSnapshot(routeProjectId, snapshot, 'safe_merge')
+        const snapshotGuardMode = ['gallery_remove', 'gallery_clear', 'clear_draft', 'generator_completed', 'generator_completed_direct', 'mmaudio_completed'].some((item) => String(reason || '').startsWith(item)) ? 'replace' : 'safe_merge'
+        await saveGeneratorProjectSnapshot(routeProjectId, snapshot, snapshotGuardMode)
         console.log('[GENERATOR PROJECT SNAPSHOT SAVED]', { projectId: routeProjectId, reason, gallery: gallery.length, result: snapshot.result })
       } catch (error) {
         console.warn('[GENERATOR PROJECT SNAPSHOT SAVE FAILED]', { reason, error: error?.message || error })
       }
     }
 
-    const delay = ['generator_completed', 'media_upload', 'gallery_remove', 'job_started', 'job_polling', 'mmaudio_job_started', 'mmaudio_job_polling', 'mmaudio_completed', 'mmaudio_failed'].includes(reason) ? 0 : 700
+    // AVA_GENERATOR_EXIT_SAFE_SNAPSHOT_V3:
+    // Critical job/media/result updates must be written immediately, not through a
+    // zero-delay timer that can be cancelled when the user leaves the Generator.
+    const immediateReasons = ['generator_completed', 'generator_completed_direct', 'media_upload', 'gallery_remove', 'gallery_clear', 'clear_draft', 'job_started', 'mmaudio_job_started', 'mmaudio_completed', 'mmaudio_failed']
+    if (immediateReasons.some((item) => String(reason || '').startsWith(item))) {
+      run()
+      return
+    }
+
+    const delay = 700
     generatorSnapshotSaveTimerRef.current = setTimeout(run, delay)
   }, [
     routeProjectId, rawResponse, job, resultUrl, startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview,
@@ -1976,6 +2193,10 @@ export default function StandaloneGeneratorPage() {
       mmaudioJob: compactGeneratorJob(mmaudioJob),
       mmaudioStatus,
       lastCompletedJobId: String(completedJobId || completedData?.jobId || completedData?.job_id || ''),
+      lastCompletedMmaudioJobId: [...completedMmaudioJobsRef.current].slice(-1)[0] || '',
+      completedMmaudioJobIds: [...completedMmaudioJobsRef.current].map(generatorCleanJobId).filter(Boolean).slice(-30),
+      deletedGalleryRefs: [...deletedGeneratorGalleryRefsRef.current].map((item) => String(item || '').trim()).filter(Boolean).slice(-120),
+      deletedMmaudioJobIds: [...deletedMmaudioJobIdsRef.current].map(generatorCleanJobId).filter(Boolean).slice(-120),
     }
 
     try {
@@ -1997,8 +2218,9 @@ export default function StandaloneGeneratorPage() {
   ])
 
   useEffect(() => {
+    if (routeProjectId) return
     writeGeneratorGalleryDraft(generatedVideos)
-  }, [generatedVideos])
+  }, [generatedVideos, routeProjectId])
 
   useEffect(() => {
     saveGeneratorSnapshot('autosave')
@@ -2007,48 +2229,9 @@ export default function StandaloneGeneratorPage() {
     }
   }, [saveGeneratorSnapshot])
 
-  useEffect(() => {
-    const cleanUrl = normalizeUrl(resultUrl)
-    if (!cleanUrl) return
-    const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
-    const key = `${resultKind}:${cleanUrl}`
-    if (restoredGalleryAutoAddSkipRef.current.has(key)) {
-      restoredGalleryAutoAddSkipRef.current.delete(key)
-      rememberedGalleryUrlsRef.current.add(key)
-      return
-    }
-    if (rememberedGalleryUrlsRef.current.has(key)) return
-    rememberedGalleryUrlsRef.current.add(key)
-    rememberGeneratedVideo(cleanUrl, {
-      kind: resultKind,
-      label: routeInfo?.label || (resultKind === 'image' ? 'Фото' : 'Видео'),
-      route,
-      durationSec: resultKind === 'image' ? 0 : targetDurationSec,
-      apiPath: generatorCanonicalApiPath(cleanUrl),
-      assetId: generatorAssetIdFromRef(cleanUrl),
-    })
-  }, [resultUrl, rememberGeneratedVideo, route, routeInfo?.kind, routeInfo?.label, targetDurationSec, generatorPagePath, routeProjectId])
-
-  useEffect(() => {
-    const cleanUrl = normalizeUrl(mmaudioResultUrl)
-    if (!cleanUrl) return
-    const key = `mmaudio:${cleanUrl}`
-    if (restoredGalleryAutoAddSkipRef.current.has(key)) {
-      restoredGalleryAutoAddSkipRef.current.delete(key)
-      rememberedGalleryUrlsRef.current.add(key)
-      return
-    }
-    if (rememberedGalleryUrlsRef.current.has(key)) return
-    rememberedGalleryUrlsRef.current.add(key)
-    rememberGeneratedVideo(cleanUrl, {
-      kind: 'mmaudio',
-      label: 'MMAudio',
-      route: 'mmaudio',
-      durationSec: targetDurationSec,
-      apiPath: generatorCanonicalApiPath(cleanUrl),
-      assetId: generatorAssetIdFromRef(cleanUrl),
-    })
-  }, [mmaudioResultUrl, rememberGeneratedVideo])
+  // AVA_GENERATOR_GALLERY_SOT_V1:
+  // resultUrl/mmaudioResultUrl are preview pointers only. They must not auto-create
+  // feed cards after delete/F5; completed handlers are the only allowed gallery writers.
 
   const openGeneratedVideo = useCallback((item) => {
     if (!item?.url) return
@@ -2059,27 +2242,67 @@ export default function StandaloneGeneratorPage() {
 
   const removeGeneratedVideo = useCallback((event, item) => {
     event?.stopPropagation?.()
-    if (!item?.id) return
     const removedKey = generatorComparableRef(item?.apiPath || item?.api_path || item?.url)
+    const removedTombstoneRef = generatorGalleryTombstoneRef(item?.apiPath, item?.api_path, item?.assetId, item?.asset_id, item?.url)
+    if (!item?.id && !removedKey && !removedTombstoneRef) return
+
     const resultKey = generatorComparableRef(resultUrl)
     const mmaudioKey = generatorComparableRef(mmaudioResultUrl)
+    const selectedKey = generatorComparableRef(selectedGalleryVideoUrl)
+    const shouldClearResult = !!removedKey && removedKey === resultKey
+    const shouldClearMmaudio = !!removedKey && removedKey === mmaudioKey
+    const shouldClearSelected = (!!removedKey && removedKey === selectedKey) || selectedGalleryVideoUrl === item?.url
+    const removedJobId = generatorCleanJobId(item?.jobId || item?.job_id || (shouldClearMmaudio ? mmaudioJob?.jobId || mmaudioJob?.job_id : ''))
+
+    if (removedTombstoneRef) deletedGeneratorGalleryRefsRef.current.add(removedTombstoneRef)
+    if (shouldClearMmaudio && removedJobId) deletedMmaudioJobIdsRef.current.add(removedJobId)
+    if (shouldClearMmaudio && removedJobId) completedMmaudioJobsRef.current.delete(removedJobId)
+
+    const deletedGalleryRefs = [...deletedGeneratorGalleryRefsRef.current].slice(-120)
+    const deletedMmaudioJobIds = [...deletedMmaudioJobIdsRef.current].slice(-120)
+    const completedMmaudioJobIds = [...completedMmaudioJobsRef.current].slice(-30)
 
     setGeneratedVideos((old) => {
-      const nextGallery = (Array.isArray(old) ? old : []).filter((video) => video.id !== item.id)
-      saveGeneratorSnapshot('gallery_remove', { gallery: nextGallery })
+      const nextGallery = (Array.isArray(old) ? old : []).filter((video) => {
+        const sameId = item?.id && video?.id === item.id
+        const sameRef = removedKey && generatorComparableRef(video?.apiPath || video?.api_path || video?.url) === removedKey
+        const sameTombstone = removedTombstoneRef && generatorGalleryTombstoneRef(video?.apiPath, video?.api_path, video?.assetId, video?.asset_id, video?.url) === removedTombstoneRef
+        return !(sameId || sameRef || sameTombstone)
+      })
+      saveGeneratorSnapshot('gallery_remove', {
+        gallery: nextGallery,
+        resultUrl: shouldClearResult ? '' : resultUrl,
+        resultData: shouldClearResult ? null : rawResponse,
+        job: shouldClearResult ? null : job,
+        statusText: shouldClearResult ? 'удалено из ленты' : statusText,
+        mmaudioResultUrl: shouldClearMmaudio ? '' : mmaudioResultUrl,
+        mmaudioJob: shouldClearMmaudio ? null : mmaudioJob,
+        mmaudioStatus: shouldClearMmaudio ? '' : mmaudioStatus,
+        lastCompletedMmaudioJobId: shouldClearMmaudio ? '' : undefined,
+        completedMmaudioJobIds,
+        deletedGalleryRefs,
+        deletedMmaudioJobIds,
+      })
       return nextGallery
     })
 
-    if (removedKey && removedKey === resultKey) setResultUrl('')
-    if (removedKey && removedKey === mmaudioKey) {
+    const refsForActiveJobs = [
+      removedKey,
+      item?.url, item?.apiPath, item?.api_path, item?.videoUrl, item?.video_url,
+      resultUrl, mmaudioResultUrl,
+    ].map((value) => String(value || '').trim()).filter(Boolean)
+    removeAvaGeneratorActiveJobsMatching({ refs: refsForActiveJobs, jobIds: removedJobId ? [removedJobId] : [], projectId: routeProjectId })
+
+    if (shouldClearResult) setResultUrl('')
+    if (shouldClearMmaudio) {
       setMmaudioResultUrl('')
       setMmaudioJob(null)
       setMmaudioStatus('')
     }
-    if (selectedGalleryVideoUrl === item.url) {
-      setSelectedGalleryVideoUrl('')
-    }
-  }, [mmaudioResultUrl, resultUrl, saveGeneratorSnapshot, selectedGalleryVideoUrl])
+    if (shouldClearSelected) setSelectedGalleryVideoUrl('')
+    setImageActionMenuId('')
+    setStatusText('удалено из ленты')
+  }, [job, mmaudioJob, mmaudioResultUrl, mmaudioStatus, rawResponse, resultUrl, routeProjectId, saveGeneratorSnapshot, selectedGalleryVideoUrl, statusText])
 
   const useImageResultAsFrame = useCallback(async (event, item, target = 'start') => {
     event?.stopPropagation?.()
@@ -2475,7 +2698,22 @@ export default function StandaloneGeneratorPage() {
         setStartPersistedDataUrl(apiPath)
         setStartPreview(URL.createObjectURL(file))
         await writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), startPersistedDataUrl: apiPath, startImageAssetId: uploaded.assetId || uploaded.asset_id || '' })
-        saveGeneratorSnapshot('media_upload', { mediaUploaded: true })
+        saveGeneratorSnapshot('media_upload', {
+          mediaUploaded: true,
+          media: {
+            startImageUrl: normalizeUrl(apiPath),
+            startImageApiPath: generatorCanonicalApiPath(apiPath),
+            startImageAssetId: uploaded.assetId || uploaded.asset_id || generatorAssetIdFromRef(apiPath),
+            endImageUrl: normalizeUrl(endPersistedDataUrl || endPreview || ''),
+            endImageApiPath: generatorCanonicalApiPath(endPersistedDataUrl, endPreview),
+            endImageAssetId: generatorAssetIdFromRef(endPersistedDataUrl, endPreview),
+            audioUrl: normalizeUrl(audioPersistedDataUrl || audioPreviewUrl || ''),
+            audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
+            audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
+            audioName,
+            audioDurationSec,
+          },
+        })
         setStatusText('стартовое фото сохранено в проект')
         return
       }
@@ -2487,7 +2725,7 @@ export default function StandaloneGeneratorPage() {
     setStartPersistedDataUrl(persisted)
     setStartPreview(persisted || URL.createObjectURL(file))
     if (persisted) writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), startPersistedDataUrl: persisted })
-  }, [routeProjectId, saveGeneratorSnapshot])
+  }, [routeProjectId, saveGeneratorSnapshot, endPersistedDataUrl, endPreview, audioPersistedDataUrl, audioPreviewUrl, audioName, audioDurationSec])
 
   const handleEndFile = useCallback(async (file) => {
     setEndFile(file || null)
@@ -2506,7 +2744,22 @@ export default function StandaloneGeneratorPage() {
         setEndPersistedDataUrl(apiPath)
         setEndPreview(URL.createObjectURL(file))
         await writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), endPersistedDataUrl: apiPath, endImageAssetId: uploaded.assetId || uploaded.asset_id || '' })
-        saveGeneratorSnapshot('media_upload', { mediaUploaded: true })
+        saveGeneratorSnapshot('media_upload', {
+          mediaUploaded: true,
+          media: {
+            startImageUrl: normalizeUrl(startPersistedDataUrl || startPreview || ''),
+            startImageApiPath: generatorCanonicalApiPath(startPersistedDataUrl, startPreview),
+            startImageAssetId: generatorAssetIdFromRef(startPersistedDataUrl, startPreview),
+            endImageUrl: normalizeUrl(apiPath),
+            endImageApiPath: generatorCanonicalApiPath(apiPath),
+            endImageAssetId: uploaded.assetId || uploaded.asset_id || generatorAssetIdFromRef(apiPath),
+            audioUrl: normalizeUrl(audioPersistedDataUrl || audioPreviewUrl || ''),
+            audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
+            audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
+            audioName,
+            audioDurationSec,
+          },
+        })
         setStatusText('второй кадр сохранён в проект')
         return
       }
@@ -2518,7 +2771,7 @@ export default function StandaloneGeneratorPage() {
     setEndPersistedDataUrl(persisted)
     setEndPreview(persisted || URL.createObjectURL(file))
     if (persisted) writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), endPersistedDataUrl: persisted })
-  }, [routeProjectId, saveGeneratorSnapshot])
+  }, [routeProjectId, saveGeneratorSnapshot, startPersistedDataUrl, startPreview, audioPersistedDataUrl, audioPreviewUrl, audioName, audioDurationSec])
 
   const handleAudioFile = useCallback(async (file) => {
 
@@ -2555,7 +2808,22 @@ export default function StandaloneGeneratorPage() {
         setAudioPersistedDataUrl(apiPath)
         setAudioPreviewUrl(normalizeUrl(apiPath))
         await writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), audioPersistedDataUrl: apiPath, audioName: file?.name || '', audioDurationSec: sec, audioAssetId: uploaded.assetId || uploaded.asset_id || '' })
-        saveGeneratorSnapshot('media_upload', { mediaUploaded: true })
+        saveGeneratorSnapshot('media_upload', {
+          mediaUploaded: true,
+          media: {
+            startImageUrl: normalizeUrl(startPersistedDataUrl || startPreview || ''),
+            startImageApiPath: generatorCanonicalApiPath(startPersistedDataUrl, startPreview),
+            startImageAssetId: generatorAssetIdFromRef(startPersistedDataUrl, startPreview),
+            endImageUrl: normalizeUrl(endPersistedDataUrl || endPreview || ''),
+            endImageApiPath: generatorCanonicalApiPath(endPersistedDataUrl, endPreview),
+            endImageAssetId: generatorAssetIdFromRef(endPersistedDataUrl, endPreview),
+            audioUrl: normalizeUrl(apiPath),
+            audioApiPath: generatorCanonicalApiPath(apiPath),
+            audioAssetId: uploaded.assetId || uploaded.asset_id || generatorAssetIdFromRef(apiPath),
+            audioName: file?.name || '',
+            audioDurationSec: sec,
+          },
+        })
         setStatusText('аудио сохранено в проект')
         return
       }
@@ -2567,7 +2835,7 @@ export default function StandaloneGeneratorPage() {
     setAudioPersistedDataUrl(audioDataUrlForPersist)
     setAudioPreviewUrl(audioDataUrlForPersist || URL.createObjectURL(file))
     if (audioDataUrlForPersist) writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), audioPersistedDataUrl: audioDataUrlForPersist, audioName: file?.name || '', audioDurationSec: sec })
-  }, [route, audioPreviewUrl, routeProjectId, saveGeneratorSnapshot])
+  }, [route, audioPreviewUrl, routeProjectId, saveGeneratorSnapshot, startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview])
 
   const toggleAudioPreview = useCallback(async () => {
     if (!audioRef.current || !audioPreviewUrl) return
@@ -2862,11 +3130,14 @@ export default function StandaloneGeneratorPage() {
             setMmaudioResultUrl(canonicalVideo)
             setGeneratedVideos((old) => {
               const nextGallery = upsertGeneratorGalleryResult(old, canonicalVideo, mmaudioMeta)
+              const completedMmaudioJobIds = [...completedMmaudioJobsRef.current].map(generatorCleanJobId).filter(Boolean).slice(-30)
               saveGeneratorSnapshot('mmaudio_completed', {
                 gallery: nextGallery,
                 mmaudioResultUrl: canonicalVideo,
                 mmaudioJob: null,
                 mmaudioStatus: 'completed',
+                lastCompletedMmaudioJobId: cleanJobId,
+                completedMmaudioJobIds,
               })
               return nextGallery
             })
@@ -2874,6 +3145,8 @@ export default function StandaloneGeneratorPage() {
             saveGeneratorSnapshot('mmaudio_completed', {
               mmaudioJob: null,
               mmaudioStatus: 'completed',
+              lastCompletedMmaudioJobId: cleanJobId,
+              completedMmaudioJobIds: [cleanJobId],
             })
           }
 
@@ -2978,7 +3251,26 @@ export default function StandaloneGeneratorPage() {
       setMmaudioJob(startedJob)
       setMmaudioStatus(startedStatus)
       if (jobId) {
-        saveGeneratorSnapshot('mmaudio_job_started', { mmaudioJob: startedJob, mmaudioStatus: startedStatus })
+        saveGeneratorSnapshot('mmaudio_job_started', {
+          resultUrl,
+          gallery: generatedVideos,
+          mmaudioResultUrl: '',
+          mmaudioJob: startedJob,
+          mmaudioStatus: startedStatus,
+          media: {
+            startImageUrl: normalizeUrl(startPersistedDataUrl || startPreview || ''),
+            startImageApiPath: generatorCanonicalApiPath(startPersistedDataUrl, startPreview),
+            startImageAssetId: generatorAssetIdFromRef(startPersistedDataUrl, startPreview),
+            endImageUrl: normalizeUrl(endPersistedDataUrl || endPreview || ''),
+            endImageApiPath: generatorCanonicalApiPath(endPersistedDataUrl, endPreview),
+            endImageAssetId: generatorAssetIdFromRef(endPersistedDataUrl, endPreview),
+            audioUrl: normalizeUrl(audioPersistedDataUrl || audioPreviewUrl || ''),
+            audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
+            audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
+            audioName,
+            audioDurationSec,
+          },
+        })
         upsertGlobalJob({
           id: `generator-mmaudio:${jobId}`,
           key: `generator-mmaudio:${jobId}`,
@@ -3016,7 +3308,7 @@ export default function StandaloneGeneratorPage() {
       setMmaudioError(String(exc?.message || exc))
       setMmaudioBusy(false)
     }
-  }, [aspectInfo.value, durationSec, generatorPagePath, mmaudioCreditCost, mmaudioPrompt, mmaudioNegativePrompt, pollMmaudioStatus, resultUrl, routeProjectId, saveGeneratorSnapshot])
+  }, [aspectInfo.value, durationSec, generatorPagePath, mmaudioCreditCost, mmaudioPrompt, mmaudioNegativePrompt, pollMmaudioStatus, resultUrl, routeProjectId, saveGeneratorSnapshot, generatedVideos, startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview, audioPersistedDataUrl, audioPreviewUrl, audioName, audioDurationSec])
 
   const submitGeneration = useCallback(async () => {
     setError('')
@@ -3087,6 +3379,19 @@ export default function StandaloneGeneratorPage() {
       const endImageUrlForBackend = endRef && !endIsDataUrl ? endRef : ''
       const startImageDataUrlForBackend = startIsDataUrl ? startRef : ''
       const endImageDataUrlForBackend = endIsDataUrl ? endRef : ''
+      const activeJobMediaSnapshot = {
+        startImageUrl: normalizeUrl(startImageUrlForBackend || startImageDataUrlForBackend || startPersistedDataUrl || startPreview || ''),
+        startImageApiPath: generatorCanonicalApiPath(startImageUrlForBackend || startPersistedDataUrl || '', startPreview),
+        startImageAssetId: generatorAssetIdFromRef(startImageUrlForBackend, startPersistedDataUrl, startPreview),
+        endImageUrl: normalizeUrl(endImageUrlForBackend || endImageDataUrlForBackend || endPersistedDataUrl || endPreview || ''),
+        endImageApiPath: generatorCanonicalApiPath(endImageUrlForBackend || endPersistedDataUrl || '', endPreview),
+        endImageAssetId: generatorAssetIdFromRef(endImageUrlForBackend, endPersistedDataUrl, endPreview),
+        audioUrl: normalizeUrl(audioDataUrl || audioPersistedDataUrl || audioPreviewUrl || ''),
+        audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
+        audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
+        audioName,
+        audioDurationSec,
+      }
 
       const sceneId = `generator_${Date.now()}`
       const effectiveProjectId = routeProjectId || generatorProjectIdFromPath()
@@ -3168,7 +3473,7 @@ export default function StandaloneGeneratorPage() {
       setJob(startedJob)
       setStatusText(startedStatus)
       if (jobId && generatorJobLooksActive(startedJob)) {
-        saveGeneratorSnapshot('job_started', { job: startedJob, statusText: startedStatus })
+        saveGeneratorSnapshot('job_started', { job: startedJob, statusText: startedStatus, media: activeJobMediaSnapshot })
       }
       const pickedVideo = normalizeUrl(pickVideoUrl(data))
       const video = isBlockedGeneratorPreviewUrl(pickedVideo) ? '' : pickedVideo
@@ -3246,6 +3551,27 @@ export default function StandaloneGeneratorPage() {
 
   const clearDraft = useCallback(() => {
     clearGeneratorDraft()
+    writeGeneratorGalleryDraft([])
+    deletedGeneratorGalleryRefsRef.current = new Set()
+    deletedMmaudioJobIdsRef.current = new Set()
+    completedMmaudioJobsRef.current = new Set()
+    setGeneratedVideos([])
+    saveGeneratorSnapshot('gallery_clear', {
+      gallery: [],
+      media: {},
+      resultUrl: '',
+      resultData: null,
+      job: null,
+      statusText: 'очищено',
+      mmaudioResultUrl: '',
+      mmaudioJob: null,
+      mmaudioStatus: '',
+      lastCompletedMmaudioJobId: '',
+      completedMmaudioJobIds: [],
+      deletedGalleryRefs: [],
+      deletedMmaudioJobIds: [],
+    })
+    removeAvaGeneratorActiveJobsMatching({ projectId: routeProjectId })
     setJob(null)
     setResultUrl('')
     setSelectedGalleryVideoUrl('')
@@ -3273,7 +3599,7 @@ export default function StandaloneGeneratorPage() {
     setMmaudioResultUrl('')
     setMmaudioRawResponse(null)
     if (audioRef.current) audioRef.current.pause()
-  }, [])
+  }, [routeProjectId, saveGeneratorSnapshot])
 
   const durationMax = routeInfo.maxDuration || 1
 
@@ -3476,34 +3802,74 @@ export default function StandaloneGeneratorPage() {
 
           <div className="avaGeneratorStageGrid">
             <div className="avaGeneratorThumbsCol">
-              <button type="button" className="avaGeneratorThumbCard avaGeneratorThumbInteractive" onClick={() => openZoom(startPreviewDisplayUrl || startPreview, startFile?.name || 'Start image')} disabled={!(startPreviewDisplayUrl || startPreview)}>
+              <button type="button" className="avaGeneratorThumbCard avaGeneratorThumbInteractive" onClick={() => openZoom(startThumbUrl, startFile?.name || 'Start image')} disabled={!startThumbUrl || startPreviewIsLoading}>
                 <div className="avaGeneratorThumbPreview">
-                  {(startPreviewDisplayUrl || startPreview) ? (
+                  {startPreviewIsLoading ? (
+                    <span
+                      className="avaGeneratorInputThumbLoadingV7"
+                      aria-label="Загрузка стартового кадра"
+                      title="Загрузка стартового кадра"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '100%',
+                        height: '100%',
+                        minHeight: 120,
+                      }}
+                    >
+                      <i
+                        className="avaGeneratorMmaudioHeaderSpinner"
+                        aria-hidden="true"
+                        style={{ width: 24, height: 24, flex: '0 0 24px' }}
+                      />
+                    </span>
+                  ) : startThumbUrl ? (
                     <>
-                      <img src={startPreviewDisplayUrl || startPreview} alt="start" />
+                      <img src={startThumbUrl} alt="start" />
                       <div className="avaGeneratorZoomOverlay"><span>⌕</span><em>Увеличить</em></div>
                     </>
                   ) : <span>start</span>}
                 </div>
                 <div className="avaGeneratorThumbMeta">
                   <strong>Start</strong>
-                  <span title={startFile?.name || ''}>{startFile?.name || ((startPreviewDisplayUrl || startPreview) ? 'кадр из ленты' : 'Нет изображения')}</span>
+                  <span title={startFile?.name || ''}>{startFile?.name || (startPreviewIsLoading ? 'загружаем кадр...' : (startThumbUrl ? 'кадр из ленты' : 'Нет изображения'))}</span>
                 </div>
               </button>
 
               {routeInfo.needsEnd ? (
-                <button type="button" className="avaGeneratorThumbCard avaGeneratorThumbInteractive" onClick={() => openZoom(endPreviewDisplayUrl || endPreview, endFile?.name || 'End image')} disabled={!(endPreviewDisplayUrl || endPreview)}>
+                <button type="button" className="avaGeneratorThumbCard avaGeneratorThumbInteractive" onClick={() => openZoom(endThumbUrl, endFile?.name || 'End image')} disabled={!endThumbUrl || endPreviewIsLoading}>
                   <div className="avaGeneratorThumbPreview">
-                    {(endPreviewDisplayUrl || endPreview) ? (
+                    {endPreviewIsLoading ? (
+                      <span
+                        className="avaGeneratorInputThumbLoadingV7"
+                        aria-label="Загрузка финального кадра"
+                        title="Загрузка финального кадра"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '100%',
+                          height: '100%',
+                          minHeight: 120,
+                        }}
+                      >
+                        <i
+                          className="avaGeneratorMmaudioHeaderSpinner"
+                          aria-hidden="true"
+                          style={{ width: 24, height: 24, flex: '0 0 24px' }}
+                        />
+                      </span>
+                    ) : endThumbUrl ? (
                       <>
-                        <img src={endPreviewDisplayUrl || endPreview} alt="end" />
+                        <img src={endThumbUrl} alt="end" />
                         <div className="avaGeneratorZoomOverlay"><span>⌕</span><em>Увеличить</em></div>
                       </>
                     ) : <span>end</span>}
                   </div>
                   <div className="avaGeneratorThumbMeta">
                     <strong>End</strong>
-                    <span title={endFile?.name || ''}>{endFile?.name || ((endPreviewDisplayUrl || endPreview) ? 'кадр из ленты' : 'Нет финального кадра')}</span>
+                    <span title={endFile?.name || ''}>{endFile?.name || (endPreviewIsLoading ? 'загружаем кадр...' : (endThumbUrl ? 'кадр из ленты' : 'Нет финального кадра'))}</span>
                   </div>
                 </button>
               ) : null}
@@ -3550,14 +3916,14 @@ export default function StandaloneGeneratorPage() {
                       ⇩
                     </button>
                   </div>
-                ) : displayedResultUrl && isGeneratorAssetFileRef(displayedResultUrl) && !displayedResultPreviewUrl ? (
+                ) : displayedResultUrl && displayedResultIsProtectedAsset && !displayedResultPreviewUrl ? (
                   <div className="avaGeneratorCanvasState isBusy">
                     <div className="avaGeneratorSpinner" />
-                    <strong>Подгружаем результат</strong>
-                    <span>Получаем защищённый asset-файл.</span>
+                    <strong>Подгружаем видео</strong>
+                    <span>Готовим защищённый asset-preview с авторизацией.</span>
                   </div>
                 ) : displayedResultUrl && !isBlockedGeneratorPreviewUrl(displayedResultUrl) ? (
-                  <video className="avaGeneratorVideo" src={displayedResultPreviewUrl || displayedResultUrl} controls playsInline />
+                  <video className="avaGeneratorVideo" src={displayedResultPreviewUrl || generatorPreviewUrl(displayedResultUrl)} controls playsInline preload="metadata" />
                 ) : displayedResultUrl && isBlockedGeneratorPreviewUrl(displayedResultUrl) ? (
                   <div className="avaGeneratorCanvasState isPlaceholder">
                     <strong>Старый static-result заблокирован</strong>
@@ -3668,7 +4034,7 @@ export default function StandaloneGeneratorPage() {
             {visibleHistoryItems.map((item, index) => (
               <article
                 key={item.id}
-                className={`avaGeneratorHistoryCard ${selectedGalleryVideoUrl === item.url ? 'isActive' : ''}`}
+                className={`avaGeneratorHistoryCard ${normalizeUrl(displayedResultUrl || '') === normalizeUrl(item.url || '') ? 'isActive' : ''}`}
                 onClick={() => openGeneratedVideo(item)}
                 role="button"
                 tabIndex={0}
@@ -3687,10 +4053,10 @@ export default function StandaloneGeneratorPage() {
 
                 <div className="avaGeneratorHistoryThumb">
                   {item.kind === 'image' ? (
-                    generatorPreviewUrl(item.url) ? <img src={generatorPreviewUrl(item.url)} alt={item.label || 'result'} /> : <span>asset</span>
+                    generatorHistoryPreviewNode(item)
                   ) : (
                     <>
-                      {generatorPreviewUrl(item.url) ? <video src={generatorPreviewUrl(item.url)} muted playsInline preload="metadata" /> : <span>asset</span>}
+                      {generatorHistoryPreviewNode(item)}
                       <div className="avaGeneratorHistoryPlay">▶</div>
                     </>
                   )}
