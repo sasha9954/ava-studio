@@ -740,6 +740,56 @@ def cut_audio_range(payload: CutAudioRangeIn, user: dict = Depends(get_current_u
     return store.update(op)
 
 
+
+
+def _asset_thumb_cache_path(asset_id: str, source_path: Path) -> Path:
+    return source_path.parent / f'{asset_id}_thumb.jpg'
+
+
+def _create_asset_video_thumb(source_path: Path, thumb_path: Path) -> None:
+    # AVA_ASSET_VIDEO_THUMB_ENDPOINT_V12B:
+    # Create a small cached JPG for Generator history cards instead of streaming full MP4s.
+    exe = shutil.which('ffmpeg')
+    if not exe:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='ffmpeg_not_found')
+    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+    attempts = [
+        ['-y', '-ss', '0.35', '-i', str(source_path), '-frames:v', '1', '-vf', 'scale=360:-2', '-q:v', '5', str(thumb_path)],
+        ['-y', '-ss', '0', '-i', str(source_path), '-frames:v', '1', '-vf', 'scale=360:-2', '-q:v', '5', str(thumb_path)],
+    ]
+    last_stderr = ''
+    for args in attempts:
+        result = subprocess.run([exe, *args], text=True, capture_output=True, timeout=45)
+        if result.returncode == 0 and thumb_path.exists() and thumb_path.stat().st_size > 0:
+            return
+        last_stderr = result.stderr or last_stderr
+    thumb_path.unlink(missing_ok=True)
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail={'code': 'thumb_failed', 'stderr': (last_stderr or '')[-1800:]},
+    )
+
+
+@router.get('/{asset_id}/thumb')
+def read_asset_thumb(asset_id: str, user: dict = Depends(get_current_user)):
+    db = store.get_db()
+    asset = db.get('assets', {}).get(asset_id)
+    if not asset or asset.get('user_id') != user['id']:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Asset not found')
+    path = _asset_file_path_from_record(asset)
+    if not path or not path.exists() or not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Asset file missing')
+    kind = str(asset.get('kind') or '').lower()
+    mime = str(asset.get('mime_type') or '').lower()
+    if kind == 'image' or mime.startswith('image/'):
+        return FileResponse(str(path), media_type=asset.get('mime_type') or _guess_media_mime(path) or 'image/jpeg')
+    if kind not in {'video', 'assembly'} and not mime.startswith('video/'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Asset thumbnail is supported for image/video only')
+    thumb_path = _asset_thumb_cache_path(asset_id, path)
+    if (not thumb_path.exists()) or thumb_path.stat().st_size <= 0 or thumb_path.stat().st_mtime < path.stat().st_mtime:
+        _create_asset_video_thumb(path, thumb_path)
+    return FileResponse(str(thumb_path), media_type='image/jpeg', filename=f'{asset_id}_thumb.jpg')
+
 @router.get('/{asset_id}')
 def read_asset_meta(asset_id: str, user: dict = Depends(get_current_user)):
     db = store.get_db()

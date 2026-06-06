@@ -3730,13 +3730,13 @@ def _ava_stage610d_dynamic_corner_filter():
     return (
         "[1:v]format=rgba,split=4[wm0][wm1][wm2][wm3];"
         "[0:v][wm0]overlay=main_w-overlay_w-18:18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,0\\,4)'[v1];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,0\\,2)'[v1];"
         "[v1][wm1]overlay=18:18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,4\\,8)'[v2];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,2\\,4)'[v2];"
         "[v2][wm2]overlay=18:main_h-overlay_h-18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,8\\,12)'[v3];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,4\\,6)'[v3];"
         "[v3][wm3]overlay=main_w-overlay_w-18:main_h-overlay_h-18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,12\\,16)'[v]"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,6\\,8)'[v]"
     )
 
 
@@ -3827,10 +3827,10 @@ def _ava_stage610e_png_pos_expr(position):
 def _ava_stage610e_corners_filter():
     return (
         "[1:v]format=rgba,split=4[wm0][wm1][wm2][wm3];"
-        "[0:v][wm0]overlay=main_w-overlay_w-18:18:format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,0\\,4)'[v1];"
-        "[v1][wm1]overlay=18:18:format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,4\\,8)'[v2];"
-        "[v2][wm2]overlay=18:main_h-overlay_h-18:format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,8\\,12)'[v3];"
-        "[v3][wm3]overlay=main_w-overlay_w-18:main_h-overlay_h-18:format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,12\\,16)'[v]"
+        "[0:v][wm0]overlay=main_w-overlay_w-18:18:format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,0\\,2)'[v1];"
+        "[v1][wm1]overlay=18:18:format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,2\\,4)'[v2];"
+        "[v2][wm2]overlay=18:main_h-overlay_h-18:format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,4\\,6)'[v3];"
+        "[v3][wm3]overlay=main_w-overlay_w-18:main_h-overlay_h-18:format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,6\\,8)'[v]"
     )
 
 
@@ -3894,12 +3894,13 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
 
 # ---------------------------------------------------------------------
 # Stage 6.11 — Board Assembly high quality default.
+# AVA_ASSEMBLY_AUDIO_WATERMARK_FAST_EXPORT_V4: use fast-enough preset for 5-10 scene montage tests.
 # Assembly now uses CRF 15 + preset fast for normalization and watermark burn-in.
 # This is cleaner than CRF 18/veryfast, without going into huge lossless files.
 # ---------------------------------------------------------------------
 
-AVA_BOARD_ASSEMBLY_CRF = "15"
-AVA_BOARD_ASSEMBLY_PRESET = "fast"
+AVA_BOARD_ASSEMBLY_CRF = "18"
+AVA_BOARD_ASSEMBLY_PRESET = "veryfast"
 
 
 def _normalize_assembly_clip(
@@ -4069,17 +4070,18 @@ def _ava_stage612b_png_pos_expr(position):
 
 
 def _ava_stage612b_corners_filter():
+    # AVA_ASSEMBLY_DYNAMIC_WATERMARK_BURNIN_V4: move watermark every 2 sec across corners.
     # Final label [v] is always yuv420p to keep MP4 playable everywhere.
     return (
         "[1:v]format=rgba,split=4[wm0][wm1][wm2][wm3];"
         "[0:v][wm0]overlay=main_w-overlay_w-18:18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\,16)\,0\,4)'[v1];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\,8)\,0\,2)'[v1];"
         "[v1][wm1]overlay=18:18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\,16)\,4\,8)'[v2];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\,8)\,2\,4)'[v2];"
         "[v2][wm2]overlay=18:main_h-overlay_h-18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\,16)\,8\,12)'[v3];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\,8)\,4\,6)'[v3];"
         "[v3][wm3]overlay=main_w-overlay_w-18:main_h-overlay_h-18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\,16)\,12\,16)'[ov];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\,8)\,6\,8)'[ov];"
         "[ov]format=yuv420p[v]"
     )
 
@@ -4199,6 +4201,7 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
 
 # ---------------------------------------------------------------------
 # Stage 6.12C — compatible MP4 with better color/quality.
+# AVA_ASSEMBLY_AUDIO_WATERMARK_FAST_EXPORT_V4: final override keeps audio/watermark burn-in faster for 5-10 scene edits.
 # Fixes the playable-yuv420p output while reducing color/quality loss:
 # - keep yuv420p for browser/player compatibility;
 # - use much cleaner CRF 12 for assembly/watermark re-encodes;
@@ -4207,8 +4210,8 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
 # - keep dynamic watermark mode.
 # ---------------------------------------------------------------------
 
-AVA_BOARD_ASSEMBLY_CRF = "12"
-AVA_BOARD_ASSEMBLY_PRESET = "fast"
+AVA_BOARD_ASSEMBLY_CRF = "18"
+AVA_BOARD_ASSEMBLY_PRESET = "veryfast"
 
 
 def _ava_stage612c_color_args():
@@ -4224,10 +4227,9 @@ def _ava_stage612c_video_args():
     return [
         "-c:v", "libx264",
         "-preset", globals().get("AVA_BOARD_ASSEMBLY_PRESET", "fast"),
-        "-crf", globals().get("AVA_BOARD_ASSEMBLY_CRF", "12"),
+        "-crf", globals().get("AVA_BOARD_ASSEMBLY_CRF", "18"),
         "-profile:v", "high",
         "-pix_fmt", "yuv420p",
-        "-tune", "film",
         *_ava_stage612c_color_args(),
     ]
 
@@ -4254,7 +4256,7 @@ def _normalize_assembly_clip(
     # duration returned by each generated MP4. If a generated clip is shorter,
     # freeze its last frame; if longer, trim it. This prevents cumulative drift.
     vf = (
-        f"scale={width}:{height}:flags=lanczos:force_original_aspect_ratio=decrease,"
+        f"scale={width}:{height}:flags=fast_bilinear:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
         f"setsar=1,"
         f"tpad=stop_mode=clone:stop_duration={target_duration:.6f},"
@@ -4309,9 +4311,9 @@ def _normalize_assembly_clip(
         "timelineLockApplied": True,
         "sceneAudioVolumeApplied": max(0.0, float(audio_volume)),
         "hadAudio": has_audio,
-        "qualityCrf": globals().get("AVA_BOARD_ASSEMBLY_CRF", "12"),
+        "qualityCrf": globals().get("AVA_BOARD_ASSEMBLY_CRF", "18"),
         "qualityPreset": globals().get("AVA_BOARD_ASSEMBLY_PRESET", "fast"),
-        "qualityColor": "bt709_yuv420p_lanczos",
+        "qualityColor": "bt709_yuv420p_fast_bilinear",
     }
 
 
@@ -4338,13 +4340,13 @@ def _ava_stage612c_corners_filter():
     return (
         "[1:v]format=rgba,split=4[wm0][wm1][wm2][wm3];"
         "[0:v][wm0]overlay=main_w-overlay_w-18:18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,0\\,4)'[v1];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,0\\,2)'[v1];"
         "[v1][wm1]overlay=18:18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,4\\,8)'[v2];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,2\\,4)'[v2];"
         "[v2][wm2]overlay=18:main_h-overlay_h-18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,8\\,12)'[v3];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,4\\,6)'[v3];"
         "[v3][wm3]overlay=main_w-overlay_w-18:main_h-overlay_h-18:"
-        "format=auto:eof_action=repeat:enable='between(mod(t\\,16)\\,12\\,16)'[ov];"
+        "format=auto:eof_action=repeat:enable='between(mod(t\\,8)\\,6\\,8)'[ov];"
         "[ov]format=yuv420p[v]"
     )
 
@@ -4438,3 +4440,121 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
             pass
 
 
+
+# ---------------------------------------------------------------------
+# Stage 6.13 — Assembly performance + browser preview cleanup.
+# AVA_ASSEMBLY_FAST_PREVIEW_POLLER_V5:
+# - speed up montage re-encodes for local testing;
+# - use one drawtext pass for dynamic watermark instead of 4 PNG overlays;
+# - always write +faststart for playable browser preview.
+# ---------------------------------------------------------------------
+
+AVA_BOARD_ASSEMBLY_CRF = "22"
+AVA_BOARD_ASSEMBLY_PRESET = "superfast"
+
+
+def _ava_stage613_escape_drawtext(value: Any) -> str:
+    text = str(value or "").replace("\\", "\\\\")
+    text = text.replace("\n", " ").replace("\r", " ")
+    text = text.replace(":", "\\:")
+    text = text.replace("'", "\\'")
+    text = text.replace("%", "\\%")
+    text = text.replace("[", "\\[").replace("]", "\\]")
+    return text
+
+
+def _ava_stage613_font_arg() -> str:
+    for candidate in [
+        Path("C:/Windows/Fonts/arialbd.ttf"),
+        Path("C:/Windows/Fonts/arial.ttf"),
+        Path("C:/Windows/Fonts/segoeuib.ttf"),
+        Path("C:/Windows/Fonts/segoeui.ttf"),
+    ]:
+        try:
+            if candidate.exists():
+                value = str(candidate).replace("\\", "/").replace(":", "\\:")
+                return f"fontfile='{value}':"
+        except Exception:
+            pass
+    return ""
+
+
+def _ava_stage613_static_drawtext_position(position: str) -> tuple[str, str]:
+    pos = str(position or "top_right").lower()
+    mx = 18
+    my = 18
+    if pos == "bottom_left":
+        return str(mx), f"h-th-{my}"
+    if pos == "top_left":
+        return str(mx), str(my)
+    if pos == "bottom_right":
+        return f"w-tw-{mx}", f"h-th-{my}"
+    if pos == "top_center":
+        return "(w-tw)/2", str(my)
+    if pos == "bottom_center":
+        return "(w-tw)/2", f"h-th-{my}"
+    return f"w-tw-{mx}", str(my)
+
+
+def _ava_stage613_dynamic_drawtext_position() -> tuple[str, str]:
+    # 0-2 top-right, 2-4 top-left, 4-6 bottom-left, 6-8 bottom-right, repeat.
+    # Commas are escaped because this expression is embedded in one ffmpeg filter.
+    x = "if(lt(mod(t\\,8)\\,2)\\,w-tw-18\\,if(lt(mod(t\\,8)\\,4)\\,18\\,if(lt(mod(t\\,8)\\,6)\\,18\\,w-tw-18)))"
+    y = "if(lt(mod(t\\,8)\\,4)\\,18\\,h-th-18)"
+    return x, y
+
+
+def _apply_assembly_watermark(src_path, out_path, watermark):
+    text_raw = str((watermark or {}).get("text") or "").strip()
+    preset = globals().get("AVA_BOARD_ASSEMBLY_PRESET", "superfast")
+    crf = globals().get("AVA_BOARD_ASSEMBLY_CRF", "22")
+
+    if not text_raw:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(src_path),
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-c:v", "copy",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            str(out_path),
+        ])
+        return
+
+    text = _ava_stage613_escape_drawtext(text_raw)
+    size = _assembly_int((watermark or {}).get("size"), 28)
+    opacity = max(0.03, min(1.0, _assembly_float((watermark or {}).get("opacity"), 0.35)))
+    motion = str((watermark or {}).get("motion") or "static").lower()
+    position = str((watermark or {}).get("position") or "top_right")
+    if motion == "corners":
+        x, y = _ava_stage613_dynamic_drawtext_position()
+    else:
+        x, y = _ava_stage613_static_drawtext_position(position)
+    border_opacity = max(0.02, min(0.45, opacity * 0.65))
+    vf = (
+        "drawtext="
+        f"{_ava_stage613_font_arg()}"
+        f"text='{text}':"
+        f"fontsize={size}:"
+        f"fontcolor=white@{opacity:.3f}:"
+        "borderw=2:"
+        f"bordercolor=black@{border_opacity:.3f}:"
+        f"x={x}:y={y},"
+        "format=yuv420p"
+    )
+    _run_ffmpeg([
+        "-y",
+        "-i", str(src_path),
+        "-vf", vf,
+        "-map", "0:v:0",
+        "-map", "0:a?",
+        "-c:v", "libx264",
+        "-preset", preset,
+        "-crf", crf,
+        "-profile:v", "high",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        str(out_path),
+    ])

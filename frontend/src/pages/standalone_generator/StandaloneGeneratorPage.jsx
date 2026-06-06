@@ -1177,14 +1177,17 @@ async function clearGeneratorMediaDb() {
 }
 
 
-function getGeneratorAssemblyVideoDuration(item = {}, fallback = 6) {
+// AVA_ASSEMBLY_GENERATOR_TIMELINE_DURATION_V3:
+// Generator gallery clips should enter Montage with their visible target duration.
+// Older gallery cards may not have duration metadata; Generator default is 3 sec, not 6 sec.
+function getGeneratorAssemblyVideoDuration(item = {}, fallback = 3) {
   const raw = Number(
-    item.durationSec
-    || item.duration_sec
-    || item.targetDurationSec
+    item.targetDurationSec
     || item.target_duration_sec
     || item.trimToDurationSec
     || item.trim_to_duration_sec
+    || item.durationSec
+    || item.duration_sec
     || fallback
   )
   return Number.isFinite(raw) && raw > 0 ? Number(raw.toFixed(3)) : fallback
@@ -1199,7 +1202,7 @@ function buildBoardAssemblyFromGeneratorVideos(items = []) {
   const now = Date.now()
 
   const scenes = safeItems.map((item, index) => {
-    const duration = getGeneratorAssemblyVideoDuration(item, 6)
+    const duration = getGeneratorAssemblyVideoDuration(item, 3)
     const start = Number(cursor.toFixed(3))
     const end = Number((cursor + duration).toFixed(3))
     cursor = end
@@ -1228,6 +1231,9 @@ function buildBoardAssemblyFromGeneratorVideos(items = []) {
       mmaudioVideoUrl: isMmaudio ? item.url : '',
       duration_sec: duration,
       durationSec: duration,
+      target_duration_sec: duration,
+      targetDurationSec: duration,
+      assembly_duration_source: item.durationSec || item.duration_sec || item.targetDurationSec || item.target_duration_sec || item.trimToDurationSec || item.trim_to_duration_sec ? 'generator_gallery_metadata' : 'generator_default_3s',
       start_sec: start,
       start,
       end_sec: end,
@@ -1272,7 +1278,8 @@ function buildBoardAssemblyFromGeneratorVideos(items = []) {
         label: item.label || '',
         route: item.route || '',
         kind: item.kind || '',
-        durationSec: item.durationSec || item.duration_sec || 0,
+        durationSec: getGeneratorAssemblyVideoDuration(item, 3),
+        durationSource: item.durationSec || item.duration_sec || item.targetDurationSec || item.target_duration_sec || item.trimToDurationSec || item.trim_to_duration_sec ? 'generator_gallery_metadata' : 'generator_default_3s',
         createdAt: item.createdAt || '',
       })),
     },
@@ -1363,6 +1370,164 @@ async function saveGeneratorHandoffBoardSnapshot(board = {}, projectId = '') {
   return response.json().catch(() => null)
 }
 
+function assemblyFinalUrlFromSnapshot(snapshot = {}) {
+  const data = snapshot?.data || snapshot?.snapshot?.data || snapshot || {}
+  return normalizeUrl(
+    data.finalVideoUrl || data.final_video_url || data.finalUrl || data.final_url ||
+    data.assemblyUrl || data.assembly_url || data.outputUrl || data.output_url ||
+    data.downloadUrl || data.download_url || data.resultUrl || data.result_url ||
+    data.assemblyApiPath || data.assembly_api_path || data.finalVideoApiPath || data.final_video_api_path ||
+    data.videoApiPath || data.video_api_path || data.videoUrl || data.video_url || ''
+  )
+}
+
+function assemblySceneRefsFromSnapshot(snapshot = {}) {
+  const data = snapshot?.data || snapshot?.snapshot?.data || snapshot || {}
+  const board = data.board || data.boardSnapshot || data.board_snapshot || {}
+  const scenes = (Array.isArray(data.scenes) && data.scenes.length ? data.scenes : null)
+    || (Array.isArray(data.boardScenes) && data.boardScenes.length ? data.boardScenes : null)
+    || (Array.isArray(data.board_scenes) && data.board_scenes.length ? data.board_scenes : null)
+    || (Array.isArray(board.scenes) ? board.scenes : [])
+  return scenes.map((scene) => generatorComparableRef(
+    scene?.mmaudioVideoApiPath,
+    scene?.mmaudio_video_api_path,
+    scene?.videoApiPath,
+    scene?.video_api_path,
+    scene?.url,
+    scene?.videoUrl,
+    scene?.video_url,
+    scene?.apiPath,
+    scene?.api_path,
+    scene?.assetId,
+    scene?.asset_id,
+    scene?.id,
+    scene?.scene_id,
+  )).filter(Boolean)
+}
+
+function sameAssemblySceneRefs(left = [], right = []) {
+  if (!left.length || !right.length || left.length !== right.length) return false
+  return left.every((item, index) => item === right[index])
+}
+
+async function fetchExistingBoardAssemblySnapshot(projectId = '') {
+  const safeProjectId = String(projectId || '').trim()
+  const endpoint = safeProjectId ? `${API_BASE}/projects/${safeProjectId}/snapshots/board_assembly` : `${API_BASE}/workspace/snapshots/board_assembly`
+  try {
+    const response = await fetch(endpoint, { headers: authHeaders() })
+    if (!response.ok) return null
+    const data = await response.json().catch(() => null)
+    return data?.snapshot?.data || data?.data || data?.snapshot || data || null
+  } catch {
+    return null
+  }
+}
+
+async function saveGeneratorHandoffAssemblySnapshot(board = {}, projectId = '') {
+  // AVA_ASSEMBLY_SOURCE_OF_TRUTH_V6:
+  // Generator → Montage handoff writes board_assembly immediately, so another
+  // computer opens the same scene list without relying on browser localStorage.
+  // AVA_ASSEMBLY_FINAL_RESULT_TRANSFER_V7:
+  // Do not wipe an already completed montage result when re-entering montage from Generator
+  // with the same clip list. Only mark the old MP4 dirty when the clip refs changed.
+  const scenes = Array.isArray(board?.scenes) ? board.scenes : []
+  const existingAssembly = await fetchExistingBoardAssemblySnapshot(projectId)
+  const existingFinalUrl = assemblyFinalUrlFromSnapshot(existingAssembly || {})
+  const currentRefs = assemblySceneRefsFromSnapshot({ scenes })
+  const existingRefs = assemblySceneRefsFromSnapshot(existingAssembly || {})
+  const preserveExistingFinal = Boolean(existingFinalUrl && sameAssemblySceneRefs(currentRefs, existingRefs))
+  const snapshot = {
+    stage: 'board_assembly',
+    source: 'standalone_generator_handoff',
+    schema: 'ava_board_assembly_snapshot_v2',
+    reason: 'generator_handoff_source_of_truth_v6',
+    projectId: projectId || '',
+    updatedAt: new Date().toISOString(),
+    board,
+    boardSnapshot: board,
+    board_snapshot: board,
+    boardVersion: board?.boardVersion || board?.board_version || '',
+    board_version: board?.board_version || board?.boardVersion || '',
+    boardSource: board?.source || 'standalone_generator',
+    board_source: board?.source || 'standalone_generator',
+    sourceNodeId: board?.sourceNodeId || board?.source_node_id || 'standalone_generator',
+    source_node_id: board?.source_node_id || board?.sourceNodeId || 'standalone_generator',
+    generatorHandoff: board?.generatorHandoff || null,
+    generator_handoff: board?.generatorHandoff || null,
+    boardAudio: board?.audio || null,
+    board_audio: board?.audio || null,
+    audio: board?.audio || null,
+    scenes,
+    boardScenes: scenes,
+    board_scenes: scenes,
+    items: scenes.map((scene, index) => ({
+      id: scene.id || scene.scene_id || `generator_scene_${index + 1}`,
+      scene_id: scene.scene_id || scene.id || `generator_scene_${index + 1}`,
+      title: scene.title || scene.text || `Видео ${index + 1}`,
+      route: scene.route || 'i2v',
+      start: scene.start ?? scene.start_sec ?? 0,
+      start_sec: scene.start_sec ?? scene.start ?? 0,
+      end: scene.end ?? scene.end_sec ?? 0,
+      end_sec: scene.end_sec ?? scene.end ?? 0,
+      duration: scene.durationSec ?? scene.duration_sec ?? 0,
+      duration_sec: scene.duration_sec ?? scene.durationSec ?? 0,
+      videoUrl: scene.videoUrl || scene.video_url || '',
+      video_url: scene.video_url || scene.videoUrl || '',
+      videoApiPath: scene.videoApiPath || scene.video_api_path || '',
+      video_api_path: scene.video_api_path || scene.videoApiPath || '',
+      hasVideo: Boolean(scene.videoApiPath || scene.video_api_path || scene.videoUrl || scene.video_url),
+      hasMmaudio: Boolean(scene.mmaudioVideoApiPath || scene.mmaudio_video_api_path || scene.mmaudioVideoUrl || scene.mmaudio_video_url),
+      raw: scene,
+    })),
+    audioMode: 'scene_only',
+    audio_mode: 'scene_only',
+    preferMmaudio: true,
+    prefer_mmaudio: true,
+    skipMissing: false,
+    skip_missing: false,
+    originalVolume: 0,
+    sceneVolume: 100,
+    musicVolume: 15,
+    musicLoop: true,
+    musicFadeOut: true,
+    watermarkDefaultVersion: 'wm_defaults_v2_ava_studio_top_right_corners_35_28',
+    watermark: { enabled: true, text: 'ava studio', position: 'top_right', opacityPercent: 35, size: 28, motion: 'corners' },
+    selectedSceneId: scenes[0]?.id || scenes[0]?.scene_id || '',
+    finalVideoUrl: preserveExistingFinal ? existingFinalUrl : '',
+    final_video_url: preserveExistingFinal ? existingFinalUrl : '',
+    finalUrl: preserveExistingFinal ? existingFinalUrl : '',
+    final_url: preserveExistingFinal ? existingFinalUrl : '',
+    assemblyUrl: preserveExistingFinal ? existingFinalUrl : '',
+    assembly_url: preserveExistingFinal ? existingFinalUrl : '',
+    outputUrl: preserveExistingFinal ? existingFinalUrl : '',
+    output_url: preserveExistingFinal ? existingFinalUrl : '',
+    downloadUrl: preserveExistingFinal ? existingFinalUrl : '',
+    download_url: preserveExistingFinal ? existingFinalUrl : '',
+    resultUrl: preserveExistingFinal ? existingFinalUrl : '',
+    result_url: preserveExistingFinal ? existingFinalUrl : '',
+    finalDirty: Boolean(existingFinalUrl && !preserveExistingFinal),
+    final_dirty: Boolean(existingFinalUrl && !preserveExistingFinal),
+    assemblyJob: preserveExistingFinal ? null : (existingAssembly?.assemblyJob || existingAssembly?.job || null),
+    job: preserveExistingFinal ? null : (existingAssembly?.assemblyJob || existingAssembly?.job || null),
+  }
+  const safeProjectId = String(projectId || '').trim()
+  const endpoint = safeProjectId ? `${API_BASE}/projects/${safeProjectId}/snapshots/board_assembly` : `${API_BASE}/workspace/snapshots/board_assembly`
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      data: snapshot,
+      client_version: 'generator-to-board-assembly-v6',
+      guard_mode: 'replace',
+    }),
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(text || `board_assembly snapshot save failed ${response.status}`)
+  }
+  return response.json().catch(() => null)
+}
+
 function generatorAssetIdFromRef(...values) {
   for (const value of values) {
     const raw = String(value || '').trim()
@@ -1377,6 +1542,24 @@ function generatorAssetIdFromRef(...values) {
 function generatorAssetApiPath(assetId = '') {
   const safeAssetId = String(assetId || '').trim()
   return safeAssetId ? `/assets/${safeAssetId}/file` : ''
+}
+
+
+function generatorAssetThumbApiPath(assetId = '') {
+  const safeAssetId = String(assetId || '').trim()
+  return safeAssetId ? `/assets/${safeAssetId}/thumb` : ''
+}
+
+async function fetchGeneratorAssetThumbBlobUrl(value = '') {
+  // AVA_GENERATOR_HISTORY_THUMBNAILS_V12B:
+  // History cards must fetch a tiny protected thumbnail, not the full MP4.
+  const assetId = generatorAssetIdFromRef(value)
+  const thumbApiPath = generatorAssetThumbApiPath(assetId)
+  if (!thumbApiPath) return ''
+  const response = await fetch(`${API_BASE}${thumbApiPath}`, { headers: authHeaders() })
+  if (!response.ok) throw new Error(`asset thumb failed: ${response.status}`)
+  const blob = await response.blob()
+  return URL.createObjectURL(blob)
 }
 
 function generatorCanonicalApiPath(...values) {
@@ -1513,8 +1696,36 @@ export default function StandaloneGeneratorPage() {
   const [busy, setBusy] = useState(false)
   const [rawResponse, setRawResponse] = useState(null)
   const [generatedVideos, setGeneratedVideos] = useState(() => (routeProjectId ? [] : readGeneratorGalleryDraft()))
+  const [generatorSnapshotLoading, setGeneratorSnapshotLoading] = useState(() => Boolean(routeProjectId))
   const generatorPreviewObjectUrlsRef = useRef({})
   const [generatorAssetPreviewMap, setGeneratorAssetPreviewMap] = useState({})
+  const generatorHistoryThumbObjectUrlsRef = useRef({})
+  const [generatorHistoryThumbPreviewMap, setGeneratorHistoryThumbPreviewMap] = useState({})
+
+  const ensureGeneratorHistoryThumbPreview = useCallback((value = '') => {
+    const canonical = generatorCanonicalApiPath(value) || String(value || '').trim()
+    if (!canonical || !isGeneratorAssetFileRef(canonical)) return
+    if (generatorHistoryThumbObjectUrlsRef.current[canonical]) return
+    fetchGeneratorAssetThumbBlobUrl(canonical)
+      .then((objectUrl) => {
+        if (!objectUrl) return
+        generatorHistoryThumbObjectUrlsRef.current[canonical] = objectUrl
+        setGeneratorHistoryThumbPreviewMap((old) => ({ ...old, [canonical]: objectUrl }))
+      })
+      .catch((error) => {
+        console.warn('[GENERATOR HISTORY THUMB FAILED V12B]', { ref: canonical, error: error?.message || error })
+      })
+  }, [])
+
+  useEffect(() => () => {
+    Object.values(generatorHistoryThumbObjectUrlsRef.current || {}).forEach((url) => {
+      if (String(url || '').startsWith('blob:')) {
+        try { URL.revokeObjectURL(url) } catch {}
+      }
+    })
+    generatorHistoryThumbObjectUrlsRef.current = {}
+  }, [])
+
 
   const ensureGeneratorAssetPreview = useCallback((value = '') => {
     const canonical = generatorCanonicalApiPath(value) || String(value || '').trim()
@@ -1653,10 +1864,12 @@ export default function StandaloneGeneratorPage() {
   useEffect(() => {
     let cancelled = false
     generatorSnapshotHydratedRef.current = false
+    setGeneratorSnapshotLoading(Boolean(routeProjectId))
 
     async function restoreProjectGeneratorSnapshot() {
       if (!routeProjectId) {
         generatorSnapshotHydratedRef.current = true
+        setGeneratorSnapshotLoading(false)
         return
       }
       try {
@@ -1778,7 +1991,10 @@ export default function StandaloneGeneratorPage() {
       } catch (error) {
         console.warn('[GENERATOR PROJECT SNAPSHOT RESTORE FAILED]', error)
       } finally {
-        if (!cancelled) generatorSnapshotHydratedRef.current = true
+        if (!cancelled) {
+          generatorSnapshotHydratedRef.current = true
+          setGeneratorSnapshotLoading(false)
+        }
       }
     }
 
@@ -1892,16 +2108,17 @@ export default function StandaloneGeneratorPage() {
     ensureGeneratorAssetPreview(displayedResultUrl)
   }, [displayedResultUrl, displayedResultIsProtectedAsset, ensureGeneratorAssetPreview])
 
-
-  // AVA_GENERATOR_INPUT_THUMB_SMALL_SPINNER_V7:
-  // Start/End restored input thumbnails show only a compact spinner in the preview area;
-  // the text stays in the card metadata so the thumb does not render huge loading letters.
+  // AVA_GENERATOR_RESTORE_SMALL_INPUT_SPINNER_V3B:
+  // Assembly timeline patch v3 touched this file and accidentally brought back the
+  // large history loader text inside Start/End input thumbnails. Keep only the compact spinner.
 
   const generatorHistoryPreviewNode = useCallback((item = {}) => {
     const kind = String(item?.kind || '').toLowerCase() === 'image' ? 'image' : 'video'
-    const sourceRef = item?.url || item?.apiPath || item?.api_path || item?.videoUrl || item?.imageUrl || ''
-    const protectedAsset = !!sourceRef && isGeneratorAssetFileRef(sourceRef)
-    const previewUrl = protectedAsset ? generatorAssetBlobPreviewUrl(sourceRef) : generatorPreviewUrl(sourceRef)
+    const sourceRef = item?.apiPath || item?.api_path || item?.url || item?.videoUrl || item?.imageUrl || ''
+    const canonical = generatorCanonicalApiPath(sourceRef) || String(sourceRef || '').trim()
+    const previewUrl = kind === 'image'
+      ? generatorPreviewUrl(sourceRef)
+      : (generatorHistoryThumbPreviewMap[canonical] || '')
     if (!previewUrl) {
       return (
         <span
@@ -1921,28 +2138,35 @@ export default function StandaloneGeneratorPage() {
           }}
         >
           <i className="avaGeneratorMmaudioHeaderSpinner" aria-hidden="true" />
-          <span>{kind === 'image' ? 'Загрузка фото…' : 'Загрузка видео…'}</span>
+          <span>{kind === 'image' ? 'Загрузка фото…' : 'Кадр видео…'}</span>
         </span>
       )
     }
-    if (kind === 'image') {
-      return <img src={previewUrl} alt={item?.label || item?.title || 'result'} />
-    }
-    return <video src={previewUrl} muted playsInline preload="metadata" />
-  }, [generatorAssetBlobPreviewUrl, generatorPreviewUrl])
+    return <img src={previewUrl} alt={item?.label || item?.title || 'result'} />
+  }, [generatorPreviewUrl, generatorHistoryThumbPreviewMap])
 
   useEffect(() => {
-    // AVA_GENERATOR_HISTORY_AUTH_THUMBS_V6:
-    // Protected video assets need authenticated blob URLs even in the feed.
-    // Keep the v4/v5 performance fix by warming only visible gallery items, not
-    // every old result source from localStorage.
-    visibleHistoryItems
-      .slice(-GENERATOR_GALLERY_LIMIT)
-      .forEach((item) => {
-        const ref = item?.url || item?.apiPath || item?.api_path || item?.videoUrl || item?.imageUrl || ''
-        if (ref && isGeneratorAssetFileRef(ref)) ensureGeneratorAssetPreview(ref)
-      })
-  }, [visibleHistoryItems, ensureGeneratorAssetPreview])
+    // AVA_GENERATOR_HISTORY_THUMBNAILS_V12B: warm only tiny history thumbnails.
+    visibleHistoryItems.forEach((item) => {
+      const kind = String(item?.kind || '').toLowerCase() === 'image' ? 'image' : 'video'
+      if (kind === 'image') return
+      const sourceRef = item?.apiPath || item?.api_path || item?.url || item?.videoUrl || ''
+      if (sourceRef && isGeneratorAssetFileRef(sourceRef)) ensureGeneratorHistoryThumbPreview(sourceRef)
+    })
+  }, [visibleHistoryItems, ensureGeneratorHistoryThumbPreview])
+
+  useEffect(() => {
+    // AVA_GENERATOR_HISTORY_AUTH_THUMBS_V6B:
+    // Do not download every protected video as a blob during page restore. That made
+    // Generator look empty/slow on F5. Warm the latest/current result first; the feed
+    // can lazily prepare previews as the user clicks or the browser streams direct URLs.
+    const warmRefs = [displayedResultUrl, latestGalleryItem?.url, latestGalleryItem?.apiPath, latestGalleryItem?.api_path]
+      .filter(Boolean)
+      .slice(0, 3)
+    warmRefs.forEach((ref) => {
+      if (isGeneratorAssetFileRef(ref)) ensureGeneratorAssetPreview(ref)
+    })
+  }, [displayedResultUrl, latestGalleryItem, ensureGeneratorAssetPreview])
 
   useEffect(() => {
     // AVA_GENERATOR_DIRECT_ASSET_PREVIEW_V4:
@@ -2470,6 +2694,7 @@ export default function StandaloneGeneratorPage() {
     try {
       clearBoardAssemblyStorageForGeneratorHandoff()
       await saveGeneratorHandoffBoardSnapshot(boardSnapshot, routeProjectId)
+      await saveGeneratorHandoffAssemblySnapshot(boardSnapshot, routeProjectId)
       setMontageConfirmOpen(false)
 
       rememberWorkflowEntry(makeWorkflowEntry({
@@ -3894,7 +4119,13 @@ export default function StandaloneGeneratorPage() {
 
             <div className="avaGeneratorResultCol">
               <div className="avaGeneratorCanvas">
-                {busy ? (
+                {generatorSnapshotLoading ? (
+                  <div className="avaGeneratorCanvasState isBusy">
+                    <div className="avaGeneratorSpinner" />
+                    <strong>Загружаем проект</strong>
+                    <span>Восстанавливаем ленту, медиа и активные задачи из project snapshot.</span>
+                  </div>
+                ) : busy ? (
                   <div className="avaGeneratorCanvasState isBusy">
                     <div className="avaGeneratorSpinner" />
                     <strong>Идёт генерация</strong>
@@ -4003,7 +4234,21 @@ export default function StandaloneGeneratorPage() {
         </div>
       ) : null}
     
-      {generatedVideos.length ? (
+      {generatorSnapshotLoading && !generatedVideos.length ? (
+        <section className="avaGeneratorHistoryPanel">
+          <div className="avaGeneratorHistoryHeader">
+            <div>
+              <p>RECENT RESULTS</p>
+              <h2>Загружаем ленту проекта…</h2>
+            </div>
+          </div>
+          <div className="avaGeneratorCanvasState isBusy" style={{ minHeight: 120 }}>
+            <div className="avaGeneratorSpinner" />
+            <strong>Синхронизируем gallery</strong>
+            <span>Берём результаты из backend project snapshot, не из localStorage.</span>
+          </div>
+        </section>
+      ) : generatedVideos.length ? (
 <section className="avaGeneratorHistoryPanel">
           <div className="avaGeneratorHistoryHeader">
             <div>

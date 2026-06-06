@@ -24,7 +24,7 @@ import {
 import { useProjects } from '../context/ProjectContext.jsx'
 import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, normalizeAssetFileUrl, normalizeStaticMediaUrl, registerStaticMediaAsset, uploadMediaAsset } from '../services/apiClient.js'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
-import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, readWorkflowEntry } from '../utils/workflowNavigation.js'
+import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, readWorkflowEntry, makeWorkflowEntry, rememberWorkflowEntry } from '../utils/workflowNavigation.js'
 import '../styles/ava-board.css'
 
 const STAGE = 'board'
@@ -1374,6 +1374,14 @@ function videoButtonState(scene) {
 
 
 function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
+  const [imageLoading, setImageLoading] = useState(Boolean(value))
+  const [imageFailed, setImageFailed] = useState(false)
+
+  useEffect(() => {
+    setImageFailed(false)
+    setImageLoading(Boolean(value))
+  }, [value])
+
   return (
     <div className="avaBoardImageSlot">
       <div className="avaBoardImageSlotHeader">
@@ -1383,8 +1391,31 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
         </div>
         {name && <small>{name}</small>}
       </div>
-      <div className="avaBoardImagePreview">
-        {value ? <img src={value} alt={title} /> : <div><ImageIcon size={30} /><span>Нет изображения</span></div>}
+      <div className={`avaBoardImagePreview ${imageLoading ? 'isLoadingMedia' : ''} ${imageFailed ? 'isMissingMedia' : ''}`}>
+        {value ? (
+          <>
+            {!imageFailed ? (
+              <img
+                src={value}
+                alt={title}
+                onLoad={() => setImageLoading(false)}
+                onError={() => { setImageLoading(false); setImageFailed(true) }}
+              />
+            ) : null}
+            {imageLoading ? (
+              <div className="avaMediaLoadingOverlay">
+                <RefreshCcw className="avaMediaSpinIcon" size={30} />
+                <span>Загружаем фото…</span>
+              </div>
+            ) : null}
+            {imageFailed ? (
+              <div className="avaMediaLoadingOverlay isMissing">
+                <ImageIcon size={30} />
+                <span>Фото не найдено</span>
+              </div>
+            ) : null}
+          </>
+        ) : <div><ImageIcon size={30} /><span>Нет изображения</span></div>}
       </div>
       <div className="avaBoardSlotActions">
         <label className="avaBoardSmallButton">
@@ -1395,6 +1426,121 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
       </div>
     </div>
   )
+}
+
+
+function boardAssemblyVideoRef(scene = {}) {
+  return String(
+    scene.mmaudio_video_api_path || scene.mmaudioVideoApiPath ||
+    scene.video_api_path || scene.videoApiPath ||
+    scene.mmaudio_video_url || scene.mmaudioVideoUrl ||
+    scene.video_url || scene.videoUrl || ''
+  ).trim()
+}
+
+function buildBoardAssemblySnapshotFromBoard(board = {}, { projectId = '', source = 'board_to_assembly_confirmed' } = {}) {
+  const now = new Date().toISOString()
+  const scenes = asSceneArray(board.scenes).map((scene, index) => {
+    const start = toNumber(scene.start_sec ?? scene.start, 0)
+    const duration = durationOf(scene)
+    const end = toNumber(scene.end_sec ?? scene.end, start + duration)
+    const hue = scene.sceneColor ?? scene.scene_color ?? scene.blockHue ?? scene.block_hue ?? scene.color ?? scene.hue ?? ''
+    return canonicalizeBoardSceneMediaRefs({
+      ...scene,
+      id: scene.id || scene.scene_id || `seg_${String(index + 1).padStart(2, '0')}`,
+      scene_id: scene.scene_id || scene.id || `seg_${String(index + 1).padStart(2, '0')}`,
+      index,
+      start,
+      start_sec: start,
+      end,
+      end_sec: end,
+      duration_sec: duration,
+      durationSec: duration,
+      sceneColor: hue,
+      scene_color: hue,
+      blockId: scene.blockId ?? scene.block_id ?? '',
+      block_id: scene.block_id ?? scene.blockId ?? '',
+      blockTitle: scene.blockTitle ?? scene.block_title ?? '',
+      block_title: scene.block_title ?? scene.blockTitle ?? '',
+    })
+  })
+  const items = scenes.map((scene, index) => {
+    const start = toNumber(scene.start_sec ?? scene.start, 0)
+    const duration = durationOf(scene)
+    const end = toNumber(scene.end_sec ?? scene.end, start + duration)
+    const videoRef = boardAssemblyVideoRef(scene)
+    return {
+      id: scene.id || scene.scene_id || `seg_${String(index + 1).padStart(2, '0')}`,
+      scene_id: scene.scene_id || scene.id || `seg_${String(index + 1).padStart(2, '0')}`,
+      sceneId: scene.scene_id || scene.id || `seg_${String(index + 1).padStart(2, '0')}`,
+      title: scene.title || scene.id || scene.scene_id || `Сцена ${index + 1}`,
+      route: scene.route || 'i2v',
+      start_sec: start,
+      start,
+      end_sec: end,
+      end,
+      duration_sec: duration,
+      durationSec: duration,
+      video_url: scene.video_url || scene.videoUrl || scene.mmaudio_video_url || scene.mmaudioVideoUrl || videoRef,
+      videoUrl: scene.videoUrl || scene.video_url || scene.mmaudioVideoUrl || scene.mmaudio_video_url || videoRef,
+      video_api_path: scene.video_api_path || scene.videoApiPath || scene.mmaudio_video_api_path || scene.mmaudioVideoApiPath || '',
+      videoApiPath: scene.videoApiPath || scene.video_api_path || scene.mmaudioVideoApiPath || scene.mmaudio_video_api_path || '',
+      hasVideo: Boolean(videoRef),
+      has_video: Boolean(videoRef),
+      hasSound: Boolean(scene.mmaudio_video_api_path || scene.mmaudioVideoApiPath || scene.mmaudio_video_url || scene.mmaudioVideoUrl || scene.has_sound || scene.hasSound),
+      has_sound: Boolean(scene.mmaudio_video_api_path || scene.mmaudioVideoApiPath || scene.mmaudio_video_url || scene.mmaudioVideoUrl || scene.has_sound || scene.hasSound),
+      blockId: scene.blockId ?? scene.block_id ?? '',
+      block_id: scene.block_id ?? scene.blockId ?? '',
+      blockTitle: scene.blockTitle ?? scene.block_title ?? '',
+      block_title: scene.block_title ?? scene.blockTitle ?? '',
+      sceneColor: scene.sceneColor ?? scene.scene_color ?? scene.blockHue ?? scene.block_hue ?? scene.color ?? scene.hue ?? '',
+      scene_color: scene.scene_color ?? scene.sceneColor ?? scene.block_hue ?? scene.blockHue ?? scene.color ?? scene.hue ?? '',
+      raw: scene,
+    }
+  })
+  const audio = board.audio || board.sourceAudio || board.timingAudio || board.originalAudio || null
+  const selectedSceneId = board.selectedSceneId || scenes[0]?.id || scenes[0]?.scene_id || ''
+  return {
+    stage: 'board_assembly',
+    schema: 'ava_board_assembly_snapshot_v8',
+    source,
+    importedFrom: 'board',
+    projectId: projectId || '',
+    boardVersion: board.boardVersion || board.board_version || BOARD_VERSION,
+    board: { ...board, scenes, audio, selectedSceneId },
+    boardSnapshot: { ...board, scenes, audio, selectedSceneId },
+    scenes,
+    boardScenes: scenes,
+    items,
+    readyItems: items,
+    selectedSceneId,
+    audio,
+    sourceAudio: audio,
+    timingAudio: audio,
+    originalAudio: audio,
+    audioMode: 'original_plus_scene',
+    preferMmaudio: true,
+    skipMissing: false,
+    originalVolume: 100,
+    sceneVolume: 25,
+    musicVolume: 15,
+    watermark: {
+      enabled: true,
+      text: 'ava studio',
+      position: 'top_right',
+      opacityPercent: 35,
+      size: 28,
+      motion: 'corners',
+    },
+    finalVideoUrl: '',
+    finalUrl: '',
+    assemblyUrl: '',
+    outputUrl: '',
+    resultUrl: '',
+    assemblyJob: null,
+    finalDirty: false,
+    updatedAt: now,
+  }
 }
 
 export default function BoardPage() {
@@ -1910,6 +2056,9 @@ export default function BoardPage() {
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('')
   const [boardToasts, setBoardToasts] = useState([])
+  const [assemblyConfirmOpen, setAssemblyConfirmOpen] = useState(false)
+  const [assemblyConfirmBusy, setAssemblyConfirmBusy] = useState(false)
+  const [assemblyConfirmError, setAssemblyConfirmError] = useState('')
   const [saving, setSaving] = useState(false)
   const [playback, setPlayback] = useState(null)
   const [collapsedPanels, setCollapsedPanels] = useState({ translation: false })
@@ -2480,6 +2629,71 @@ export default function BoardPage() {
     const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
     writeAvaGlobalJobs([...jobs, nextJob].slice(-12))
   }
+
+
+  async function confirmBoardToAssemblyHandoff() {
+    if (assemblyConfirmBusy) return
+    const scenes = asSceneArray(board.scenes)
+    if (!scenes.length) {
+      setAssemblyConfirmError('В Доске нет сцен для монтажника.')
+      return
+    }
+    setAssemblyConfirmBusy(true)
+    setAssemblyConfirmError('')
+    try {
+      const currentBoard = {
+        ...board,
+        source: workspaceMode ? (board.source || 'board') : (board.source === 'standalone_board' ? 'project_board' : (board.source || 'project_board')),
+        updatedAt: new Date().toISOString(),
+      }
+      await saveBoard(currentBoard, true)
+      const assemblySnapshot = buildBoardAssemblySnapshotFromBoard(currentBoard, {
+        projectId: projectId || '',
+        source: 'board_to_assembly_confirmed_v8',
+      })
+      if (workspaceMode) {
+        await saveWorkspaceStage('board_assembly', assemblySnapshot)
+      } else {
+        await saveStage(projectId, 'board_assembly', assemblySnapshot, 'replace')
+      }
+      const toPath = projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'
+      const fromPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+      rememberWorkflowEntry(makeWorkflowEntry({
+        from: 'board',
+        to: 'board_assembly',
+        fromPath,
+        toPath,
+        projectId: projectId || '',
+        source: 'board_to_assembly_confirmed_v8',
+      }))
+      try {
+        localStorage.removeItem('ava:board-assembly:cleared:v1')
+        sessionStorage.removeItem('ava:board-assembly:cleared:v1')
+      } catch {}
+      setAssemblyConfirmOpen(false)
+      navigate(toPath, {
+        state: {
+          workflowEntry: makeWorkflowEntry({
+            from: 'board',
+            to: 'board_assembly',
+            fromPath,
+            toPath,
+            projectId: projectId || '',
+            source: 'board_to_assembly_confirmed_v8',
+          }),
+          source: 'board',
+          board: assemblySnapshot.board,
+          forceReplace: true,
+        },
+      })
+    } catch (error) {
+      console.warn('[BOARD TO ASSEMBLY HANDOFF FAILED]', error)
+      setAssemblyConfirmError(`Не удалось перенести в монтажник: ${error?.message || error}`)
+    } finally {
+      setAssemblyConfirmBusy(false)
+    }
+  }
+
 
   async function refreshFromTiming() {
     setStatus('Обновляем сцены из Manual Timing…')
@@ -3738,6 +3952,27 @@ async function importTimingJson(event) {
         </div>
       )}
 
+      {assemblyConfirmOpen && (
+        <div className="avaBoardAssemblyConfirmOverlay" role="presentation" onMouseDown={() => !assemblyConfirmBusy && setAssemblyConfirmOpen(false)}>
+          <div className="avaBoardAssemblyConfirmCard" role="dialog" aria-modal="true" aria-label="Переход в монтажник" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="avaBoardAssemblyConfirmIcon"><Film size={26} /></div>
+            <div className="avaBoardAssemblyConfirmText">
+              <p className="avaEyebrow">Ava Studio pipeline</p>
+              <h3>Перенести Доску в монтажник?</h3>
+              <p>Текущая монтажка будет заменена данными из Доски: сцены, цвета блоков, тайминги, готовые видео, MMAudio и исходное audio из Timing.</p>
+              <span>Если хочешь сохранить старую сборку из Генератора — нажми “Отмена”.</span>
+              {assemblyConfirmError ? <b>{assemblyConfirmError}</b> : null}
+            </div>
+            <div className="avaBoardAssemblyConfirmActions">
+              <button type="button" onClick={() => setAssemblyConfirmOpen(false)} disabled={assemblyConfirmBusy}>Отмена</button>
+              <button type="button" className="isPrimary" onClick={confirmBoardToAssemblyHandoff} disabled={assemblyConfirmBusy || !asSceneArray(board.scenes).length}>
+                {assemblyConfirmBusy ? 'Переносим…' : 'Да, перейти'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <section className="avaBoardHeader">
         <div>
           <p className="avaEyebrow"><Sparkles size={15} /> Stage 5.1 storyboard foundation</p>
@@ -3761,35 +3996,17 @@ async function importTimingJson(event) {
             <RefreshCcw size={15} /> Обновить с тайминга
           </button>
 
-          <Link
+          <button
+            type="button"
             className="avaBoardHeaderLink avaBoardActionMontage"
-            to={projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'}
-            onClick={() => {
-              const toPath = projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'
-              const fromPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
-              try {
-                sessionStorage.setItem('ava:workflow-entry:board_assembly', JSON.stringify({
-                  schema: 'ava_workflow_entry_v1',
-                  from: 'board',
-                  to: 'board_assembly',
-                  fromLabel: 'Доска',
-                  toLabel: 'Монтажник',
-                  fromPath,
-                  toPath,
-                  projectId: projectId || '',
-                  source: 'board_to_assembly_button',
-                  enteredByUserClick: true,
-                  createdAt: Date.now(),
-                }))
-                localStorage.removeItem('ava:board-assembly:cleared:v1')
-                sessionStorage.removeItem('ava:board-assembly:cleared:v1')
-              } catch {
-                // ignore
-              }
+            onClick={(event) => {
+              stopBoardActionEvent(event)
+              setAssemblyConfirmError('')
+              setAssemblyConfirmOpen(true)
             }}
           >
             <Film size={15} /> В монтаж
-          </Link>
+          </button>
 
           <button
             type="button"
