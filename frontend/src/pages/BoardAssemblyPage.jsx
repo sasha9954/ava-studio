@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { ArrowLeft, Clapperboard, Download, Music, RefreshCcw, SlidersHorizontal, UploadCloud, Volume2, Wand2 } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, normalizeAssetFileUrl, registerStaticMediaAsset, uploadAudioAsset } from '../services/apiClient.js'
+import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, getAuthHeaders, normalizeAssetFileUrl, registerStaticMediaAsset, uploadAudioAsset } from '../services/apiClient.js'
 import '../styles/ava-board.css'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
-import { AVA_BOARD_ASSEMBLY_CLEARED_KEY } from '../utils/workflowNavigation.js'
+import { AVA_BOARD_ASSEMBLY_CLEARED_KEY, clearWorkflowEntry, readWorkflowEntry } from '../utils/workflowNavigation.js'
 
 const AUDIO_MODES = [
   {
@@ -319,10 +319,50 @@ function normalizeBoard(raw = {}) {
   return {
     ...board,
     scenes: asArray(board.scenes),
-    audio: board.audio || null,
+    audio: board.audio || raw?.audio || null,
   }
 }
 
+function assemblySnapshotScenes(raw = {}) {
+  return asArray(raw.scenes).length ? asArray(raw.scenes)
+    : asArray(raw.boardScenes).length ? asArray(raw.boardScenes)
+      : asArray(raw.readyItems).length ? asArray(raw.readyItems).map((item) => item.raw || item)
+        : asArray(raw.items).length ? asArray(raw.items).map((item) => item.raw || item)
+          : asArray(raw.board?.scenes).length ? asArray(raw.board.scenes)
+            : asArray(raw.boardSnapshot?.scenes)
+}
+
+function assemblyHasScenes(raw = {}) {
+  return assemblySnapshotScenes(raw).length > 0
+}
+
+function assemblyFinalUrlFromSnapshot(raw = {}) {
+  return normalizePlayableVideoUrl(
+    raw.finalVideoUrl || raw.finalUrl || raw.assemblyUrl || raw.outputUrl || raw.resultUrl || raw.downloadUrl ||
+    raw.videoApiPath || raw.video_api_path || raw.videoUrl || raw.video_url || raw.assemblyApiPath || raw.assembly_api_path || ''
+  )
+}
+
+function boardFromAssemblySnapshot(raw = {}) {
+  const sourceBoard = raw.board || raw.boardSnapshot || raw
+  const scenes = assemblySnapshotScenes(raw)
+  const audio = raw.audio || raw.sourceAudio || raw.timingAudio || raw.originalAudio || sourceBoard.audio || null
+  return normalizeBoard({
+    ...sourceBoard,
+    source: raw.source || sourceBoard.source || 'board_assembly_snapshot',
+    importedFrom: raw.importedFrom || sourceBoard.importedFrom || raw.source || '',
+    scenes,
+    audio,
+    selectedSceneId: raw.selectedSceneId || sourceBoard.selectedSceneId || scenes[0]?.id || scenes[0]?.scene_id || '',
+  })
+}
+
+function assemblyJobIsRunning(job = {}) {
+  if (!job) return false
+  const status = String(job.status || job.state || '').toLowerCase()
+  if (!status) return Boolean(job.jobId || job.job_id)
+  return ['queued', 'preparing', 'running', 'submitting', 'starting'].includes(status)
+}
 
 function isGeneratorAssemblyBoard(board = {}) {
   return Boolean(
@@ -375,9 +415,16 @@ function buildSceneItems(board, preferMmaudio = true) {
 }
 
 export default function BoardAssemblyPage() {
+  // AVA_ASSEMBLY_BOARD_HANDOFF_SOURCE_OF_TRUTH_V8
   const { projectId } = useParams()
+  const location = useLocation()
   const workspaceMode = !projectId
   const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
+  const workflowEntry = useMemo(() => readWorkflowEntry('board_assembly', location.state), [location.state])
+  const entryFromBoard = workflowEntry?.from === 'board'
+  const entryFromGenerator = workflowEntry?.from === 'standalone_generator'
+  const autosaveTimerRef = useRef(null)
+  const resumedAssemblyJobRef = useRef('')
 
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -394,6 +441,8 @@ export default function BoardAssemblyPage() {
   const [musicPreviewUrl, setMusicPreviewUrl] = useState('')
   const [selectedVideoBlobUrl, setSelectedVideoBlobUrl] = useState('')
   const [selectedVideoLoadError, setSelectedVideoLoadError] = useState('')
+  const [selectedPreviewVideoLoading, setSelectedPreviewVideoLoading] = useState(false)
+  const [finalPreviewVideoLoading, setFinalPreviewVideoLoading] = useState(false)
   const [musicUploading, setMusicUploading] = useState(false)
   const [musicLoop, setMusicLoop] = useState(true)
   const [musicFadeOut, setMusicFadeOut] = useState(true)
@@ -507,6 +556,13 @@ export default function BoardAssemblyPage() {
     !selectedVideoBlobUrl &&
     !selectedVideoLoadError
   )
+  useEffect(() => {
+    setSelectedPreviewVideoLoading(Boolean(selectedItemPlayableVideoUrl))
+  }, [selectedItemPlayableVideoUrl])
+
+  useEffect(() => {
+    setFinalPreviewVideoLoading(Boolean(finalVideoUrl && !finalDirty))
+  }, [finalVideoUrl, finalDirty])
   const watermarkPreviewStyle = {
     opacity: Math.max(0.05, Math.min(1, watermarkOpacity / 100)),
     fontSize: `${Math.max(10, Math.round(watermarkSize * 0.42))}px`,
@@ -523,6 +579,123 @@ export default function BoardAssemblyPage() {
     const canAssemble = total > 0 && (ready > 0 || hasOriginalAudio)
     return { total, ready, withSound, missing, duration, hasOriginalAudio, canAssemble }
   }, [sceneItems, board])
+
+
+  function buildAssemblySnapshotForSave({ source = 'board_assembly_autosave_v8', overrides = {} } = {}) {
+    const scenes = asArray(board?.scenes)
+    const items = sceneItems
+      .slice()
+      .sort((a, b) => (a.start - b.start) || (a.index - b.index))
+      .map((item) => ({
+        id: item.id,
+        scene_id: item.id,
+        sceneId: item.id,
+        title: item.title,
+        route: item.route,
+        start_sec: item.start,
+        start: item.start,
+        end_sec: item.end,
+        end: item.end,
+        duration_sec: item.duration,
+        durationSec: item.duration,
+        video_url: item.videoUrl || '',
+        videoUrl: item.videoUrl || '',
+        video_api_path: item.videoApiPath || '',
+        videoApiPath: item.videoApiPath || '',
+        hasVideo: Boolean(item.hasVideo),
+        has_video: Boolean(item.hasVideo),
+        hasSound: Boolean(item.hasSound || item.hasMmaudio),
+        has_sound: Boolean(item.hasSound || item.hasMmaudio),
+        blockLabel: item.blockLabel || '',
+        hue: item.hue,
+        raw: item.raw || {},
+      }))
+    const finalUrl = normalizePlayableVideoUrl(overrides.finalVideoUrl ?? finalVideoUrl)
+    const activeJob = overrides.assemblyJob !== undefined ? overrides.assemblyJob : assemblyJob
+    return {
+      stage: 'board_assembly',
+      schema: 'ava_board_assembly_snapshot_v8',
+      source,
+      projectId: projectId || '',
+      boardVersion: board?.boardVersion || board?.board_version || '',
+      board: board ? { ...board, scenes } : { scenes: [] },
+      boardSnapshot: board ? { ...board, scenes } : { scenes: [] },
+      scenes,
+      boardScenes: scenes,
+      items,
+      readyItems: items,
+      selectedSceneId: overrides.selectedSceneId ?? selectedSceneId,
+      audio: board?.audio || null,
+      sourceAudio: board?.sourceAudio || board?.audio || null,
+      timingAudio: board?.timingAudio || board?.audio || null,
+      originalAudio: board?.originalAudio || board?.audio || null,
+      audioMode: overrides.audioMode ?? audioMode,
+      preferMmaudio: overrides.preferMmaudio ?? preferMmaudio,
+      skipMissing: overrides.skipMissing ?? skipMissing,
+      originalVolume: overrides.originalVolume ?? originalVolume,
+      sceneVolume: overrides.sceneVolume ?? sceneVolume,
+      musicVolume: overrides.musicVolume ?? musicVolume,
+      musicAsset: overrides.musicAsset ?? musicAsset,
+      musicLoop: overrides.musicLoop ?? musicLoop,
+      musicFadeOut: overrides.musicFadeOut ?? musicFadeOut,
+      watermark: {
+        enabled: Boolean(overrides.watermark?.enabled ?? (watermarkEnabled && String(watermarkText || '').trim())),
+        text: overrides.watermark?.text ?? watermarkText,
+        position: overrides.watermark?.position ?? watermarkPosition,
+        opacityPercent: overrides.watermark?.opacityPercent ?? watermarkOpacity,
+        size: overrides.watermark?.size ?? watermarkSize,
+        motion: overrides.watermark?.motion ?? watermarkMotion,
+      },
+      finalVideoUrl: finalUrl,
+      finalUrl,
+      assemblyUrl: finalUrl,
+      outputUrl: finalUrl,
+      resultUrl: finalUrl,
+      downloadUrl: finalUrl,
+      finalDirty: overrides.finalDirty ?? finalDirty,
+      assemblyJob: activeJob || null,
+      job: activeJob || null,
+      stats,
+      updatedAt: new Date().toISOString(),
+      ...overrides,
+    }
+  }
+
+  async function saveAssemblySnapshotNow({ source = 'board_assembly_autosave_v8', overrides = {}, guardMode = 'replace' } = {}) {
+    const snapshot = buildAssemblySnapshotForSave({ source, overrides })
+    if (workspaceMode) await saveWorkspaceStage('board_assembly', snapshot)
+    else await saveStage(projectId, 'board_assembly', snapshot, guardMode)
+    return snapshot
+  }
+
+  function applyAssemblySnapshot(raw = {}, { forceBoard = false } = {}) {
+    const nextBoard = forceBoard ? normalizeBoard(raw) : boardFromAssemblySnapshot(raw)
+    setBoard(nextBoard)
+    const nextScenes = asArray(nextBoard.scenes)
+    setSelectedSceneId(raw.selectedSceneId || nextBoard.selectedSceneId || nextScenes[0]?.id || nextScenes[0]?.scene_id || '')
+    setAudioMode(raw.audioMode || (isGeneratorAssemblyBoard(nextBoard) ? 'scene_only' : 'original_plus_scene'))
+    setPreferMmaudio(raw.preferMmaudio ?? true)
+    setSkipMissing(raw.skipMissing ?? false)
+    setOriginalVolume(clampNumber(raw.originalVolume, 0, 150, isGeneratorAssemblyBoard(nextBoard) ? 0 : 100))
+    setSceneVolume(clampNumber(raw.sceneVolume, 0, 150, isGeneratorAssemblyBoard(nextBoard) ? 100 : 25))
+    setMusicVolume(clampNumber(raw.musicVolume, 0, 150, 15))
+    setMusicAsset(raw.musicAsset || null)
+    setMusicFile(null)
+    setMusicLoop(raw.musicLoop ?? true)
+    setMusicFadeOut(raw.musicFadeOut ?? true)
+    const watermark = raw.watermark || {}
+    setWatermarkEnabled(watermark.enabled ?? true)
+    setWatermarkText(watermark.text ?? 'ava studio')
+    setWatermarkPosition(watermark.position ?? 'top_right')
+    setWatermarkOpacity(clampNumber(watermark.opacityPercent ?? watermark.opacity ?? 35, 0, 100, 35))
+    setWatermarkSize(clampNumber(watermark.size, 10, 80, 28))
+    setWatermarkMotion(watermark.motion || 'corners')
+    setFinalVideoUrl(assemblyFinalUrlFromSnapshot(raw))
+    setFinalDirty(Boolean(raw.finalDirty))
+    const nextJob = raw.assemblyJob || raw.job || null
+    setAssemblyJob(nextJob)
+    setAssemblyRunning(assemblyJobIsRunning(nextJob))
+  }
 
   const warnings = useMemo(() => {
     const list = []
@@ -542,11 +715,124 @@ export default function BoardAssemblyPage() {
     return list
   }, [stats, audioMode, musicFile, board])
 
-  async function loadBoardSnapshot() {
-    setLoading(true)
-    setStatus('Загружаем Board snapshot…')
+  // AVA_ASSEMBLY_FORCE_BOARD_IMPORT_V11:
+  // Board → Montage must import the *current* Board snapshot as source-of-truth.
+  // Normal Montage entry may restore saved board_assembly, but explicit Board entry / Refresh replaces it.
+  function readBoardAssemblyEntryV11() {
+    try {
+      return JSON.parse(sessionStorage.getItem('ava:workflow-entry:board_assembly') || '{}') || {}
+    } catch {
+      return {}
+    }
+  }
 
-    if (isBoardAssemblyCleared()) {
+  function boardAssemblyDataV11(raw = {}) {
+    return raw?.data || raw || {}
+  }
+
+  function boardAssemblyScenesV11(data = {}) {
+    const directScenes = asArray(data.scenes)
+    if (directScenes.length) return directScenes
+    const boardScenes = asArray(data.boardScenes)
+    if (boardScenes.length) return boardScenes
+    const snapshotScenes = asArray(data.board?.scenes || data.boardSnapshot?.scenes)
+    if (snapshotScenes.length) return snapshotScenes
+    return []
+  }
+
+  function boardAssemblyItemsV11(data = {}) {
+    const directItems = asArray(data.items)
+    if (directItems.length) return directItems
+    const readyItems = asArray(data.readyItems)
+    if (readyItems.length) return readyItems
+    return []
+  }
+
+  function boardFromAssemblySnapshotV11(data = {}) {
+    const base = data.boardSnapshot || data.board || data
+    const scenes = boardAssemblyScenesV11(data)
+    return normalizeBoard({
+      ...base,
+      source: data.source || base.source || 'board_assembly_snapshot_v11',
+      boardVersion: data.boardVersion || data.board_version || base.boardVersion || base.board_version || 'board_assembly_snapshot_v11',
+      scenes,
+      audio: data.audio || data.sourceAudio || data.timingAudio || data.originalAudio || base.audio || base.sourceAudio || base.timingAudio || null,
+      sourceAudio: data.sourceAudio || data.audio || base.sourceAudio || base.audio || null,
+      timingAudio: data.timingAudio || base.timingAudio || null,
+      originalAudio: data.originalAudio || base.originalAudio || null,
+    })
+  }
+
+  function buildBoardAssemblySnapshotV11(nextBoard, sourceLabel = 'board_to_assembly_imported_v11') {
+    const nextScenes = asArray(nextBoard?.scenes)
+    const nextItems = buildSceneItems({ ...nextBoard, scenes: nextScenes }, true)
+    const selectedId = nextScenes?.[0]?.id || nextScenes?.[0]?.scene_id || nextItems?.[0]?.id || ''
+    const audio = nextBoard?.audio || nextBoard?.sourceAudio || nextBoard?.timingAudio || nextBoard?.originalAudio || null
+    return {
+      stage: 'board_assembly',
+      source: sourceLabel,
+      schema: 'ava_board_assembly_snapshot_v11',
+      projectId: projectId || '',
+      board: nextBoard,
+      boardSnapshot: nextBoard,
+      boardVersion: nextBoard?.boardVersion || nextBoard?.board_version || sourceLabel,
+      scenes: nextScenes,
+      boardScenes: nextScenes,
+      items: nextItems,
+      readyItems: nextItems,
+      selectedSceneId: selectedId,
+      audio,
+      sourceAudio: nextBoard?.sourceAudio || audio,
+      timingAudio: nextBoard?.timingAudio || null,
+      originalAudio: nextBoard?.originalAudio || null,
+      audioMode: nextBoard?.audioMode || 'original_plus_scene',
+      preferMmaudio: true,
+      skipMissing: false,
+      musicAsset,
+      watermark: {
+        enabled: watermarkEnabled,
+        text: watermarkText || 'ava studio',
+        position: watermarkPosition || 'top_right',
+        opacityPercent: watermarkOpacity,
+        size: watermarkSize,
+        motion: watermarkMotion || 'corners',
+      },
+      finalVideoUrl: '',
+      finalUrl: '',
+      assemblyUrl: '',
+      outputUrl: '',
+      downloadUrl: '',
+      resultUrl: '',
+      videoUrl: '',
+      videoApiPath: '',
+      assemblyJob: null,
+      job: null,
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
+  async function persistBoardImportToAssemblyV11(nextBoard, sourceLabel = 'board_to_assembly_imported_v11') {
+    const snapshot = buildBoardAssemblySnapshotV11(nextBoard, sourceLabel)
+    try {
+      if (projectId) await saveStage(projectId, 'board_assembly', snapshot, 'replace')
+      else await saveWorkspaceStage('board_assembly', snapshot)
+      console.log('[AVA ASSEMBLY BOARD IMPORT SAVED V11]', {
+        source: sourceLabel,
+        scenes: snapshot.scenes.length,
+        items: snapshot.items.length,
+        firstItems: snapshot.items.slice(0, 6).map((item) => ({ id: item.id, videoApiPath: item.videoApiPath || item.video_api_path })),
+      })
+    } catch (error) {
+      console.warn('[AVA ASSEMBLY BOARD IMPORT SAVE FAILED V11]', error?.message || error)
+    }
+  }
+
+  async function loadBoardSnapshot(options = {}) {
+    const forceBoard = Boolean(options.forceBoard)
+    setLoading(true)
+    setStatus(forceBoard ? 'Обновляем монтаж из текущей Доски…' : 'Загружаем монтаж…')
+
+    if (isBoardAssemblyCleared() && !forceBoard) {
       setBoard(emptyBoardAssemblySource())
       setSelectedSceneId('')
       setFinalVideoUrl('')
@@ -558,7 +844,47 @@ export default function BoardAssemblyPage() {
       return
     }
 
+    const entry = readBoardAssemblyEntryV11()
+    const fromBoardEntry = String(entry?.from || '').trim() === 'board' || String(entry?.source || '').includes('board_to_assembly')
+    const shouldImportBoard = forceBoard || fromBoardEntry
+
     try {
+      if (!shouldImportBoard) {
+        const assemblyRaw = workspaceMode
+          ? await loadWorkspaceStage('board_assembly')
+          : await loadStage(projectId, 'board_assembly')
+        const assemblyData = boardAssemblyDataV11(assemblyRaw)
+        const assemblyScenes = boardAssemblyScenesV11(assemblyData)
+        const assemblyItems = boardAssemblyItemsV11(assemblyData)
+        if (assemblyScenes.length || assemblyItems.length) {
+          const restoredBoard = boardFromAssemblySnapshotV11(assemblyData)
+          setBoard(restoredBoard)
+          const firstSceneId = assemblyData.selectedSceneId || restoredBoard.scenes?.[0]?.id || restoredBoard.scenes?.[0]?.scene_id || assemblyItems?.[0]?.id || ''
+          setSelectedSceneId(firstSceneId)
+          setAudioMode(assemblyData.audioMode || assemblyData.audio_mode || audioMode || 'original_plus_scene')
+          setPreferMmaudio(assemblyData.preferMmaudio ?? assemblyData.prefer_mmaudio ?? true)
+          setSkipMissing(assemblyData.skipMissing ?? assemblyData.skip_missing ?? false)
+          if (assemblyData.musicAsset) setMusicAsset(assemblyData.musicAsset)
+          const wm = assemblyData.watermark || {}
+          if (Object.keys(wm).length) {
+            setWatermarkEnabled(wm.enabled ?? true)
+            setWatermarkText(wm.text || 'ava studio')
+            setWatermarkPosition(wm.position || 'top_right')
+            setWatermarkOpacity(clampNumber(wm.opacityPercent ?? (Number(wm.opacity) * 100), 5, 100, 35))
+            setWatermarkSize(clampNumber(wm.size, 10, 96, 28))
+            setWatermarkMotion(wm.motion || 'corners')
+          }
+          const finalUrl = assemblyData.finalVideoUrl || assemblyData.finalUrl || assemblyData.assemblyUrl || assemblyData.outputUrl || assemblyData.downloadUrl || assemblyData.resultUrl || assemblyData.videoUrl || ''
+          setFinalVideoUrl(normalizePlayableVideoUrl(finalUrl))
+          setFinalDirty(false)
+          setAssemblyJob(assemblyData.assemblyJob || assemblyData.job || null)
+          setAssemblyRunning(Boolean((assemblyData.assemblyJob || assemblyData.job)?.jobId || (assemblyData.assemblyJob || assemblyData.job)?.job_id) && !finalUrl)
+          setStatus(`Монтаж восстановлен из project snapshot: сцен ${assemblyScenes.length || assemblyItems.length}`)
+          setLoading(false)
+          return
+        }
+      }
+
       const data = workspaceMode
         ? await loadWorkspaceStage('board')
         : await loadStage(projectId, 'board')
@@ -566,30 +892,26 @@ export default function BoardAssemblyPage() {
       const nextBoard = normalizeBoard(data)
       setBoard(nextBoard)
       const firstSceneId = nextBoard.scenes?.[0]?.id || nextBoard.scenes?.[0]?.scene_id || ''
-      setSelectedSceneId((current) => current || firstSceneId)
+      setSelectedSceneId(firstSceneId)
 
-      if (isGeneratorAssemblyBoard(nextBoard)) {
-        setAudioMode('scene_only')
-        setPreferMmaudio(true)
-        setSkipMissing(false)
-        setOriginalVolume(0)
-        setSceneVolume(100)
-        setMusicVolume(15)
-        setWatermarkEnabled(false)
-        setWatermarkText('')
-        setWatermarkPosition('bottom_right')
-        setWatermarkOpacity(35)
-        setWatermarkSize(28)
-        setWatermarkMotion('static')
-        setFinalVideoUrl('')
-        setFinalDirty(false)
-        setAssemblyJob(null)
-        setStatus(nextBoard.scenes?.length ? 'Генератор → монтажник: watermark отключён' : 'В ленте генератора нет видео')
-      } else {
-        setStatus(nextBoard.scenes?.length ? 'Board snapshot загружен' : 'В Board нет сцен')
-      }
+      // Board -> Montage is authoritative: replace stale montage items/assets with current Board assets.
+      setAudioMode('original_plus_scene')
+      setPreferMmaudio(true)
+      setSkipMissing(false)
+      setFinalVideoUrl('')
+      setFinalDirty(false)
+      setAssemblyJob(null)
+      setAssemblyRunning(false)
+      setWatermarkEnabled(true)
+      setWatermarkText('ava studio')
+      setWatermarkPosition('top_right')
+      setWatermarkOpacity(35)
+      setWatermarkSize(28)
+      setWatermarkMotion('corners')
+      await persistBoardImportToAssemblyV11(nextBoard, shouldImportBoard ? 'board_to_assembly_imported_v11' : 'board_fallback_imported_v11')
+      setStatus(nextBoard.scenes?.length ? `Доска перенесена в монтажник: сцен ${nextBoard.scenes.length}` : 'В Board нет сцен')
     } catch (error) {
-      setStatus(`Не удалось загрузить Board: ${error?.message || 'unknown_error'}`)
+      setStatus(`Не удалось загрузить монтаж/Board: ${error?.message || 'unknown_error'}`)
       setBoard({ scenes: [] })
     } finally {
       setLoading(false)
@@ -598,7 +920,7 @@ export default function BoardAssemblyPage() {
 
   useEffect(() => {
     loadBoardSnapshot()
-  }, [projectId])
+  }, [projectId, entryFromBoard])
 
   useEffect(() => {
     if (!settingsHydrated) return
@@ -691,6 +1013,55 @@ export default function BoardAssemblyPage() {
   ])
 
 
+
+  useEffect(() => {
+    if (!settingsHydrated || loading || !board) return undefined
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = window.setTimeout(() => {
+      saveAssemblySnapshotNow({ source: 'board_assembly_autosave_v8', guardMode: 'replace' }).catch((error) => {
+        console.warn('[BOARD ASSEMBLY AUTOSAVE FAILED]', error)
+      })
+    }, 650)
+    return () => {
+      if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
+    }
+  }, [
+    settingsHydrated,
+    loading,
+    board,
+    selectedSceneId,
+    audioMode,
+    preferMmaudio,
+    skipMissing,
+    originalVolume,
+    sceneVolume,
+    musicVolume,
+    musicAsset,
+    musicLoop,
+    musicFadeOut,
+    watermarkEnabled,
+    watermarkText,
+    watermarkPosition,
+    watermarkOpacity,
+    watermarkSize,
+    watermarkMotion,
+    finalVideoUrl,
+    finalDirty,
+    assemblyJob,
+  ])
+
+  useEffect(() => {
+    if (loading) return
+    const job = assemblyJob || null
+    const jobId = job?.jobId || job?.job_id || ''
+    const statusEndpoint = job?.statusEndpoint || job?.status_endpoint || (jobId ? `/api/board-assembly/status/${jobId}` : '')
+    if (!jobId || !statusEndpoint || !assemblyJobIsRunning(job)) return
+    if (resumedAssemblyJobRef.current === jobId) return
+    resumedAssemblyJobRef.current = jobId
+    setAssemblyRunning(true)
+    pollAssemblyJob(statusEndpoint, jobId)
+  }, [loading, assemblyJob])
+
   function boardAssemblyVideoUrl(data) {
     return normalizePlayableVideoUrl(
       data?.videoApiPath ||
@@ -728,8 +1099,9 @@ export default function BoardAssemblyPage() {
     }
 
     const snapshot = {
+      ...buildAssemblySnapshotForSave({ source: 'board_assembly_result_v8', overrides: { finalVideoUrl: assemblyApiPath || normalizedUrl, finalDirty: false, assemblyJob: null } }),
       stage: 'board_assembly',
-      source: 'board_assembly_result',
+      source: 'board_assembly_result_v8',
       boardVersion: board?.boardVersion || board?.board_version || '',
       assembly_asset_id: assemblyAssetId,
       assemblyAssetId: assemblyAssetId,
@@ -737,6 +1109,11 @@ export default function BoardAssemblyPage() {
       assemblyApiPath: assemblyApiPath,
       assemblyUrl: assemblyApiPath || normalizedUrl,
       finalVideoUrl: assemblyApiPath || normalizedUrl,
+      finalUrl: assemblyApiPath || normalizedUrl,
+      assemblyUrl: assemblyApiPath || normalizedUrl,
+      outputUrl: assemblyApiPath || normalizedUrl,
+      resultUrl: assemblyApiPath || normalizedUrl,
+      downloadUrl: assemblyApiPath || normalizedUrl,
       video_url: assemblyApiPath || normalizedUrl,
       videoUrl: assemblyApiPath || normalizedUrl,
       video_api_path: assemblyApiPath,
@@ -749,11 +1126,14 @@ export default function BoardAssemblyPage() {
       preferMmaudio,
       skipMissing,
       stats,
+      finalDirty: false,
+      assemblyJob: null,
+      job: null,
       updatedAt: new Date().toISOString(),
     }
 
     try {
-      if (projectId) await saveStage(projectId, 'board_assembly', snapshot, 'safe_merge')
+      if (projectId) await saveStage(projectId, 'board_assembly', snapshot, 'replace')
       else await saveWorkspaceStage('board_assembly', snapshot)
       console.log('[BOARD ASSEMBLY RESULT SAVED]', { assemblyAssetId, assemblyApiPath, videoUrl: snapshot.finalVideoUrl })
     } catch (error) {
@@ -822,7 +1202,7 @@ export default function BoardAssemblyPage() {
         duration_sec: musicAsset?.audio_duration_sec || 0,
       },
       watermark: {
-        enabled: false, // export safe-mode: backend drawtext/fontconfig пока отключён
+        enabled: Boolean(watermarkEnabled && String(watermarkText || '').trim()),
         text: watermarkText,
         position: watermarkPosition,
         opacity: watermarkOpacity / 100,
@@ -854,6 +1234,7 @@ export default function BoardAssemblyPage() {
           setFinalVideoUrl(videoUrl)
           setFinalDirty(false)
           setAssemblyRunning(false)
+          setAssemblyJob(null)
           await persistBoardAssemblyResult(data, videoUrl)
           setStatus(`Финальный MP4 готов: ${data?.videoName || data?.video_name || jobId || ''}`)
           return
@@ -916,7 +1297,13 @@ export default function BoardAssemblyPage() {
         body: JSON.stringify(payload),
       })
 
-      setAssemblyJob(data)
+      const startedJob = { ...data, startedAt: new Date().toISOString() }
+      setAssemblyJob(startedJob)
+      await saveAssemblySnapshotNow({
+        source: 'board_assembly_job_started_v8',
+        overrides: { assemblyJob: startedJob, job: startedJob, finalVideoUrl: '', finalDirty: false },
+        guardMode: 'replace',
+      })
       setStatus(`Assembly job: ${data?.status || 'queued'} · ${data?.jobId || data?.job_id || ''}`)
       pollAssemblyJob(data?.statusEndpoint || (data?.jobId ? `/api/board-assembly/status/${data.jobId}` : ''), data?.jobId || data?.job_id)
     } catch (error) {
@@ -937,16 +1324,38 @@ export default function BoardAssemblyPage() {
     window.open(normalizedUrl, '_blank', 'noopener,noreferrer')
   }
 
-  function downloadVideoExplicitly(event, url, filename = 'ava-video.mp4') {
+  // AVA_ASSEMBLY_FORCE_MP4_DOWNLOAD_V13:
+  // Cross-origin <a download> often opens the video in the browser instead of saving it.
+  // Fetch the final file as a blob on click, then download the object URL.
+  async function downloadVideoExplicitly(event, url, filename = 'ava-video.mp4') {
     stopAssemblyActionEvent(event)
     const normalizedUrl = normalizePlayableVideoUrl(url)
     if (!normalizedUrl) return
-    const link = document.createElement('a')
-    link.href = normalizedUrl
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+
+    const safeFilename = String(filename || 'ava-video.mp4').trim() || 'ava-video.mp4'
+    try {
+      setStatus(`Готовим скачивание: ${safeFilename}`)
+      const needsAuth = /\/api\/assets\//i.test(normalizedUrl) || /\/assets\//i.test(normalizedUrl)
+      const response = await fetch(normalizedUrl, {
+        headers: needsAuth ? getAuthHeaders() : {},
+      })
+      if (!response.ok) throw new Error(`download_failed_${response.status}`)
+      const blob = await response.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = safeFilename
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 8000)
+      setStatus(`MP4 отправлен на скачивание: ${safeFilename}`)
+    } catch (error) {
+      console.warn('[BOARD ASSEMBLY DOWNLOAD FALLBACK V13]', error)
+      setStatus('Не удалось скачать напрямую, открываем видео в новой вкладке')
+      window.open(normalizedUrl, '_blank', 'noopener,noreferrer')
+    }
   }
 
   async function handleMusicSelect(event) {
@@ -1008,7 +1417,7 @@ export default function BoardAssemblyPage() {
               type="button"
               onClick={() => {
                 clearBoardAssemblyClearedMarker()
-                loadBoardSnapshot()
+                loadBoardSnapshot({ forceBoard: true })
               }}
             ><RefreshCcw size={15} /> Обновить из Board</button>
           <button type="button" disabled><Wand2 size={15} /> Собрать preview</button>
@@ -1070,7 +1479,22 @@ export default function BoardAssemblyPage() {
           <div className="avaAssemblyPreview">
             {selectedItemPlayableVideoUrl ? (
               <div className="avaAssemblyVideoWithWatermark">
-                <video src={selectedItemPlayableVideoUrl} controls preload="metadata" playsInline />
+                <video
+                  src={selectedItemPlayableVideoUrl}
+                  controls
+                  preload="metadata"
+                  playsInline
+                  onLoadStart={() => setSelectedPreviewVideoLoading(true)}
+                  onLoadedData={() => setSelectedPreviewVideoLoading(false)}
+                  onCanPlay={() => setSelectedPreviewVideoLoading(false)}
+                  onError={() => setSelectedPreviewVideoLoading(false)}
+                />
+                {selectedPreviewVideoLoading ? (
+                  <div className="avaAssemblyMediaOverlay" role="status" aria-live="polite">
+                    <RefreshCcw className="avaMediaSpinIcon" size={32} />
+                    <strong>Загружаем видео…</strong>
+                  </div>
+                ) : null}
                 {watermarkEnabled && String(watermarkText || '').trim() && (
                   <span className={`avaAssemblyLiveWatermark ${watermarkPosition}`} style={watermarkPreviewStyle}>
                     {watermarkText}
@@ -1131,7 +1555,22 @@ export default function BoardAssemblyPage() {
                 <button type="button" onClick={(event) => openVideoExplicitly(event, finalVideoUrl)}>Открыть файл</button>
               </div>
               <div className="avaAssemblyVideoWithWatermark avaAssemblyFinalVideoWithWatermark">
-                <video src={finalVideoUrl} controls preload="metadata" playsInline />
+                <video
+                  src={finalVideoUrl}
+                  controls
+                  preload="metadata"
+                  playsInline
+                  onLoadStart={() => setFinalPreviewVideoLoading(true)}
+                  onLoadedData={() => setFinalPreviewVideoLoading(false)}
+                  onCanPlay={() => setFinalPreviewVideoLoading(false)}
+                  onError={() => setFinalPreviewVideoLoading(false)}
+                />
+                {finalPreviewVideoLoading ? (
+                  <div className="avaAssemblyMediaOverlay" role="status" aria-live="polite">
+                    <RefreshCcw className="avaMediaSpinIcon" size={32} />
+                    <strong>Загружаем финальный MP4…</strong>
+                  </div>
+                ) : null}
                 {watermarkEnabled && String(watermarkText || '').trim() && (
                   <span className={`avaAssemblyLiveWatermark ${watermarkPosition}`} style={watermarkPreviewStyle}>
                     {watermarkText}
@@ -1142,7 +1581,7 @@ export default function BoardAssemblyPage() {
                   <button type="button" onClick={(event) => downloadVideoExplicitly(event, finalVideoUrl, 'ava-board-assembly.mp4')}>Скачать MP4</button>
                 </div>
               </div>
-              {assemblyJob?.watermarkApplied ? <p>Водный знак запечён в MP4.</p> : watermarkEnabled ? <p>Watermark показан как preview-overlay. В MP4 export он временно отключён, чтобы сборка не падала.</p> : null}
+              {false ? <p /> : null}
               {false ? <p /> : null}
               {assemblyJob?.draftNote && <p>{assemblyJob.draftNote}</p>}
             </div>
