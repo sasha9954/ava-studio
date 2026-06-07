@@ -1,3 +1,4 @@
+/* AVA_BOARD_TIMING_DURATION_LOCK_V38: Timing-imported Board scenes have locked duration independent of route. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -845,6 +846,74 @@ function durationOf(scene) {
   return Math.max(0, toNumber(scene.end, 0) - toNumber(scene.start, 0))
 }
 
+// AVA_BOARD_TIMING_DURATION_LOCK_V38:
+// Duration lock belongs to the scene data, not to the route used to open Board.
+// A Timing-imported scene must keep its timing duration even after F5, direct Board entry,
+// cross-computer restore, or notification-based navigation.
+function formatBoardDurationShort(seconds) {
+  const value = Math.max(0, toNumber(seconds, 0))
+  if (!value) return '0'
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
+function boardSceneTimingLockInfo(sceneArg = {}) {
+  // AVA_BOARD_TIMING_DURATION_LOCK_NULL_GUARD_V38B:
+  // selectedScene can be null while Board is hydrating. Never read .source from null.
+  const scene = sceneArg || {}
+  const source = asText(scene.source || scene.importedFrom || scene.durationSource || scene.duration_source)
+  const sourcePhraseIds = asArray(scene.source_phrase_ids || scene.sourcePhraseIds)
+  const audioSceneId = asText(scene.audio_scene_id || scene.audioSceneId)
+  const manualBoardScene = (
+    source === 'manual_board' ||
+    source === 'manual_board_scene' ||
+    scene.source === 'manual_board_scene' ||
+    scene.importedFrom === 'manual_board'
+  )
+
+  const explicitLocked = (
+    scene.timingLocked === true ||
+    scene.timing_locked === true ||
+    scene.durationLocked === true ||
+    scene.duration_locked === true ||
+    scene.durationSource === 'timing' ||
+    scene.duration_source === 'timing' ||
+    scene.durationSource === 'manual_timing' ||
+    scene.duration_source === 'manual_timing'
+  )
+
+  const timingLike = (
+    source.includes('manual_timing') ||
+    source.includes('timing_to_board') ||
+    sourcePhraseIds.length > 0 ||
+    Boolean(audioSceneId)
+  )
+
+  const locked = !manualBoardScene && (explicitLocked || timingLike)
+
+  const start = toNumber(scene.timing_start_sec ?? scene.timingStartSec ?? scene.start_sec ?? scene.start, 0)
+  const end = toNumber(scene.timing_end_sec ?? scene.timingEndSec ?? scene.end_sec ?? scene.end, start)
+  const storedDuration = toNumber(scene.timing_duration_sec ?? scene.timingDurationSec ?? scene.duration_sec ?? scene.duration, 0)
+  const rangeDuration = Math.max(0, end - start)
+  const duration = Number((rangeDuration || storedDuration || 0).toFixed(3))
+
+  return {
+    locked,
+    start,
+    end: Number((rangeDuration ? end : start + duration).toFixed(3)),
+    duration,
+  }
+}
+
+function boardSceneGenerationDuration(scene = {}) {
+  const lock = boardSceneTimingLockInfo(scene)
+  if (lock.locked && lock.duration > 0) return lock.duration
+  return Math.max(
+    0,
+    Number(durationOf(scene) || scene.duration_sec || scene.duration || 0)
+  )
+}
+
+
 function isFirstLastRoute(route) {
   return String(route || '').startsWith('first_last')
 }
@@ -1628,7 +1697,33 @@ function buildCleanBoardFromTimingV14B(timingData = {}) {
     audio: null,
     selectedSceneId: '',
   })
-  const cleanScenes = asSceneArray(next.scenes).map(cleanBoardSceneMediaForTimingImportV14B)
+  const cleanScenes = asSceneArray(next.scenes).map((scene) => {
+    const cleanScene = cleanBoardSceneMediaForTimingImportV14B(scene)
+    const start = toNumber(cleanScene.start_sec ?? cleanScene.start, 0)
+    const end = toNumber(cleanScene.end_sec ?? cleanScene.end, start)
+    const duration = Number((Math.max(0, end - start) || toNumber(cleanScene.duration_sec ?? cleanScene.duration, 0)).toFixed(3))
+    return {
+      ...cleanScene,
+      source: cleanScene.source || 'manual_timing',
+      importedFrom: 'manual_timing',
+      timingLocked: true,
+      timing_locked: true,
+      durationLocked: true,
+      duration_locked: true,
+      durationSource: 'manual_timing',
+      duration_source: 'manual_timing',
+      timing_start_sec: start,
+      timingStartSec: start,
+      timing_end_sec: end,
+      timingEndSec: end,
+      timing_duration_sec: duration,
+      timingDurationSec: duration,
+      duration_sec: duration,
+      duration: duration,
+      end_sec: Number((start + duration).toFixed(3)),
+      end: Number((start + duration).toFixed(3)),
+    }
+  })
   return {
     ...emptyBoard,
     ...next,
@@ -2195,6 +2290,10 @@ function isBoardVideoDoneStatus(status) {
     return scenes.find((scene) => scene.id === board.selectedSceneId) || scenes[0] || null
   }, [board.scenes, board.selectedSceneId])
 
+  const selectedSceneDurationLock = useMemo(() => boardSceneTimingLockInfo(selectedScene), [selectedScene])
+  const selectedSceneTimingLocked = Boolean(selectedSceneDurationLock.locked)
+  const selectedSceneLockedDurationLabel = formatBoardDurationShort(selectedSceneDurationLock.duration)
+
   const selectedIndex = useMemo(() => {
     if (!selectedScene) return -1
     return asSceneArray(board.scenes).findIndex((scene) => scene.id === selectedScene.id)
@@ -2267,6 +2366,15 @@ function isBoardVideoDoneStatus(status) {
           if (!active) return
           setBoard(clearedBoard)
           setStatus('Доска очищена. Нажми “+ Сцена” или “Обновить с тайминга”.')
+          setLoading(false)
+          return
+        }
+
+        // AVA_TIMING_TO_BOARD_NO_EMPTY_OVERWRITE_V36:
+        // When Timing already confirmed replacement, the separate import effect below is the source of truth.
+        // Do not load/paint/save the old Board here, otherwise first transfer can end as an empty Board.
+        if (openedFromTiming && String(boardWorkflowEntry?.source || '') === 'manual_timing_to_board_confirmed_v16') {
+          setStatus('Переносим свежий Тайминг в Доску…')
           setLoading(false)
           return
         }
@@ -2900,6 +3008,12 @@ function isBoardVideoDoneStatus(status) {
         index: scenes.length,
         source: 'manual_board_scene',
         importedFrom: 'manual_board',
+        timingLocked: false,
+        timing_locked: false,
+        durationLocked: false,
+        duration_locked: false,
+        durationSource: 'manual_board',
+        duration_source: 'manual_board',
         start,
         end,
         start_sec: start,
@@ -2975,12 +3089,19 @@ function isBoardVideoDoneStatus(status) {
     setManualSceneDurationSec(safeDuration)
 
     let boardToPersist = null
+    let blockedByTimingLock = false
 
     setBoard((current) => {
       const scenes = asSceneArray(current.scenes)
       const selectedId = asText(current.selectedSceneId || current.selected_scene_id)
 
       if (!selectedId || !scenes.length) return current
+
+      const selectedSceneForLock = scenes.find((scene) => asText(scene.id || scene.scene_id) === selectedId)
+      if (boardSceneTimingLockInfo(selectedSceneForLock).locked) {
+        blockedByTimingLock = true
+        return current
+      }
 
       const nextScenes = scenes.map((scene) => {
         const id = asText(scene.id || scene.scene_id)
@@ -3013,6 +3134,10 @@ function isBoardVideoDoneStatus(status) {
     })
 
     window.setTimeout(() => {
+      if (blockedByTimingLock) {
+        setStatus('Длительность зафиксирована из Тайминга. Рычаг отключён для этой сцены.')
+        return
+      }
       if (boardToPersist) saveBoard(boardToPersist, true)
     }, 0)
   }
@@ -3592,9 +3717,10 @@ async function markVideoPlanned(sceneOverride = null) {
     const isFirstLast = isFirstLastRoute(route)
     const isLipSync = ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(route)
 
+    const durationLockForGeneration = boardSceneTimingLockInfo(sceneToStart)
     const targetDuration = Math.max(
       0.1,
-      Number(durationOf(sceneToStart) || sceneToStart.duration_sec || sceneToStart.duration || 0)
+      Number((durationLockForGeneration.locked ? durationLockForGeneration.duration : 0) || durationOf(sceneToStart) || sceneToStart.duration_sec || sceneToStart.duration || 0)
     )
 
     const formatValue = String(sceneToStart.format || sceneToStart.aspect_ratio || board.format || '16:9')
@@ -3730,8 +3856,8 @@ async function markVideoPlanned(sceneOverride = null) {
           format: formatValue,
           duration_sec: targetDuration,
           target_duration_sec: targetDuration,
-          scene_start_sec: sceneToStart.start,
-          scene_end_sec: sceneToStart.end,
+          scene_start_sec: durationLockForGeneration.locked ? durationLockForGeneration.start : sceneToStart.start,
+          scene_end_sec: durationLockForGeneration.locked ? durationLockForGeneration.end : sceneToStart.end,
           warnings,
           source: 'ava_board_stage_510g2',
         }),
@@ -4530,22 +4656,32 @@ async function importTimingJson(event) {
                   )}
                 </div>
               )}
-            </div>            {/* AVA09G_HIDE_AVA08Z_BOARD_DURATION_SLIDER_UNDER_VIDEO */}
-            {!openedFromTiming ? (
-            <section className="avaBoardSceneDurationPanel">
-              <label className="avaBoardDurationSlider">
-                <span>Длительность сцены: <strong>{manualSceneDurationSec} сек</strong></span>
-                <input
-                  type="range"
-                  min="2"
-                  max="12"
-                  step="0.5"
-                  value={manualSceneDurationSec}
-                  onChange={(event) => updateSelectedSceneDuration(Number(event.target.value))}
-                />
-              </label>
-            </section>
-            ) : null}
+            </div>            {/* AVA_BOARD_TIMING_DURATION_LOCK_V38: lock duration by scene data, not by entry route. */}
+            {selectedSceneTimingLocked ? (
+              <section className="avaBoardSceneDurationPanel isTimingLocked">
+                <div className="avaBoardDurationLocked">
+                  <Clock3 size={15} />
+                  <div>
+                    <span>Длительность из Тайминга: <strong>{selectedSceneLockedDurationLabel} сек</strong> 🔒</span>
+                    <small>Генерация и сборка используют start/end этой сцены. Рычаг отключён, даже если открыть Доску напрямую.</small>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section className="avaBoardSceneDurationPanel">
+                <label className="avaBoardDurationSlider">
+                  <span>Длительность сцены: <strong>{manualSceneDurationSec} сек</strong></span>
+                  <input
+                    type="range"
+                    min="2"
+                    max="12"
+                    step="0.5"
+                    value={manualSceneDurationSec}
+                    onChange={(event) => updateSelectedSceneDuration(Number(event.target.value))}
+                  />
+                </label>
+              </section>
+            )}
 
 
             <div className="avaBoardSceneWorkflowPanel">

@@ -4495,3 +4495,44 @@
   to { transform: rotate(360deg); }
 }
 
+
+
+/* AVA_BOARD_TIMING_DURATION_LOCK_V38: locked Timing duration badge under Board video preview. */
+.avaBoardMediaPanel .avaBoardSceneDurationPanel.isTimingLocked {
+  border-color: rgba(120, 255, 224, 0.26);
+  background:
+    radial-gradient(circle at 12% 10%, rgba(120, 255, 224, 0.13), transparent 32%),
+    linear-gradient(135deg, rgba(8, 24, 36, 0.94), rgba(22, 30, 58, 0.86));
+}
+
+.avaBoardMediaPanel .avaBoardDurationLocked {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: rgba(231, 241, 255, 0.82);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.avaBoardMediaPanel .avaBoardDurationLocked svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #78ffe0;
+  filter: drop-shadow(0 0 10px rgba(120, 255, 224, 0.32));
+}
+
+.avaBoardMediaPanel .avaBoardDurationLocked div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.avaBoardMediaPanel .avaBoardDurationLocked strong {
+  color: #78ffe0;
+}
+
+.avaBoardMediaPanel .avaBoardDurationLocked small {
+  color: rgba(199, 212, 235, 0.64);
+  line-height: 1.35;
+}

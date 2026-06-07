@@ -1,3 +1,4 @@
+/* AVA_TIMING_TO_BOARD_INLINE_CONFIRM_V35: remove runtime references to helper funcs by using inline handlers in JSX. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Clock3, Film, Pause, Play, Save, StepBack, StepForward, Trash2, Undo2, UploadCloud } from 'lucide-react'
@@ -875,6 +876,57 @@ function normalizeRoleList(inputRoles = [], speechSegments = []) {
 }
 
 function normalizeMissingSpeechHints(items = []) {
+
+  // AVA_TIMING_TO_BOARD_V16_RUNTIME_FIX_V34: fallback helpers for Timing -> Board confirm.
+  // Prevents runtime crash when the V16 button exists but helper functions were not inserted.
+
+  async function confirmTimingToBoardNavigateV16() {
+    // AVA_TIMING_TO_BOARD_FORCE_SAVE_BEFORE_NAV_V36: make first transfer use the fresh Timing snapshot.
+    await saveDraft(draft, 'timing_to_board_confirm_v36')
+    const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+    try {
+      if (typeof setShowTimingToBoardConfirmV16 === 'function') {
+        setShowTimingToBoardConfirmV16(false)
+      }
+    } catch {}
+    navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
+      from: 'manual_timing',
+      to: 'board',
+      fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+      toPath,
+      projectId,
+      source: 'manual_timing_to_board_confirmed_v16',
+    }))
+  }
+
+
+  function cancelTimingToBoardConfirmV16() {
+    try {
+      if (typeof setShowTimingToBoardConfirmV16 === 'function') {
+        setShowTimingToBoardConfirmV16(false)
+      }
+    } catch {}
+    try {
+      if (typeof setStatus === 'function') setStatus('Переход в Доску отменён. Тайминг оставлен без изменений.')
+    } catch {}
+  }
+
+
+  function openTimingToBoardConfirmV16() {
+    try {
+      if (typeof setShowTimingToBoardConfirmV16 === 'function') {
+        setShowTimingToBoardConfirmV16(true)
+        try {
+          if (typeof setStatus === 'function') setStatus('Подтверди перенос в Доску: старая Доска будет заменена свежим Таймингом.')
+        } catch {}
+        return
+      }
+    } catch {}
+    // If the modal state was not added by an older partial patch, keep the app usable:
+    // navigate with the confirmed source instead of crashing.
+    confirmTimingToBoardNavigateV16()
+  }
+
   return (Array.isArray(items) ? items : [])
     .map((item, index) => {
       const start = Number(item.start ?? item.start_sec ?? 0)
@@ -1669,7 +1721,9 @@ export default function ManualTimingPage() {
     setStatus('Переход в Доску отменён. Тайминг оставлен без изменений.')
   }
 
-  function confirmTimingToBoardNavigateV16() {
+  async function confirmTimingToBoardNavigateV16() {
+    // AVA_TIMING_TO_BOARD_FORCE_SAVE_BEFORE_NAV_V36: make first transfer use the fresh Timing snapshot.
+    await saveDraft(draft, 'timing_to_board_confirm_v36')
     const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
     setShowTimingToBoardConfirmV16(false)
     navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
@@ -3507,6 +3561,73 @@ const clearedDraft = normalizeDraft({
   }
 
 
+
+  // AVA_PROJECT_CONTEXT_TIMING_TO_BOARD_V37: project-safe Timing -> Board handoff.
+  function openTimingToBoardConfirmV37() {
+    if (loading) {
+      setStatus('Тайминг ещё загружается. Подожди пару секунд и повтори переход в Доску.')
+      return
+    }
+    if (!scenes.length) {
+      setStatus('Нельзя перейти в Доску: в Тайминге нет сцен. Сначала импортируй/создай разбивку.')
+      return
+    }
+    setShowTimingToBoardConfirmV16(true)
+    setStatus(`Подтверди перенос в Доску: ${scenes.length} сцен будут отправлены в проектную Доску.`)
+  }
+
+  function cancelTimingToBoardConfirmV37() {
+    setShowTimingToBoardConfirmV16(false)
+    setStatus('Переход в Доску отменён. Тайминг оставлен без изменений.')
+  }
+
+  async function confirmTimingToBoardNavigateV37() {
+    if (loading) {
+      setStatus('Тайминг ещё загружается. Переход в Доску заблокирован.')
+      return
+    }
+    if (!scenes.length) {
+      setStatus('Переход в Доску заблокирован: сцены не загружены. Импортируй JSON или дождись восстановления Тайминга.')
+      return
+    }
+
+    const sceneSnapshot = scenes.map((scene, index) => ({
+      ...scene,
+      id: scene.id || scene.scene_id || `seg_${String(index + 1).padStart(2, '0')}`,
+      scene_id: scene.scene_id || scene.id || `seg_${String(index + 1).padStart(2, '0')}`,
+      start: Number(scene.start ?? scene.start_sec ?? 0),
+      end: Number(scene.end ?? scene.end_sec ?? 0),
+      start_sec: Number(scene.start_sec ?? scene.start ?? 0),
+      end_sec: Number(scene.end_sec ?? scene.end ?? 0),
+      duration_sec: Math.max(0, Number(scene.end ?? scene.end_sec ?? 0) - Number(scene.start ?? scene.start_sec ?? 0)),
+      durationSec: Math.max(0, Number(scene.end ?? scene.end_sec ?? 0) - Number(scene.start ?? scene.start_sec ?? 0)),
+    }))
+
+    const nextDraft = {
+      ...draft,
+      scenes: sceneSnapshot,
+      scenesCount: sceneSnapshot.length,
+      selectedSceneIndex: Math.min(Number(draft.selectedSceneIndex || 0), Math.max(0, sceneSnapshot.length - 1)),
+      audioDurationSec: Number(draft.audioDurationSec || timelineDurationSec || sceneSnapshot[sceneSnapshot.length - 1]?.end || 0),
+      updatedAt: Date.now(),
+    }
+
+    setShowTimingToBoardConfirmV16(false)
+    setStatus(`Сохраняем Тайминг перед переходом в Доску: ${sceneSnapshot.length} сцен…`)
+    await saveDraft(nextDraft, 'timing_to_board_confirm_v37')
+
+    const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+    navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
+      from: 'manual_timing',
+      to: 'board',
+      fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+      toPath,
+      projectId,
+      source: 'manual_timing_to_board_confirmed_v16',
+    }))
+  }
+
+
   return (
     <div className="avaPage avaTimingFlatPage">
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" onLoadedMetadata={handleLoadedMetadata} />
@@ -3527,10 +3648,32 @@ const clearedDraft = normalizeDraft({
               Старые видео/кадры Доски будут отвязаны от сцен. Загруженные asset-файлы на диске не удаляются.
             </div>
             <div className="avaBoardTimingConfirmActions">
-              <button type="button" className="avaBoardTimingConfirmSecondary" onClick={cancelTimingToBoardConfirmV16}>
+              <button type="button" className="avaBoardTimingConfirmSecondary" onClick={() => {
+                  try {
+                    if (typeof setShowTimingToBoardConfirmV16 === 'function') setShowTimingToBoardConfirmV16(false)
+                  } catch {}
+                  try {
+                    if (typeof setStatus === 'function') setStatus('Переход в Доску отменён. Тайминг оставлен без изменений.')
+                  } catch {}
+                }}>
                 Оставить старую Доску
               </button>
-              <button type="button" className="avaBoardTimingConfirmPrimary" onClick={confirmTimingToBoardNavigateV16}>
+              <button type="button" className="avaBoardTimingConfirmPrimary" onClick={async () => {
+                  // AVA_TIMING_TO_BOARD_FORCE_SAVE_BEFORE_NAV_V36: make first transfer use the fresh Timing snapshot.
+                  await saveDraft(draft, 'timing_to_board_confirm_v36')
+                  const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+                  try {
+                    if (typeof setShowTimingToBoardConfirmV16 === 'function') setShowTimingToBoardConfirmV16(false)
+                  } catch {}
+                  navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
+                    from: 'manual_timing',
+                    to: 'board',
+                    fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+                    toPath,
+                    projectId,
+                    source: 'manual_timing_to_board_confirmed_v16',
+                  }))
+                }}>
                 Да, заменить Доску
               </button>
             </div>
@@ -3567,7 +3710,24 @@ const clearedDraft = normalizeDraft({
           <button
             className={`avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink ${hasAudio ? 'isReadyForBoard' : ''}`}
             type="button"
-            onClick={openTimingToBoardConfirmV16}
+            onClick={() => {
+                  if (typeof setShowTimingToBoardConfirmV16 === 'function') {
+                    setShowTimingToBoardConfirmV16(true)
+                    try {
+                      if (typeof setStatus === 'function') setStatus('Подтверди перенос в Доску: старая Доска будет заменена свежим Таймингом.')
+                    } catch {}
+                    return
+                  }
+                  const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+                  navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
+                    from: 'manual_timing',
+                    to: 'board',
+                    fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
+                    toPath,
+                    projectId,
+                    source: 'manual_timing_to_board_confirmed_v16',
+                  }))
+                }}
           >
             <Film size={16} /> В доску
           </button>
