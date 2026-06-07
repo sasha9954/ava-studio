@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, FolderKanban, Home, LogOut, PlusCircle, Settings, UserRound, WalletCards } from 'lucide-react'
 import avaLogoUrl from '../assets/ava_logo.jpg'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -412,8 +412,9 @@ function mmaudioPatchFromJobData(data = {}, job = {}) {
 
 export default function AvaShellLayout() {
   const { user, logout } = useAuth()
-  const { projects, activeProject, lastSavedAt, exitProject } = useProjects()
+  const { projects, activeProject, lastSavedAt, exitProject, syncActiveProjectFromRoute } = useProjects()
   const navigate = useNavigate()
+  const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem(SIDEBAR_OPEN_KEY) !== '0')
   const [globalToasts, setGlobalToasts] = useState([])
   const toastDedupeRef = useRef(new Map())
@@ -422,7 +423,37 @@ export default function AvaShellLayout() {
   const creditsRefreshInFlightRef = useRef(null)
   const [shellCreditBalance, setShellCreditBalance] = useState(null)
   const [shellCreditsRefreshing, setShellCreditsRefreshing] = useState(false)
-  const projectTheme = useMemo(() => getProjectTheme(activeProject, projects), [activeProject, projects])
+  const routeProjectId = useMemo(() => avaProjectIdFromPath(location.pathname), [location.pathname])
+
+  useEffect(() => {
+    // AVA_PROJECT_ROUTE_ACTIVE_SYNC_V40D:
+    // A direct project URL must activate the shell/sidebar project context too.
+    if (!routeProjectId) return
+    if (typeof syncActiveProjectFromRoute === 'function') {
+      syncActiveProjectFromRoute(routeProjectId, 'shell_route')
+    }
+  }, [routeProjectId, projects.length, syncActiveProjectFromRoute])
+
+  const routeProject = useMemo(() => {
+    if (!routeProjectId) return null
+    return projects.find((project) => String(project?.id || '') === routeProjectId) || null
+  }, [projects, routeProjectId])
+
+  const effectiveActiveProject = useMemo(() => {
+    if (activeProject) return activeProject
+    if (routeProject) return routeProject
+    if (routeProjectId) {
+      return {
+        id: routeProjectId,
+        name: `Проект ${routeProjectId.slice(-6)}`,
+        format: 'project',
+        routeSynced: true,
+      }
+    }
+    return null
+  }, [activeProject, routeProject, routeProjectId])
+
+  const projectTheme = useMemo(() => getProjectTheme(effectiveActiveProject, projects), [effectiveActiveProject, projects])
 
   const displayCreditBalance = useMemo(() => {
     const live = Number(shellCreditBalance)
@@ -589,6 +620,11 @@ export default function AvaShellLayout() {
   }
 
   function prepareGlobalToastOpen(toast) {
+    const toastProjectId = String(toast?.projectId || avaProjectIdFromPath(toast?.to || toast?.pagePath || '') || '').trim()
+    if (toastProjectId && typeof syncActiveProjectFromRoute === 'function') {
+      syncActiveProjectFromRoute(toastProjectId, 'toast_open')
+    }
+
     if (toast?.sceneId) {
       try {
         sessionStorage.setItem(AVA_OPEN_BOARD_SCENE_KEY, toast.sceneId)
@@ -687,7 +723,7 @@ export default function AvaShellLayout() {
   async function discoverGeneratorMmaudioJobsFromSnapshots(existingJobs = []) {
     const existingKeys = new Set((Array.isArray(existingJobs) ? existingJobs : []).map((job) => String(job?.key || job?.id || '').trim()).filter(Boolean))
     const discovered = []
-    const projectIds = avaShellProjectIds({ activeProject })
+    const projectIds = avaShellProjectIds({ activeProject: effectiveActiveProject })
 
     for (const projectId of projectIds) {
       try {
@@ -1020,7 +1056,7 @@ export default function AvaShellLayout() {
     navigate('/app/dashboard')
   }
 
-  const shellModeClass = activeProject ? 'isProjectMode' : 'isWorkspaceMode'
+  const shellModeClass = effectiveActiveProject ? 'isProjectMode' : 'isWorkspaceMode'
   const sidebarClass = sidebarOpen ? 'isSidebarOpen' : 'isSidebarClosed'
 
   return (
@@ -1087,10 +1123,10 @@ export default function AvaShellLayout() {
           })}
         </nav>
 
-        <div className="avaSidebarProject" title={activeProject?.name || 'Рабочая область'}>
-          <span>{activeProject ? `Проектный режим · ${projectTheme.name}` : 'Рабочая область'}</span>
-          <strong>{activeProject?.name || 'без проекта'}</strong>
-          <small>{activeProject?.format || 'автосохранение черновиков'}</small>
+        <div className="avaSidebarProject" title={effectiveActiveProject?.name || 'Рабочая область'}>
+          <span>{effectiveActiveProject ? `Проектный режим · ${projectTheme.name}` : 'Рабочая область'}</span>
+          <strong>{effectiveActiveProject?.name || 'без проекта'}</strong>
+          <small>{effectiveActiveProject?.format || 'автосохранение черновиков'}</small>
         </div>
 
         <NavLink className={({ isActive }) => `avaGhostButton ${isActive ? 'isActive' : ''}`} to="/app/settings" title="Настройки / Service Center">
@@ -1100,17 +1136,17 @@ export default function AvaShellLayout() {
 
       <main className="avaMain">
         <header className="avaTopbar">
-          <div className={`avaTopbarLeft ${activeProject ? '' : 'isWorkspaceOnly'}`}>
-            {activeProject && <p>{`Проект открыт · ${activeProject.format}`}</p>}
-            <h1>{activeProject ? activeProject.name : 'ava-studio'}</h1>
+          <div className={`avaTopbarLeft ${effectiveActiveProject ? '' : 'isWorkspaceOnly'}`}>
+            {effectiveActiveProject && <p>{`Проект открыт · ${effectiveActiveProject.format}`}</p>}
+            <h1>{effectiveActiveProject ? effectiveActiveProject.name : 'ava-studio'}</h1>
           </div>
           <div className="avaTopbarRight">
-            <span className="avaModePill">{activeProject ? 'project mode' : 'workspace mode'}</span>
+            <span className="avaModePill">{effectiveActiveProject ? 'project mode' : 'workspace mode'}</span>
             <span className="avaSavePill">{lastSavedAt ? 'Сохранено' : 'autosave ready'}</span>
             <span className={`avaCreditPill ${shellCreditsRefreshing ? 'isRefreshing' : ''}`} title={shellCreditsRefreshing ? 'Обновляю баланс...' : 'Баланс кредитов'}>
                 {displayCreditBalance !== null && displayCreditBalance !== undefined ? `${displayCreditBalance} credits` : 'credits'}
               </span>
-            {activeProject && (
+            {effectiveActiveProject && (
               <button className="avaExitProjectButton" type="button" onClick={handleExitProject}>
                 Выйти из проекта
               </button>

@@ -1,9 +1,16 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '../services/apiClient.js'
 import { useAuth } from './AuthContext.jsx'
 
 const ProjectContext = createContext(null)
 const ACTIVE_PROJECT_SESSION_KEY = 'ava_active_project_id'
+
+function avaProjectIdFromCurrentRouteV40D() {
+  if (typeof window === 'undefined') return ''
+  const match = String(window.location?.pathname || '').match(/\/app\/projects\/([^/]+)/)
+  return match?.[1] ? decodeURIComponent(match[1]) : ''
+}
+
 
 function countBoardSceneMediaRefs(data = {}) {
   const scenes = Array.isArray(data?.scenes) ? data.scenes : []
@@ -69,10 +76,20 @@ export function ProjectProvider({ children }) {
       // После обычного входа пользователь не должен автоматически попадать
       // в старый проект. Проектный режим восстанавливаем только в рамках
       // текущей браузерной сессии/F5 через sessionStorage.
+      // AVA_PROJECT_ROUTE_ACTIVE_SYNC_V40D:
+      // Direct URLs like /app/projects/:projectId/board must select the project
+      // even if sessionStorage was empty on first load.
+      const routeProjectId = avaProjectIdFromCurrentRouteV40D()
       const sessionProjectId = sessionStorage.getItem(ACTIVE_PROJECT_SESSION_KEY)
-      const selected = loadedProjects.find((p) => p.id === sessionProjectId) || null
+      const selectedProjectId = routeProjectId || sessionProjectId
+      const selected = loadedProjects.find((p) => p.id === selectedProjectId) || null
       setActiveProject(selected)
-      if (!selected) sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY)
+      if (selected) {
+        sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, selected.id)
+        try { localStorage.setItem('ava_last_active_project_id', selected.id) } catch {}
+      } else if (!routeProjectId) {
+        sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY)
+      }
     } finally {
       setLoadingProjects(false)
     }
@@ -94,6 +111,7 @@ export function ProjectProvider({ children }) {
     })
     setActiveProject(data.project)
     sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, data.project.id)
+    try { localStorage.setItem('ava_last_active_project_id', data.project.id) } catch {}
     await refreshProjects()
     return data.project
   }
@@ -101,7 +119,36 @@ export function ProjectProvider({ children }) {
   async function openProject(project) {
     setActiveProject(project)
     sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, project.id)
+    try { localStorage.setItem('ava_last_active_project_id', project.id) } catch {}
   }
+
+  const syncActiveProjectFromRoute = useCallback((projectId, reason = 'route') => {
+    // AVA_PROJECT_ROUTE_ACTIVE_SYNC_V40D:
+    // Keep global project context/sidebar synced with /app/projects/:projectId/... routes.
+    const cleanProjectId = String(projectId || '').trim()
+    if (!cleanProjectId) return null
+
+    try {
+      sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, cleanProjectId)
+      localStorage.setItem('ava_last_active_project_id', cleanProjectId)
+    } catch {}
+
+    const found = projects.find((project) => String(project?.id || '') === cleanProjectId) || null
+
+    setActiveProject((current) => {
+      if (found) return found
+      if (String(current?.id || '') === cleanProjectId) return current
+      return {
+        id: cleanProjectId,
+        name: `Проект ${cleanProjectId.slice(-6)}`,
+        format: 'project',
+        routeSynced: true,
+        routeSyncReason: reason,
+      }
+    })
+
+    return found
+  }, [projects])
 
   function exitProject() {
     sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY)
@@ -164,6 +211,7 @@ export function ProjectProvider({ children }) {
     refreshProjects,
     createProject,
     openProject,
+    syncActiveProjectFromRoute,
     exitProject,
     deleteProject,
     loadStage,
@@ -172,7 +220,7 @@ export function ProjectProvider({ children }) {
     saveWorkspaceStage,
     clearWorkspace,
     markWorkspaceSaved,
-  }), [projects, activeProject, loadingProjects, lastSavedAt])
+  }), [projects, activeProject, loadingProjects, lastSavedAt, syncActiveProjectFromRoute])
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>
 }
