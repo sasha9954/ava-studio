@@ -1848,6 +1848,9 @@ function isBoardVideoDoneStatus(status) {
   }
 
   function sceneVideoActionState(scene) {
+    // AVA_BOARD_RESTORE_NATIVE_ACTION_BUTTON_V48: queued/running states use the native action-state shape below.
+
+
     const videoStatus = String(scene?.video_status || '').toLowerCase()
     const hasVideo = Boolean(sceneMediaFieldValue(scene, 'video', 'apiPath') || sceneMediaFieldValue(scene, 'video', 'url') || scene?.video_name || scene?.videoName)
     const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
@@ -1890,9 +1893,11 @@ function isBoardVideoDoneStatus(status) {
       const hasVideoResult = Boolean(scene?.video_api_path || scene?.videoApiPath || scene?.video_url || scene?.videoUrl || scene?.video_name || scene?.videoName)
       const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
 
-      if (hasVideoResult) return false
+      // AVA_BOARD_CLEAR_OLD_VIDEO_DURING_RUNNING_V52:
+      // A real active job/status must win over stale ready video refs from a previous generation.
       if (['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status)) return true
       if (status === 'queued' && hasServerJob) return true
+      if (hasVideoResult) return false
       return false
     }) || null
   }
@@ -1981,11 +1986,8 @@ function isBoardVideoDoneStatus(status) {
         localVideoQueueRef.current.push(sceneId)
         syncQueuedSceneBadges()
       }
-      updateScene(sceneId, {
-        video_status: 'queued',
-        video_error: '',
-        video_queue_position: localVideoQueueRef.current.indexOf(sceneId) + 1,
-      })
+      const queuedPosition = localVideoQueueRef.current.indexOf(sceneId) + 1
+      updateSceneAndSave(sceneId, boardVideoQueuedRegenerateResetPatch(queuedPosition, 'video_queued_for_regenerate'))
       setStatus(`Сцена ${sceneId} поставлена в очередь`)
       pushBoardToast({ type: 'info', title: 'Сцена в очереди', message: `Сцена ${sceneId} ждёт генерацию`, sceneId })
       return
@@ -2673,8 +2675,117 @@ function isBoardVideoDoneStatus(status) {
     }
   }, [playback])
 
+
+  // AVA_BOARD_SAVE_ACTIVE_JOB_SANITIZE_V55:
+  // Final saveBoard gate: an active video job must never be saved with old generated video refs.
+  // This fixes ready-scene regeneration where preserve/canonicalize layers restored previous video.
+  function sanitizeBoardActiveVideoJobsForSaveV55(boardData = {}) {
+    const scenes = asSceneArray(boardData?.scenes)
+    if (!scenes.length) return boardData
+
+    let changed = false
+    const activeStatuses = new Set(['starting', 'queued', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'])
+    const clearGeneratedRefs = (scene) => {
+      const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+      const hasJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint)
+      if (!hasJob || !activeStatuses.has(status)) return scene
+
+      const next = {
+        ...scene,
+
+        video_asset_id: '',
+        videoAssetId: '',
+        video_api_path: '',
+        videoApiPath: '',
+        video_url: '',
+        videoUrl: '',
+        video_name: '',
+        videoName: '',
+        video_result: null,
+        videoResult: null,
+
+        result_url: '',
+        resultUrl: '',
+        result_video_url: '',
+        resultVideoUrl: '',
+        result_video_api_path: '',
+        resultVideoApiPath: '',
+        result_video_asset_id: '',
+        resultVideoAssetId: '',
+        result_video_name: '',
+        resultVideoName: '',
+
+        original_video_url: '',
+        originalVideoUrl: '',
+        video_ready_at: '',
+        videoReadyAt: '',
+
+        mmaudio_video_asset_id: '',
+        mmaudioVideoAssetId: '',
+        mmaudio_video_api_path: '',
+        mmaudioVideoApiPath: '',
+        mmaudio_video_url: '',
+        mmaudioVideoUrl: '',
+        mmaudio_video_name: '',
+        mmaudioVideoName: '',
+        mmaudio_result: null,
+        mmaudioResult: null,
+        mmaudio_result_video_url: '',
+        mmaudioResultVideoUrl: '',
+        mmaudio_result_video_api_path: '',
+        mmaudioResultVideoApiPath: '',
+        mmaudio_result_video_asset_id: '',
+        mmaudioResultVideoAssetId: '',
+        mmaudio_ready_at: '',
+        mmaudioReadyAt: '',
+        mmaudio_source_video_url: '',
+        mmaudioSourceVideoUrl: '',
+        mmaudio_source_video_api_path: '',
+        mmaudioSourceVideoApiPath: '',
+        mmaudio_reset_reason: 'active_video_save_sanitize_v55',
+        mmaudioResetReason: 'active_video_save_sanitize_v55',
+      }
+
+      if (
+        scene.video_asset_id || scene.videoAssetId ||
+        scene.video_api_path || scene.videoApiPath ||
+        scene.video_url || scene.videoUrl ||
+        scene.video_name || scene.videoName ||
+        scene.resultUrl || scene.result_url || scene.resultVideoUrl || scene.result_video_url ||
+        scene.mmaudio_video_api_path || scene.mmaudioVideoApiPath ||
+        scene.mmaudio_video_url || scene.mmaudioVideoUrl
+      ) {
+        changed = true
+      }
+      return next
+    }
+
+    const nextScenes = scenes.map(clearGeneratedRefs)
+    if (!changed) return boardData
+    return {
+      ...boardData,
+      scenes: nextScenes,
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
+
+  // AVA_BOARD_REPLACE_SAVE_ACTIVE_VIDEO_JOBS_V56:
+  // Project saveStage(..., 'safe_merge') can preserve old media refs from the previous snapshot.
+  // For active video regeneration, payload already contains a full Board snapshot, so use replace
+  // to prevent backend safe_merge from restoring stale video_api_path/video_asset_id.
+  function boardHasActiveVideoJobsForReplaceSaveV56(boardData = {}) {
+    const activeStatuses = new Set(['starting', 'queued', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'])
+    return asSceneArray(boardData?.scenes).some((scene) => {
+      const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+      const hasJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint)
+      return hasJob && activeStatuses.has(status)
+    })
+  }
+
   async function saveBoard(nextBoard = board, quiet = false) {
-    const canonicalBoard = canonicalizeBoardMediaRefs(nextBoard)
+    const canonicalBoard = sanitizeBoardActiveVideoJobsForSaveV55(canonicalizeBoardMediaRefs(nextBoard))
+    const useReplaceForActiveVideoJobsV56 = boardHasActiveVideoJobsForReplaceSaveV56(canonicalBoard)
     const payload = {
       ...sanitizeBoardDurableBackup(canonicalBoard),
       boardVersion: BOARD_VERSION,
@@ -2690,7 +2801,7 @@ function isBoardVideoDoneStatus(status) {
       }
       const saveResult = workspaceMode
         ? await saveWorkspaceStage(STAGE, payload)
-        : await saveStage(projectId, STAGE, payload, 'safe_merge')
+        : await saveStage(projectId, STAGE, payload, useReplaceForActiveVideoJobsV56 ? 'replace' : 'safe_merge')
       const verifyScene = boardSaveVerifyScene(payload)
       console.log('[BOARD SAVE VERIFY]', {
         projectId: projectId || '',
@@ -2727,6 +2838,88 @@ function isBoardVideoDoneStatus(status) {
     }
   }
 
+
+  // AVA_BOARD_CLEAR_GENERATED_REFS_ON_SCENE_PATCH_V54:
+  // Last safety gate before canonicalize/save. If a scene patch starts or resumes a video job,
+  // old generated video/MMAudio refs from the previous result must be removed from the same scene object.
+  function boardIsActiveVideoPatchV54(scene = {}, patch = {}) {
+    const status = String(
+      patch?.video_status ??
+      patch?.videoStatus ??
+      scene?.video_status ??
+      scene?.videoStatus ??
+      ''
+    ).toLowerCase()
+    const hasJob = Boolean(
+      patch?.video_job_id ||
+      patch?.videoJobId ||
+      patch?.video_status_endpoint ||
+      patch?.videoStatusEndpoint ||
+      scene?.video_job_id ||
+      scene?.videoJobId ||
+      scene?.video_status_endpoint ||
+      scene?.videoStatusEndpoint
+    )
+    return hasJob && ['starting', 'queued', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status)
+  }
+
+  function boardClearGeneratedRefsForActiveVideoPatchV54(scene = {}, patch = {}) {
+    if (!boardIsActiveVideoPatchV54(scene, patch)) return scene
+    return {
+      ...scene,
+
+      video_asset_id: '',
+      videoAssetId: '',
+      video_api_path: '',
+      videoApiPath: '',
+      video_url: '',
+      videoUrl: '',
+      video_name: '',
+      videoName: '',
+      video_result: null,
+      videoResult: null,
+      result_url: '',
+      resultUrl: '',
+      result_video_url: '',
+      resultVideoUrl: '',
+      result_video_api_path: '',
+      resultVideoApiPath: '',
+      result_video_asset_id: '',
+      resultVideoAssetId: '',
+      result_video_name: '',
+      resultVideoName: '',
+      original_video_url: '',
+      originalVideoUrl: '',
+      video_ready_at: '',
+      videoReadyAt: '',
+
+      mmaudio_video_asset_id: '',
+      mmaudioVideoAssetId: '',
+      mmaudio_video_api_path: '',
+      mmaudioVideoApiPath: '',
+      mmaudio_video_url: '',
+      mmaudioVideoUrl: '',
+      mmaudio_video_name: '',
+      mmaudioVideoName: '',
+      mmaudio_result: null,
+      mmaudioResult: null,
+      mmaudio_result_video_url: '',
+      mmaudioResultVideoUrl: '',
+      mmaudio_result_video_api_path: '',
+      mmaudioResultVideoApiPath: '',
+      mmaudio_result_video_asset_id: '',
+      mmaudioResultVideoAssetId: '',
+      mmaudio_ready_at: '',
+      mmaudioReadyAt: '',
+      mmaudio_source_video_url: '',
+      mmaudioSourceVideoUrl: '',
+      mmaudio_source_video_api_path: '',
+      mmaudioSourceVideoApiPath: '',
+      mmaudio_reset_reason: 'active_video_patch_v54',
+      mmaudioResetReason: 'active_video_patch_v54',
+    }
+  }
+
   function updateScene(sceneId, patch) {
     setBoard((current) => {
       let changed = false
@@ -2739,7 +2932,7 @@ function isBoardVideoDoneStatus(status) {
         if (!hasFieldChange) return scene
 
         changed = true
-        return canonicalizeBoardSceneMediaRefs({ ...scene, ...patch })
+        return canonicalizeBoardSceneMediaRefs(boardClearGeneratedRefsForActiveVideoPatchV54({ ...scene, ...patch }, patch))
       })
 
       if (!changed) return current
@@ -2759,7 +2952,7 @@ function isBoardVideoDoneStatus(status) {
       const entries = Object.entries(patch || {})
       const scenes = current.scenes.map((scene) => {
         if (scene.id !== sceneId && scene.scene_id !== sceneId) return scene
-        const nextScene = canonicalizeBoardSceneMediaRefs({ ...scene, ...patch })
+        const nextScene = canonicalizeBoardSceneMediaRefs(boardClearGeneratedRefsForActiveVideoPatchV54({ ...scene, ...patch }, patch))
         const hasFieldChange = entries.some(([key]) => !Object.is(scene?.[key], nextScene?.[key]))
         if (!hasFieldChange) return scene
         changed = true
@@ -2787,7 +2980,7 @@ function isBoardVideoDoneStatus(status) {
         if (jobId && currentJobId && currentJobId !== jobId) {
           return scene
         }
-        return canonicalizeBoardSceneMediaRefs({ ...scene, ...patch })
+        return canonicalizeBoardSceneMediaRefs(boardClearGeneratedRefsForActiveVideoPatchV54({ ...scene, ...patch }, patch))
       }),
       updatedAt: new Date().toISOString(),
     }))
@@ -3247,6 +3440,152 @@ function isBoardVideoDoneStatus(status) {
     }
   }
 
+  // AVA_BOARD_REGENERATE_CLEANUP_V45:
+  // When user regenerates a scene that already has a ready video, clear the old
+  // video/MMAudio result first. Otherwise active detection can still see an old
+  // video_api_path/videoUrl and treat the scene as already completed.
+  function boardVideoRegenerateResetPatch(reason = 'video_regenerate') {
+    return {
+      ...staleVideoPatch(reason),
+
+      video_status: 'starting',
+      videoStatus: 'starting',
+      video_error: '',
+      videoError: '',
+
+      video_job_id: '',
+      videoJobId: '',
+      video_status_endpoint: '',
+      videoStatusEndpoint: '',
+      video_queue_position: 0,
+      videoQueuePosition: 0,
+
+      video_url: '',
+      videoUrl: '',
+      video_api_path: '',
+      videoApiPath: '',
+      video_name: '',
+      videoName: '',
+      video_asset_id: '',
+      videoAssetId: '',
+      video_result: null,
+      videoResult: null,
+      resultVideoUrl: '',
+      // AVA_BOARD_WIDEN_REGENERATE_CLEANUP_V50:
+      // Clear every old result reference, not only video_url/video_api_path.
+      result_url: '',
+      resultUrl: '',
+      result_video_url: '',
+      resultVideoUrl: '',
+      result_video_api_path: '',
+      resultVideoApiPath: '',
+      result_video_asset_id: '',
+      resultVideoAssetId: '',
+      result_video_name: '',
+      resultVideoName: '',
+      original_video_url: '',
+      originalVideoUrl: '',
+      video_ready_at: '',
+      videoReadyAt: '',
+
+      // Old MMAudio belongs to the old base video, so it must be removed when
+      // the base video is regenerated.
+      mmaudio_status: '',
+      mmaudioStatus: '',
+      mmaudio_error: '',
+      mmaudioError: '',
+      mmaudio_job_id: '',
+      mmaudioJobId: '',
+      mmaudio_status_endpoint: '',
+      mmaudioStatusEndpoint: '',
+      mmaudio_video_url: '',
+      mmaudioVideoUrl: '',
+      mmaudio_video_api_path: '',
+      mmaudioVideoApiPath: '',
+      mmaudio_video_name: '',
+      mmaudio_video_asset_id: '',
+      mmaudioVideoAssetId: '',
+      mmaudio_result_video_url: '',
+      mmaudioResultVideoUrl: '',
+      mmaudio_result_video_api_path: '',
+      mmaudioResultVideoApiPath: '',
+      mmaudio_result_video_asset_id: '',
+      mmaudioResultVideoAssetId: '',
+      mmaudioVideoName: '',
+      mmaudio_result: null,
+      mmaudioResult: null,
+      mmaudio_ready_at: '',
+      mmaudioReadyAt: '',
+      mmaudio_source_video_url: '',
+      mmaudioSourceVideoUrl: '',
+      mmaudio_source_video_api_path: '',
+      mmaudioSourceVideoApiPath: '',
+      mmaudio_reset_reason: 'base_video_restarting',
+      mmaudioResetReason: 'base_video_restarting',
+    }
+  }
+
+  // AVA_BOARD_REGENERATE_QUEUE_BUTTON_V46:
+  // If a ready scene is queued for regeneration while another scene is active,
+  // clear the old video immediately and show a true queued state on card/button.
+  function boardVideoQueuedRegenerateResetPatch(queuePosition = 0, reason = 'video_queued_for_regenerate') {
+    return {
+      ...boardVideoRegenerateResetPatch(reason),
+      video_status: 'queued',
+      videoStatus: 'queued',
+      video_error: '',
+      videoError: '',
+      video_job_id: '',
+      videoJobId: '',
+      video_status_endpoint: '',
+      videoStatusEndpoint: '',
+      video_queue_position: queuePosition,
+      videoQueuePosition: queuePosition,
+    }
+  }
+
+
+  // AVA_BOARD_REGENERATE_CLEANUP_V45:
+  // When MMAudio is launched again for the same scene, clear the old MMAudio
+  // result/job first, but keep the base video and scene media intact.
+  function boardMmaudioRegenerateResetPatch(reason = 'mmaudio_regenerate') {
+    return {
+      mmaudio_status: '',
+      mmaudioStatus: '',
+      mmaudio_error: '',
+      mmaudioError: '',
+      mmaudio_job_id: '',
+      mmaudioJobId: '',
+      mmaudio_status_endpoint: '',
+      mmaudioStatusEndpoint: '',
+      mmaudio_video_url: '',
+      mmaudioVideoUrl: '',
+      mmaudio_video_api_path: '',
+      mmaudioVideoApiPath: '',
+      mmaudio_video_name: '',
+      mmaudio_video_asset_id: '',
+      mmaudioVideoAssetId: '',
+      mmaudio_result_video_url: '',
+      mmaudioResultVideoUrl: '',
+      mmaudio_result_video_api_path: '',
+      mmaudioResultVideoApiPath: '',
+      mmaudio_result_video_asset_id: '',
+      mmaudioResultVideoAssetId: '',
+      mmaudioVideoName: '',
+      mmaudio_result: null,
+      mmaudioResult: null,
+      mmaudio_ready_at: '',
+      mmaudioReadyAt: '',
+      mmaudio_source_video_url: '',
+      mmaudioSourceVideoUrl: '',
+      mmaudio_source_video_api_path: '',
+      mmaudioSourceVideoApiPath: '',
+      mmaudio_reset_reason: reason,
+      mmaudioResetReason: reason,
+    }
+  }
+
+
   async function setSceneFile(scene, fieldUrl, fieldName, statusField, event) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -3686,6 +4025,8 @@ async function takePreviousLastFrame(event = null) {
   }
 
 async function markVideoPlanned(sceneOverride = null) {
+    // AVA_BOARD_PERSIST_MARK_VIDEO_PLANNED_V51: persist start/job/error scene patches so F5 can restore active regeneration.
+
     const sceneToStart = sceneOverride || selectedScene
     if (!sceneToStart) return
     const requestSceneId = asText(sceneToStart.id || sceneToStart.scene_id)
@@ -3756,8 +4097,8 @@ async function markVideoPlanned(sceneOverride = null) {
       return
     }
 
-    updateScene(requestSceneId, {
-      ...staleVideoPatch('video_restarting'),
+    updateSceneAndSave(requestSceneId, {
+      ...boardVideoRegenerateResetPatch('video_restarting'),
       video_status: 'starting',
       video_error: '',
       video_start_warnings: warnings,
@@ -3866,7 +4207,9 @@ async function markVideoPlanned(sceneOverride = null) {
       const jobId = data.jobId || data.job_id || ''
       const status = data.status || 'queued'
 
-      updateScene(requestSceneId, {
+      updateSceneAndSave(requestSceneId, {
+        // AVA_BOARD_CLEAR_OLD_VIDEO_DURING_RUNNING_V52: keep new job, but remove old ready video refs during regeneration.
+        ...boardVideoRegenerateResetPatch('video_start_job_saved'),
         video_status: status,
         video_job_id: jobId,
         video_status_endpoint: data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : ''),
@@ -3886,7 +4229,7 @@ async function markVideoPlanned(sceneOverride = null) {
       pollBoardVideoJob(requestSceneId, videoStatusEndpoint, jobId)
     } catch (error) {
       console.error('[Board] /clip/video/start failed', error)
-      updateScene(requestSceneId, {
+      updateSceneAndSave(requestSceneId, {
         video_status: 'error',
         video_error: error?.message || 'video_start_failed',
       })
@@ -3975,6 +4318,8 @@ async function markVideoPlanned(sceneOverride = null) {
             }
           }
           updateSceneAndSave(sceneId, {
+          // AVA_BOARD_CLEAR_OLD_VIDEO_DURING_RUNNING_V52: running poll must not preserve stale ready video refs.
+          ...boardVideoRegenerateResetPatch('video_poll_running'),
             mmaudio_status: 'ready',
             mmaudio_video_url: videoUrl,
             mmaudioVideoUrl: videoUrl,
@@ -4041,6 +4386,7 @@ async function markVideoPlanned(sceneOverride = null) {
     }
 
     updateScene(selectedScene.id, {
+      ...boardMmaudioRegenerateResetPatch('mmaudio_restarting'),
       mmaudio_status: 'starting',
       mmaudio_error: '',
       mmaudio_video_url: '',
