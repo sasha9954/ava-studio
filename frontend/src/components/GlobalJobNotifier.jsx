@@ -1,3 +1,5 @@
+// AVA_BOARD_POLISH_BUTTONS_MMAUDIO_V58: polished board/MMAudio toast routing.
+import { useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './GlobalJobNotifier.css'
 import {
@@ -61,6 +63,9 @@ async function fetchJson(path) {
 }
 
 export default function GlobalJobNotifier() {
+  // AVA_BOARD_POLISH_BUTTONS_MMAUDIO_V58: use SPA navigation for toast clicks.
+  const navigate = useNavigate()
+
   const [toasts, setToasts] = useState([])
   const pollingRef = useRef(null)
   const toastTimersRef = useRef(new Map())
@@ -179,7 +184,7 @@ export default function GlobalJobNotifier() {
     }
     setToasts((old) => old.filter((item) => item.id !== toast.id))
     const path = toast.pagePath || '/app/workspace/generator'
-    if (window.location.pathname !== path) window.location.href = path
+    if (window.location.pathname !== path) navigate(path)
   }, [])
 
   if (!toasts.length) return null

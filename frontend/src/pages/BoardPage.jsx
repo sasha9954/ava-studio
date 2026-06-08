@@ -3124,8 +3124,30 @@ function isBoardVideoDoneStatus(status) {
       createdAt: new Date().toISOString(),
     }
 
-    const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
+        // AVA_BOARD_POLISH_BUTTONS_MMAUDIO_V58: normalize Board video/MMAudio global job notification metadata.
+    const isMmaudioJobV58 = kind === 'mmaudio'
+    Object.assign(nextJob, {
+      source: nextJob.source || 'board',
+      stage: nextJob.stage || 'board',
+      title: nextJob.title || (isMmaudioJobV58 ? 'MMAudio' : 'Видео'),
+      label: nextJob.label || (isMmaudioJobV58 ? 'MMAudio' : 'Видео'),
+      toastTitle: nextJob.toastTitle || (isMmaudioJobV58 ? 'MMAudio готово' : 'Видео готово'),
+      toastMessage: nextJob.toastMessage || (isMmaudioJobV58
+        ? `Сцена ${sceneId}: звук готов. Перейти в доску?`
+        : `Сцена ${sceneId}: видео готово. Перейти в доску?`),
+      to: nextJob.to || boardProjectPagePath(),
+      pagePath: nextJob.pagePath || boardProjectPagePath(),
+      projectId: nextJob.projectId || projectId || '',
+      sceneId: nextJob.sceneId || sceneId,
+      route: nextJob.route || (isMmaudioJobV58 ? 'mmaudio' : ''),
+    })
+
+const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
     writeAvaGlobalJobs([...jobs, nextJob].slice(-12))
+    // AVA_BOARD_POLISH_BUTTONS_MMAUDIO_V58: wake GlobalJobNotifier immediately after board job registration.
+    try {
+      window.dispatchEvent(new CustomEvent('ava:global-jobs-changed'))
+    } catch {}
   }
 
 

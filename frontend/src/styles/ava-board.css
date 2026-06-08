@@ -4536,3 +4536,124 @@
   color: rgba(199, 212, 235, 0.64);
   line-height: 1.35;
 }
+
+
+/* AVA_BOARD_POLISH_BUTTONS_MMAUDIO_V58
+   Keep Board video action buttons visually consistent for active generation states.
+   Busy and queued use the same native rounded button shape; only the accent changes slightly. */
+.avaBoardWorkflowButton.isVideo.isBusy,
+.avaBoardWorkflowButton.isVideo.isQueued {
+  border-radius: 18px !important;
+  border: 1px solid rgba(255, 181, 84, 0.48) !important;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 238, 180, 0.24), transparent 34%),
+    linear-gradient(135deg, rgba(255, 165, 52, 0.96), rgba(214, 104, 26, 0.94)) !important;
+  color: #fff7e8 !important;
+  box-shadow:
+    0 12px 28px rgba(202, 94, 18, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+  transform: none !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isQueued {
+  border-color: rgba(255, 202, 95, 0.58) !important;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 246, 199, 0.24), transparent 34%),
+    linear-gradient(135deg, rgba(255, 193, 75, 0.96), rgba(220, 122, 30, 0.94)) !important;
+  box-shadow:
+    0 12px 28px rgba(210, 122, 18, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30) !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy:hover,
+.avaBoardWorkflowButton.isVideo.isQueued:hover {
+  filter: brightness(1.04);
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy span,
+.avaBoardWorkflowButton.isVideo.isQueued span {
+  color: #fffaf0 !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy small,
+.avaBoardWorkflowButton.isVideo.isQueued small {
+  color: rgba(255, 249, 232, 0.78) !important;
+  font-size: 11px !important;
+  line-height: 1.15 !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy .avaBoardButtonSpinnerV15,
+.avaBoardWorkflowButton.isVideo.isQueued .avaBoardButtonSpinnerV15 {
+  border-color: rgba(255, 255, 255, 0.34) !important;
+  border-top-color: #fffaf0 !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isQueued .avaBoardButtonSpinnerV15 {
+  animation: avaBoardButtonSpinV15 1.35s linear infinite;
+}
+
+
+/* AVA_BOARD_QUEUE_BUTTON_POLISH_V59
+   Softer queued/busy button, darker outline, spinner in top-right corner.
+   Keeps native look, avoids spinner overlapping the text. */
+.avaBoardWorkflowButton.isVideo.isBusy,
+.avaBoardWorkflowButton.isVideo.isQueued {
+  position: relative !important;
+  overflow: hidden !important;
+  padding-right: 42px !important;
+  border-radius: 18px !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy {
+  border: 1px solid rgba(155, 82, 18, 0.68) !important;
+  background:
+    radial-gradient(circle at 16% 18%, rgba(255, 242, 198, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(232, 151, 54, 0.96), rgba(196, 104, 24, 0.96)) !important;
+  box-shadow:
+    0 10px 24px rgba(126, 58, 10, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isQueued {
+  border: 1px solid rgba(144, 74, 18, 0.72) !important;
+  background:
+    radial-gradient(circle at 16% 18%, rgba(255, 242, 198, 0.15), transparent 34%),
+    linear-gradient(135deg, rgba(224, 145, 50, 0.96), rgba(186, 98, 23, 0.96)) !important;
+  box-shadow:
+    0 10px 24px rgba(120, 57, 12, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20) !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy:hover,
+.avaBoardWorkflowButton.isVideo.isQueued:hover {
+  filter: brightness(1.02) !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy span,
+.avaBoardWorkflowButton.isVideo.isQueued span {
+  color: #fff6ea !important;
+  text-shadow: 0 1px 0 rgba(103, 46, 11, 0.22) !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy small,
+.avaBoardWorkflowButton.isVideo.isQueued small {
+  color: rgba(255, 246, 232, 0.82) !important;
+  font-size: 11px !important;
+  line-height: 1.15 !important;
+}
+
+.avaBoardWorkflowButton.isVideo.isBusy .avaBoardButtonSpinnerV15,
+.avaBoardWorkflowButton.isVideo.isQueued .avaBoardButtonSpinnerV15 {
+  position: absolute !important;
+  top: 10px !important;
+  right: 10px !important;
+  left: auto !important;
+  margin: 0 !important;
+  width: 13px !important;
+  height: 13px !important;
+  border-width: 2px !important;
+  border-color: rgba(255, 247, 235, 0.34) !important;
+  border-top-color: #fff9f0 !important;
+  pointer-events: none !important;
+  z-index: 2 !important;
+}
