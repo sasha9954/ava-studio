@@ -4657,3 +4657,119 @@
   pointer-events: none !important;
   z-index: 2 !important;
 }
+
+
+/* AVA_BOARD_SELECTED_SCENE_ACCENT_V60C
+   Selected scene accent: workspace-level --scene-hue softly colors the main edit panels.
+   Very light contour + slim left rail, without filling the media area. */
+.avaBoardWorkspace {
+  --scene-accent-border-v60c: color-mix(in srgb, var(--scene-hue, #8b5cf6) 34%, rgba(76, 94, 138, 0.50));
+  --scene-accent-glow-v60c: color-mix(in srgb, var(--scene-hue, #8b5cf6) 16%, transparent);
+  --scene-accent-rail-v60c: color-mix(in srgb, var(--scene-hue, #8b5cf6) 78%, #ffffff 0%);
+}
+
+.avaBoardWorkspace .avaBoardBrainPanel,
+.avaBoardWorkspace .avaBoardMediaPanel {
+  position: relative;
+  border-color: var(--scene-accent-border-v60c) !important;
+  box-shadow:
+    0 0 0 1px var(--scene-accent-glow-v60c),
+    0 18px 40px rgba(0, 0, 0, 0.22) !important;
+}
+
+.avaBoardWorkspace .avaBoardBrainPanel::before,
+.avaBoardWorkspace .avaBoardMediaPanel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18px;
+  bottom: 18px;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(
+    180deg,
+    var(--scene-accent-rail-v60c),
+    color-mix(in srgb, var(--scene-hue, #8b5cf6) 25%, transparent)
+  );
+  opacity: 0.78;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.avaBoardWorkspace .avaBoardSceneTitleRow h3,
+.avaBoardWorkspace .avaBoardMediaHeader h3 {
+  text-shadow: 0 0 16px color-mix(in srgb, var(--scene-hue, #8b5cf6) 18%, transparent);
+}
+
+@supports not (color: color-mix(in srgb, #fff 50%, #000)) {
+  .avaBoardWorkspace .avaBoardBrainPanel,
+  .avaBoardWorkspace .avaBoardMediaPanel {
+    border-color: rgba(139, 92, 246, 0.42) !important;
+    box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.16), 0 18px 40px rgba(0, 0, 0, 0.22) !important;
+  }
+
+  .avaBoardWorkspace .avaBoardBrainPanel::before,
+  .avaBoardWorkspace .avaBoardMediaPanel::before {
+    background: linear-gradient(180deg, rgba(139, 92, 246, 0.78), rgba(139, 92, 246, 0.22));
+  }
+}
+
+/* AVA_BOARD_SELECTED_SCENE_ACCENT_RGB_V61
+   Stronger and more reliable selected-scene accent.
+   Uses --scene-rgb to avoid white/fallback borders when color-mix or raw color parsing fails. */
+.avaBoardWorkspace .avaBoardBrainPanel,
+.avaBoardWorkspace .avaBoardMediaPanel {
+  border-color: rgba(var(--scene-rgb, 139, 92, 246), 0.62) !important;
+  box-shadow:
+    0 0 0 1px rgba(var(--scene-rgb, 139, 92, 246), 0.24),
+    0 0 26px rgba(var(--scene-rgb, 139, 92, 246), 0.10),
+    0 18px 40px rgba(0, 0, 0, 0.22) !important;
+}
+
+.avaBoardWorkspace .avaBoardBrainPanel::before,
+.avaBoardWorkspace .avaBoardMediaPanel::before {
+  background: linear-gradient(
+    180deg,
+    rgba(var(--scene-rgb, 139, 92, 246), 0.90),
+    rgba(var(--scene-rgb, 139, 92, 246), 0.20)
+  ) !important;
+  box-shadow: 0 0 18px rgba(var(--scene-rgb, 139, 92, 246), 0.30);
+}
+
+.avaBoardWorkspace .avaBoardSceneTitleRow h3,
+.avaBoardWorkspace .avaBoardMediaHeader h3 {
+  text-shadow: 0 0 18px rgba(var(--scene-rgb, 139, 92, 246), 0.24) !important;
+}
+
+.avaBoardWorkspace .avaBoardStatChip,
+.avaBoardWorkspace .avaBoardSceneCounter {
+  border-color: rgba(var(--scene-rgb, 139, 92, 246), 0.32) !important;
+}
+
+/* AVA_BOARD_SELECTED_SCENE_ACCENT_MATCH_CARDS_V62
+   Match Scene Brain / Media Studio accent to the active scene card.
+   Scene cards use numeric --scene-hue + hsla(...), so panels should use the same model. */
+.avaBoardWorkspace .avaBoardBrainPanel,
+.avaBoardWorkspace .avaBoardMediaPanel {
+  border-color: hsla(var(--scene-hue, 220), 90%, 74%, 0.48) !important;
+  box-shadow:
+    inset 3px 0 0 hsla(var(--scene-hue, 220), 88%, 62%, 0.50),
+    0 0 0 1px hsla(var(--scene-hue, 220), 82%, 70%, 0.20),
+    0 0 26px hsla(var(--scene-hue, 220), 82%, 58%, 0.08),
+    0 18px 40px rgba(0, 0, 0, 0.22) !important;
+}
+
+.avaBoardWorkspace .avaBoardBrainPanel::before,
+.avaBoardWorkspace .avaBoardMediaPanel::before {
+  background: linear-gradient(
+    180deg,
+    hsla(var(--scene-hue, 220), 92%, 68%, 0.68),
+    hsla(var(--scene-hue, 220), 88%, 58%, 0.16)
+  ) !important;
+  box-shadow: 0 0 18px hsla(var(--scene-hue, 220), 88%, 62%, 0.22) !important;
+}
+
+.avaBoardWorkspace .avaBoardSceneTitleRow h3,
+.avaBoardWorkspace .avaBoardMediaHeader h3 {
+  text-shadow: 0 0 16px hsla(var(--scene-hue, 220), 88%, 62%, 0.18) !important;
+}

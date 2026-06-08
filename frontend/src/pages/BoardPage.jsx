@@ -1,3 +1,6 @@
+/* AVA_BOARD_SELECTED_SCENE_ACCENT_MATCH_CARDS_V62: workspace hue matches scene card hue. */
+/* AVA_BOARD_SELECTED_SCENE_ACCENT_RGB_V61: robust selected scene RGB accent. */
+/* AVA_BOARD_SELECTED_SCENE_ACCENT_V60C: selected scene color accents Board workspace. */
 /* AVA_BOARD_TIMING_DURATION_LOCK_V38: Timing-imported Board scenes have locked duration independent of route. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -1733,6 +1736,57 @@ function buildCleanBoardFromTimingV14B(timingData = {}) {
     selectedSceneId: cleanScenes[0]?.id || cleanScenes[0]?.scene_id || next.selectedSceneId || '',
     updatedAt: new Date().toISOString(),
   }
+}
+
+
+function selectedSceneAccentColorV60C(scene = {}) {
+  return scene?.sceneColor || scene?.scene_color || scene?.blockColor || scene?.block_color || scene?.color || scene?.hue || '#8b5cf6'
+}
+
+
+// AVA_BOARD_SELECTED_SCENE_ACCENT_RGB_V61: robust scene accent color variables for Board UI.
+function sceneAccentColorValueV61(scene = {}) {
+  return scene?.sceneColor || scene?.scene_color || scene?.blockColor || scene?.block_color || scene?.color || scene?.hue || '#8b5cf6'
+}
+
+function sceneAccentRgbV61(scene = {}) {
+  const raw = String(sceneAccentColorValueV61(scene) || '#8b5cf6').trim()
+  const hex = raw.match(/^#?([0-9a-f]{6})$/i)
+  if (hex) {
+    const value = hex[1]
+    return `${parseInt(value.slice(0, 2), 16)}, ${parseInt(value.slice(2, 4), 16)}, ${parseInt(value.slice(4, 6), 16)}`
+  }
+
+  const shortHex = raw.match(/^#?([0-9a-f]{3})$/i)
+  if (shortHex) {
+    const value = shortHex[1].split('').map((ch) => ch + ch).join('')
+    return `${parseInt(value.slice(0, 2), 16)}, ${parseInt(value.slice(2, 4), 16)}, ${parseInt(value.slice(4, 6), 16)}`
+  }
+
+  const rgb = raw.match(/rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)/i)
+  if (rgb) return `${Math.round(Number(rgb[1]))}, ${Math.round(Number(rgb[2]))}, ${Math.round(Number(rgb[3]))}`
+
+  const hsl = raw.match(/hsla?\(\s*([0-9.]+)(?:deg)?\s*,\s*([0-9.]+)%\s*,\s*([0-9.]+)%/i)
+  if (hsl) {
+    const h = ((Number(hsl[1]) % 360) + 360) % 360
+    const s = Math.max(0, Math.min(1, Number(hsl[2]) / 100))
+    const l = Math.max(0, Math.min(1, Number(hsl[3]) / 100))
+    const c = (1 - Math.abs(2 * l - 1)) * s
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+    const m = l - c / 2
+    let r = 0
+    let g = 0
+    let b = 0
+    if (h < 60) [r, g, b] = [c, x, 0]
+    else if (h < 120) [r, g, b] = [x, c, 0]
+    else if (h < 180) [r, g, b] = [0, c, x]
+    else if (h < 240) [r, g, b] = [0, x, c]
+    else if (h < 300) [r, g, b] = [x, 0, c]
+    else [r, g, b] = [c, 0, x]
+    return `${Math.round((r + m) * 255)}, ${Math.round((g + m) * 255)}, ${Math.round((b + m) * 255)}`
+  }
+
+  return '139, 92, 246'
 }
 
 export default function BoardPage() {
@@ -4831,7 +4885,7 @@ async function importTimingJson(event) {
       </div>
 
       {selectedScene ? (
-        <section className="avaBoardWorkspace">
+        <section className="avaBoardWorkspace" style={{ '--scene-hue': storyboardSceneColor(selectedScene, Math.max(0, boardScenes.findIndex((scene) => scene.id === selectedScene?.id))) }}>
           <div className="avaBoardBrainPanel">
             <div className="avaBoardSceneTitleRow">
               <div>
