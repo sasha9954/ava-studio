@@ -1902,6 +1902,59 @@ function isBoardVideoDoneStatus(status) {
     }) || null
   }
 
+  // AVA_BOARD_QUEUE_RESTORE_NO_UPDATE_PATCH_V57B:
+  // Persist/rebuild queue from scene statuses. Does not touch v56 regenerate fix.
+  function boardQueuedWaitingSceneIdsV57B(boardData = {}) {
+    return asSceneArray(boardData?.scenes)
+      .filter((scene) => {
+        const id = asText(scene?.id || scene?.scene_id)
+        const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+        const hasJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint)
+        return id && status === 'queued' && !hasJob
+      })
+      .map((scene, index) => ({
+        id: asText(scene?.id || scene?.scene_id),
+        position: Number(scene?.video_queue_position ?? scene?.videoQueuePosition ?? 0) || (index + 1),
+        index,
+      }))
+      .sort((a, b) => (a.position - b.position) || (a.index - b.index))
+      .map((item) => item.id)
+  }
+
+  function boardMergeWaitingSceneIdsV57B(boardData = {}, runtimeIds = []) {
+    const validIds = new Set(boardQueuedWaitingSceneIdsV57B(boardData))
+    const ordered = []
+    for (const id of runtimeIds || []) {
+      const safeId = asText(id)
+      if (safeId && validIds.has(safeId) && !ordered.includes(safeId)) ordered.push(safeId)
+    }
+    for (const id of validIds) {
+      if (!ordered.includes(id)) ordered.push(id)
+    }
+    return ordered
+  }
+
+  function boardWithVideoQueueSnapshotV57B(boardData = {}, options = {}) {
+    const previousQueue = boardData?.video_queue || boardData?.videoQueue || {}
+    const activeScene = activeBoardVideoScene(boardData)
+    const waitingSceneIds = boardMergeWaitingSceneIdsV57B(
+      boardData,
+      Array.isArray(options.waitingSceneIds) ? options.waitingSceneIds : (previousQueue.waitingSceneIds || previousQueue.waiting_scene_ids || localVideoQueueRef.current || [])
+    )
+    return {
+      ...boardData,
+      video_queue: {
+        activeSceneId: asText(activeScene?.id || activeScene?.scene_id),
+        activeJobId: asText(activeScene?.video_job_id || activeScene?.videoJobId),
+        activeStatusEndpoint: asText(activeScene?.video_status_endpoint || activeScene?.videoStatusEndpoint),
+        waitingSceneIds,
+        updatedAt: new Date().toISOString(),
+        source: options.reason || 'queue_restore_v57B',
+      },
+    }
+  }
+
+
   function syncQueuedSceneBadges() {
     const queuedIds = [...localVideoQueueRef.current]
     setBoard((current) => {
@@ -1933,6 +1986,11 @@ function isBoardVideoDoneStatus(status) {
 
   function processNextQueuedBoardVideo() {
     const currentBoard = boardRef.current
+    // AVA_BOARD_QUEUE_RESTORE_NO_UPDATE_PATCH_V57B:
+    // Runtime queue is lost after F5; rebuild it from persisted queued scenes.
+    if (!localVideoQueueRef.current.length) {
+      localVideoQueueRef.current = boardQueuedWaitingSceneIdsV57B(currentBoard)
+    }
     if (activeBoardVideoScene(currentBoard)) return
 
     while (localVideoQueueRef.current.length) {
@@ -2641,6 +2699,27 @@ function isBoardVideoDoneStatus(status) {
     return () => window.clearTimeout(timer)
   }, [loading, board, projectId, workspaceMode])
 
+
+  // AVA_BOARD_QUEUE_RESTORE_NO_UPDATE_PATCH_V57B:
+  // Restore waiting queue after F5/re-enter. If active job is gone/finished and waiting scenes remain,
+  // start exactly one queued scene.
+  useEffect(() => {
+    const waitingIds = boardMergeWaitingSceneIdsV57B(board, board?.video_queue?.waitingSceneIds || [])
+    if (waitingIds.length) {
+      localVideoQueueRef.current = waitingIds
+    }
+    if (!waitingIds.length || activeBoardVideoScene(board)) return undefined
+
+    const timer = window.setTimeout(() => {
+      const liveBoard = boardRef.current
+      if (activeBoardVideoScene(liveBoard)) return
+      localVideoQueueRef.current = boardMergeWaitingSceneIdsV57B(liveBoard, localVideoQueueRef.current)
+      processNextQueuedBoardVideo()
+    }, 350)
+
+    return () => window.clearTimeout(timer)
+  }, [board])
+
   useEffect(() => {
     if (loading) return undefined
     board.scenes.forEach((scene) => {
@@ -2784,7 +2863,8 @@ function isBoardVideoDoneStatus(status) {
   }
 
   async function saveBoard(nextBoard = board, quiet = false) {
-    const canonicalBoard = sanitizeBoardActiveVideoJobsForSaveV55(canonicalizeBoardMediaRefs(nextBoard))
+    const canonicalBoardBaseV57B = sanitizeBoardActiveVideoJobsForSaveV55(canonicalizeBoardMediaRefs(nextBoard))
+    const canonicalBoard = boardWithVideoQueueSnapshotV57B(canonicalBoardBaseV57B, { reason: 'saveBoard_v57B' })
     const useReplaceForActiveVideoJobsV56 = boardHasActiveVideoJobsForReplaceSaveV56(canonicalBoard)
     const payload = {
       ...sanitizeBoardDurableBackup(canonicalBoard),
