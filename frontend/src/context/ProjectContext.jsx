@@ -1,14 +1,23 @@
+/* AVA_PROJECT_NEW_ID_GUARD_V12: ignore reserved route id 'new' and only accept real p_* project ids. */
+/* AVA_PROJECT_MODES_PACK_V1: normalize project_mode for old and new projects. */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '../services/apiClient.js'
 import { useAuth } from './AuthContext.jsx'
+import { normalizeProjectRecord } from '../lib/projectModes.js'
 
 const ProjectContext = createContext(null)
 const ACTIVE_PROJECT_SESSION_KEY = 'ava_active_project_id'
 
+function avaProjectContextIsRealProjectId(value = '') {
+  const id = String(value || '').trim()
+  return /^p_[a-z0-9]+$/i.test(id)
+}
+
 function avaProjectIdFromCurrentRouteV40D() {
   if (typeof window === 'undefined') return ''
   const match = String(window.location?.pathname || '').match(/\/app\/projects\/([^/]+)/)
-  return match?.[1] ? decodeURIComponent(match[1]) : ''
+  const rawProjectId = match?.[1] ? decodeURIComponent(match[1]) : ''
+  return avaProjectContextIsRealProjectId(rawProjectId) ? rawProjectId : ''
 }
 
 
@@ -70,7 +79,7 @@ export function ProjectProvider({ children }) {
     setLoadingProjects(true)
     try {
       const data = await apiRequest('/projects')
-      const loadedProjects = data.projects || []
+      const loadedProjects = (data.projects || []).map(normalizeProjectRecord)
       setProjects(loadedProjects)
 
       // После обычного входа пользователь не должен автоматически попадать
@@ -109,24 +118,26 @@ export function ProjectProvider({ children }) {
       method: 'POST',
       body: JSON.stringify(payload),
     })
-    setActiveProject(data.project)
-    sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, data.project.id)
-    try { localStorage.setItem('ava_last_active_project_id', data.project.id) } catch {}
+    const normalizedProject = normalizeProjectRecord(data.project)
+    setActiveProject(normalizedProject)
+    sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, normalizedProject.id)
+    try { localStorage.setItem('ava_last_active_project_id', normalizedProject.id) } catch {}
     await refreshProjects()
-    return data.project
+    return normalizedProject
   }
 
   async function openProject(project) {
-    setActiveProject(project)
-    sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, project.id)
-    try { localStorage.setItem('ava_last_active_project_id', project.id) } catch {}
+    const normalizedProject = normalizeProjectRecord(project)
+    setActiveProject(normalizedProject)
+    sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, normalizedProject.id)
+    try { localStorage.setItem('ava_last_active_project_id', normalizedProject.id) } catch {}
   }
 
   const syncActiveProjectFromRoute = useCallback((projectId, reason = 'route') => {
     // AVA_PROJECT_ROUTE_ACTIVE_SYNC_V40D:
     // Keep global project context/sidebar synced with /app/projects/:projectId/... routes.
     const cleanProjectId = String(projectId || '').trim()
-    if (!cleanProjectId) return null
+    if (!avaProjectContextIsRealProjectId(cleanProjectId)) return null
 
     try {
       sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, cleanProjectId)
@@ -164,13 +175,17 @@ export function ProjectProvider({ children }) {
   }
 
   async function loadStage(projectId, stage) {
-    const data = await apiRequest(`/projects/${projectId}/snapshots/${stage}`)
+    const cleanProjectId = String(projectId || '').trim()
+    if (!avaProjectContextIsRealProjectId(cleanProjectId)) throw new Error(`invalid_project_id:${cleanProjectId || 'empty'}`)
+    const data = await apiRequest(`/projects/${cleanProjectId}/snapshots/${stage}`)
     return data.snapshot?.data || {}
   }
 
   async function saveStage(projectId, stage, data, guardMode = 'safe_merge') {
+    const cleanProjectId = String(projectId || '').trim()
+    if (!avaProjectContextIsRealProjectId(cleanProjectId)) throw new Error(`invalid_project_id:${cleanProjectId || 'empty'}`)
     logProjectSaveMediaRefsSummary(stage, data, 'project')
-    const response = await apiRequest(`/projects/${projectId}/snapshots/${stage}`, {
+    const response = await apiRequest(`/projects/${cleanProjectId}/snapshots/${stage}`, {
       method: 'POST',
       body: JSON.stringify({ data, guard_mode: guardMode, client_version: 'ava-shell-v0.1' }),
     })

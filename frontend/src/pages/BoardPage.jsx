@@ -1956,6 +1956,46 @@ function isBoardVideoDoneStatus(status) {
     }) || null
   }
 
+  // AVA_BOARD_QUEUE_HARD_SINGLE_ACTIVE_V61:
+  // A runtime guard for the small gap between "we decided to start a queued scene"
+  // and React/backend state showing a real active job. Without it, F5 restore + poll completion
+  // can submit two Board videos at almost the same time.
+  function boardVideoQueueStartInFlight() {
+    const sceneId = asText(localVideoQueueStartLockRef.current)
+    if (!sceneId) return ''
+    const startedAt = Number(localVideoQueueStartLockAtRef.current || 0)
+    if (startedAt && Date.now() - startedAt > 45000) {
+      localVideoQueueStartLockRef.current = ''
+      localVideoQueueStartLockAtRef.current = 0
+      return ''
+    }
+    return sceneId
+  }
+
+  function boardBeginVideoQueueStart(sceneId) {
+    const safeSceneId = asText(sceneId)
+    if (!safeSceneId) return false
+    const existing = boardVideoQueueStartInFlight()
+    if (existing && existing !== safeSceneId) return false
+    localVideoQueueStartLockRef.current = safeSceneId
+    localVideoQueueStartLockAtRef.current = Date.now()
+    return true
+  }
+
+  function boardReleaseVideoQueueStart(sceneId = '') {
+    const safeSceneId = asText(sceneId)
+    if (!safeSceneId || localVideoQueueStartLockRef.current === safeSceneId) {
+      localVideoQueueStartLockRef.current = ''
+      localVideoQueueStartLockAtRef.current = 0
+    }
+  }
+
+  function boardHasActiveVideoOrStartLock(currentBoard = boardRef.current) {
+    if (activeBoardVideoScene(currentBoard)) return true
+    if (boardVideoQueueStartInFlight()) return true
+    return Boolean(activeVideoPollsRef.current?.size)
+  }
+
   // AVA_BOARD_QUEUE_RESTORE_NO_UPDATE_PATCH_V57B:
   // Persist/rebuild queue from scene statuses. Does not touch v56 regenerate fix.
   function boardQueuedWaitingSceneIdsV57B(boardData = {}) {
@@ -1975,17 +2015,49 @@ function isBoardVideoDoneStatus(status) {
       .map((item) => item.id)
   }
 
-  function boardMergeWaitingSceneIdsV57B(boardData = {}, runtimeIds = []) {
-    const validIds = new Set(boardQueuedWaitingSceneIdsV57B(boardData))
+  function boardQueueSnapshotWaitingIdsV59(boardData = {}, runtimeIds = []) {
+    const previousQueue = boardData?.video_queue || boardData?.videoQueue || {}
+    const rawIds = [
+      ...(Array.isArray(runtimeIds) ? runtimeIds : []),
+      ...(Array.isArray(previousQueue.waitingSceneIds) ? previousQueue.waitingSceneIds : []),
+      ...(Array.isArray(previousQueue.waiting_scene_ids) ? previousQueue.waiting_scene_ids : []),
+      ...boardQueuedWaitingSceneIdsV57B(boardData),
+    ]
+    const scenes = asSceneArray(boardData?.scenes)
     const ordered = []
-    for (const id of runtimeIds || []) {
-      const safeId = asText(id)
-      if (safeId && validIds.has(safeId) && !ordered.includes(safeId)) ordered.push(safeId)
+
+    for (const rawId of rawIds) {
+      const safeId = asText(rawId)
+      if (!safeId || ordered.includes(safeId)) continue
+
+      const scene = scenes.find((item) => asText(item?.id || item?.scene_id) === safeId)
+      if (!scene) continue
+
+      const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+      const hasJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint)
+      const hasVideoResult = Boolean(
+        scene?.video_api_path || scene?.videoApiPath ||
+        scene?.video_url || scene?.videoUrl ||
+        scene?.video_name || scene?.videoName ||
+        scene?.video_asset_id || scene?.videoAssetId
+      )
+      const isWorkerStatus = ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status)
+      const isBadStatus = ['error', 'failed', 'blocked_missing_comfy_base_url', 'blocked_missing_audio_slice', 'blocked_missing_prompt'].includes(status)
+
+      // Waiting queue means: scene exists, has no finished video, has no active server job,
+      // and is not a known broken/blocked item. Empty status is allowed here because F5 cleanup
+      // is exactly what can erase the visible queued badge before restore runs.
+      if (hasJob || hasVideoResult || isWorkerStatus || isBadStatus) continue
+      ordered.push(safeId)
     }
-    for (const id of validIds) {
-      if (!ordered.includes(id)) ordered.push(id)
-    }
+
     return ordered
+  }
+
+  function boardMergeWaitingSceneIdsV57B(boardData = {}, runtimeIds = []) {
+    // AVA_BOARD_QUEUE_F5_KEEP_PERSISTED_WAITING_IDS_V59:
+    // Keep persisted board.video_queue.waitingSceneIds even if queued scene badges were erased by F5 cleanup.
+    return boardQueueSnapshotWaitingIdsV59(boardData, runtimeIds)
   }
 
   function boardWithVideoQueueSnapshotV57B(boardData = {}, options = {}) {
@@ -2040,16 +2112,26 @@ function isBoardVideoDoneStatus(status) {
 
   function processNextQueuedBoardVideo() {
     const currentBoard = boardRef.current
-    // AVA_BOARD_QUEUE_RESTORE_NO_UPDATE_PATCH_V57B:
-    // Runtime queue is lost after F5; rebuild it from persisted queued scenes.
+
+    // AVA_BOARD_QUEUE_HARD_SINGLE_ACTIVE_V61:
+    // Only one Board video may be submitted at a time. The check includes:
+    // - active scene status/job in Board state
+    // - POST/start lock before React state catches up
+    // - active status polling already running in the browser
+    if (boardHasActiveVideoOrStartLock(currentBoard)) return
+
+    // Runtime queue is lost after F5; rebuild it from persisted board.video_queue + visible queued badges.
     if (!localVideoQueueRef.current.length) {
-      localVideoQueueRef.current = boardQueuedWaitingSceneIdsV57B(currentBoard)
+      localVideoQueueRef.current = boardMergeWaitingSceneIdsV57B(currentBoard, [])
+    } else {
+      localVideoQueueRef.current = boardMergeWaitingSceneIdsV57B(currentBoard, localVideoQueueRef.current)
     }
-    if (activeBoardVideoScene(currentBoard)) return
 
     while (localVideoQueueRef.current.length) {
+      if (boardHasActiveVideoOrStartLock(boardRef.current)) return
+
       const nextId = localVideoQueueRef.current.shift()
-      const scene = asSceneArray(boardRef.current?.scenes || currentBoard?.scenes).find((item) => item.id === nextId)
+      const scene = asSceneArray(boardRef.current?.scenes || currentBoard?.scenes).find((item) => item.id === nextId || item.scene_id === nextId)
       if (!scene) continue
 
       const inputProblems = sceneVideoInputProblems(scene)
@@ -2058,11 +2140,20 @@ function isBoardVideoDoneStatus(status) {
         continue
       }
 
+      if (!boardBeginVideoQueueStart(nextId)) return
       syncQueuedSceneBadges()
       setBoard((current) => ({ ...current, selectedSceneId: nextId }))
       setStatus(`Запускаем из очереди: ${nextId}`)
       window.setTimeout(() => {
-        markVideoPlanned(scene)
+        Promise.resolve(markVideoPlanned(scene)).finally(() => {
+          // Give updateSceneAndSave/poll start time to put the scene into starting/queued/running state.
+          window.setTimeout(() => {
+            boardReleaseVideoQueueStart(nextId)
+            if (!boardHasActiveVideoOrStartLock(boardRef.current)) {
+              window.setTimeout(processNextQueuedBoardVideo, 350)
+            }
+          }, 1600)
+        })
       }, 120)
       return
     }
@@ -2092,8 +2183,14 @@ function isBoardVideoDoneStatus(status) {
     const currentBoard = boardRef.current
     const activeScene = activeBoardVideoScene(currentBoard)
     const sceneId = selectedScene.id
+    const inFlightSceneId = boardVideoQueueStartInFlight()
+    const shouldQueueBehindActive = Boolean(
+      (activeScene && activeScene.id !== sceneId) ||
+      (inFlightSceneId && inFlightSceneId !== sceneId) ||
+      activeVideoPollsRef.current?.size
+    )
 
-    if (activeScene && activeScene.id !== sceneId) {
+    if (shouldQueueBehindActive) {
       if (!localVideoQueueRef.current.includes(sceneId)) {
         localVideoQueueRef.current.push(sceneId)
         syncQueuedSceneBadges()
@@ -2105,7 +2202,25 @@ function isBoardVideoDoneStatus(status) {
       return
     }
 
-    markVideoPlanned(selectedScene)
+    if (!boardBeginVideoQueueStart(sceneId)) {
+      if (!localVideoQueueRef.current.includes(sceneId)) {
+        localVideoQueueRef.current.push(sceneId)
+        syncQueuedSceneBadges()
+      }
+      const queuedPosition = localVideoQueueRef.current.indexOf(sceneId) + 1
+      updateSceneAndSave(sceneId, boardVideoQueuedRegenerateResetPatch(queuedPosition, 'video_queued_for_regenerate'))
+      setStatus(`Сцена ${sceneId} поставлена в очередь`)
+      return
+    }
+
+    Promise.resolve(markVideoPlanned(selectedScene)).finally(() => {
+      window.setTimeout(() => {
+        boardReleaseVideoQueueStart(sceneId)
+        if (!boardHasActiveVideoOrStartLock(boardRef.current)) {
+          window.setTimeout(processNextQueuedBoardVideo, 350)
+        }
+      }, 1600)
+    })
   }
 
   function boardVideoPatchFromStatus(data, endpoint, jobId) {
@@ -2210,6 +2325,7 @@ function isBoardVideoDoneStatus(status) {
 
     const finishPoll = () => {
       activeVideoPollsRef.current.delete(pollKey)
+      boardReleaseVideoQueueStart(sceneId)
     }
 
     let attempt = 0
@@ -2233,7 +2349,7 @@ function isBoardVideoDoneStatus(status) {
             sceneId,
             dedupeKey: `video:${jobId || sceneId}:not_found_reset`,
           })
-          window.setTimeout(processNextQueuedBoardVideo, 80)
+          window.setTimeout(processNextQueuedBoardVideo, 650)
           return
         }
 
@@ -2250,7 +2366,7 @@ function isBoardVideoDoneStatus(status) {
           })
           setStatus(`Видео заблокировано: ${blockedError}`)
           pushBoardToast({ type: 'warning', title: 'Видео заблокировано', message: `Сцена ${sceneId}: ${blockedError}`, sceneId })
-          window.setTimeout(processNextQueuedBoardVideo, 80)
+          window.setTimeout(processNextQueuedBoardVideo, 650)
           return
         }
 
@@ -2280,7 +2396,7 @@ function isBoardVideoDoneStatus(status) {
               video_queue_position: 0,
               video_result: data || null,
             })
-            window.setTimeout(processNextQueuedBoardVideo, 80)
+            window.setTimeout(processNextQueuedBoardVideo, 650)
             return
           }
           console.log('[BOARD JOB COMPLETED APPLY]', {
@@ -2298,7 +2414,7 @@ function isBoardVideoDoneStatus(status) {
           markBoardJobSeen(data?.jobId || data?.job_id || jobId || '')
           setStatus(`Видео готово: ${sceneId}`)
           pushBoardToast({ type: 'success', title: 'Видео готово', message: `Сцена ${sceneId}`, sceneId })
-          window.setTimeout(processNextQueuedBoardVideo, 80)
+          window.setTimeout(processNextQueuedBoardVideo, 650)
           return
         }
 
@@ -2313,7 +2429,7 @@ function isBoardVideoDoneStatus(status) {
           })
           setStatus('Comfy завершил job, но backend не вернул video_url')
           pushBoardToast({ type: 'error', title: 'Видео без результата', message: `Сцена ${sceneId}: backend не вернул video_url`, sceneId })
-          window.setTimeout(processNextQueuedBoardVideo, 80)
+          window.setTimeout(processNextQueuedBoardVideo, 650)
           return
         }
 
@@ -2328,7 +2444,7 @@ function isBoardVideoDoneStatus(status) {
           })
           setStatus(`Видео не собрано: ${data?.error || data?.detail || status}`)
           pushBoardToast({ type: 'error', title: 'Видео не собрано', message: `Сцена ${sceneId}: ${data?.error || data?.detail || status}`, sceneId })
-          window.setTimeout(processNextQueuedBoardVideo, 80)
+          window.setTimeout(processNextQueuedBoardVideo, 650)
           return
         }
 
@@ -2355,7 +2471,7 @@ function isBoardVideoDoneStatus(status) {
           })
           setStatus('Видео слишком долго не отвечает: poll_timeout')
           pushBoardToast({ type: 'error', title: 'Видео зависло', message: `Сцена ${sceneId}: poll_timeout`, sceneId })
-          window.setTimeout(processNextQueuedBoardVideo, 80)
+          window.setTimeout(processNextQueuedBoardVideo, 650)
         }
       } catch (error) {
         console.error('[Board] video status polling failed', error)
@@ -2369,7 +2485,7 @@ function isBoardVideoDoneStatus(status) {
           })
           setStatus(`Ошибка проверки видео: ${error?.message || 'poll_failed'}`)
           pushBoardToast({ type: 'error', title: 'Ошибка проверки видео', message: `Сцена ${sceneId}: ${error?.message || 'poll_failed'}`, sceneId })
-          window.setTimeout(processNextQueuedBoardVideo, 80)
+          window.setTimeout(processNextQueuedBoardVideo, 650)
         }
       }
     }
@@ -2395,6 +2511,8 @@ function isBoardVideoDoneStatus(status) {
   const importRef = useRef(null)
   const boardRef = useRef(board)
   const localVideoQueueRef = useRef([])
+  const localVideoQueueStartLockRef = useRef('')
+  const localVideoQueueStartLockAtRef = useRef(0)
   const activeVideoPollsRef = useRef(new Set())
   const staticAssetRepairRef = useRef(new Set())
   const seenCompletedJobIdsRef = useRef(readBoardSeenCompletedJobIds())
@@ -2430,7 +2548,29 @@ function isBoardVideoDoneStatus(status) {
   // cleanup stale queued scenes without local queue
   useEffect(() => {
     if (loading) return
-    const queuedIds = new Set(localVideoQueueRef.current)
+
+    // AVA_BOARD_QUEUE_F5_RESTORE_BEFORE_CLEANUP_V58:
+    // On F5 localVideoQueueRef is empty. Rebuild it from persisted queued scenes
+    // before stale-cleanup, otherwise waiting scenes are cleared and queue never continues.
+    const restoredWaitingIds = boardMergeWaitingSceneIdsV57B(
+      board,
+      board?.video_queue?.waitingSceneIds ||
+        board?.videoQueue?.waitingSceneIds ||
+        board?.video_queue?.waiting_scene_ids ||
+        board?.videoQueue?.waiting_scene_ids ||
+        localVideoQueueRef.current ||
+        []
+    )
+    if (restoredWaitingIds.length) {
+      localVideoQueueRef.current = restoredWaitingIds
+    }
+
+    // AVA_BOARD_QUEUE_F5_KEEP_PERSISTED_WAITING_IDS_V59:
+    // Cleanup must protect IDs from the persisted queue snapshot, not only the runtime ref.
+    const queuedIds = new Set(boardMergeWaitingSceneIdsV57B(board, localVideoQueueRef.current))
+    if (queuedIds.size) {
+      localVideoQueueRef.current = Array.from(queuedIds)
+    }
     const staleQueued = asSceneArray(board.scenes).filter((scene) => (
       scene.video_status === 'queued' &&
       !scene.video_job_id &&
@@ -2758,21 +2898,37 @@ function isBoardVideoDoneStatus(status) {
   // Restore waiting queue after F5/re-enter. If active job is gone/finished and waiting scenes remain,
   // start exactly one queued scene.
   useEffect(() => {
-    const waitingIds = boardMergeWaitingSceneIdsV57B(board, board?.video_queue?.waitingSceneIds || [])
+    if (loading) return undefined
+
+    const waitingIds = boardMergeWaitingSceneIdsV57B(
+      board,
+      board?.video_queue?.waitingSceneIds ||
+        board?.videoQueue?.waitingSceneIds ||
+        board?.video_queue?.waiting_scene_ids ||
+        board?.videoQueue?.waiting_scene_ids ||
+        localVideoQueueRef.current ||
+        []
+    )
+
     if (waitingIds.length) {
       localVideoQueueRef.current = waitingIds
+      // AVA_BOARD_QUEUE_F5_KEEP_PERSISTED_WAITING_IDS_V59:
+      // Restore visible "В очереди" badges immediately after F5, even while another job is active.
+      syncQueuedSceneBadges()
     }
+
     if (!waitingIds.length || activeBoardVideoScene(board)) return undefined
 
     const timer = window.setTimeout(() => {
       const liveBoard = boardRef.current
       if (activeBoardVideoScene(liveBoard)) return
       localVideoQueueRef.current = boardMergeWaitingSceneIdsV57B(liveBoard, localVideoQueueRef.current)
+      syncQueuedSceneBadges()
       processNextQueuedBoardVideo()
     }, 350)
 
     return () => window.clearTimeout(timer)
-  }, [board])
+  }, [loading, board])
 
   useEffect(() => {
     if (loading) return undefined
@@ -4190,20 +4346,20 @@ async function markVideoPlanned(sceneOverride = null) {
       const message = 'Нет projectId, видео не будет сохранено в проект'
       setStatus(message)
       pushBoardToast({ type: 'error', title: 'Видео не отправлено', message, sceneId: requestSceneId })
-      window.setTimeout(processNextQueuedBoardVideo, 80)
+      window.setTimeout(processNextQueuedBoardVideo, 650)
       return
     }
     if (!requestSceneId || (!workspaceMode && isGeneratorSceneId(requestSceneId))) {
       const message = 'Некорректный sceneId, видео не будет сохранено в проект'
       setStatus(message)
       pushBoardToast({ type: 'error', title: 'Видео не отправлено', message, sceneId: requestSceneId })
-      window.setTimeout(processNextQueuedBoardVideo, 80)
+      window.setTimeout(processNextQueuedBoardVideo, 650)
       return
     }
     const inputProblems = sceneVideoInputProblems(sceneToStart)
     if (inputProblems.length) {
       showSceneVideoInputError(sceneToStart, inputProblems)
-      window.setTimeout(processNextQueuedBoardVideo, 80)
+      window.setTimeout(processNextQueuedBoardVideo, 650)
       return
     }
 
@@ -4249,7 +4405,7 @@ async function markVideoPlanned(sceneOverride = null) {
     if (warnings.length) {
       const labels = warnings.map((item) => item === 'missing_start_image' ? 'нет фото/start image' : item === 'missing_last_frame' ? 'нет последнего кадра' : item === 'missing_audio_slice' ? 'нет audio slice для lip-sync' : item)
       showSceneVideoInputError(sceneToStart, labels)
-      window.setTimeout(processNextQueuedBoardVideo, 80)
+      window.setTimeout(processNextQueuedBoardVideo, 650)
       return
     }
 

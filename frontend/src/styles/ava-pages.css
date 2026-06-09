@@ -1,3 +1,4 @@
+/* AVA_UNIFIED_TASK_BUTTON_TIMING_V6_ROLLBACK: removed v6 CSS. */
 .avaSplash,
 .avaAuthPage {
   min-height: 100vh;
@@ -2996,3 +2997,378 @@
 }
 /* AVA_CREDITS_EQUAL_PANELS_V3_NEAT_END */
 
+
+
+/* AVA_PROJECT_MODE_PICKER_UI_V2
+   Pretty project-mode picker on Create Project page.
+   Also forces dark select/options fallback so browser dropdowns don't become white-on-white. */
+.avaPanel select option {
+  background: #111827;
+  color: #eef6ff;
+}
+
+.avaFieldHint {
+  display: block;
+  color: #9fb1d8;
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.avaProjectModePickerV2 {
+  margin: 18px 0 20px;
+}
+
+.avaProjectModeGridV2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.avaProjectModeCardV2 {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  min-height: 92px;
+  text-align: left;
+  border: 1px solid rgba(125, 151, 214, 0.20);
+  border-radius: 18px;
+  padding: 15px 16px;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(69, 216, 255, 0.10), transparent 34%),
+    linear-gradient(135deg, rgba(18, 28, 51, 0.94), rgba(13, 18, 33, 0.94));
+  color: #edf5ff;
+  cursor: pointer;
+  display: grid;
+  gap: 7px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 10px 24px rgba(0, 0, 0, 0.14);
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.avaProjectModeCardV2:hover {
+  transform: translateY(-1px);
+  border-color: rgba(116, 226, 255, 0.38);
+  background:
+    radial-gradient(circle at 12% 18%, rgba(69, 216, 255, 0.15), transparent 36%),
+    linear-gradient(135deg, rgba(22, 35, 63, 0.96), rgba(15, 22, 42, 0.96));
+}
+
+.avaProjectModeCardV2.isActive {
+  border-color: rgba(108, 236, 255, 0.70);
+  background:
+    radial-gradient(circle at 10% 20%, rgba(82, 241, 255, 0.20), transparent 36%),
+    radial-gradient(circle at 88% 16%, rgba(167, 139, 250, 0.16), transparent 38%),
+    linear-gradient(135deg, rgba(19, 46, 76, 0.98), rgba(25, 28, 62, 0.98));
+  box-shadow:
+    0 0 0 1px rgba(93, 224, 255, 0.22),
+    0 16px 42px rgba(24, 130, 185, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.avaProjectModeCardV2.isActive::after {
+  content: "выбрано";
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(38, 224, 180, 0.14);
+  border: 1px solid rgba(97, 255, 220, 0.24);
+  color: #9fffe3;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.avaProjectModeCardV2 strong {
+  position: relative;
+  z-index: 1;
+  padding-right: 78px;
+  color: #f3f8ff;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.avaProjectModeCardV2 small {
+  position: relative;
+  z-index: 1;
+  color: #aebbdd;
+  font-size: 12px;
+  line-height: 1.45;
+  max-width: 95%;
+}
+
+.avaProjectModeCardV2 em {
+  position: relative;
+  z-index: 1;
+  width: fit-content;
+  margin-top: 1px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(116, 144, 210, 0.12);
+  border: 1px solid rgba(126, 158, 234, 0.14);
+  color: #8deaff;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.avaProjectModeCardGlowV2 {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  right: -42px;
+  bottom: -48px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(72, 219, 255, 0.16), transparent 68%);
+  pointer-events: none;
+}
+
+@media (min-width: 720px) {
+  .avaProjectModeGridV2 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .avaProjectModeCardV2 {
+    min-height: 134px;
+  }
+}
+
+
+/* AVA_PROJECT_MODE_PICKER_COMPACT_V3
+   Compact mode picker: only show mode names. Descriptions/contracts stay in data/JSON, not in the card UI. */
+.avaProjectModePickerV2 {
+  margin: 16px 0 18px !important;
+}
+
+.avaProjectModeGridV2 {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.avaProjectModeCardV2 {
+  min-height: 64px !important;
+  padding: 13px 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  border-radius: 18px !important;
+}
+
+.avaProjectModeCardV2 strong {
+  padding-right: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.15 !important;
+  max-width: 100% !important;
+  text-align: center !important;
+}
+
+.avaProjectModeCardV2 small,
+.avaProjectModeCardV2 em {
+  display: none !important;
+}
+
+.avaProjectModeCardV2.isActive::after {
+  content: none !important;
+  display: none !important;
+}
+
+.avaProjectModeCardV2.isActive {
+  border-color: rgba(108, 236, 255, 0.78) !important;
+  box-shadow:
+    0 0 0 1px rgba(93, 224, 255, 0.28),
+    0 12px 28px rgba(24, 130, 185, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10) !important;
+}
+
+.avaProjectModeCardGlowV2 {
+  width: 92px !important;
+  height: 92px !important;
+  right: -34px !important;
+  bottom: -38px !important;
+}
+
+@media (max-width: 719px) {
+  .avaProjectModeGridV2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .avaProjectModeCardV2 {
+    min-height: 56px !important;
+  }
+}
+
+/* AVA_CREATE_PROJECT_MODE_ONLY_V4
+   Project creation has ONE concept: mode. No separate project type dropdown.
+   Cards are compact: Clip / Recipe / Meaning remix. */
+.avaProjectModePickerV2 {
+  margin: 16px 0 18px !important;
+}
+
+.avaProjectModeGridV2 {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.avaProjectModeCardV2 {
+  min-height: 58px !important;
+  padding: 12px 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  border-radius: 18px !important;
+}
+
+.avaProjectModeCardV2 strong {
+  padding-right: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.14 !important;
+  max-width: 100% !important;
+  text-align: center !important;
+}
+
+.avaProjectModeCardV2 small,
+.avaProjectModeCardV2 em,
+.avaProjectModeCardV2.isActive::after {
+  display: none !important;
+  content: none !important;
+}
+
+.avaProjectModeCardV2.isActive {
+  border-color: rgba(108, 236, 255, 0.78) !important;
+  box-shadow:
+    0 0 0 1px rgba(93, 224, 255, 0.28),
+    0 12px 28px rgba(24, 130, 185, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10) !important;
+}
+
+@media (max-width: 719px) {
+  .avaProjectModeGridV2 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
+/* AVA_CREATE_PROJECT_MODE_DROPDOWN_V5
+   Project creation uses one compact dropdown: Режим проекта.
+   No separate Type picker, no mode cards. */
+.avaProjectModeDropdownV5 {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+  color: #dbe7ff;
+}
+
+.avaProjectModeDropdownV5 select {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(26, 37, 62, 0.96), rgba(16, 23, 42, 0.96));
+  color: #eef6ff;
+  padding: 0 14px;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+.avaProjectModeDropdownV5 select:focus {
+  border-color: rgba(108, 236, 255, 0.62);
+  box-shadow:
+    0 0 0 1px rgba(93, 224, 255, 0.22),
+    0 12px 26px rgba(24, 130, 185, 0.12);
+}
+
+.avaProjectModeDropdownV5 option,
+.avaPanel select option {
+  background: #111827;
+  color: #eef6ff;
+}
+
+/* Hide old card picker details if cached markup remains. */
+.avaProjectModePickerV2 .avaProjectModeCardV2 small,
+.avaProjectModePickerV2 .avaProjectModeCardV2 em {
+  display: none !important;
+}
+
+
+
+
+/* AVA_UNIFIED_TASK_BUTTON_TIMING_V7
+   One JSX-level universal task button in Manual Timing.
+   Replaces Prompt / Video / Codex with "📦 Скачать задание". */
+.avaTimingActionTaskPackV7 {
+  border-color: rgba(108, 236, 255, 0.54) !important;
+  background:
+    radial-gradient(circle at 16% 22%, rgba(96, 239, 255, 0.18), transparent 36%),
+    linear-gradient(135deg, rgba(28, 52, 88, 0.96), rgba(26, 31, 68, 0.96)) !important;
+  color: #f0fbff !important;
+  min-width: 168px !important;
+  white-space: nowrap !important;
+  box-shadow:
+    0 0 0 1px rgba(93, 224, 255, 0.18),
+    0 12px 28px rgba(24, 130, 185, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.avaTimingActionTaskPackV7:hover {
+  filter: brightness(1.05);
+}
+
+
+/* AVA_TRANSITION_MODAL_RETURN_ICON_V13
+   Small "go back / cancel transition" icon for transition-confirm dialogs.
+   It is intentionally separate from the main action buttons so accidental clicks are easy to undo. */
+.avaModalReturnRowV13 {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 0;
+  margin: -4px 0 4px;
+  pointer-events: none;
+}
+
+.avaModalReturnIconV13 {
+  pointer-events: auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(159, 190, 255, 0.28);
+  background:
+    radial-gradient(circle at 35% 25%, rgba(116, 236, 255, 0.18), transparent 42%),
+    linear-gradient(135deg, rgba(30, 43, 72, 0.92), rgba(18, 25, 48, 0.92));
+  color: #e9f5ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.avaModalReturnIconV13:hover {
+  transform: translateY(-1px);
+  border-color: rgba(111, 235, 255, 0.55);
+  background:
+    radial-gradient(circle at 35% 25%, rgba(116, 236, 255, 0.26), transparent 42%),
+    linear-gradient(135deg, rgba(39, 58, 95, 0.96), rgba(23, 32, 60, 0.96));
+  box-shadow:
+    0 12px 28px rgba(27, 156, 205, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.avaModalReturnIconV13:active {
+  transform: translateY(0);
+}

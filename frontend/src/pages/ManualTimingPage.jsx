@@ -1,3 +1,11 @@
+/* AVA_PROJECT_PACK_NORMALIZED_SCENES_V15: import Unified Project Pack split with root/timing/production priority. */
+/* AVA_PROJECT_PACK_SCENE_IMPORT_EXPORT_V14: import Unified Project Pack scenes with root/timing/production priority. */
+/* AVA_TRANSITION_MODAL_RETURN_ICON_V13C_HANDLER_FIX: return icon uses existing cancel button instead of missing cancelTimingToBoardConfirmV16. */
+/* AVA_TRANSITION_MODAL_RETURN_ICON_V13B_FIX: fixed literal escaped newlines from v13 modal return patch. */
+/* AVA_TRANSITION_MODAL_RETURN_ICON_V13: transition-confirm modals have a small return icon. */
+/* AVA_PROJECT_NEW_ID_GUARD_V12: sanitize route projectId so /projects/new/timing does not call /api/projects/new. */
+/* AVA_UNIFIED_TASK_BUTTON_TIMING_V7: Prompt/Video/Codex replaced by one JSX task pack button. */
+/* AVA_UNIFIED_TASK_BUTTON_TIMING_V6_ROLLBACK: removed hook-based v6 that caused React hook-order error. */
 /* AVA_TIMING_TO_BOARD_INLINE_CONFIRM_V35: remove runtime references to helper funcs by using inline handlers in JSX. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -5,6 +13,7 @@ import { Clock3, Film, Pause, Play, Save, StepBack, StepForward, Trash2, Undo2, 
 import { useProjects } from '../context/ProjectContext.jsx'
 import { buildApiUrl, cutAudioAssetRange, fetchProtectedBlobUrl, getAuthHeaders, normalizeAssetFileUrl, normalizeStaticMediaUrl, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
+import { buildAvaProjectPackV1, downloadJsonFile } from '../lib/avaProjectPack.js'
 import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, makeWorkflowEntry, navigateWithWorkflowEntry, rememberWorkflowEntry, readWorkflowEntry } from '../utils/workflowNavigation.js'
 
 const STAGE = 'manual_timing'
@@ -101,6 +110,11 @@ function avaManualTimingStripVideoRefs(value, depth = 0) {
   return out
 }
 
+
+function avaManualTimingIsRealProjectId(value = '') {
+  const id = String(value || '').trim()
+  return /^p_[a-z0-9]+$/i.test(id)
+}
 
 function avaStage16SafeAudioFilename(name = 'ava_audio.mp3') {
   const raw = String(name || 'ava_audio.mp3').trim() || 'ava_audio.mp3'
@@ -1177,12 +1191,15 @@ function applySceneSliceTranslations(sceneList = [], translatedItems = [], speec
 }
 
 export default function ManualTimingPage() {
-  const { projectId } = useParams()
+  const { projectId: routeProjectId } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
   const manualTimingWorkflowEntry = useMemo(() => readWorkflowEntry('manual_timing', location.state), [location.state])
   const openedFromPodcast = manualTimingWorkflowEntry?.from === 'podcast'
   const { activeProject, loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
+  const routeProjectIdClean = avaManualTimingIsRealProjectId(routeProjectId) ? String(routeProjectId || '').trim() : ''
+  const activeProjectIdClean = avaManualTimingIsRealProjectId(activeProject?.id) ? String(activeProject.id || '').trim() : ''
+  const projectId = routeProjectIdClean || activeProjectIdClean
   const workspaceMode = !projectId
   const [draft, setDraft] = useState(emptyDraft)
   const [history, setHistory] = useState([])
@@ -3168,21 +3185,285 @@ const clearedDraft = normalizeDraft({
 
 
 
+
+  function avaManualTimingFirstTextV14(...values) {
+    for (const value of values) {
+      const text = String(value ?? '').trim()
+      if (text) return text
+    }
+    return ''
+  }
+
+  function avaManualTimingFirstPositiveNumberV14(...values) {
+    for (const value of values) {
+      if (value === null || value === undefined || value === '') continue
+      const num = Number(value)
+      if (Number.isFinite(num) && num > 0) return num
+    }
+    return 0
+  }
+
+  function avaManualTimingImportSceneIdV14(scene = {}, index = 0) {
+    return avaManualTimingFirstTextV14(scene.id, scene.scene_id, scene.sceneId) || formatSceneId(index)
+  }
+
+  function avaManualTimingProductionByIdV14(raw = {}, root = {}) {
+    const productionScenes = Array.isArray(raw.production?.scenes)
+      ? raw.production.scenes
+      : Array.isArray(root.production?.scenes)
+        ? root.production.scenes
+        : []
+    const map = new Map()
+    productionScenes.forEach((scene, index) => {
+      const id = avaManualTimingImportSceneIdV14(scene, index)
+      if (id) map.set(String(id), scene)
+    })
+    return map
+  }
+
+  function avaManualTimingPickImportSceneSourceV14(raw = {}, root = {}) {
+    const rootScenes = Array.isArray(raw.scenes)
+      ? raw.scenes
+      : Array.isArray(root.scenes)
+        ? root.scenes
+        : []
+    const timingScenes = Array.isArray(raw.timing?.scenes)
+      ? raw.timing.scenes
+      : Array.isArray(root.timing?.scenes)
+        ? root.timing.scenes
+        : []
+    const productionScenes = Array.isArray(raw.production?.scenes)
+      ? raw.production.scenes
+      : Array.isArray(root.production?.scenes)
+        ? root.production.scenes
+        : []
+
+    if (rootScenes.length) return { scenes: rootScenes, source: 'scenes' }
+    if (timingScenes.length) return { scenes: timingScenes, source: 'timing.scenes' }
+    if (productionScenes.length) return { scenes: productionScenes, source: 'production.scenes' }
+    return { scenes: [], source: '' }
+  }
+
+  function avaManualTimingNormalizeImportSceneV14(scene = {}, index = 0, durationSec = 0, productionById = new Map()) {
+    const id = avaManualTimingImportSceneIdV14(scene, index)
+    const production = productionById.get(String(id)) || {}
+    const start = Number(scene.start ?? scene.start_sec ?? scene.startSec ?? scene.target_t0 ?? scene.t0 ?? 0) || 0
+    const duration = avaManualTimingFirstPositiveNumberV14(scene.duration, scene.duration_sec, scene.durationSec, production.duration, production.duration_sec)
+    const endRaw = Number(scene.end ?? scene.end_sec ?? scene.endSec ?? scene.target_t1 ?? scene.t1 ?? 0) || 0
+    const end = endRaw > start ? endRaw : (duration > 0 ? start + duration : Math.min(Number(durationSec || 0), start + 1))
+    if (!(end > start)) return null
+
+    const route = avaManualTimingFirstTextV14(scene.route, scene.planned_route, scene.plannedRoute, production.route, production.planned_route) || 'i2v'
+    const blockId = avaManualTimingFirstTextV14(scene.blockId, scene.block_id, production.blockId, production.block_id)
+    const blockTitle = avaManualTimingFirstTextV14(scene.blockTitle, scene.block_title, production.blockTitle, production.block_title)
+    const color = avaManualTimingFirstTextV14(scene.color, scene.scene_color, scene.sceneColor, production.color, production.scene_color, production.sceneColor)
+
+    return {
+      ...production,
+      ...scene,
+      id,
+      scene_id: id,
+      title: id,
+      index,
+      start,
+      end,
+      start_sec: start,
+      end_sec: end,
+      duration: Number((end - start).toFixed(3)),
+      duration_sec: Number((end - start).toFixed(3)),
+      target_t0: start,
+      target_t1: end,
+      route,
+      planned_route: avaManualTimingFirstTextV14(scene.planned_route, scene.plannedRoute, production.planned_route, route),
+      scene_word_text: avaManualTimingFirstTextV14(scene.scene_word_text, scene.text, production.scene_word_text, production.text),
+      lyrics_text: avaManualTimingFirstTextV14(scene.lyrics_text, scene.scene_word_text, production.lyrics_text, production.scene_word_text),
+      original_text: avaManualTimingFirstTextV14(scene.original_text, scene.originalText, production.original_text, production.originalText),
+      translated_text_ru: avaManualTimingFirstTextV14(scene.translated_text_ru, scene.translation, scene.translation_ru, scene.ruText, production.translated_text_ru, production.translation),
+      meaning_hint_ru: avaManualTimingFirstTextV14(scene.meaning_hint_ru, scene.meaning, scene.meaningText, production.meaning_hint_ru, production.meaning),
+      blockId,
+      block_id: blockId,
+      blockTitle,
+      block_title: blockTitle,
+      color,
+      sceneColor: color,
+      blockColor: color,
+      recipe_step: avaManualTimingFirstTextV14(scene.recipe_step, production.recipe_step),
+      idea_fn: avaManualTimingFirstTextV14(scene.idea_fn, production.idea_fn),
+      visual_action: avaManualTimingFirstTextV14(scene.visual_action, production.visual_action),
+      viewer_should_understand: avaManualTimingFirstTextV14(scene.viewer_should_understand, production.viewer_should_understand),
+      readability_check: avaManualTimingFirstTextV14(scene.readability_check, production.readability_check),
+      locked: scene.locked !== false,
+      do_not_change_scene_id: true,
+      do_not_change_start_end_duration: true,
+    }
+  }
+
+  function avaManualTimingBuildImportScenesV14(raw = {}, root = {}, durationSec = 0) {
+    const picked = avaManualTimingPickImportSceneSourceV14(raw, root)
+    const productionById = avaManualTimingProductionByIdV14(raw, root)
+    const scenes = (Array.isArray(picked.scenes) ? picked.scenes : [])
+      .map((scene, index) => avaManualTimingNormalizeImportSceneV14(scene, index, durationSec, productionById))
+      .filter(Boolean)
+    return { scenes, source: picked.source }
+  }
+
+
   async function importTimingJson(event) {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
+
+    function pickText(...values) {
+      for (const value of values) {
+        const text = String(value ?? '').trim()
+        if (text) return text
+      }
+      return ''
+    }
+
+    function pickPositiveNumber(...values) {
+      for (const value of values) {
+        if (value === null || value === undefined || value === '') continue
+        const num = Number(value)
+        if (Number.isFinite(num) && num > 0) return num
+      }
+      return 0
+    }
+
+    function importSceneId(scene = {}, index = 0) {
+      return pickText(scene.id, scene.scene_id, scene.sceneId) || formatSceneId(index)
+    }
+
+    function pickSceneSource(raw = {}, root = {}) {
+      const rootScenes = Array.isArray(raw.scenes) ? raw.scenes : Array.isArray(root.scenes) ? root.scenes : []
+      const timingScenes = Array.isArray(raw.timing?.scenes) ? raw.timing.scenes : Array.isArray(root.timing?.scenes) ? root.timing.scenes : []
+      const productionScenes = Array.isArray(raw.production?.scenes) ? raw.production.scenes : Array.isArray(root.production?.scenes) ? root.production.scenes : []
+
+      if (rootScenes.length) return { scenes: rootScenes, source: 'scenes' }
+      if (timingScenes.length) return { scenes: timingScenes, source: 'timing.scenes' }
+      if (productionScenes.length) return { scenes: productionScenes, source: 'production.scenes' }
+      return { scenes: [], source: '' }
+    }
+
+    function productionById(raw = {}, root = {}) {
+      const rows = Array.isArray(raw.production?.scenes)
+        ? raw.production.scenes
+        : Array.isArray(root.production?.scenes)
+          ? root.production.scenes
+          : []
+      const map = new Map()
+      rows.forEach((scene, index) => {
+        const id = importSceneId(scene, index)
+        if (id) map.set(String(id), scene)
+      })
+      return map
+    }
+
+    function normalizeImportScene(scene = {}, index = 0, durationSec = 0, productionMap = new Map()) {
+      const id = importSceneId(scene, index)
+      const production = productionMap.get(String(id)) || {}
+      const start = Number(scene.start ?? scene.start_sec ?? scene.startSec ?? scene.target_t0 ?? scene.t0 ?? 0) || 0
+      const explicitDuration = pickPositiveNumber(scene.duration, scene.duration_sec, scene.durationSec, production.duration, production.duration_sec, production.durationSec)
+      const rawEnd = Number(scene.end ?? scene.end_sec ?? scene.endSec ?? scene.target_t1 ?? scene.t1 ?? 0) || 0
+      const end = rawEnd > start ? rawEnd : (explicitDuration > 0 ? start + explicitDuration : Math.min(Number(durationSec || 0), start + 1))
+      if (!(end > start)) return null
+
+      const route = pickText(scene.route, scene.planned_route, scene.plannedRoute, production.route, production.planned_route) || 'i2v'
+      const blockId = pickText(scene.blockId, scene.block_id, production.blockId, production.block_id)
+      const blockTitle = pickText(scene.blockTitle, scene.block_title, production.blockTitle, production.block_title)
+      const color = pickText(scene.color, scene.sceneColor, scene.scene_color, production.color, production.sceneColor, production.scene_color)
+
+      return {
+        ...production,
+        ...scene,
+        id,
+        scene_id: id,
+        title: id,
+        index,
+        start: Number(start.toFixed(3)),
+        end: Number(end.toFixed(3)),
+        start_sec: Number(start.toFixed(3)),
+        end_sec: Number(end.toFixed(3)),
+        duration: Number((end - start).toFixed(3)),
+        duration_sec: Number((end - start).toFixed(3)),
+        target_t0: Number(start.toFixed(3)),
+        target_t1: Number(end.toFixed(3)),
+        route,
+        planned_route: pickText(scene.planned_route, scene.plannedRoute, production.planned_route, route),
+        scene_word_text: pickText(scene.scene_word_text, scene.text, production.scene_word_text, production.text),
+        lyrics_text: pickText(scene.lyrics_text, scene.scene_word_text, production.lyrics_text, production.scene_word_text),
+        original_text: pickText(scene.original_text, scene.originalText, production.original_text, production.originalText),
+        translated_text_ru: pickText(scene.translated_text_ru, scene.translation, scene.translation_ru, scene.ruText, production.translated_text_ru, production.translation),
+        meaning_hint_ru: pickText(scene.meaning_hint_ru, scene.meaning, scene.meaningText, production.meaning_hint_ru, production.meaning),
+        blockId,
+        block_id: blockId,
+        blockTitle,
+        block_title: blockTitle,
+        color,
+        sceneColor: color,
+        blockColor: color,
+        recipe_step: pickText(scene.recipe_step, production.recipe_step),
+        idea_fn: pickText(scene.idea_fn, production.idea_fn),
+        visual_action: pickText(scene.visual_action, production.visual_action),
+        viewer_should_understand: pickText(scene.viewer_should_understand, production.viewer_should_understand),
+        readability_check: pickText(scene.readability_check, production.readability_check),
+        photo_prompt_positive: pickText(production.photo_prompt_positive, scene.photo_prompt_positive),
+        photo_prompt_negative: pickText(production.photo_prompt_negative, scene.photo_prompt_negative),
+        video_motion_prompt: pickText(production.video_motion_prompt, scene.video_motion_prompt),
+        video_motion_negative: pickText(production.video_motion_negative, scene.video_motion_negative),
+        lipsync_motion_prompt: pickText(production.lipsync_motion_prompt, scene.lipsync_motion_prompt),
+        positive_prompt: pickText(production.positive_prompt, scene.positive_prompt),
+        negative_prompt: pickText(production.negative_prompt, scene.negative_prompt),
+        video_prompt: pickText(production.video_prompt, scene.video_prompt),
+        prompt_positive: pickText(production.prompt_positive, scene.prompt_positive),
+        prompt_negative: pickText(production.prompt_negative, scene.prompt_negative),
+        sound_design_needed: Boolean(production.sound_design_needed || scene.sound_design_needed),
+        sound_role: pickText(production.sound_role, scene.sound_role),
+        mmaudio_prompt: pickText(production.mmaudio_prompt, scene.mmaudio_prompt),
+        mmaudio_negative_prompt: pickText(production.mmaudio_negative_prompt, scene.mmaudio_negative_prompt),
+        scene_ambience_prompt: pickText(production.scene_ambience_prompt, scene.scene_ambience_prompt),
+        foley_prompt: pickText(production.foley_prompt, scene.foley_prompt),
+        sound_notes: pickText(production.sound_notes, scene.sound_notes),
+        locked: scene.locked !== false,
+        do_not_change_scene_id: true,
+        do_not_change_start_end_duration: true,
+      }
+    }
+
     try {
       const raw = JSON.parse(await file.text())
       const root = raw.manualTiming || raw.manual_timing || raw
       const manifest = raw.podcast_edit_manifest || root.podcast_edit_manifest || raw.manifest || root.manifest || {}
-      const rawSpeech = root.speechSegments || root.speech_segments || root.audio_phrases || root.asr_phrases || manifest.speechSegments || manifest.speech_segments || manifest.audio_phrases || manifest.asr_phrases || manifest.segments || []
+      const rawSpeech = root.speechSegments || root.speech_segments || root.audio_phrases || root.asr_phrases || raw.timing?.speech_segments || manifest.speechSegments || manifest.speech_segments || manifest.audio_phrases || manifest.asr_phrases || manifest.segments || []
       const speechSegments = typeof normalizeSpeechSegments === 'function' ? normalizeSpeechSegments(rawSpeech) : []
       const defaultClipPassRole = (root.audio_phrases || manifest.audio_phrases) ? [{ roleId: 'narrator', id: 'narrator', name: 'Диктор', label: 'ДИК', color: 220 }] : []
       const roles = typeof normalizeRoleList === 'function' ? normalizeRoleList(root.roles || manifest.roles || defaultClipPassRole, speechSegments) : (root.roles || manifest.roles || defaultClipPassRole)
       const silentSegments = typeof normalizeSilentSegments === 'function' ? normalizeSilentSegments(root.silentSegments || root.silent_segments || manifest.silentSegments || manifest.silent_segments || []) : []
-      const importedDuration = Number(root.audioDurationSec || root.audio_duration_sec || root.audio?.durationSec || root.audio?.duration_sec || manifest.audioDurationSec || manifest.audio_duration_sec || draft.audioDurationSec || 0)
-      const importedScenes = Array.isArray(root.scenes) ? root.scenes : []
+
+      const importedDuration = pickPositiveNumber(
+        raw.durationSec,
+        raw.audio_duration_sec,
+        raw.audio?.durationSec,
+        raw.audio?.duration_sec,
+        raw.assets?.audio?.durationSec,
+        raw.assets?.audio?.duration_sec,
+        raw.timing?.audioDurationSec,
+        raw.timing?.audio_duration_sec,
+        root.audioDurationSec,
+        root.audio_duration_sec,
+        root.audio?.durationSec,
+        root.audio?.duration_sec,
+        manifest.audioDurationSec,
+        manifest.audio_duration_sec,
+        draft.audioDurationSec
+      )
+
+      const picked = pickSceneSource(raw, root)
+      const productionMap = productionById(raw, root)
+      const importedScenes = picked.scenes
+        .map((scene, index) => normalizeImportScene(scene, index, importedDuration || draft.audioDurationSec, productionMap))
+        .filter(Boolean)
+
       const nextScenes = importedScenes.length
         ? normalizeScenes({ scenes: importedScenes }, importedDuration || draft.audioDurationSec)
         : scenes.length
@@ -3191,25 +3472,46 @@ const clearedDraft = normalizeDraft({
             ? renumberScenes(speechSegments.map((segment) => ({ start: segment.start, end: segment.end })))
             : makeSingleScene(importedDuration || draft.audioDurationSec)
 
+      const nextStoryBlocks = Array.isArray(raw.storyBlocks)
+        ? raw.storyBlocks
+        : Array.isArray(raw.story_blocks)
+          ? raw.story_blocks
+          : Array.isArray(root.storyBlocks)
+            ? root.storyBlocks
+            : Array.isArray(root.story_blocks)
+              ? root.story_blocks
+              : Array.isArray(draft.storyBlocks)
+                ? draft.storyBlocks
+                : []
+
       const nextDraft = normalizeDraft({
         ...draft,
-        audioName: root.audioName || root.audio_name || root.audio?.name || draft.audioName,
+        audioName: root.audioName || root.audio_name || root.audio?.name || raw.audio?.name || raw.assets?.audio?.name || draft.audioName,
+        audioAssetId: root.audioAssetId || root.audio_asset_id || root.audio?.assetId || root.audio?.asset_id || raw.assets?.audio?.assetId || raw.assets?.audio?.asset_id || draft.audioAssetId,
+        audioApiPath: root.audioApiPath || root.audio_api_path || root.audio?.assetApiPath || root.audio?.asset_api_path || raw.assets?.audio?.assetApiPath || raw.assets?.audio?.asset_api_path || draft.audioApiPath,
         audioDurationSec: importedDuration || draft.audioDurationSec,
         roles,
         speechSegments,
-        audioPhrases: Array.isArray(root.audio_phrases) ? root.audio_phrases : Array.isArray(root.audioPhrases) ? root.audioPhrases : speechSegments,
+        audioPhrases: Array.isArray(root.audio_phrases) ? root.audio_phrases : Array.isArray(root.audioPhrases) ? root.audioPhrases : Array.isArray(raw.timing?.speech_segments) ? raw.timing.speech_segments : speechSegments,
         silentSegments,
         scenes: nextScenes,
         scenesCount: nextScenes.length,
-        storyBlocks: Array.isArray(root.storyBlocks) ? root.storyBlocks : Array.isArray(root.story_blocks) ? root.story_blocks : draft.storyBlocks,
-        handoffSource: raw.source || root.source || manifest.source || 'json_import',
+        storyBlocks: nextStoryBlocks,
+        scene_block_map: raw.scene_block_map || root.scene_block_map || draft.scene_block_map,
+        handoffSource: raw.status || raw.source || root.source || manifest.source || picked.source || 'json_import',
       })
 
       pushHistorySnapshot()
       setDraft(nextDraft)
       setCursorSec(nextScenes[0]?.start || 0)
       await saveDraft(nextDraft, 'json_import')
-      setStatus(root.audio_phrases || manifest.audio_phrases ? `JSON импортирован: audio_phrases импортированы как ASR-карта · ${speechSegments.length} фраз` : `JSON импортирован: ролей ${roles.length}, речевых сегментов ${speechSegments.length}`)
+      setStatus(
+        importedScenes.length
+          ? `JSON импортирован: ${nextScenes.length} сцен · источник ${picked.source || 'unknown'}`
+          : (root.audio_phrases || manifest.audio_phrases
+            ? `JSON импортирован: audio_phrases импортированы как ASR-карта · ${speechSegments.length} фраз`
+            : `JSON импортирован: ролей ${roles.length}, речевых сегментов ${speechSegments.length}`)
+      )
     } catch (err) {
       setStatus(`ошибка импорта JSON: ${err.message}`)
     }
@@ -3468,6 +3770,43 @@ const clearedDraft = normalizeDraft({
     }
   }
 
+
+  async function downloadUnifiedTaskPackV7() {
+    try {
+      setStatus('Собираем задание…')
+      try {
+        await saveDraft(draft, 'download_unified_task_pack_v7', true)
+      } catch {}
+
+      const projectForPack = activeProject || {
+        id: projectId || '',
+        name: scopeTitle || 'Ava project',
+        project_mode: { id: 'manual_general_v1' },
+      }
+
+      const boardSnapshot = projectId
+        ? await loadStage(projectId, 'board').catch(() => ({}))
+        : await loadWorkspaceStage('board').catch(() => ({}))
+
+      const pack = buildAvaProjectPackV1({
+        project: projectForPack,
+        manualTiming: draft,
+        board: boardSnapshot || {},
+        summary: {
+          source: 'manual_timing_unified_task_button_v7',
+          scenes_count: Array.isArray(draft.scenes) ? draft.scenes.length : 0,
+          audio_duration_sec: Number(draft.audioDurationSec || 0),
+        },
+      })
+
+      downloadJsonFile(pack, 'ava_project_pack_v1.json')
+      setStatus(`Скачано задание · режим: ${pack.project_mode?.label_ru || 'Клип'}`)
+    } catch (error) {
+      console.error('[ManualTiming] unified task pack download failed', error)
+      setStatus(`Не удалось скачать задание: ${error?.message || 'unknown_error'}`)
+    }
+  }
+
   if (loading) return (
     <div className="avaPage avaTimingFlatPage avaTimingLoadingPage isAvaTimingWaveLoading">
       <div className="avaTimingLoadingShell">
@@ -3639,7 +3978,24 @@ const clearedDraft = normalizeDraft({
           <div className="avaBoardTimingConfirmCard">
             <div className="avaBoardTimingConfirmGlow" />
             <div className="avaBoardTimingConfirmBadge">Timing → Board</div>
-            <h3>Перенести Тайминг в Доску?</h3>
+            <div className="avaModalReturnRowV13">
+              <button
+                className="avaModalReturnIconV13"
+                type="button"
+                onClick={(event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const cancelButton = Array.from(document.querySelectorAll('button')).find((button) =>
+        String(button?.textContent || '').includes('Оставить старую Доску')
+      )
+      if (cancelButton && cancelButton !== event.currentTarget) cancelButton.click()
+    }}
+                title="Вернуться без перехода"
+                aria-label="Вернуться без перехода"
+              >
+                ↩
+              </button>
+            </div>\n            <h3>Перенести Тайминг в Доску?</h3>
             <p>
               Сейчас в Доске могут быть старые сцены, видео и аудио. Если продолжить, Доска будет очищена
               и заменена свежими сценами, цветами, блоками и главным аудио из Тайминга.
@@ -3703,9 +4059,15 @@ const clearedDraft = normalizeDraft({
             <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Аудио'}
           </button>
           <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportTimingJson} disabled={loading}>Prompt</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchSeedJson} disabled={loading || !scenes.length}>📷 Video</button>
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={exportVideoMatchCodexJobJson} disabled={loading || !scenes.length}>🧠 Codex</button>
+          <button
+            className="avaSoftButton avaTimingActionButton avaTimingActionTaskPackV7"
+            type="button"
+            onClick={downloadUnifiedTaskPackV7}
+            disabled={loading}
+            title="Скачать единое задание проекта: режим, contract, timing, readiness и подсказка для Codex/ChatGPT"
+          >
+            📦 Скачать задание
+          </button>
 
           <button
             className={`avaSoftButton avaTimingActionButton avaTimingActionBoard avaTimingStageLink ${hasAudio ? 'isReadyForBoard' : ''}`}
@@ -3948,7 +4310,7 @@ const clearedDraft = normalizeDraft({
                 ''
               ).trim()
               const visibleRoleLabels = podcastRoleLabel ? [podcastRoleLabel] : roleLabels
-              return (
+  return (
                 <button
                   key={`${scene.id}-${scene.start}-${scene.end}`}
                   type="button"

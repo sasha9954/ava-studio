@@ -11,8 +11,48 @@ STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', '
 PROJECT_THEME_COUNT = 8
 
 
+# AVA_PROJECT_MODES_PACK_V1
+DEFAULT_PROJECT_MODE = {
+    'id': 'manual_general_v1',
+    'label_ru': 'Обычный проект',
+    'version': 1,
+    'contract_ref': 'manual_general_v1',
+}
+
+PROJECT_MODE_LABELS = {
+    'manual_general_v1': ('Обычный проект', 'manual_general_v1'),
+    'lyric_meaning_remix_v1': ('Клип: подмена смысла', 'lyric_meaning_remix_v1'),
+    'recipe_process_v1': ('Готовка / рецепт', 'recipe_process_readability_v1'),
+    'video_first_documentary_v1': ('Документалка из видео', 'video_first_documentary_v1'),
+    'music_visual_story_v1': ('Музыкальный клип', 'music_visual_story_v1'),
+    'product_ad_v1': ('Реклама / продукт', 'product_ad_v1'),
+    'story_monologue_v1': ('История / монолог', 'story_monologue_v1'),
+}
+
+
+def normalize_project_mode(value) -> dict:
+    if isinstance(value, str):
+        mode_id = value.strip() or DEFAULT_PROJECT_MODE['id']
+    elif isinstance(value, dict):
+        mode_id = str(value.get('id') or value.get('project_mode_id') or DEFAULT_PROJECT_MODE['id']).strip()
+    else:
+        mode_id = DEFAULT_PROJECT_MODE['id']
+    label, contract_ref = PROJECT_MODE_LABELS.get(mode_id, PROJECT_MODE_LABELS[DEFAULT_PROJECT_MODE['id']])
+    if mode_id not in PROJECT_MODE_LABELS:
+        mode_id = DEFAULT_PROJECT_MODE['id']
+    return {
+        'id': mode_id,
+        'label_ru': label,
+        'version': 1,
+        'contract_ref': contract_ref,
+    }
+
+
+
 def project_public(project: dict) -> dict:
-    return {k: v for k, v in project.items() if k != 'user_id'}
+    public = {k: v for k, v in project.items() if k != 'user_id'}
+    public['project_mode'] = normalize_project_mode(public.get('project_mode'))
+    return public
 
 
 def state_richness(data: dict) -> int:
@@ -118,6 +158,7 @@ def create_project(payload: ProjectCreateRequest, user: dict = Depends(get_curre
             'type': payload.type,
             'format': payload.format,
             'description': payload.description,
+            'project_mode': normalize_project_mode(payload.project_mode),
             'theme_index': len(user_projects) % PROJECT_THEME_COUNT,
             'status': 'draft',
             'created_at': now_iso(),
@@ -161,6 +202,8 @@ def update_project(payload: ProjectUpdateRequest, project: dict = Depends(ensure
             p['status'] = payload.status
         if payload.description is not None:
             p['description'] = payload.description
+        if payload.project_mode is not None:
+            p['project_mode'] = normalize_project_mode(payload.project_mode)
         p['updated_at'] = now_iso()
         return {'project': project_public(p)}
 

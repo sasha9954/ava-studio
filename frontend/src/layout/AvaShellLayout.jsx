@@ -1,3 +1,4 @@
+/* AVA_PROJECT_NEW_ID_GUARD_V12: ignore reserved route id 'new' in shell project routing helpers. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, FolderKanban, Home, LogOut, PlusCircle, Settings, UserRound, WalletCards } from 'lucide-react'
@@ -121,10 +122,16 @@ function normalizeAvaEndpoint(endpoint) {
   return value.startsWith('/api/') ? value.slice(4) : value
 }
 
+function avaShellIsRealProjectId(value = '') {
+  const id = String(value || '').trim()
+  return /^p_[a-z0-9]+$/i.test(id)
+}
+
 function avaProjectIdFromPath(path = '') {
   const value = String(path || (typeof window !== 'undefined' ? window.location.pathname : '') || '')
   const match = value.match(/\/app\/projects\/([^/]+)/)
-  return match?.[1] ? decodeURIComponent(match[1]) : ''
+  const rawProjectId = match?.[1] ? decodeURIComponent(match[1]) : ''
+  return avaShellIsRealProjectId(rawProjectId) ? rawProjectId : ''
 }
 
 function avaStageFromPath(path = '') {
@@ -238,7 +245,8 @@ function avaGeneratorJobLooksActive(job = {}) {
 }
 
 function avaShellProjectIdFromProject(project = {}) {
-  return String(project?.id || project?.project_id || project?.projectId || project?.key || '').trim()
+  const id = String(project?.id || project?.project_id || project?.projectId || project?.key || '').trim()
+  return avaShellIsRealProjectId(id) ? id : ''
 }
 
 function avaShellProjectIds({ activeProject = null } = {}) {

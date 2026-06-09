@@ -39,6 +39,84 @@ BOARD_VIDEO_JOBS: dict[str, dict[str, Any]] = {}
 BOARD_MMAUDIO_JOBS: dict[str, dict[str, Any]] = {}
 BOARD_ASSEMBLY_JOBS: dict[str, dict[str, Any]] = {}
 
+
+# AVA_BOARD_VIDEO_JOB_PERSIST_V62:
+# Board video jobs used to live only in process memory. If the backend was restarted
+# while Comfy was still rendering, the UI kept polling a job that the backend had
+# forgotten. Persist a lightweight sanitized copy into storage/jobs so status polling
+# can continue after backend restart and still collect Comfy outputs by promptId.
+def _board_video_job_sanitize(value: Any, depth: int = 0) -> Any:
+    if depth > 8:
+        return "[omitted_depth]"
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            key_lower = key_text.lower()
+            if "dataurl" in key_lower or "data_url" in key_lower:
+                result[key_text] = "[omitted_data_url]"
+                continue
+            result[key_text] = _board_video_job_sanitize(item, depth + 1)
+        return result
+    if isinstance(value, list):
+        return [_board_video_job_sanitize(item, depth + 1) for item in value[:200]]
+    if isinstance(value, str):
+        if value.startswith("data:"):
+            return "[omitted_data_url]"
+        if len(value) > 12000:
+            return value[:12000] + "...[truncated]"
+    return value
+
+
+def _board_video_job_store(job_id: str, job: dict[str, Any]) -> None:
+    safe_job_id = str(job_id or job.get("jobId") or job.get("job_id") or "").strip()
+    if not safe_job_id or not isinstance(job, dict):
+        return
+    job["jobId"] = job.get("jobId") or safe_job_id
+    job["job_id"] = job.get("job_id") or safe_job_id
+    BOARD_VIDEO_JOBS[safe_job_id] = job
+    safe_job = _board_video_job_sanitize(job)
+    safe_job["persistedAt"] = now_iso()
+
+    def op(db):
+        jobs = db.setdefault("jobs", {})
+        jobs[safe_job_id] = {
+            "id": safe_job_id,
+            "type": "board_video",
+            "status": safe_job.get("status") or safe_job.get("video_status") or "",
+            "sceneId": safe_job.get("sceneId") or safe_job.get("scene_id") or "",
+            "projectId": safe_job.get("projectId") or safe_job.get("project_id") or "",
+            "updated_at": now_iso(),
+            "data": safe_job,
+        }
+        return jobs[safe_job_id]
+
+    try:
+        store.update(op)
+    except Exception as exc:
+        print(f"[BOARD VIDEO JOB PERSIST] failed job_id={safe_job_id}: {exc}", flush=True)
+
+
+def _board_video_job_load(job_id: str) -> dict[str, Any] | None:
+    safe_job_id = str(job_id or "").strip()
+    if not safe_job_id:
+        return None
+    try:
+        record = (store.get_db().get("jobs") or {}).get(safe_job_id)
+    except Exception as exc:
+        print(f"[BOARD VIDEO JOB LOAD] failed job_id={safe_job_id}: {exc}", flush=True)
+        return None
+    if not isinstance(record, dict):
+        return None
+    data = record.get("data") if record.get("type") == "board_video" else record
+    if not isinstance(data, dict):
+        return None
+    data["jobId"] = data.get("jobId") or safe_job_id
+    data["job_id"] = data.get("job_id") or safe_job_id
+    data["restoredFromStorage"] = True
+    BOARD_VIDEO_JOBS[safe_job_id] = data
+    return data
+
 WORKFLOW_ROUTE_MAP: dict[str, str] = {
     "i2v": "image-video.json",
     "i2v_text": "image-video-golos-zvuk.json",
@@ -1364,7 +1442,7 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
         status = "blocked_missing_comfy_base_url"
         job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": project_id_for_credit, "project_id": project_id_for_credit, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
         _ava_credit_attach_job_user(job, user)
-        BOARD_VIDEO_JOBS[job_id] = job
+        _board_video_job_store(job_id, job)
         return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", **job}
     workflow = _load_workflow(workflow_key)
     start_url = payload.start_image_url or payload.startImageUrl or payload.image_url or payload.imageUrl
@@ -1412,7 +1490,7 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
             "payload": payload.model_dump(),
         }
         _ava_credit_attach_job_user(job, user)
-        BOARD_VIDEO_JOBS[job_id] = job
+        _board_video_job_store(job_id, job)
         return {
             "ok": False,
             "jobId": job_id,
@@ -1447,7 +1525,7 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     status = "queued" if prompt_id else "queued_no_prompt_id"
     job = {"jobId": job_id, "status": status, "createdAt": now, "updatedAt": now, "sceneId": payload.scene_id or payload.sceneId, "projectId": project_id_for_credit, "project_id": project_id_for_credit, "route": route, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "promptId": prompt_id, "promptSubmit": submit_data, "workflowPatches": patches, "uploadedMedia": {"image": uploaded_image, "start": uploaded_start, "end": uploaded_end, "audio": uploaded_audio}, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "comfyBaseUrlConfigured": True, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "not_charged_until_result_success", "imageQuality": _txt2img_quality_from_payload(payload), "image_quality": _txt2img_quality_from_payload(payload), "payload": payload.model_dump()}
     _ava_credit_attach_job_user(job, user)
-    BOARD_VIDEO_JOBS[job_id] = job
+    _board_video_job_store(job_id, job)
     return {"ok": True, "jobId": job_id, "job_id": job_id, "status": status, "statusEndpoint": f"/api/clip/video/status/{job_id}", "sceneId": payload.scene_id or payload.sceneId, "projectId": project_id_for_credit, "project_id": project_id_for_credit, "promptId": prompt_id, "workflowKey": workflow_key, "workflowExists": workflow_path.exists(), "targetComfy": "main_ltx", "targetComfyBaseUrl": main_url, "targetDurationSec": target_duration, "generationDurationSec": generation_duration, "trimToDurationSec": target_duration, "plusOneSecondApplied": generation_duration > target_duration, "creditCost": credit_cost, "creditCharged": False, "creditChargeMode": "preflight_ok_charge_after_success", "workflowPatchCount": len(patches), "uploadedMedia": job["uploadedMedia"], "jobStored": True}
 
 
@@ -1683,7 +1761,7 @@ def _finalize_video_job_from_outputs(job: dict[str, Any], outputs: list[dict[str
 
 @router.get("/clip/video/status/{job_id}")
 def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
-    job = BOARD_VIDEO_JOBS.get(job_id)
+    job = BOARD_VIDEO_JOBS.get(job_id) or _board_video_job_load(job_id)
     if not job:
         return {"ok": False, "status": "not_found", "code": "BOARD_VIDEO_JOB_NOT_FOUND", "jobId": job_id}
 
@@ -1691,6 +1769,7 @@ def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[st
 
     if job.get("videoUrl") or job.get("video_url") or job.get("imageUrl") or job.get("image_url"):
         _ava_credit_charge_video_job_if_ready(job)
+        _board_video_job_store(job_id, job)
 
         return {"ok": True, **job}
 
@@ -1730,6 +1809,7 @@ def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[st
         job["historyPreview"] = history
 
     _ava_credit_charge_video_job_if_ready(job)
+    _board_video_job_store(job_id, job)
 
 
     return {"ok": True, **job}

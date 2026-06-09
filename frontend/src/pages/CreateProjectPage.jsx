@@ -1,7 +1,14 @@
+/* AVA_CREATE_PROJECT_REDIRECT_DASHBOARD_V11: after project creation return to main dashboard, not Board. */
+/* AVA_CREATE_PROJECT_MODE_DROPDOWN_V5: project mode is a compact dropdown, no separate type picker and no mode cards. */
+/* AVA_CREATE_PROJECT_MODE_ONLY_V4: replace project type selector with project mode picker only. */
+/* AVA_PROJECT_MODE_PICKER_COMPACT_V3: compact mode cards, no long descriptions/contracts in UI. */
+/* AVA_PROJECT_MODE_PICKER_UI_V2: styled project mode cards instead of plain select. */
+/* AVA_PROJECT_MODES_PACK_V1: project mode selector on create project. */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Monitor, Smartphone, Square } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
+import { enabledProjectModes, normalizeProjectMode } from '../lib/projectModes.js'
 
 const formatOptions = [
   { value: '16:9', title: 'Горизонталь', hint: '16:9', icon: Monitor },
@@ -12,7 +19,7 @@ const formatOptions = [
 export default function CreateProjectPage() {
   const { createProject } = useProjects()
   const navigate = useNavigate()
-  const [form, setForm] = useState({ name: '', type: 'clip', format: '16:9', description: '' })
+  const [form, setForm] = useState({ name: '', type: 'clip', format: '16:9', description: '', projectModeId: 'manual_general_v1' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -25,7 +32,9 @@ export default function CreateProjectPage() {
     setLoading(true)
     setError('')
     try {
-      await createProject(form)
+      const payload = { ...form, type: 'clip', project_mode: normalizeProjectMode(form.projectModeId) }
+      delete payload.projectModeId
+      const project = await createProject(payload)
       navigate('/app/dashboard')
     } catch (err) {
       setError(err.message)
@@ -42,14 +51,14 @@ export default function CreateProjectPage() {
         <p>Проект будет хранить все этапы: аудио, тайминг, доску, видео, сборку и генератор.</p>
         {error && <div className="avaError">{error}</div>}
         <label>Название проекта<input value={form.name} onChange={(e) => setField('name', e.target.value)} placeholder="Например: Greenland clip" required /></label>
-        <label>Тип проекта
-          <select value={form.type} onChange={(e) => setField('type', e.target.value)}>
-            <option value="clip">Клип</option>
-            <option value="documentary">Документалка</option>
-            <option value="podcast">Подкаст</option>
-            <option value="video_match">Video Match</option>
-            <option value="test">Тест генерации</option>
-            <option value="empty">Пустой проект</option>
+        <label className="avaProjectModeDropdownV5">Режим проекта
+          <select value={form.projectModeId} onChange={(e) => setField('projectModeId', e.target.value)}>
+            {enabledProjectModes().slice().sort((a, b) => {
+              const order = { manual_general_v1: 0, recipe_process_v1: 1, lyric_meaning_remix_v1: 2 }
+              return (order[a.id] ?? 99) - (order[b.id] ?? 99)
+            }).map((mode) => (
+              <option key={mode.id} value={mode.id}>{mode.label_ru}</option>
+            ))}
           </select>
         </label>
 

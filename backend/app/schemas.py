@@ -1,3 +1,4 @@
+# AVA_PROJECT_MODES_PACK_V1
 from typing import Any, Literal
 from pydantic import BaseModel, EmailStr, Field
 
@@ -23,12 +24,14 @@ class ProjectCreateRequest(BaseModel):
     type: str = 'clip'
     format: str = '16:9'
     description: str = ''
+    project_mode: dict[str, Any] | None = None  # AVA_PROJECT_MODES_PACK_V1
 
 
 class ProjectUpdateRequest(BaseModel):
     name: str | None = None
     status: str | None = None
     description: str | None = None
+    project_mode: dict[str, Any] | None = None  # AVA_PROJECT_MODES_PACK_V1
 
 
 class SnapshotSaveRequest(BaseModel):
