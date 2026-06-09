@@ -3480,3 +3480,24 @@
 @keyframes avaTimingAsrSpinV67B {
   to { transform: rotate(360deg); }
 }
+
+
+/* AVA_SEMANTIC_BLOCKS_CANON_V69 */
+.avaTimingSegmentsRow button.hasBlock {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--scene-block-color) 42%, transparent), rgba(255,255,255,.026) 76%),
+    rgba(255,255,255,.035) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--scene-block-color) 42%, transparent);
+}
+.avaTimingSegmentsRow button.hasBlock::before { border-left-color: var(--scene-block-color) !important; background: linear-gradient(180deg, color-mix(in srgb, var(--scene-block-color) 30%, transparent), transparent 55%) !important; }
+.avaTimingSegmentsRow button.hasBlock.isActive { background: linear-gradient(90deg, color-mix(in srgb, var(--scene-block-color) 58%, transparent), color-mix(in srgb, var(--scene-block-color) 22%, transparent)), rgba(69,216,255,.08) !important; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--scene-block-color) 88%, white), 0 0 24px color-mix(in srgb, var(--scene-block-color) 42%, transparent) !important; }
+.avaSemanticBlockEditorV69 { align-items: center; }
+.avaSemanticBlockColorPickV69 { display: inline-flex; align-items: center; gap: 7px; color: #b9c6e3; font-size: 12px; font-weight: 900; }
+.avaSemanticBlockColorPickV69 input[type="color"] { width: 44px; height: 32px; padding: 0; border: 1px solid rgba(255,255,255,.16); border-radius: 10px; background: rgba(255,255,255,.06); cursor: pointer; }
+.avaSemanticBlockConflictOverlayV69 { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, .54); backdrop-filter: blur(8px); }
+.avaSemanticBlockConflictCardV69 { width: min(560px, 94vw); border: 1px solid rgba(255, 214, 102, .42); border-radius: 22px; padding: 18px; background: linear-gradient(135deg, rgba(26, 20, 44, .96), rgba(10, 18, 36, .96)); box-shadow: 0 22px 80px rgba(0,0,0,.42); color: #f4f8ff; }
+.avaSemanticBlockConflictCardV69 strong { display: block; color: #ffe08a; font-size: 18px; margin-bottom: 8px; }
+.avaSemanticBlockConflictCardV69 p { margin: 0 0 14px; color: #c9d6f3; line-height: 1.45; }
+.avaSemanticBlockConflictActionsV69 { display: flex; gap: 8px; flex-wrap: wrap; }
+.avaSemanticBlockConflictActionsV69 button { min-height: 38px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 0 13px; color: #f4f8ff; background: rgba(255,255,255,.07); font-weight: 900; cursor: pointer; }
+.avaSemanticBlockConflictActionsV69 button:first-child { color: #101827; background: linear-gradient(135deg, #ffe08a, #8ee9ff); }

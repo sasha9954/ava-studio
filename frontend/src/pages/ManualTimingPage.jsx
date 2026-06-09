@@ -808,6 +808,107 @@ function encodeAudioBufferSliceToWav(audioBuffer, startFrame, frameCount, channe
   return buffer
 }
 
+
+const AVA_SEMANTIC_BLOCK_COLORS_V69 = [
+  '#FF5A5F', '#00B7FF', '#FF7A00', '#00D26A', '#FF2D55', '#FFC400',
+  '#FF00A8', '#FDE047', '#7CFF00', '#00FFE0', '#8B5CF6', '#38BDF8',
+  '#FB7185', '#A3E635',
+]
+
+function avaSemanticBlockHexColorV69(value = '', fallbackIndex = 0) {
+  const raw = String(value || '').trim()
+  if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toUpperCase()
+  if (/^#[0-9a-f]{3}$/i.test(raw)) return `#${raw.slice(1).split('').map((ch) => ch + ch).join('')}`.toUpperCase()
+  const numeric = Number(raw)
+  if (Number.isFinite(numeric)) return AVA_SEMANTIC_BLOCK_COLORS_V69[Math.abs(Math.floor(numeric)) % AVA_SEMANTIC_BLOCK_COLORS_V69.length]
+  return AVA_SEMANTIC_BLOCK_COLORS_V69[Math.abs(Number(fallbackIndex) || 0) % AVA_SEMANTIC_BLOCK_COLORS_V69.length]
+}
+
+function avaSemanticBlockSceneIdV69(scene = {}, fallback = '') {
+  return String(scene.id || scene.scene_id || scene.sceneId || scene.title || fallback || '').trim()
+}
+
+function avaSemanticBlockIdOfSceneV69(scene = {}) {
+  return String(scene.blockId || scene.block_id || scene.semanticBlockId || scene.semantic_block_id || '').trim()
+}
+
+function avaSemanticBlockTitleOfSceneV69(scene = {}, fallback = '') {
+  return String(scene.blockTitle || scene.block_title || scene.semanticBlockTitle || scene.semantic_block_title || fallback || '').trim()
+}
+
+function avaSemanticBlockColorOfSceneV69(scene = {}, fallbackIndex = 0) {
+  return avaSemanticBlockHexColorV69(scene.blockColor || scene.block_color || scene.color || scene.sceneColor || scene.scene_color || scene.timelineColor || scene.cardColor || '', fallbackIndex)
+}
+
+function avaSemanticBlockCssColorV69(scene = {}, fallbackIndex = 0) {
+  const blockId = avaSemanticBlockIdOfSceneV69(scene)
+  if (blockId) return avaSemanticBlockColorOfSceneV69(scene, fallbackIndex)
+  return `hsl(${sceneHue(fallbackIndex)}, 82%, 52%)`
+}
+
+function avaSemanticStoryBlocksFromScenesV69(sceneList = []) {
+  const blocks = new Map()
+  ;(Array.isArray(sceneList) ? sceneList : []).forEach((scene, index) => {
+    const sceneId = avaSemanticBlockSceneIdV69(scene, `seg_${String(index + 1).padStart(2, '0')}`)
+    const blockId = avaSemanticBlockIdOfSceneV69(scene)
+    if (!sceneId || !blockId) return
+    const title = avaSemanticBlockTitleOfSceneV69(scene, blockId)
+    const color = avaSemanticBlockColorOfSceneV69(scene, blocks.size)
+    if (!blocks.has(blockId)) {
+      blocks.set(blockId, { id: blockId, blockId, block_id: blockId, title, blockTitle: title, block_title: title, color, blockColor: color, block_color: color, scene_ids: [], sceneIds: [], sceneIndexes: [], start: Number(scene.start || scene.start_sec || 0), end: Number(scene.end || scene.end_sec || 0) })
+    }
+    const block = blocks.get(blockId)
+    if (!block.scene_ids.includes(sceneId)) block.scene_ids.push(sceneId)
+    if (!block.sceneIds.includes(sceneId)) block.sceneIds.push(sceneId)
+    if (!block.sceneIndexes.includes(index)) block.sceneIndexes.push(index)
+    block.start = Math.min(Number(block.start || 0), Number(scene.start || scene.start_sec || block.start || 0))
+    block.end = Math.max(Number(block.end || 0), Number(scene.end || scene.end_sec || block.end || 0))
+    block.duration = Number(Math.max(0, block.end - block.start).toFixed(3))
+  })
+  return Array.from(blocks.values()).filter((block) => block.scene_ids.length)
+}
+
+function avaSemanticClearSceneBlockFieldsV69(scene = {}) {
+  const next = { ...scene }
+  delete next.blockId; delete next.block_id; delete next.blockTitle; delete next.block_title
+  delete next.blockColor; delete next.block_color; delete next.semanticBlockId; delete next.semantic_block_id
+  delete next.semanticBlockTitle; delete next.semantic_block_title; delete next.semanticBlockColor; delete next.semantic_block_color
+  delete next.color; delete next.timelineColor; delete next.cardColor; delete next.user_scene_color; delete next.scene_block_index
+  return next
+}
+
+function avaSemanticBlockScenePatchV69(scene = {}, block = {}, index = 0) {
+  // AVA_SEMANTIC_BLOCK_COLORS_CANON_V72:
+  // A semantic block has exactly one color. Do not let old per-scene color fields
+  // survive as block_color/user_scene_color and later override the real blockColor.
+  const blockId = String(block.id || block.blockId || block.block_id || '').trim()
+  const blockTitle = String(block.title || block.blockTitle || block.block_title || blockId).trim()
+  const blockColor = avaSemanticBlockHexColorV69(block.color || block.blockColor || block.block_color, index)
+  return {
+    ...scene,
+    blockId,
+    block_id: blockId,
+    blockTitle,
+    block_title: blockTitle,
+    blockColor,
+    block_color: blockColor,
+    color: blockColor,
+    sceneColor: blockColor,
+    scene_color: blockColor,
+    timelineColor: blockColor,
+    cardColor: blockColor,
+    user_scene_color: blockColor,
+    semanticBlockId: blockId,
+    semantic_block_id: blockId,
+    semanticBlockTitle: blockTitle,
+    semantic_block_title: blockTitle,
+    semanticBlockColor: blockColor,
+    semantic_block_color: blockColor,
+  }
+}
+
+// AVA_SEMANTIC_BLOCKS_CANON_V69
+
 function stableHueFromBlockKey(value, fallbackIndex = 0) {
   const text = String(value || '').trim()
   if (!text) return sceneHue(fallbackIndex)
@@ -1224,6 +1325,7 @@ export default function ManualTimingPage() {
   const [showDev, setShowDev] = useState(false)
   const [blockSelection, setBlockSelection] = useState([])
   const [blockDraft, setBlockDraft] = useState({ title: '' })
+  const [semanticBlockConflict, setSemanticBlockConflict] = useState(null)
   const [sceneEditor, setSceneEditor] = useState(null)
   const [playingMode, setPlayingMode] = useState(null)
   const [cursorSec, setCursorSec] = useState(0)
@@ -2228,53 +2330,85 @@ export default function ManualTimingPage() {
     setBlockDraft((prev) => ({ title: prev.title || selectedScene.blockTitle || '' }))
   }
 
-  function applyStoryBlock() {
-    const selectedScenesForBlock = getSelectedBlockScenes(blockSelection)
-    if (!selectedScenesForBlock.length) {
-      setStatus('выберите сцены через Ctrl+клик')
-      return
-    }
-    const existingBlocks = Array.isArray(draft.storyBlocks) ? draft.storyBlocks : []
-    const title = (blockDraft.title || '').trim() || `Блок ${existingBlocks.length + 1}`
-    const blockId = `block_${Date.now().toString(36)}`
-    const blockColor = sceneHue(existingBlocks.length + 8)
-    const selectedIds = selectedScenesForBlock.map(getSceneSelectionId)
-    const selectedSet = new Set(selectedIds)
-    const nextScenes = scenes.map((scene) => (
-      selectedSet.has(getSceneSelectionId(scene))
-        ? { ...scene, semanticBlock: true, blockId, blockTitle: title, blockColor }
-        : scene
-    ))
-    const selectedScenes = nextScenes.filter((scene) => selectedSet.has(getSceneSelectionId(scene)))
-    const nextBlocks = [
-      ...existingBlocks,
-      {
-        id: blockId,
-        title,
-        color: blockColor,
-        sceneIds: selectedScenes.map((scene) => scene.id),
-        sceneIndexes: selectedScenes.map((scene) => scene.index),
-        start: selectedScenes[0]?.start ?? 0,
-        end: selectedScenes[selectedScenes.length - 1]?.end ?? 0,
-      },
-    ]
-    logManualTimingBlockDiag('[MT BLOCK DIAG SAVE]', {
-      blockId,
-      title,
-      sceneIds: selectedScenes.map((scene) => scene.id),
-      color: blockColor,
-    })
-    pushHistorySnapshot()
-    applyDraftChange({ ...draft, scenes: nextScenes, storyBlocks: nextBlocks, selectedSceneIndex: selectedScenes[0]?.index ?? 0 }, `блок создан: ${title}`, selectedScenes[0]?.start ?? cursorSec)
-    setBlockSelection([])
-    setBlockDraft({ title: '' })
+  function resolveSemanticBlockConflictV69(mode = 'cancel') {
+  const conflict = semanticBlockConflict
+  setSemanticBlockConflict(null)
+  if (!conflict || mode === 'cancel') {
+    setStatus('Создание смыслового блока отменено.')
+    return
+  }
+  applyStoryBlock(mode, conflict)
+}
+
+function applyStoryBlock(conflictMode = '', pendingConflict = null) {
+  const selectedScenes = getSelectedBlockScenes(blockSelection).sort((a, b) => Number(a.index || 0) - Number(b.index || 0))
+  if (!selectedScenes.length) {
+    setStatus('Выдели сцены для смыслового блока через Ctrl+клик.')
+    return
   }
 
-  function clearBlockSelection() {
-    setBlockSelection([])
-    setBlockDraft({ title: '' })
-    setStatus('выбор блока очищен')
+  const selectedIds = selectedScenes.map((scene, index) => avaSemanticBlockSceneIdV69(scene, String(index)))
+  const firstScene = selectedScenes[0] || {}
+  const title = String(blockDraft.title || pendingConflict?.title || firstScene.blockTitle || firstScene.block_title || `Блок ${String((draft.storyBlocks || []).length + 1).padStart(2, '0')}`).trim()
+  const newBlockId = pendingConflict?.blockId || `block_${Date.now().toString(36)}`
+  const blockColor = avaSemanticBlockHexColorV69(blockDraft.color || pendingConflict?.color || firstScene.blockColor || firstScene.block_color || firstScene.color, (draft.storyBlocks || []).length)
+  const conflicts = selectedScenes.map((scene) => ({ sceneId: avaSemanticBlockSceneIdV69(scene), sceneTitle: scene.title || scene.id || scene.scene_id, blockId: avaSemanticBlockIdOfSceneV69(scene), blockTitle: avaSemanticBlockTitleOfSceneV69(scene) })).filter((item) => item.blockId && item.blockId !== newBlockId)
+
+  if (conflicts.length && !conflictMode) {
+    setSemanticBlockConflict({ title, blockId: newBlockId, color: blockColor, conflicts, selectedIds })
+    setStatus(`Есть сцены из другого блока: ${conflicts.map((item) => item.sceneTitle).join(', ')}`)
+    return
   }
+
+  let includedIds = selectedIds
+  if (conflictMode === 'skip') {
+    const conflictIds = new Set(conflicts.map((item) => String(item.sceneId)))
+    includedIds = selectedIds.filter((id) => !conflictIds.has(String(id)))
+  }
+  if (!includedIds.length) {
+    setStatus('Все выбранные сцены уже остались в старых блоках.')
+    return
+  }
+
+  const included = new Set(includedIds.map(String))
+  pushHistorySnapshot()
+  const nextScenes = renumberScenes(scenes.map((scene, index) => {
+    const sceneId = avaSemanticBlockSceneIdV69(scene, String(index))
+    if (!included.has(sceneId)) return scene
+    return avaSemanticBlockScenePatchV69(scene, { id: newBlockId, title, color: blockColor }, index)
+  }))
+  const storyBlocks = avaSemanticStoryBlocksFromScenesV69(nextScenes)
+  applyDraftChange({ ...draft, scenes: nextScenes, scenesCount: nextScenes.length, storyBlocks }, `Смысловой блок сохранён: ${title} · ${includedIds.length} сцен`, Number(selectedScenes[0]?.start || cursorSec || 0))
+  setBlockSelection([])
+  setBlockDraft({ title: '', color: '' })
+}
+
+function clearSelectedScenesFromBlocks() {
+  const selectedScenes = getSelectedBlockScenes(blockSelection)
+  if (!selectedScenes.length) {
+    setStatus('Выдели сцены, которые нужно снять из блока.')
+    return
+  }
+  const selectedIds = new Set(selectedScenes.map((scene, index) => avaSemanticBlockSceneIdV69(scene, String(index))))
+  const blockedCount = selectedScenes.filter((scene) => avaSemanticBlockIdOfSceneV69(scene)).length
+  if (!blockedCount) {
+    setStatus('В выбранных сценах нет смыслового блока.')
+    return
+  }
+  pushHistorySnapshot()
+  const nextScenes = renumberScenes(scenes.map((scene, index) => selectedIds.has(avaSemanticBlockSceneIdV69(scene, String(index))) ? avaSemanticClearSceneBlockFieldsV69(scene) : scene))
+  const storyBlocks = avaSemanticStoryBlocksFromScenesV69(nextScenes)
+  applyDraftChange({ ...draft, scenes: nextScenes, scenesCount: nextScenes.length, storyBlocks }, `Снято из блока: ${blockedCount} сцен`, Number(selectedScenes[0]?.start || cursorSec || 0))
+  setBlockSelection([])
+  setBlockDraft({ title: '', color: '' })
+}
+
+function clearBlockSelection() {
+  setBlockSelection([])
+  setBlockDraft({ title: '', color: '' })
+  setSemanticBlockConflict(null)
+  setStatus('выделение смыслового блока снято')
+}
 
   function openSceneEditor(sceneIndex) {
     const scene = scenes[Math.min(sceneIndex, scenes.length - 1)]
@@ -3957,15 +4091,27 @@ const useVocalStem = mode === 'vocal'
       durationSec: Math.max(0, Number(scene.end ?? scene.end_sec ?? 0) - Number(scene.start ?? scene.start_sec ?? 0)),
       // AVA_TIMING_TO_BOARD_SCENE_COLORS_V67B:
       // Preserve the exact visual hue used in Manual Timing so Board cards do not collapse to one role/block color.
-      sceneColor: scene.sceneColor ?? scene.scene_color ?? scene.color ?? sceneHue(index),
-      scene_color: scene.scene_color ?? scene.sceneColor ?? scene.color ?? sceneHue(index),
-      color: scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
+      blockId: scene.blockId || scene.block_id || '',
+      block_id: scene.block_id || scene.blockId || '',
+      blockTitle: scene.blockTitle || scene.block_title || '',
+      block_title: scene.block_title || scene.blockTitle || '',
+      // AVA_TIMING_TO_BOARD_BLOCK_COLOR_CANON_V72:
+      // Use the semantic block color as the one canonical color for Board.
+      blockColor: scene.blockColor || scene.block_color || scene.color || scene.sceneColor || scene.scene_color || '',
+      block_color: scene.blockColor || scene.block_color || scene.color || scene.sceneColor || scene.scene_color || '',
+      sceneColor: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
+      scene_color: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
+      color: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
+      user_scene_color: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
+      timelineColor: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
+      cardColor: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
     }))
 
     const nextDraft = {
       ...draft,
       scenes: sceneSnapshot,
       scenesCount: sceneSnapshot.length,
+      storyBlocks: avaSemanticStoryBlocksFromScenesV69(sceneSnapshot),
       selectedSceneIndex: Math.min(Number(draft.selectedSceneIndex || 0), Math.max(0, sceneSnapshot.length - 1)),
       audioDurationSec: Number(draft.audioDurationSec || timelineDurationSec || sceneSnapshot[sceneSnapshot.length - 1]?.end || 0),
       updatedAt: Date.now(),
@@ -4335,7 +4481,7 @@ const useVocalStem = mode === 'vocal'
                   key={`${scene.id}-${scene.start}-${scene.end}`}
                   type="button"
                   data-scene-id={scene.id || scene.title || scene.index}
-                  style={{ left: `${sceneLeft}%`, width: `${sceneWidth}%`, '--scene-hue': sceneBlockHue(scene, scene.index) }}
+                  style={{ left: `${sceneLeft}%`, width: `${sceneWidth}%`, '--scene-hue': sceneBlockHue(scene, scene.index), '--scene-block-color': avaSemanticBlockCssColorV69(scene, scene.index) }}
                   className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${isSceneInBlockSelection(scene) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''}`}
                   onClick={(event) => handleSceneClick(event, scene.index)}
                   onDoubleClick={(event) => {
@@ -4436,18 +4582,43 @@ const useVocalStem = mode === 'vocal'
         )}
 
         {selectedBlockSceneCount > 0 && (
-          <div className="avaTimingBlockEditor">
+          <div className="avaTimingBlockEditor avaSemanticBlockEditorV69">
             <div>
               <strong>Смысловой блок</strong>
-              <span>{blockSelection.length} сцен · Ctrl+клик добавляет/убирает сцены</span>
+              <span>{selectedBlockSceneCount} сцен · Ctrl+клик добавляет/убирает сцены</span>
             </div>
             <input
               value={blockDraft.title}
-              onChange={(event) => setBlockDraft({ title: event.target.value })}
-              placeholder="Название блока, например: Куплет 1 / Припев / Воспоминание"
+              onChange={(event) => setBlockDraft((value) => ({ ...value, title: event.target.value }))}
+              placeholder="Название блока: начало / вступление / подготовка / финал"
             />
-            <button type="button" onClick={applyStoryBlock}>Сохранить блок</button>
+            <label className="avaSemanticBlockColorPickV69">
+              цвет
+              <input
+                type="color"
+                value={blockDraft.color || avaSemanticBlockHexColorV69(getSelectedBlockScenes(blockSelection)[0]?.blockColor || getSelectedBlockScenes(blockSelection)[0]?.color, selectedBlockSceneCount)}
+                onChange={(event) => setBlockDraft((value) => ({ ...value, color: event.target.value }))}
+              />
+            </label>
+            <button type="button" onClick={() => applyStoryBlock()}>Сохранить блок</button>
+            <button type="button" onClick={clearSelectedScenesFromBlocks}>Снять из блока</button>
             <button type="button" onClick={clearBlockSelection}>Отмена</button>
+          </div>
+        )}
+
+        {semanticBlockConflict && (
+          <div className="avaSemanticBlockConflictOverlayV69" role="dialog" aria-modal="true">
+            <div className="avaSemanticBlockConflictCardV69">
+              <strong>Сцены уже входят в другой блок</strong>
+              <p>
+                {semanticBlockConflict.conflicts.map((item) => `${item.sceneTitle} — ${item.blockTitle || item.blockId}`).join(', ')}
+              </p>
+              <div className="avaSemanticBlockConflictActionsV69">
+                <button type="button" onClick={() => resolveSemanticBlockConflictV69('take')}>Забрать в новый блок</button>
+                <button type="button" onClick={() => resolveSemanticBlockConflictV69('skip')}>Оставить в старом блоке</button>
+                <button type="button" onClick={() => resolveSemanticBlockConflictV69('cancel')}>Отмена</button>
+              </div>
+            </div>
           </div>
         )}
 

@@ -475,41 +475,78 @@ function sourceSceneArray(manualTiming = {}, board = {}) {
 }
 
 function storyBlocksFromSources(manualTiming = {}, board = {}, scenes = []) {
+  // AVA_SEMANTIC_BLOCKS_CANON_V69B:
+  // Current scene assignments are the source of truth. This removes stale duplicate
+  // storyBlocks when the user re-groups scenes with Ctrl+click in Manual Timing.
   const existing = asArray(manualTiming.storyBlocks || manualTiming.story_blocks || board.storyBlocks || board.story_blocks)
-  if (existing.length) return existing.map((block, index) => {
+  const existingById = new Map()
+  existing.forEach((block, index) => {
+    const id = firstText(block.id, block.blockId, block.block_id)
+    if (!id) return
+    existingById.set(id, {
+      index,
+      title: firstText(block.title, block.blockTitle, block.block_title, block.label),
+      color: normalizeHexColor(block.color || block.blockColor || block.block_color, index),
+    })
+  })
+
+  const byId = new Map()
+  ;(Array.isArray(scenes) ? scenes : []).forEach((scene, index) => {
+    const id = firstText(scene.blockId, scene.block_id)
+    if (!id) return
+    const sceneId = sceneIdOf(scene, index)
+    const existingBlock = existingById.get(id) || {}
+    const title = firstText(scene.blockTitle, scene.block_title, existingBlock.title, id)
+    const color = normalizeHexColor(scene.blockColor || scene.block_color || scene.color || scene.sceneColor || existingBlock.color, byId.size)
+
+    if (!byId.has(id)) {
+      byId.set(id, {
+        id,
+        title,
+        color,
+        scene_ids: [],
+        sceneIds: [],
+        sceneIndexes: [],
+        start: Number(scene.start ?? scene.start_sec ?? 0),
+        end: Number(scene.end ?? scene.end_sec ?? 0),
+        blockId: id,
+        block_id: id,
+        blockTitle: title,
+        block_title: title,
+        blockColor: color,
+        block_color: color,
+      })
+    }
+
+    const block = byId.get(id)
+    if (!block.scene_ids.includes(sceneId)) block.scene_ids.push(sceneId)
+    if (!block.sceneIds.includes(sceneId)) block.sceneIds.push(sceneId)
+    if (!block.sceneIndexes.includes(index)) block.sceneIndexes.push(index)
+    block.start = Math.min(Number(block.start || 0), Number(scene.start ?? scene.start_sec ?? block.start ?? 0))
+    block.end = Math.max(Number(block.end || 0), Number(scene.end ?? scene.end_sec ?? block.end ?? 0))
+    block.duration = round3(Math.max(0, Number(block.end || 0) - Number(block.start || 0)))
+  })
+
+  const canonical = Array.from(byId.values()).filter((block) => block.scene_ids.length)
+  if (canonical.length) return canonical
+
+  return existing.map((block, index) => {
     const color = normalizeHexColor(block.color || block.blockColor || block.block_color, index)
+    const id = firstText(block.id, block.blockId, block.block_id) || `block_${String(index + 1).padStart(2, '0')}`
+    const title = firstText(block.title, block.blockTitle, block.block_title, block.label) || `Block ${index + 1}`
     return {
       ...block,
-      id: firstText(block.id, block.blockId, block.block_id) || `block_${String(index + 1).padStart(2, '0')}`,
-      blockId: firstText(block.blockId, block.block_id, block.id) || `block_${String(index + 1).padStart(2, '0')}`,
-      block_id: firstText(block.block_id, block.blockId, block.id) || `block_${String(index + 1).padStart(2, '0')}`,
-      title: firstText(block.title, block.blockTitle, block.block_title, block.label) || `Block ${index + 1}`,
-      blockTitle: firstText(block.blockTitle, block.block_title, block.title, block.label) || `Block ${index + 1}`,
-      block_title: firstText(block.block_title, block.blockTitle, block.title, block.label) || `Block ${index + 1}`,
+      id,
+      blockId: id,
+      block_id: id,
+      title,
+      blockTitle: title,
+      block_title: title,
       color,
       blockColor: color,
       block_color: color,
     }
   })
-
-  const byId = new Map()
-  scenes.forEach((scene, index) => {
-    const id = firstText(scene.blockId, scene.block_id) || `block_${String(index + 1).padStart(2, '0')}`
-    if (byId.has(id)) return
-    const color = normalizeHexColor(scene.color || scene.blockColor || scene.block_color, byId.size)
-    byId.set(id, {
-      id,
-      blockId: id,
-      block_id: id,
-      title: firstText(scene.blockTitle, scene.block_title) || id,
-      blockTitle: firstText(scene.blockTitle, scene.block_title) || id,
-      block_title: firstText(scene.blockTitle, scene.block_title) || id,
-      color,
-      blockColor: color,
-      block_color: color,
-    })
-  })
-  return Array.from(byId.values())
 }
 
 function buildColorMaps(storyBlocks = [], scenes = []) {
@@ -637,10 +674,15 @@ function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming
       block_id: blockId,
       blockTitle,
       block_title: blockTitle,
+      // AVA_PACK_BLOCK_COLOR_CANON_V72:
+      // All aliases are the same exact semantic block color. This prevents
+      // stale block_color/user_scene_color from leaking into Board.
       color,
-      sceneColor: color,
-      user_scene_color: color,
       blockColor: color,
+      block_color: color,
+      sceneColor: color,
+      scene_color: color,
+      user_scene_color: color,
       timelineColor: color,
       cardColor: color,
       recipe_step: projectModeId === 'recipe_process_v1' ? firstText(scene.recipe_step, production.recipe_step, blockTitle) : firstText(scene.recipe_step, production.recipe_step),
@@ -729,7 +771,11 @@ function rootScenesFromNormalized(normalizedScenes = [], modeId = 'manual_genera
       translated_text_ru: scene.translated_text_ru,
       meaning_hint_ru: scene.meaning_hint_ru,
       blockId: scene.blockId,
+      block_id: scene.block_id || scene.blockId,
       blockTitle: scene.blockTitle,
+      block_title: scene.block_title || scene.blockTitle,
+      blockColor: scene.blockColor || scene.color,
+      block_color: scene.block_color || scene.blockColor || scene.color,
       color: scene.color,
       visual_action: scene.visual_action,
       viewer_should_understand: scene.viewer_should_understand,

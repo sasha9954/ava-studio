@@ -1123,6 +1123,177 @@ function storyboardSceneColor(scene, index = 0) {
   return 185 + ((Number(index || 0) * 47) % 150)
 }
 
+function storyboardHexColorV69(value = '', fallbackIndex = 0) {
+  const raw = String(value || '').trim()
+  if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toUpperCase()
+  if (/^#[0-9a-f]{3}$/i.test(raw)) return `#${raw.slice(1).split('').map((ch) => ch + ch).join('')}`.toUpperCase()
+  const num = Number(raw)
+  if (Number.isFinite(num)) return `hsl(${num}, 82%, 52%)`
+  return `hsl(${storyboardSceneColor({}, fallbackIndex)}, 82%, 52%)`
+}
+function storyboardCssColorV69(scene = {}, index = 0) {
+  const blockValue = scene.blockColor || scene.block_color || scene.color || scene.sceneColor || scene.scene_color || scene.user_scene_color || scene.timelineColor || scene.cardColor || ''
+  if (String(blockValue || '').trim()) return storyboardHexColorV69(blockValue, index)
+  return `hsl(${storyboardSceneColor(scene, index)}, 82%, 52%)`
+}
+
+
+
+function storyboardExactCssColorV70(value = '', fallbackIndex = 0) {
+  const raw = String(value || '').trim()
+  if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toUpperCase()
+  if (/^#[0-9a-f]{3}$/i.test(raw)) {
+    return `#${raw.slice(1).split('').map((ch) => ch + ch).join('')}`.toUpperCase()
+  }
+  if (/^rgba?\(/i.test(raw) || /^hsla?\(/i.test(raw) || /^color-mix\(/i.test(raw)) return raw
+  const numeric = Number(raw)
+  if (Number.isFinite(numeric)) return `hsl(${numeric}, 82%, 52%)`
+  return `hsl(${storyboardSceneColor({}, fallbackIndex)}, 82%, 52%)`
+}
+
+function storyboardSceneBlockCssColorV70(scene = {}, index = 0) {
+  // AVA_BOARD_EXACT_BLOCK_COLORS_V70:
+  // Exact block hex from Timing wins over hue hashing. This keeps Board visually
+  // identical to Manual Timing semantic blocks.
+  return storyboardExactCssColorV70(
+    scene.blockColor ||
+    scene.block_color ||
+    scene.semanticBlockColor ||
+    scene.semantic_block_color ||
+    scene.color ||
+    scene.user_scene_color ||
+    scene.timelineColor ||
+    scene.cardColor ||
+    scene.sceneColor ||
+    scene.scene_color ||
+    '',
+    index
+  )
+}
+
+function storyboardSceneCardInlineStyleV70(scene = {}, index = 0) {
+  const exactColor = storyboardSceneBlockCssColorV70(scene, index)
+  const hue = storyboardSceneColor(scene, index)
+  const hasBlock = Boolean(
+    scene.blockId ||
+    scene.block_id ||
+    scene.semanticBlockId ||
+    scene.semantic_block_id ||
+    scene.blockTitle ||
+    scene.block_title
+  )
+
+  const style = {
+    '--scene-hue': hue,
+    '--scene-block-color': exactColor,
+  }
+
+  if (hasBlock) {
+    style.borderColor = exactColor
+    style.background = `linear-gradient(135deg, color-mix(in srgb, ${exactColor} 54%, transparent), rgba(10,16,34,.82) 68%), rgba(255,255,255,.035)`
+    style.boxShadow = `inset 0 0 0 1px color-mix(in srgb, ${exactColor} 58%, transparent), 0 12px 34px rgba(0,0,0,.22)`
+  }
+
+  return style
+}
+
+
+function storyboardCleanSceneIdV71(scene = {}, index = 0) {
+  return String(scene.id || scene.scene_id || scene.sceneId || scene.title || `seg_${String(index + 1).padStart(2, '0')}`).trim()
+}
+
+function storyboardSceneIdInBlockV71(block = {}, sceneId = '', index = -1) {
+  const id = String(sceneId || '').trim()
+  const sceneIds = [
+    ...(Array.isArray(block.scene_ids) ? block.scene_ids : []),
+    ...(Array.isArray(block.sceneIds) ? block.sceneIds : []),
+    ...(Array.isArray(block.scenes) ? block.scenes.map((item) => typeof item === 'string' ? item : (item?.id || item?.scene_id || item?.sceneId)) : []),
+  ].map((item) => String(item || '').trim()).filter(Boolean)
+
+  if (id && sceneIds.includes(id)) return true
+
+  const indexes = [
+    ...(Array.isArray(block.sceneIndexes) ? block.sceneIndexes : []),
+    ...(Array.isArray(block.scene_indexes) ? block.scene_indexes : []),
+  ].map((item) => Number(item)).filter(Number.isFinite)
+
+  return Number.isFinite(Number(index)) && indexes.includes(Number(index))
+}
+
+function storyboardBlockColorFromStoryBlocksV71(scene = {}, index = 0, boardState = {}) {
+  // AVA_SEMANTIC_BLOCK_COLORS_CANON_V72:
+  // Exact blockId match must win over old scene_ids membership.
+  // Before this, stale blocks like block_01_host_intro with scene_ids:['seg_01']
+  // could override the new block_mq... that actually owns seg_01..seg_03.
+  const sceneId = storyboardCleanSceneIdV71(scene, index)
+  const blockId = String(scene.blockId || scene.block_id || scene.semanticBlockId || scene.semantic_block_id || '').trim()
+  const blocks = [
+    ...(Array.isArray(boardState.storyBlocks) ? boardState.storyBlocks : []),
+    ...(Array.isArray(boardState.story_blocks) ? boardState.story_blocks : []),
+    ...(Array.isArray(boardState.timing?.storyBlocks) ? boardState.timing.storyBlocks : []),
+    ...(Array.isArray(boardState.timing?.story_blocks) ? boardState.timing.story_blocks : []),
+  ]
+
+  const exactById = blockId
+    ? blocks.find((block) => {
+        const id = String(block.id || block.blockId || block.block_id || '').trim()
+        return id && id === blockId
+      })
+    : null
+
+  const matched = exactById || blocks.find((block) => storyboardSceneIdInBlockV71(block, sceneId, index))
+  if (!matched) return ''
+
+  return matched.color || matched.blockColor || matched.block_color || matched.sceneColor || matched.scene_color || ''
+}
+
+function storyboardSceneBlockCssColorV71(scene = {}, index = 0, boardState = {}) {
+  // AVA_SEMANTIC_BLOCK_COLORS_CANON_V72:
+  // canonical storyBlock/blockColor wins. stale user_scene_color is last.
+  return storyboardExactCssColorV70(
+    storyboardBlockColorFromStoryBlocksV71(scene, index, boardState) ||
+    scene.blockColor ||
+    scene.block_color ||
+    scene.semanticBlockColor ||
+    scene.semantic_block_color ||
+    scene.color ||
+    scene.timelineColor ||
+    scene.cardColor ||
+    scene.sceneColor ||
+    scene.scene_color ||
+    scene.user_scene_color ||
+    '',
+    index
+  )
+}
+
+function storyboardSceneCardInlineStyleV71(scene = {}, index = 0, boardState = {}) {
+  const exactColor = storyboardSceneBlockCssColorV71(scene, index, boardState)
+  const hue = storyboardSceneColor(scene, index)
+  const hasBlock = Boolean(
+    storyboardBlockColorFromStoryBlocksV71(scene, index, boardState) ||
+    scene.blockId ||
+    scene.block_id ||
+    scene.semanticBlockId ||
+    scene.semantic_block_id ||
+    scene.blockTitle ||
+    scene.block_title
+  )
+
+  const style = {
+    '--scene-hue': hue,
+    '--scene-block-color': exactColor,
+  }
+
+  if (hasBlock) {
+    style.borderColor = exactColor
+    style.background = `linear-gradient(135deg, color-mix(in srgb, ${exactColor} 48%, transparent), rgba(10,16,34,.86) 70%), rgba(255,255,255,.035)`
+    style.boxShadow = `inset 0 5px 0 ${exactColor}, inset 0 0 0 1px color-mix(in srgb, ${exactColor} 70%, transparent), 0 12px 34px rgba(0,0,0,.22)`
+  }
+
+  return style
+}
+
 function normalizeAudioSliceStatus(rawScene = {}, savedScene = {}) {
   const status = asText(savedScene?.audio_slice_status || rawScene?.audio_slice_status || 'not_extracted')
   const hasServerSlice = Boolean(
@@ -5187,7 +5358,7 @@ async function importTimingJson(event) {
                 if (node) sceneCardRefs.current.set(scene.id, node)
                 else sceneCardRefs.current.delete(scene.id)
               }}
-              style={{ '--scene-hue': storyboardSceneColor(scene, index) }}
+              style={storyboardSceneCardInlineStyleV71(scene, index, board)}
               onClick={() => selectScene(scene.id)}
             >
               <div className="avaBoardSceneCardTop">
