@@ -721,10 +721,13 @@ function completedJobPatch(job = {}) {
       mmaudio_video_url: assetApiPath || videoUrl,
       mmaudioVideoUrl: assetApiPath || videoUrl,
       mmaudio_video_name: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
-      mmaudio_job_id: data?.jobId || data?.job_id || job.jobId || '',
+                  mmaudioVideoName: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
+mmaudio_job_id: data?.jobId || data?.job_id || job.jobId || '',
       mmaudio_status_endpoint: job.statusEndpoint || '',
       mmaudio_error: '',
+            mmaudioError: '',
       mmaudio_result: data,
+            mmaudioResult: data,
       mmaudio_ready_at: data?.completedAt || job.completedAt || new Date().toISOString(),
     }
   }
@@ -1274,13 +1277,22 @@ function isVideoBusyStatus(status) {
   return ['starting', 'queued', 'preparing', 'submitting', 'running'].includes(String(status || '').toLowerCase())
 }
 
+
 function scenePreviewVideoUrl(scene) {
-  if (!scene || isVideoBusyStatus(scene.video_status)) return ''
-  return normalizeBoardMediaUrl(
+  if (!scene) return ''
+
+  const mmaudioVideo = (
     scene.mmaudio_video_api_path ||
     scene.mmaudioVideoApiPath ||
     scene.mmaudio_video_url ||
     scene.mmaudioVideoUrl ||
+    ''
+  )
+  if (mmaudioVideo) return normalizeBoardMediaUrl(mmaudioVideo)
+
+  if (isVideoBusyStatus(scene.video_status || scene.videoStatus)) return ''
+
+  return normalizeBoardMediaUrl(
     scene.video_api_path ||
     scene.videoApiPath ||
     scene.video_url ||
@@ -1293,11 +1305,20 @@ function scenePreviewVideoUrl(scene) {
   )
 }
 
+
 function scenePreviewAssetApiPath(scene) {
-  if (!scene || isVideoBusyStatus(scene.video_status)) return ''
-  return boardProtectedAssetApiPath(
+  if (!scene) return ''
+
+  const mmaudioAssetPath = (
     scene.mmaudio_video_api_path ||
     scene.mmaudioVideoApiPath ||
+    ''
+  )
+  if (mmaudioAssetPath) return boardProtectedAssetApiPath(mmaudioAssetPath)
+
+  if (isVideoBusyStatus(scene.video_status || scene.videoStatus)) return ''
+
+  return boardProtectedAssetApiPath(
     scene.video_api_path ||
     scene.videoApiPath ||
     scene.resultVideoApiPath ||
@@ -1306,11 +1327,22 @@ function scenePreviewAssetApiPath(scene) {
   )
 }
 
+
 function sceneStaticVideoCandidate(scene) {
-  if (!scene || isVideoBusyStatus(scene.video_status)) return ''
-  const values = [
+  if (!scene) return ''
+
+  const mmaudioValues = [
     scene.mmaudio_video_url,
     scene.mmaudioVideoUrl,
+  ]
+  for (const value of mmaudioValues) {
+    const staticUrl = boardStaticMediaUrl(value)
+    if (staticUrl) return staticUrl
+  }
+
+  if (isVideoBusyStatus(scene.video_status || scene.videoStatus)) return ''
+
+  const values = [
     scene.video_url,
     scene.videoUrl,
     scene.resultVideoUrl,
@@ -1325,17 +1357,26 @@ function sceneStaticVideoCandidate(scene) {
   return ''
 }
 
+
 function scenePreviewVideoLabel(scene) {
   if (!scene) return 'empty'
-  const status = String(scene.video_status || '').toLowerCase()
+  const mmaudioStatus = String(scene.mmaudio_status || scene.mmaudioStatus || '').toLowerCase()
+  if (['starting', 'queued', 'preparing', 'running'].includes(mmaudioStatus)) return 'MMAudio делается'
+  if (
+    scene.mmaudio_video_api_path ||
+    scene.mmaudioVideoApiPath ||
+    scene.mmaudio_video_url ||
+    scene.mmaudioVideoUrl
+  ) return 'mmaudio ready'
+
+  const status = String(scene.video_status || scene.videoStatus || '').toLowerCase()
   if (isVideoBusyStatus(status)) {
     if (status === 'starting') return 'отправляется'
     if (status === 'queued') return 'в очереди'
     if (status === 'preparing' || status === 'submitting') return 'подготовка'
     return 'видео делается'
   }
-  if (scene.mmaudio_video_url || scene.mmaudioVideoUrl) return 'mmaudio ready'
-  return scene.video_status || 'empty'
+  return scene.video_status || scene.videoStatus || (scene.video_url || scene.videoUrl || scene.video_api_path || scene.videoApiPath ? 'ready' : 'empty')
 }
 
 function normalizeLoadedBoardVideoStatuses(boardData = {}) {
@@ -2516,6 +2557,8 @@ function isBoardVideoDoneStatus(status) {
   const activeVideoPollsRef = useRef(new Set())
   const staticAssetRepairRef = useRef(new Set())
   const seenCompletedJobIdsRef = useRef(readBoardSeenCompletedJobIds())
+  const sceneStripRef = useRef(null)
+  const sceneCardRefs = useRef(new Map())
 
   const selectedScene = useMemo(() => {
     const scenes = asSceneArray(board.scenes)
@@ -2525,11 +2568,57 @@ function isBoardVideoDoneStatus(status) {
   const selectedSceneDurationLock = useMemo(() => boardSceneTimingLockInfo(selectedScene), [selectedScene])
   const selectedSceneTimingLocked = Boolean(selectedSceneDurationLock.locked)
   const selectedSceneLockedDurationLabel = formatBoardDurationShort(selectedSceneDurationLock.duration)
+  // AVA_BOARD_HIDE_MANUAL_ADD_FOR_TIMING_V65B:
+  // Manual scene tools are only for standalone Board. Timing-imported boards must not
+  // show '+ Сцена' after F5/direct entry because adding scenes can break the locked timing map.
+  const manualSceneToolsEnabled = useMemo(() => {
+    // AVA_BOARD_MANUAL_TOOLS_STANDALONE_FIX_V65C:
+    // Pure manual boards may still have start/end/duration/blockTitle-like fields,
+    // so do not classify them as Timing-imported only because of scene timing data.
+    const scenes = asSceneArray(board.scenes)
+    const isManualScene = (scene = {}) => (
+      scene?.source === 'manual_board_scene' ||
+      scene?.importedFrom === 'manual_board' ||
+      scene?.source_kind === 'manual_board_scene' ||
+      scene?.sourceKind === 'manual_board_scene' ||
+      scene?.scene_type === 'manual_board_scene' ||
+      scene?.sceneType === 'manual_board_scene' ||
+      scene?.manual === true ||
+      scene?.isManual === true
+    )
+    const hasScenes = scenes.length > 0
+    const allScenesManual = hasScenes && scenes.every(isManualScene)
+    const boardSource = String(board.source || board.importedFrom || board.source_kind || board.sourceKind || '').toLowerCase()
+    const boardSaysManual = ['manual_board', 'standalone_board', 'manual'].includes(boardSource)
+
+    if (allScenesManual || (boardSaysManual && !boardLooksTimingImported(board))) return true
+    return !boardLooksTimingImported(board)
+  }, [board])
+
 
   const selectedIndex = useMemo(() => {
     if (!selectedScene) return -1
     return asSceneArray(board.scenes).findIndex((scene) => scene.id === selectedScene.id)
   }, [board.scenes, selectedScene])
+
+
+  // AVA_BOARD_SELECTED_SCENE_STRIP_FOCUS_V63:
+  // After F5/re-enter the selected scene can be restored in Scene Brain while
+  // the horizontal strip stays visually at seg_01. Keep the strip focused on
+  // the actual selected scene card.
+  useEffect(() => {
+    if (loading || !selectedScene?.id) return undefined
+    const timer = window.setTimeout(() => {
+      const node = sceneCardRefs.current.get(selectedScene.id)
+      if (!node) return
+      try {
+        node.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' })
+      } catch {
+        node.scrollIntoView(false)
+      }
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [loading, selectedScene?.id, board.scenes?.length])
 
   const previousScene = useMemo(() => {
     if (selectedIndex <= 0) return null
@@ -2832,7 +2921,7 @@ function isBoardVideoDoneStatus(status) {
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [selectedPreviewAssetApiPath])
+  }, [selectedPreviewAssetApiPath, selectedScene?.mmaudio_video_api_path, selectedScene?.mmaudioVideoApiPath, selectedScene?.mmaudio_video_url, selectedScene?.mmaudioVideoUrl])
 
   useEffect(() => {
     let cancelled = false
@@ -3477,6 +3566,10 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
   }
 
   function createManualScene() {
+    if (!manualSceneToolsEnabled) {
+      setStatus('Добавление ручных сцен отключено: эта доска привязана к таймингу.')
+      return
+    }
     // AVA09D2_MANUAL_SCENE_CLEARS_MARKER_AND_SAVES
     // AVA09C_CLEAR_BOARD_MARKER_ON_MANUAL_SCENE
     clearWorkflowStageClearedMarker('board')
@@ -4630,17 +4723,27 @@ async function markVideoPlanned(sceneOverride = null) {
             }
           }
           updateSceneAndSave(sceneId, {
-          // AVA_BOARD_CLEAR_OLD_VIDEO_DURING_RUNNING_V52: running poll must not preserve stale ready video refs.
-          ...boardVideoRegenerateResetPatch('video_poll_running'),
+            // AVA_BOARD_FOCUS_AND_MMAUDIO_PREVIEW_V63:
+            // MMAudio is not a base-video regeneration. Preserve the base video,
+            // clear stale busy status, and show the sound-added video immediately.
+            video_status: 'ready',
+            videoStatus: 'ready',
+            video_error: '',
+            videoError: '',
+            video_queue_position: 0,
+            videoQueuePosition: 0,
             mmaudio_status: 'ready',
             mmaudio_video_url: videoUrl,
             mmaudioVideoUrl: videoUrl,
             mmaudio_video_name: data?.mmaudioVideoName || data?.mmaudio_video_name || data?.videoName || data?.video_name || 'mmaudio.mp4',
             mmaudio_job_id: data?.jobId || data?.job_id || jobId || '',
+            mmaudioJobId: data?.jobId || data?.job_id || jobId || '',
             mmaudio_status_endpoint: endpoint,
+            mmaudioStatusEndpoint: endpoint,
             mmaudio_error: '',
             mmaudio_result: data,
             mmaudio_ready_at: new Date().toISOString(),
+            mmaudioReadyAt: new Date().toISOString(),
             ...assetPatch,
           })
           setStatus(`MMAudio готово: ${sceneId}`)
@@ -4958,7 +5061,7 @@ async function importTimingJson(event) {
           </button>
         </div>
       </section>      {/* AVA09G_HIDE_AVA08Z_BOARD_ADD_SCENE_TOP_BUTTON */}
-      {!openedFromTiming ? (
+      {manualSceneToolsEnabled ? (
       <section className="avaBoardManualSceneTopBar">
         <div className="avaBoardManualSceneInfo">
           <strong>Ручные сцены</strong>
@@ -4999,7 +5102,7 @@ async function importTimingJson(event) {
       ) : null}{/* AVA_TIMING_TO_BOARD_CONFIRM_MODAL_V14B */}
 
 
-      <section className="avaBoardSceneStrip" aria-label="Сцены">
+      <section ref={sceneStripRef} className="avaBoardSceneStrip" aria-label="Сцены">
         {boardScenes.map((scene, index) => {
           const statusInfo = sceneStatus(scene)
           const active = selectedScene?.id === scene.id
@@ -5008,6 +5111,10 @@ async function importTimingJson(event) {
               key={scene.id}
               type="button"
               className={`avaBoardSceneCard ${active ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''}`}
+              ref={(node) => {
+                if (node) sceneCardRefs.current.set(scene.id, node)
+                else sceneCardRefs.current.delete(scene.id)
+              }}
               style={{ '--scene-hue': storyboardSceneColor(scene, index) }}
               onClick={() => selectScene(scene.id)}
             >
@@ -5257,7 +5364,8 @@ async function importTimingJson(event) {
               </div>
               {selectedPreviewVideoUrl && !selectedVideoLoadError ? (
                 <>
-                  <video
+                  <div className="avaBoardVideoFrameV64">
+                    <video
                     key={selectedPreviewVideoUrl}
                     src={selectedPreviewVideoUrl}
                     controls
@@ -5282,6 +5390,18 @@ async function importTimingJson(event) {
                       })
                     }}
                   />
+
+                    {['starting', 'queued', 'preparing', 'running'].includes(String(selectedScene.mmaudio_status || selectedScene.mmaudioStatus || '').toLowerCase()) && (
+                      <div className="avaBoardVideoMmaudioOverlayV64">
+                        {/* AVA_BOARD_MMAUDIO_BUSY_VIDEO_OVERLAY_V64 */}
+                        <span className="avaBoardTinyMediaSpinner isGold" aria-hidden="true" />
+                        <div>
+                          <strong>MMAudio делается</strong>
+                          <small>Старое видео остаётся на экране, новый звук собирается в ComfyLab.</small>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <div className="avaBoardVideoActions">
                     <button type="button" onClick={openSelectedSceneVideo}>Смотреть видео</button>
                     <button type="button" onClick={downloadSelectedSceneVideo}>Скачать видео</button>
