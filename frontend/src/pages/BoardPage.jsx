@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle,
+  ArrowLeft,
   AudioLines,
   CheckCircle2,
   ChevronDown,
@@ -1049,7 +1050,52 @@ function storyboardStableHueFromText(value, fallbackIndex = 0) {
   return 185 + (Math.abs(hash) % 150)
 }
 
+function storyboardNumericHueV67(value) {
+  if (value === null || value === undefined || value === '') return NaN
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN
+  const raw = String(value || '').trim()
+  if (!raw) return NaN
+  const direct = Number(raw)
+  if (Number.isFinite(direct)) return direct
+  const hslMatch = raw.match(/hsla?\(\s*([0-9.]+)/i)
+  if (hslMatch) {
+    const parsed = Number(hslMatch[1])
+    if (Number.isFinite(parsed)) return parsed
+  }
+  // If a hex/css color somehow arrives, keep it stable but convert to a hue-like numeric value.
+  if (raw.startsWith('#')) return storyboardStableHueFromText(`hex:${raw}`, 0)
+  return NaN
+}
+
 function storyboardSceneColor(scene, index = 0) {
+  // AVA_BOARD_TIMING_SCENE_COLORS_V67B:
+  // Timing-imported scenes must keep their own per-scene color. The old logic used
+  // blockId/blockTitle first, so many imported scenes collapsed into one color.
+  const direct = storyboardNumericHueV67(
+    scene?.sceneColor ??
+    scene?.scene_color ??
+    scene?.color ??
+    scene?.blockColor ??
+    scene?.block_color ??
+    scene?.blockHue ??
+    scene?.block_hue ??
+    scene?.hue
+  )
+  if (Number.isFinite(direct)) return direct
+
+  const looksTimingScene = Boolean(
+    scene?.source_phrase_ids ||
+    scene?.sourcePhraseIds ||
+    scene?.phrase_id ||
+    scene?.phraseId ||
+    scene?.scene_word_text ||
+    scene?.lyrics_text ||
+    scene?.translated_text_ru ||
+    scene?.meaning_hint_ru ||
+    scene?.phrases
+  )
+  if (looksTimingScene) return 185 + ((Number(index || 0) * 47) % 150)
+
   const blockKey = String(
     scene?.blockId ??
     scene?.block_id ??
@@ -1073,18 +1119,6 @@ function storyboardSceneColor(scene, index = 0) {
     }
     return storyboardStableHueFromText(`block:${blockKey}`, index)
   }
-
-  const direct = Number(
-    scene?.blockColor ??
-    scene?.block_color ??
-    scene?.blockHue ??
-    scene?.block_hue ??
-    scene?.color ??
-    scene?.sceneColor ??
-    scene?.scene_color ??
-    scene?.hue
-  )
-  if (Number.isFinite(direct)) return direct
 
   return 185 + ((Number(index || 0) * 47) % 150)
 }
@@ -2595,6 +2629,12 @@ function isBoardVideoDoneStatus(status) {
     return !boardLooksTimingImported(board)
   }, [board])
 
+  // AVA_BOARD_RETURN_TO_TIMING_V66B:
+  // Show return only for Timing-imported boards. For standalone/manual boards,
+  // manualSceneToolsEnabled stays true and this button remains hidden.
+  const timingReturnButtonEnabled = !manualSceneToolsEnabled
+
+
 
   const selectedIndex = useMemo(() => {
     if (!selectedScene) return -1
@@ -3552,6 +3592,27 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
     // Explicit Timing refresh is destructive, so ask first in the same style.
     setShowTimingToBoardConfirm(true)
     setStatus('Подтверди замену Доски свежим Таймингом.')
+  }
+
+  function returnToTimingFromBoardV66B() {
+    const toPath = workspaceMode ? '/app/workspace/timing' : `/app/projects/${projectId}/timing`
+    const fromPath = workspaceMode ? '/app/workspace/board' : `/app/projects/${projectId}/board`
+    const entry = makeWorkflowEntry({
+      from: 'board',
+      to: 'manual_timing',
+      fromPath,
+      toPath,
+      projectId: projectId || '',
+      source: 'board_return_to_timing_v66b',
+    })
+    rememberWorkflowEntry(entry)
+    navigate(toPath, {
+      state: {
+        workflowEntry: entry,
+        returnFromBoard: true,
+        boardSceneId: selectedScene?.id || board.selectedSceneId || '',
+      },
+    })
   }
 
   function selectScene(sceneId) {
@@ -5013,6 +5074,17 @@ async function importTimingJson(event) {
           <p>Горизонтальная лента сцен, смысл, video prompts и медиа. Генерацию подключим следующим этапом.</p>
         </div>
         <div className="avaBoardHeaderActions">
+          {timingReturnButtonEnabled && (
+            <button
+              type="button"
+              className="avaBoardHeaderButton avaBoardActionRefresh"
+              onClick={returnToTimingFromBoardV66B}
+              title="Вернуться в Manual Timing, чтобы поправить сцены или тайминги"
+            >
+              <ArrowLeft size={15} /> Вернуться в Тайминг
+            </button>
+          )}
+
           <button
             type="button"
             className="avaBoardHeaderButton avaBoardActionRefresh"

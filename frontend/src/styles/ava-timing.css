@@ -3444,3 +3444,39 @@
 .avaAssemblyLoadingLine {
   background: rgba(255, 255, 255, .035) !important;
 }
+
+
+/* AVA_TIMING_ASR_IMMEDIATE_FEEDBACK_V67B */
+.avaTimingAsrPrimaryButton {
+  position: relative;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.avaTimingAsrPrimaryButton.isRunning,
+.avaTimingAsrModeCard > button.avaTimingAsrPrimaryButton.isRunning:disabled,
+.avaTimingAsrModeActions button.avaTimingAsrPrimaryButton.isRunning:disabled {
+  opacity: 1 !important;
+  color: #0c1e24 !important;
+  border-color: rgba(255, 225, 132, .72) !important;
+  background: linear-gradient(135deg, #ffe08a, #8ee9ff) !important;
+  box-shadow: 0 0 0 1px rgba(255, 224, 138, .22), 0 12px 28px rgba(255, 203, 84, .16);
+  cursor: wait !important;
+}
+
+.avaTimingAsrButtonSpinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  border: 2px solid rgba(12, 30, 36, .25);
+  border-top-color: rgba(12, 30, 36, .95);
+  animation: avaTimingAsrSpinV67B .82s linear infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes avaTimingAsrSpinV67B {
+  to { transform: rotate(360deg); }
+}

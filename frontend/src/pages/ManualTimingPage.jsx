@@ -1211,6 +1211,7 @@ export default function ManualTimingPage() {
   const [uploadingVocal, setUploadingVocal] = useState(false)
   const [deletingSceneAudio, setDeletingSceneAudio] = useState(false)
   const [asrRunning, setAsrRunning] = useState(false)
+  const [asrRunningMode, setAsrRunningMode] = useState('')
   const [translationRunning, setTranslationRunning] = useState(false)
   const [showSceneTranslator, setShowSceneTranslator] = useState(true)
   const [translationTtsPlayingId, setTranslationTtsPlayingId] = useState('')
@@ -2415,6 +2416,7 @@ export default function ManualTimingPage() {
   }
 
   async function runVocalStemAsrExact() {
+    setAsrRunningMode('vocal')
     const sourceDraft = draft
     const vocalAssetId = sourceDraft.vocalAudioAssetId || sourceDraft.vocal_audio_asset_id || ''
     console.log('[AVA VOCAL ASR] click', { vocalAssetId, vocalAudioName: sourceDraft.vocalAudioName })
@@ -2487,6 +2489,7 @@ export default function ManualTimingPage() {
       setStatus(`ошибка ASR vocal stem: ${err.message}`)
     } finally {
       setAsrRunning(false)
+    setAsrRunningMode('')
     }
   }
 
@@ -2608,7 +2611,18 @@ const useVocalStem = mode === 'vocal'
       setStatus(useVocalStem ? 'сначала загрузите vocal stem' : 'ASR не нашёл assetId у аудио. Нужен /api/assets/asset_xxx/file или audioAssetId.')
       return
     }
-const clearedDraft = normalizeDraft({
+// AVA_TIMING_ASR_IMMEDIATE_FEEDBACK_V67B:
+    // Show ASR progress immediately after click, before clearing/saving the draft.
+    // Otherwise user sees a long silent pause and thinks nothing started.
+    // AVA_TIMING_ASR_SEPARATE_BUTTON_FEEDBACK_V68:
+    // One shared asrRunning flag disables both buttons, but only the clicked mode
+    // should show the spinner/gold running state.
+    const asrModeForUi = (useVocalStem || mode === 'music') ? 'vocal' : 'speech'
+    setAsrRunningMode(asrModeForUi)
+    setAsrRunning(true)
+    setStatus(useVocalStem ? 'ASR vocal stem запускается…' : mode === 'music' ? 'ASR master запускается…' : 'ASR диктор запускается…')
+
+    const clearedDraft = normalizeDraft({
       ...sourceDraft,
       roles: [],
       speechSegments: [],
@@ -2670,6 +2684,7 @@ const clearedDraft = normalizeDraft({
       setStatus(`ошибка ASR: ${err.message}`)
     } finally {
       setAsrRunning(false)
+    setAsrRunningMode('')
     }
   }
 
@@ -3940,6 +3955,11 @@ const clearedDraft = normalizeDraft({
       end_sec: Number(scene.end_sec ?? scene.end ?? 0),
       duration_sec: Math.max(0, Number(scene.end ?? scene.end_sec ?? 0) - Number(scene.start ?? scene.start_sec ?? 0)),
       durationSec: Math.max(0, Number(scene.end ?? scene.end_sec ?? 0) - Number(scene.start ?? scene.start_sec ?? 0)),
+      // AVA_TIMING_TO_BOARD_SCENE_COLORS_V67B:
+      // Preserve the exact visual hue used in Manual Timing so Board cards do not collapse to one role/block color.
+      sceneColor: scene.sceneColor ?? scene.scene_color ?? scene.color ?? sceneHue(index),
+      scene_color: scene.scene_color ?? scene.sceneColor ?? scene.color ?? sceneHue(index),
+      color: scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
     }))
 
     const nextDraft = {
@@ -4520,8 +4540,19 @@ const clearedDraft = normalizeDraft({
                 <strong>Диктор / обычная речь</strong>
                 <p>Для подкаста, озвучки, интервью и рассказчика. Берём слова прямо из основного аудио.</p>
               </div>
-              <button type="button" onClick={() => runAudioAsr('speech')} disabled={!hasAudio || !narratorAsrAssetId || asrRunning} title={narratorAsrAssetId ? `ASR asset: ${narratorAsrAssetId}` : 'ASR не нашёл assetId у аудио'}>
-                {asrRunning ? 'ASR…' : 'ASR диктор · 1 кредит'}
+              <button
+                type="button"
+                className={(asrRunning && (asrRunningMode === 'speech' || !asrRunningMode)) ? 'avaTimingAsrPrimaryButton isRunning' : 'avaTimingAsrPrimaryButton'}
+                onClick={() => runAudioAsr('speech')}
+                disabled={!hasAudio || !narratorAsrAssetId || asrRunning}
+                title={narratorAsrAssetId ? `ASR asset: ${narratorAsrAssetId}` : 'ASR не нашёл assetId у аудио'}
+              >
+                {(asrRunning && (asrRunningMode === 'speech' || !asrRunningMode)) ? (
+                  <>
+                    <span className="avaTimingAsrButtonSpinner" aria-hidden="true" />
+                    ASR запускается…
+                  </>
+                ) : 'ASR диктор · 1 кредит'}
               </button>
             </div>
 
@@ -4553,10 +4584,16 @@ const clearedDraft = normalizeDraft({
                 />
                 <button
                   type="button"
+                  className={(asrRunning && asrRunningMode === 'vocal') ? 'avaTimingAsrPrimaryButton isRunning' : 'avaTimingAsrPrimaryButton'}
                   onClick={runVocalStemAsrExact}
                   disabled={asrRunning}
                 >
-                  {asrRunning ? 'ASR vocal…' : 'ASR vocal stem точно · 1 кредит'}
+                  {(asrRunning && asrRunningMode === 'vocal') ? (
+                    <>
+                      <span className="avaTimingAsrButtonSpinner" aria-hidden="true" />
+                      ASR vocal запускается…
+                    </>
+                  ) : 'ASR vocal stem точно · 1 кредит'}
                 </button>
                 <button type="button"
                   disabled={!vocalAsrAssetId || asrRunning}
