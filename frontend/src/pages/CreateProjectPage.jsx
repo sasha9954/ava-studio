@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Monitor, Smartphone, Square } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { enabledProjectModes, normalizeProjectMode } from '../lib/projectModes.js'
+import { createProjectModes, isProjectModeSelectable, normalizeProjectMode } from '../lib/projectModes.js'
 
 const formatOptions = [
   { value: '16:9', title: 'Горизонталь', hint: '16:9', icon: Monitor },
@@ -53,12 +53,15 @@ export default function CreateProjectPage() {
         <label>Название проекта<input value={form.name} onChange={(e) => setField('name', e.target.value)} placeholder="Например: Greenland clip" required /></label>
         <label className="avaProjectModeDropdownV5">Режим проекта
           <select value={form.projectModeId} onChange={(e) => setField('projectModeId', e.target.value)}>
-            {enabledProjectModes().slice().sort((a, b) => {
-              const order = { manual_general_v1: 0, recipe_process_v1: 1, lyric_meaning_remix_v1: 2 }
-              return (order[a.id] ?? 99) - (order[b.id] ?? 99)
-            }).map((mode) => (
-              <option key={mode.id} value={mode.id}>{mode.label_ru}</option>
-            ))}
+            {/* AVA_PROJECT_MODES_CREATE_LIST_V74 */}
+            {createProjectModes().map((mode) => {
+              const selectable = isProjectModeSelectable(mode)
+              return (
+                <option key={mode.id} value={mode.id} disabled={!selectable}>
+                  {mode.label_ru}{selectable ? '' : ' — скоро'}
+                </option>
+              )
+            })}
           </select>
         </label>
 

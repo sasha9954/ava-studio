@@ -3,7 +3,7 @@
 // AVA_PROJECT_PACK_IMAGE_AWARE_PASS_V16: image-aware video prompt pass workflow/readiness/per-scene fields.
 // AVA_PROJECT_PACK_NORMALIZED_SCENES_V15
 // Unified Project Pack exporter: one normalized scene split is mirrored into root scenes[], timing.scenes[], and production.scenes[].
-import { buildCodexTaskForMode, buildModeContract, normalizeProjectMode } from './projectModes.js'
+import { buildCodexTaskForMode, buildModeContract, normalizeProjectMode, projectModeCatalogForPack, projectTypeForMode } from './projectModes.js'
 
 const PROMPT_POSITIVE_KEYS = ['photo_prompt_positive', 'video_motion_prompt']
 const PROMPT_NEGATIVE_KEYS = ['photo_prompt_negative', 'video_motion_negative', 'negative_prompt', 'prompt_negative']
@@ -17,6 +17,124 @@ const IMAGE_AWARE_VIDEO_PROMPT_FIELDS_TO_UPDATE = [
   'prompt_negative',
   'lipsync_motion_prompt',
 ]
+
+
+// AVA_PROJECT_PACK_UNIVERSAL_TASK_CONTRACT_V75
+const AVA_UNIVERSAL_TASK_PIPELINE_V75 = [
+  'input_validation',
+  'questions_if_missing',
+  'still_planning',
+  'photo_prompt_pass',
+  'still_generation_or_import',
+  'image_review_and_reject',
+  'image_aware_video_prompt_pass',
+  'board_import_patch',
+  'video_generation',
+]
+
+function buildUniversalTaskContractV75(projectMode = {}) {
+  return {
+    version: 'ava_universal_task_contract_v1',
+    mode_id: projectMode.id || 'manual_general_v1',
+    rule: 'This JSON is an instruction/contract for the selected project mode, not a place to store every possible mode.',
+    selected_mode_only: true,
+    worker_flow: AVA_UNIVERSAL_TASK_PIPELINE_V75,
+    user_folder_inputs: [
+      'audio file / audio asset',
+      'timing JSON / ava_project_pack_v1',
+      'user task / description',
+      'visual cards: character, location, product, ingredient, prop, source-video frames depending on selected mode',
+      'generated stills when moving to image review/video prompts',
+      'board JSON snapshot when patching an existing board',
+    ],
+    ask_questions_if: [
+      'required cards are missing',
+      'story/world/task is too vague',
+      'route/lip-sync expectations are unclear',
+      'still images are missing but final video prompts are requested',
+      'source video is required by selected mode but missing',
+    ],
+  }
+}
+
+function buildStillFirstWorkflowV75(projectMode = {}) {
+  return {
+    required: true,
+    rule: 'First create/review still images. Only after selected stills exist, write image-aware video prompts.',
+    selected_mode_id: projectMode.id || 'manual_general_v1',
+    stages: [
+      'still_plan_patch',
+      'photo_prompt_patch',
+      'generated_stills_manifest',
+      'image_review_patch',
+      'board_import_patch_with_final_video_prompts',
+    ],
+    do_not_change_during_still_pass: ['scene_id', 'start', 'end', 'duration', 'route', 'scene order'],
+  }
+}
+
+function buildBoardSnapshotContractV75() {
+  return {
+    version: 'ava_board_snapshot_contract_v1',
+    role: 'Board JSON is a full production snapshot and repair file. It should keep all fields so existing media and manual work are not lost.',
+    use_cases: [
+      'patch translations/meaning after Board work already started',
+      'patch prompts after some scenes are generated',
+      'add or edit MMAudio/sound prompts',
+      'restore Board state',
+      'import safe changes by scene_id without rebuilding timing',
+    ],
+    full_snapshot_import: {
+      purpose: 'restore full Board state',
+      warning: 'may replace current Board snapshot',
+    },
+    safe_patch_import: {
+      match_by: 'scene_id',
+      can_update: [
+        'text/translation/meaning fields',
+        'photo/video/negative/lipsync prompts',
+        'MMAudio and sound prompts',
+        'story block labels/colors if needed',
+      ],
+      must_not_touch: [
+        'scene_id',
+        'start/end/duration',
+        'route unless explicitly requested',
+        'generated media urls/assets',
+        'job ids/status/queue',
+        'audio source and audio slice boundaries unless explicitly requested',
+      ],
+    },
+  }
+}
+
+function buildImageReviewContractV75() {
+  return {
+    version: 'ava_image_review_contract_v1',
+    rule: 'Every still candidate must be approved or rejected before final video prompts are treated as ready.',
+    per_candidate_fields: [
+      'scene_id',
+      'candidate_id',
+      'approved',
+      'reject_reason',
+      'visible_content_summary',
+      'card_match_check',
+      'continuity_check',
+      'must_show_check',
+      'must_not_show_check',
+      'safe_motion_notes',
+    ],
+    reject_if: [
+      'wrong identity/card',
+      'wrong location/world',
+      'missing required object/action',
+      'extra duplicate props or impossible objects',
+      'future step appears too early',
+      'unsafe for requested route/motion',
+    ],
+  }
+}
+
 
 const IMAGE_AWARE_WORKFLOW_STAGES = [
   'scene_split',
@@ -1082,7 +1200,9 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     project.project_mode || project.projectMode || project.project_mode_id || project.projectModeId ||
     manualTiming.project_mode || manualTiming.projectMode || board.project_mode || board.projectMode || summary.project_mode || summary.projectMode
   )
+  const modeCatalogV76 = projectModeCatalogForPack()
   const modeContract = buildModeContract(projectMode.id)
+  const projectTypeV76 = project.type && project.type !== 'clip' ? project.type : projectTypeForMode(projectMode.id)
   const format = getProjectFormat(project, manualTiming, board)
   const assets = collectAssets({ manualTiming, board, summary })
   const audioDuration = firstNumber(Number(assets.audio?.duration_sec || assets.audio?.durationSec || 0), extractAudioDuration(manualTiming, board, summary, assets))
@@ -1112,6 +1232,11 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
       : buildCodexTaskForMode(projectMode.id, { status: readiness.stage })?.task_type,
     expected_outputs: expectedOutputsForMode(projectMode.id),
     production_fields_to_fill: PRODUCTION_FIELDS_TO_FILL,
+    // AVA_PROJECT_PACK_UNIVERSAL_TASK_CONTRACT_V75
+    universal_task_contract: buildUniversalTaskContractV75(projectMode),
+    still_first_workflow: buildStillFirstWorkflowV75(projectMode),
+    image_review_contract: buildImageReviewContractV75(),
+    board_snapshot_contract: buildBoardSnapshotContractV75(),
     sound_layer_supported: true,
     sound_layer_required: false,
     sound_fields_to_fill: SOUND_FIELDS_TO_FILL,
@@ -1138,7 +1263,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     project: {
       id: project.id || project.project_id || '',
       name: project.name || '',
-      type: project.type || 'clip',
+      type: projectTypeV76,
       format,
       aspect_ratio: format,
       output_format: format,
@@ -1146,6 +1271,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
       status: project.status || '',
     },
     workflow_stages: IMAGE_AWARE_WORKFLOW_STAGES,
+    universal_workflow_stages: AVA_UNIVERSAL_TASK_PIPELINE_V75,
     production_workflow: {
       stages: IMAGE_AWARE_WORKFLOW_STAGES,
       current_stage: readiness.stage,
@@ -1229,8 +1355,14 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     },
     codex_task: codexTask,
     readiness,
+    // AVA_PACK_MODE_REQUIREMENTS_CATALOG_V76
     mode_requirements: {
-      active_modes: ['manual_general_v1', 'lyric_meaning_remix_v1', 'recipe_process_v1'],
+      active_modes: modeCatalogV76.active_modes,
+      visible_modes: modeCatalogV76.visible_modes,
+      visible_disabled_modes: modeCatalogV76.visible_disabled_modes,
+      selected_mode_id: projectMode.id,
+      selected_mode_label_ru: projectMode.label_ru,
+      selected_mode_contract_ref: projectMode.contract_ref,
       source_video_required: projectMode.id === 'video_first_documentary_v1',
       character_ref_required_for_ia2v: true,
       prompt_guidelines_required: true,

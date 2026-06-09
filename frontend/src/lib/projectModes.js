@@ -51,6 +51,9 @@ export const PROJECT_MODES = [
     contract_ref: 'manual_general_v1',
     enabled: true,
     beta: false,
+    visible_in_create: true,
+    selectable: true,
+    display_order: 10,
     scene_fields: ['viewer_should_understand', 'readability_check'],
     progression: ['setup', 'develop', 'finish'],
     mode_contract: {
@@ -126,6 +129,9 @@ export const PROJECT_MODES = [
     contract_ref: 'recipe_process_readability_v1',
     enabled: true,
     beta: false,
+    visible_in_create: true,
+    selectable: true,
+    display_order: 20,
     scene_fields: ['recipe_step', 'visual_action', 'viewer_should_understand', 'readability_check'],
     progression: ['hook', 'ingredients', 'prep', 'fire_setup', 'cook', 'finish', 'outro'],
     mode_contract: {
@@ -223,17 +229,20 @@ export const PROJECT_MODES = [
   {
     id: 'lyric_meaning_remix_v1',
     version: 1,
-    label_ru: 'Клип: подмена смысла',
+    label_ru: 'Подмена смысла',
     label_en: 'Lyric Meaning Remix',
     description_ru: 'Берём эмоциональный смысл строк песни/ASR и переносим в неожиданный сюжетный мир.',
     contract_ref: 'lyric_meaning_remix_v1',
     enabled: true,
     beta: false,
+    visible_in_create: true,
+    selectable: true,
+    display_order: 30,
     scene_fields: ['idea_fn', 'idea_meaning', 'idea_story', 'idea_anchor', 'viewer_should_understand', 'readability_check'],
     progression: ['setup', 'hint', 'deepen', 'reveal', 'aftermath'],
     mode_contract: {
       contract_ref: 'lyric_meaning_remix_v1',
-      label_ru: 'Клип: подмена смысла',
+      label_ru: 'Подмена смысла',
       core_rule: 'Take emotional meaning from lyric/ASR segment and translate it into selected story world instead of following lyrics literally.',
       scene_fields: ['idea_fn', 'idea_meaning', 'idea_story', 'idea_anchor', 'viewer_should_understand', 'readability_check'],
       progression: ['setup', 'hint', 'deepen', 'reveal', 'aftermath'],
@@ -367,17 +376,97 @@ export const PROJECT_MODES = [
     },
   },
   {
+    id: 'podcast_audio_v1',
+    version: 1,
+    label_ru: 'Подкаст',
+    label_en: 'Podcast',
+    description_ru: 'Подкаст/разговор: голос главный, визуал и звук поддерживают темы, главы и атмосферу.',
+    contract_ref: 'podcast_audio_v1',
+    enabled: true,
+    beta: false,
+    visible_in_create: true,
+    selectable: true,
+    display_order: 50,
+    scene_fields: ['podcast_topic', 'speaker_role', 'chapter_meaning', 'visual_support', 'audio_focus'],
+    progression: ['intro', 'topic_setup', 'discussion', 'example', 'conclusion'],
+    mode_contract: {
+      contract_ref: 'podcast_audio_v1',
+      label_ru: 'Подкаст',
+      core_rule: 'Voice/dialogue is primary. Visuals must support podcast chapters, topic clarity and speaker continuity without distracting from speech.',
+      scene_fields: ['podcast_topic', 'speaker_role', 'chapter_meaning', 'visual_support', 'audio_focus'],
+      progression: ['intro', 'topic_setup', 'discussion', 'example', 'conclusion'],
+      rules_ru: [
+        'Голос/разговор — главный источник смысла.',
+        'Не перегружать кадры действием, если оно отвлекает от речи.',
+        'Поддерживать стабильность ведущих/гостей, студии или визуального мира.',
+        'Если есть talking-head/lip-sync, лицо и рот должны быть хорошо видны.',
+        'MMAudio/звук должен быть тихим слоем под голосом, если не задано иначе.',
+      ],
+      prompt_hint_ru: 'Подкаст: визуал должен помогать понять тему и главу разговора, не спорить с голосом.',
+      prompt_guidelines: {
+        photo_prompt: {
+          goal: 'Create a still that supports the podcast topic, speaker identity, studio/world and chapter meaning.',
+          must_include: ['speaker or topic visual anchor', 'consistent studio/location or visual style', 'chapter meaning', 'clean composition'],
+          avoid: ['busy distracting action', 'random unrelated stock-like visuals', 'visuals that overpower speech'],
+        },
+        video_motion_prompt: {
+          goal: 'Animate with restrained motion suitable for a podcast or narrated discussion.',
+          must_include: ['subtle camera movement', 'stable speaker identity if present', 'calm visual support', 'no distracting action'],
+          avoid: ['chaotic movement', 'overacting', 'fast action unrelated to topic'],
+        },
+        negative_prompt: COMMON_NEGATIVE_PROMPT_GUIDELINES,
+        lipsync_prompt: {
+          usage: 'For visible speaker/talking-head scenes only.',
+          must_include: ['same speaker identity', 'clear mouth visibility', 'natural conversational expression', 'no hand covering mouth'],
+        },
+        still_generation: { goal: 'Generate podcast-support stills with consistent speaker/location/style.' },
+        final_generation_prompt: {
+          goal: 'Final generation prompts must be clean English prompts for the video model, not planning text.',
+          must_include: ['actual visible content', 'safe motion only', 'current scene step only', 'no service labels', 'English final prompt'],
+          avoid: ['Scene action:', 'Viewer must understand:', 'Motion:', 'Recipe step:', 'Russian text', 'planning field names', 'generic actions from other steps', 'objects not visible in the still'],
+          sanitizer_required: true,
+        },
+        image_aware_video_prompt_pass: {
+          required_after_stills: true,
+          goal: 'Rewrite final video prompts after real stills exist, matching visible podcast stills and preserving topic/speaker continuity.',
+          must_include: ['actual visible subject', 'safe motion based on the still', 'locked chapter meaning', 'stable framing and continuity'],
+          avoid: ['objects not visible in the still', 'actions from another topic', 'turning b-roll into lip-sync', 'changing route or timing'],
+        },
+        sound_design_prompt: {
+          usage: 'Optional subtle layer under speech.',
+          goal: 'Support podcast chapter atmosphere without overpowering voice.',
+          sound_roles: ['room_tone', 'studio_ambience', 'subtle_transition', 'topic_texture'],
+          must_include: ['stay under speech', 'low prominence', 'matches room/topic'],
+          avoid: ['loud music', 'extra dialogue', 'busy foley', 'sound that fights narration'],
+        },
+        video_generation: { goal: 'Animate stills calmly and keep speech as the main focus.' },
+      },
+    },
+    codex_task_defaults: {
+      task_type: 'podcast_storyboard_prompts',
+      do_not_change_timing: true,
+      do_not_require_source_video: true,
+      core_instruction: 'Create podcast-support still prompts and image-aware video prompts while preserving voice/dialogue as the main source of meaning.',
+      mode_prompt_ru: 'Это режим подкаста. Голос главный, визуал и звук только поддерживают тему и главы.',
+      expected_outputs: ['storyboard_locked.md', 'prompts_pack.json', 'board_import_ready.json', 'generated_stills_manifest.json', 'validation_report.json'],
+    },
+  },
+  {
     id: 'video_first_documentary_v1',
     version: 1,
-    label_ru: 'Документалка из видео',
+    label_ru: 'Документалка',
     label_en: 'Video-first Documentary',
     description_ru: 'Сначала анализ реального видео, потом история/озвучка/нарезка только из реально видимого.',
     contract_ref: 'video_first_documentary_v1',
     enabled: false,
     beta: true,
+    visible_in_create: true,
+    selectable: false,
+    disabled_reason_ru: 'Скоро',
+    display_order: 60,
     mode_contract: {
       contract_ref: 'video_first_documentary_v1',
-      label_ru: 'Документалка из видео',
+      label_ru: 'Документалка',
       core_rule: 'Use real source footage as truth. Do not invent visuals that are not present in the source video.',
       rules_ru: ['source_video обязателен.', 'Не придумывать кадры, которых нет в видео.', 'Сначала inventory/source shots, потом story/timing/match.'],
       prompt_guidelines: {
@@ -437,6 +526,10 @@ export const PROJECT_MODES = [
     contract_ref: 'product_ad_v1',
     enabled: false,
     beta: true,
+    visible_in_create: true,
+    selectable: false,
+    disabled_reason_ru: 'Скоро',
+    display_order: 70,
     scene_fields: ['product_role', 'benefit', 'proof_or_desire', 'visual_detail', 'call_to_action_stage'],
     mode_contract: {
       contract_ref: 'product_ad_v1',
@@ -483,22 +576,32 @@ export const PROJECT_MODES = [
   {
     id: 'story_monologue_v1',
     version: 1,
-    label_ru: 'История / монолог',
-    label_en: 'Story / Monologue',
-    description_ru: 'Озвучка/текст главный, сцены поддерживают смысл и настроение.',
+    label_ru: 'История',
+    label_en: 'Story',
+    description_ru: 'История/монолог: озвучка или текст главный, сцены поддерживают смысл, настроение и эмоциональную дугу.',
     contract_ref: 'story_monologue_v1',
-    enabled: false,
-    beta: true,
+    enabled: true,
+    beta: false,
+    visible_in_create: true,
+    selectable: true,
+    display_order: 40,
     scene_fields: ['monologue_meaning', 'emotional_state', 'visual_memory', 'atmosphere', 'viewer_should_feel'],
     mode_contract: {
       contract_ref: 'story_monologue_v1',
-      label_ru: 'История / монолог',
+      label_ru: 'История',
       core_rule: 'Voice/text meaning is primary. Visuals should support mood, memory, atmosphere and emotional arc.',
       scene_fields: ['monologue_meaning', 'emotional_state', 'visual_memory', 'atmosphere', 'viewer_should_feel'],
+      rules_ru: [
+        'Озвучка/текст — главный источник смысла.',
+        'Кадры должны поддерживать настроение, память, атмосферу и эмоциональную дугу.',
+        'Не перегружать сцену лишним действием, если монолог спокойный.',
+        'Не менять тайминг и scene_id без явной просьбы.',
+      ],
+      prompt_hint_ru: 'История/монолог: визуал поддерживает голос, а не спорит с ним.',
       prompt_guidelines: {
         photo_prompt: {
           goal: 'Create a still that supports the narrated meaning or emotional memory.',
-          must_include: ['emotional meaning', 'story context', 'visual metaphor only if clear', 'consistent tone'],
+          must_include: ['emotional meaning', 'story context', 'visual memory or atmosphere', 'consistent tone'],
           avoid: ['over-literal illustration', 'random cinematic shots', 'unclear metaphor'],
         },
         video_motion_prompt: {
@@ -519,7 +622,7 @@ export const PROJECT_MODES = [
           required_after_stills: true,
           goal: 'Rewrite final video prompts after real still images exist, so video generation matches the actual still while staying under narration and preserving mood.',
           must_include: ['actual visible subject', 'safe motion based on the still', 'locked scene meaning', 'stable framing and continuity'],
-          avoid: ['objects not visible in the still', 'actions from another recipe/story step', 'camera moves that contradict the still framing', 'turning b-roll into lip-sync', 'changing route or timing'],
+          avoid: ['objects not visible in the still', 'camera moves that contradict the still framing', 'changing route or timing'],
         },
         sound_design_prompt: {
           usage: 'Optional atmosphere layer under narration.',
@@ -532,8 +635,233 @@ export const PROJECT_MODES = [
         video_generation: { goal: 'Use restrained motion aligned to narration.' },
       },
     },
+    codex_task_defaults: {
+      task_type: 'story_monologue_storyboard',
+      do_not_change_timing: true,
+      do_not_require_source_video: true,
+      core_instruction: 'Build a visual story from narration/text meaning. Keep visuals under the voice and preserve timing.',
+      mode_prompt_ru: 'Это режим истории/монолога. Голос/текст главный, визуал поддерживает смысл и настроение.',
+      expected_outputs: ['storyboard_locked.md', 'prompts_pack.json', 'board_import_ready.json', 'generated_stills_manifest.json', 'validation_report.json'],
+    },
   },
 ]
+
+
+// AVA_MODE_CONTRACTS_UNIVERSAL_WORKFLOW_V75
+// These objects are mode-level guidance, not concrete scenario content.
+// The concrete project comes from: user task, audio, timing JSON, cards folder,
+// selected aspect ratio, storyBlocks, and scene list.
+export const UNIVERSAL_STAGE_PIPELINE_V75 = [
+  'input_validation',
+  'questions_if_missing',
+  'still_planning',
+  'photo_prompt_pass',
+  'still_generation_or_import',
+  'image_review_and_reject',
+  'image_aware_video_prompt_pass',
+  'board_import_patch',
+  'video_generation',
+]
+
+export const UNIVERSAL_INPUT_FOLDER_CONTRACT_V75 = {
+  rule: 'The worker reads the project folder as source of truth: audio, timing JSON, cards, generated stills, and board snapshot/patch files when present.',
+  expected_items: [
+    'audio file or audio asset reference',
+    'timing JSON / ava_project_pack_v1',
+    'user task / project description',
+    'character cards if characters are used',
+    'location cards if location continuity matters',
+    'object/prop/product/ingredient cards depending on selected mode',
+    'generated stills folder after still generation',
+    'board JSON snapshot when patching an existing Board',
+  ],
+  ask_if_missing: [
+    'required visual cards are missing for scenes that depend on identity or continuity',
+    'project task is too vague',
+    'route/lip-sync expectations are unclear',
+    'still images are missing but video prompts are requested',
+  ],
+}
+
+export const UNIVERSAL_STILL_FIRST_POLICY_V75 = {
+  rule: 'Do not write final video prompts before still images are generated or imported and reviewed.',
+  stages: [
+    'write still plan',
+    'write photo prompts',
+    'generate/import stills',
+    'review stills against cards and scene intent',
+    'select/approve stills',
+    'write image-aware video prompts based on the actual selected stills',
+  ],
+  locked_during_still_pass: [
+    'scene_id',
+    'start',
+    'end',
+    'duration',
+    'route',
+    'story block order',
+  ],
+}
+
+export const UNIVERSAL_IMAGE_REVIEW_POLICY_V75 = {
+  rule: 'Every generated/imported still must be checked before video prompts are finalized.',
+  review_fields: [
+    'candidate_id',
+    'scene_id',
+    'approved',
+    'reject_reason',
+    'visible_content_summary',
+    'continuity_check',
+    'card_match_check',
+    'must_show_check',
+    'must_not_show_check',
+    'safe_motion_notes',
+  ],
+  reject_if: [
+    'wrong character/person/product/ingredient',
+    'wrong location or broken world continuity',
+    'extra duplicated props that break the scene',
+    'missing required object/action',
+    'shows a future recipe/story step too early',
+    'image framing contradicts intended video route',
+    'bad anatomy, broken hands/face, unreadable object',
+  ],
+}
+
+export const BOARD_SNAPSHOT_PATCH_POLICY_V75 = {
+  role: 'Board JSON is a full production snapshot, not the main scenario source.',
+  keep_all_fields: true,
+  use_cases: [
+    'repair translations/meaning after some scenes are already generated',
+    'patch photo/video prompts without losing media',
+    'add or edit MMAudio/sound prompts',
+    'preserve generated images/videos/jobs while updating text fields',
+    'restore Board state',
+  ],
+  safe_patch_mode: {
+    match_by: 'scene_id',
+    can_update: [
+      'scene_word_text',
+      'original_text',
+      'translated_text_ru',
+      'meaning_hint_ru',
+      'viewer_should_understand',
+      'visual_action',
+      'readability_check',
+      'photo_prompt_positive',
+      'photo_prompt_negative',
+      'video_motion_prompt',
+      'video_motion_negative',
+      'positive_prompt',
+      'negative_prompt',
+      'video_prompt',
+      'prompt_positive',
+      'prompt_negative',
+      'lipsync_motion_prompt',
+      'final_video_prompt',
+      'final_negative_prompt',
+      'final_lipsync_prompt',
+      'sound_design_needed',
+      'sound_role',
+      'mmaudio_prompt',
+      'mmaudio_negative_prompt',
+      'scene_ambience_prompt',
+      'foley_prompt',
+      'sound_notes',
+      'storyBlocks',
+      'blockId',
+      'blockTitle',
+      'blockColor',
+    ],
+    do_not_touch: [
+      'scene_id',
+      'id',
+      'start',
+      'end',
+      'duration',
+      'start_sec',
+      'end_sec',
+      'duration_sec',
+      'target_t0',
+      'target_t1',
+      'route',
+      'planned_route',
+      'image/video/media URLs',
+      'asset ids',
+      'generated results',
+      'job ids',
+      'queue status',
+      'audio file',
+      'audio slice boundaries unless explicitly requested',
+    ],
+  },
+}
+
+export const MODE_BEHAVIOR_PROFILES_V75 = {
+  manual_general_v1: {
+    short_label_ru: 'Клип',
+    primary_goal: 'Create a coherent clip/storyboard from timing, cards, references, scene notes and user direction.',
+    focus: ['visual continuity', 'performance', 'mood', 'scene meaning', 'controlled motion'],
+    card_usage: ['character cards when identity matters', 'location cards when world continuity matters', 'style/reference cards if provided'],
+    still_rules: ['one readable scene idea per still', 'avoid random beautiful frames without scene purpose'],
+    review_focus: ['identity continuity', 'style continuity', 'scene purpose readability', 'safe motion potential'],
+    sound_role: 'Optional ambience/foley/MMAudio only if it supports the scene and does not fight master audio.',
+  },
+  recipe_process_v1: {
+    short_label_ru: 'Готовка / рецепт',
+    primary_goal: 'Show a readable step-by-step process in correct order. Process clarity beats beauty.',
+    focus: ['one cooking step per scene', 'ingredient continuity', 'prop/tool continuity', 'no premature future steps', 'no duplicate impossible cookware'],
+    card_usage: ['character/host card for lip-sync or visible host', 'location card for same kitchen/yard/table', 'ingredient cards', 'prop/tool/cookware cards'],
+    still_rules: ['show only the current recipe step', 'do not show pan/fire/cooked result before the step requires it', 'keep ingredient and prop counts stable'],
+    review_focus: ['right ingredients', 'right step', 'no extra pan/bowl/knife', 'same table/location', 'no cooked result too early'],
+    sound_role: 'Optional cooking foley/MMAudio: sizzle, fire, knife, food handling, ambience; must support current step.',
+  },
+  lyric_meaning_remix_v1: {
+    short_label_ru: 'Подмена смысла',
+    primary_goal: 'Translate emotional meaning of lyrics/ASR into a selected story world without illustrating words literally.',
+    focus: ['emotion-to-story translation', 'story world', 'reveal timing', 'central idea readability', 'not literal lyrics'],
+    card_usage: ['character/object/location cards define the alternative story world', 'style cards maintain the remix world'],
+    still_rules: ['each still advances the alternate idea or reveal', 'do not reveal twist too early', 'do not add random symbols'],
+    review_focus: ['does this still support the central idea', 'does reveal timing make sense', 'is it too literal', 'is identity/world consistent'],
+    sound_role: 'Usually master music is primary; optional subtle texture only if it supports story world/reveal.',
+  },
+  story_monologue_v1: {
+    short_label_ru: 'История',
+    primary_goal: 'Support narration/text meaning with restrained visuals, mood, memory and emotional arc.',
+    focus: ['narration meaning', 'emotion', 'atmosphere', 'visual memory', 'not overpowering voice'],
+    card_usage: ['character/location cards if the story has recurring people/places', 'object cards if an object is a memory anchor'],
+    still_rules: ['visuals support the spoken meaning', 'do not over-literalize every phrase', 'keep a consistent emotional tone'],
+    review_focus: ['does it support the narration', 'is mood correct', 'does it distract from voice', 'is metaphor clear enough'],
+    sound_role: 'Optional low ambience/texture under narration; never overpower voice.',
+  },
+  podcast_audio_v1: {
+    short_label_ru: 'Подкаст',
+    primary_goal: 'Voice/dialogue is primary. Visuals support topic chapters, speakers and studio/world continuity.',
+    focus: ['speaker continuity', 'topic clarity', 'chapter structure', 'calm support visuals', 'audio-first thinking'],
+    card_usage: ['speaker cards for talking-head/lip-sync', 'studio/location card', 'topic/object cards if visual examples are needed'],
+    still_rules: ['do not overload frames with action', 'make chapter/topic understandable', 'keep speakers and setting consistent'],
+    review_focus: ['speaker identity', 'mouth visibility for talking-head scenes', 'topic support', 'visual not distracting'],
+    sound_role: 'Room tone/studio ambience/very subtle transitions only; voice remains dominant.',
+  },
+  video_first_documentary_v1: {
+    short_label_ru: 'Документалка',
+    primary_goal: 'Use real source footage as truth. Do not invent documentary evidence.',
+    focus: ['source-shot integrity', 'visual inventory', 'proof frames', 'no invented footage', 'video match after timing'],
+    card_usage: ['source video/contact sheets/proof frames are primary', 'generated cards only for clearly marked inserts'],
+    still_rules: ['prefer source frames; generated stills must be marked as inserts', 'do not fake real events'],
+    review_focus: ['visible in source', 'no internal cut', 'candidate matches narration', 'proof frame verifies selection'],
+    sound_role: 'Source sound is primary when available; generated sound for inserts only.',
+  },
+  product_ad_v1: {
+    short_label_ru: 'Реклама / продукт',
+    primary_goal: 'Product remains the hero. Every scene increases clarity, desire, trust or proof.',
+    focus: ['product identity', 'benefit', 'use case', 'detail', 'brand/visual continuity'],
+    card_usage: ['product card is mandatory', 'brand/style card if available', 'location/use-case card if relevant'],
+    still_rules: ['product visible and readable', 'do not hide or deform product', 'do not drift logo/text'],
+    review_focus: ['product matches card', 'benefit is clear', 'product not deformed', 'no wrong logo/text'],
+    sound_role: 'Optional tactile/product handling foley; clean and controlled.',
+  },
+}
 
 export function getProjectMode(id = DEFAULT_PROJECT_MODE_ID) {
   return PROJECT_MODES.find((mode) => mode.id === id) || PROJECT_MODES.find((mode) => mode.id === DEFAULT_PROJECT_MODE_ID)
@@ -565,27 +893,109 @@ export function normalizeProjectRecord(project = {}) {
   }
 }
 
+// AVA_PROJECT_MODES_CREATE_LIST_V74
 export function enabledProjectModes() {
   return PROJECT_MODES.filter((mode) => mode.enabled)
 }
 
+export function createProjectModes() {
+  return PROJECT_MODES
+    .filter((mode) => mode.enabled || mode.visible_in_create)
+    .slice()
+    .sort((a, b) => (a.display_order ?? 999) - (b.display_order ?? 999))
+}
+
+export function isProjectModeSelectable(mode = {}) {
+  return mode.enabled !== false && mode.selectable !== false
+}
+
+
+// AVA_PROJECT_MODE_CATALOG_V76
+export function projectModeCatalogForPack() {
+  const visibleModes = (typeof createProjectModes === 'function' ? createProjectModes() : PROJECT_MODES)
+    .map((mode) => ({
+      id: mode.id,
+      label_ru: mode.label_ru,
+      label_en: mode.label_en,
+      enabled: Boolean(mode.enabled),
+      beta: Boolean(mode.beta),
+      selectable: mode.selectable !== false && mode.enabled !== false,
+      disabled_reason_ru: mode.disabled_reason_ru || '',
+      display_order: mode.display_order ?? 999,
+      contract_ref: mode.contract_ref,
+    }))
+
+  return {
+    active_modes: PROJECT_MODES
+      .filter((mode) => mode.enabled && mode.selectable !== false)
+      .map((mode) => mode.id),
+    visible_modes: visibleModes,
+    visible_disabled_modes: visibleModes
+      .filter((mode) => !mode.selectable)
+      .map((mode) => ({
+        id: mode.id,
+        label_ru: mode.label_ru,
+        disabled_reason_ru: mode.disabled_reason_ru || 'Скоро',
+        beta: Boolean(mode.beta),
+        contract_ref: mode.contract_ref,
+      })),
+  }
+}
+
+export function projectTypeForMode(modeId = DEFAULT_PROJECT_MODE_ID) {
+  const map = {
+    manual_general_v1: 'clip',
+    recipe_process_v1: 'recipe',
+    lyric_meaning_remix_v1: 'meaning_remix',
+    story_monologue_v1: 'story',
+    podcast_audio_v1: 'podcast',
+    video_first_documentary_v1: 'documentary',
+    product_ad_v1: 'product_ad',
+    music_visual_story_v1: 'music_visual_story',
+  }
+  return map[modeId] || 'clip'
+}
+
+
 export function buildModeContract(modeId = DEFAULT_PROJECT_MODE_ID) {
   const mode = getProjectMode(modeId)
+  const behavior = MODE_BEHAVIOR_PROFILES_V75[mode.id] || MODE_BEHAVIOR_PROFILES_V75[DEFAULT_PROJECT_MODE_ID]
   return {
     contract_ref: mode.contract_ref,
     label_ru: mode.label_ru,
-    core_rule: mode.mode_contract?.core_rule || 'Use existing project data.',
+    core_rule: mode.mode_contract?.core_rule || behavior?.primary_goal || 'Use existing project data.',
     scene_fields: mode.mode_contract?.scene_fields || mode.scene_fields || [],
     progression: mode.mode_contract?.progression || mode.progression || [],
     rules_ru: mode.mode_contract?.rules_ru || [],
     prompt_hint_ru: mode.mode_contract?.prompt_hint_ru || '',
     prompt_guidelines: mode.mode_contract?.prompt_guidelines || {},
+    // AVA_MODE_CONTRACTS_UNIVERSAL_WORKFLOW_V75
+    mode_behavior_profile: behavior,
+    universal_stage_pipeline: UNIVERSAL_STAGE_PIPELINE_V75,
+    input_folder_contract: UNIVERSAL_INPUT_FOLDER_CONTRACT_V75,
+    still_first_policy: UNIVERSAL_STILL_FIRST_POLICY_V75,
+    image_review_policy: UNIVERSAL_IMAGE_REVIEW_POLICY_V75,
+    board_snapshot_patch_policy: BOARD_SNAPSHOT_PATCH_POLICY_V75,
+    // AVA_MODE_CONTRACTS_UNIVERSAL_WORKFLOW_V75
+    behavior_profile: behavior,
+    universal_stage_pipeline: UNIVERSAL_STAGE_PIPELINE_V75,
+    input_folder_contract: UNIVERSAL_INPUT_FOLDER_CONTRACT_V75,
+    still_first_policy: UNIVERSAL_STILL_FIRST_POLICY_V75,
+    image_review_policy: UNIVERSAL_IMAGE_REVIEW_POLICY_V75,
+    board_snapshot_patch_policy: BOARD_SNAPSHOT_PATCH_POLICY_V75,
+    output_strategy: {
+      rule: 'Return stage-appropriate JSON patches, not a full rewritten project unless explicitly requested.',
+      still_plan_patch: ['scene_id', 'must_show', 'must_not_show', 'continuity_anchors', 'photo_prompt_positive', 'photo_prompt_negative'],
+      image_review_patch: ['scene_id', 'candidate_id', 'approved', 'reject_reason', 'visible_content_summary', 'safe_motion_notes'],
+      board_import_patch: ['scene_id', 'selected_still', 'video_motion_prompt', 'negative_prompt', 'lipsync_motion_prompt', 'mmaudio_prompt', 'sound_notes'],
+    },
   }
 }
 
 export function buildCodexTaskForMode(modeId = DEFAULT_PROJECT_MODE_ID, context = {}) {
   const mode = getProjectMode(modeId)
   const defaults = mode.codex_task_defaults || getDefaultProjectMode().codex_task_defaults
+  const behavior = MODE_BEHAVIOR_PROFILES_V75[mode.id] || MODE_BEHAVIOR_PROFILES_V75[DEFAULT_PROJECT_MODE_ID]
   return {
     ...defaults,
     mode_id: mode.id,

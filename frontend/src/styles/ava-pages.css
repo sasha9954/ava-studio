@@ -3488,3 +3488,11 @@
   background: color-mix(in srgb, var(--scene-block-color) 42%, rgba(12,18,38,.68)) !important;
   border-color: color-mix(in srgb, var(--scene-block-color) 65%, transparent) !important;
 }
+
+
+/* AVA_PROJECT_MODES_CREATE_LIST_V74 */
+.avaProjectModeDropdownV5 option:disabled,
+.avaPanel select option:disabled {
+  color: #7f8da8;
+  opacity: .75;
+}
