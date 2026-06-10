@@ -42,6 +42,16 @@ export default function ProjectsPage() {
     setProjectToDelete(null)
   }
 
+  // AVA_PROJECT_CARD_MODE_LABEL_V77
+  function projectModeLabel(project = {}) {
+    return project?.project_mode?.label_ru ||
+      project?.projectMode?.label_ru ||
+      project?.project_mode?.id ||
+      project?.projectModeId ||
+      project?.type ||
+      'Проект'
+  }
+
   return (
     <div className="avaPage">
       <div className="avaSectionHeader">
@@ -77,7 +87,7 @@ export default function ProjectsPage() {
               onKeyDown={(event) => handleProjectCardKeyDown(event, project)}
             >
               <i className="avaProjectColorDot" />
-              <span>{project.type} · {theme.name}</span>
+              <span>{projectModeLabel(project)} · {theme.name}</span>
               <h3>{project.name}</h3>
               <p>{project.description || 'Описание пока не добавлено'}</p>
               <small>{project.format} · {project.status} · {new Date(project.updated_at).toLocaleString()}</small>

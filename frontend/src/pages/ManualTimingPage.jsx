@@ -1,3 +1,4 @@
+// AVA_MANUAL_TIMING_CODEX_MIRROR_V78: preserve Codex still/review/final prompt fields on JSON import.
 /* AVA_PROJECT_PACK_NORMALIZED_SCENES_V15: import Unified Project Pack split with root/timing/production priority. */
 /* AVA_PROJECT_PACK_SCENE_IMPORT_EXPORT_V14: import Unified Project Pack scenes with root/timing/production priority. */
 /* AVA_TRANSITION_MODAL_RETURN_ICON_V13C_HANDLER_FIX: return icon uses existing cancel button instead of missing cancelTimingToBoardConfirmV16. */
@@ -3470,6 +3471,48 @@ const useVocalStem = mode === 'vocal'
       return ''
     }
 
+
+    // AVA_MANUAL_TIMING_CODEX_MIRROR_FIELDS_V78
+    const AVA_MANUAL_TIMING_CODEX_MIRROR_FIELDS_V78 = [
+      'approved_still_path',
+      'approved_still_url',
+      'approved_still_filename',
+      'approved_still_notes',
+      'approved_still_review',
+      'visible_content_summary',
+      'safe_motion_plan',
+      'unsafe_motion_avoid',
+      'final_video_prompt',
+      'final_negative_prompt',
+      'final_lipsync_prompt',
+      'final_prompt_ready',
+      'prompt_validation',
+      'lipsync_photo_rules',
+      'speaking_frame_confirmed',
+      'camera_framing',
+      'continuity_notes',
+      'props_required',
+      'ingredients_required',
+      'location_required',
+      'character_required',
+      'review_status',
+      'image_aware_prompt_status',
+      'image_aware_video_prompt_updated',
+      'image_aware_prompt_notes',
+    ]
+
+    function mirrorCodexImportFieldsV78(scene = {}, production = {}) {
+      const out = {}
+      AVA_MANUAL_TIMING_CODEX_MIRROR_FIELDS_V78.forEach((field) => {
+        const value = production[field] ?? scene[field]
+        if (value === null || value === undefined) return
+        if (typeof value === 'string' && !value.trim()) return
+        if (Array.isArray(value) && !value.length) return
+        out[field] = value
+      })
+      return out
+    }
+
     function pickPositiveNumber(...values) {
       for (const value of values) {
         if (value === null || value === undefined || value === '') continue
@@ -3573,6 +3616,7 @@ const useVocalStem = mode === 'vocal'
         scene_ambience_prompt: pickText(production.scene_ambience_prompt, scene.scene_ambience_prompt),
         foley_prompt: pickText(production.foley_prompt, scene.foley_prompt),
         sound_notes: pickText(production.sound_notes, scene.sound_notes),
+        ...mirrorCodexImportFieldsV78(scene, production),
         locked: scene.locked !== false,
         do_not_change_scene_id: true,
         do_not_change_start_end_duration: true,

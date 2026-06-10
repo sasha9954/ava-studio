@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Monitor, Smartphone, Square } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
-import { createProjectModes, isProjectModeSelectable, normalizeProjectMode } from '../lib/projectModes.js'
+import {createProjectModes, isProjectModeSelectable, normalizeProjectMode, projectTypeForMode} from '../lib/projectModes.js'
 
 const formatOptions = [
   { value: '16:9', title: 'Горизонталь', hint: '16:9', icon: Monitor },
@@ -32,7 +32,8 @@ export default function CreateProjectPage() {
     setLoading(true)
     setError('')
     try {
-      const payload = { ...form, type: 'clip', project_mode: normalizeProjectMode(form.projectModeId) }
+      // AVA_CREATE_PROJECT_TYPE_FROM_MODE_V77
+      const payload = { ...form, type: projectTypeForMode(form.projectModeId), project_mode: normalizeProjectMode(form.projectModeId) }
       delete payload.projectModeId
       const project = await createProject(payload)
       navigate('/app/dashboard')

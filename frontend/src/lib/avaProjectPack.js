@@ -1,3 +1,4 @@
+// AVA_CODEX_OUTPUT_MIRROR_V78: mirror Codex root scene prompt/still fields into production.scenes for Board import.
 // AVA_PROJECT_PACK_PATCH_SCOPE_POLICY_V18: task_scope/update_policy/project_state_summary patch-only contract.
 // AVA_FINAL_PROMPT_SANITIZER_IMAGE_AWARE_V17: final generation prompt fields and sanitizer validation.
 // AVA_PROJECT_PACK_IMAGE_AWARE_PASS_V16: image-aware video prompt pass workflow/readiness/per-scene fields.
@@ -144,6 +145,72 @@ const IMAGE_AWARE_WORKFLOW_STAGES = [
   'video_generation',
 ]
 
+
+// AVA_CODEX_OUTPUT_MIRROR_FIELDS_V78
+// These fields may be created by Codex either in root scenes[] or production.scenes[].
+// Mirror them both ways so Board import sees the same data whichever array it reads.
+const AVA_CODEX_OUTPUT_MIRROR_FIELDS_V78 = [
+  'photo_prompt_positive',
+  'photo_prompt_negative',
+  'approved_still_path',
+  'approved_still_url',
+  'approved_still_filename',
+  'approved_still_notes',
+  'approved_still_review',
+  'visible_content_summary',
+  'safe_motion_plan',
+  'unsafe_motion_avoid',
+  'video_motion_prompt',
+  'video_motion_negative',
+  'positive_prompt',
+  'negative_prompt',
+  'video_prompt',
+  'prompt_positive',
+  'prompt_negative',
+  'final_video_prompt',
+  'final_negative_prompt',
+  'final_lipsync_prompt',
+  'final_prompt_ready',
+  'prompt_validation',
+  'lipsync_motion_prompt',
+  'lipsync_photo_rules',
+  'speaking_frame_confirmed',
+  'camera_framing',
+  'continuity_notes',
+  'props_required',
+  'ingredients_required',
+  'location_required',
+  'character_required',
+  'review_status',
+  'image_aware_prompt_status',
+  'image_aware_video_prompt_updated',
+  'image_aware_prompt_notes',
+  'sound_design_needed',
+  'sound_role',
+  'mmaudio_prompt',
+  'mmaudio_negative_prompt',
+  'scene_ambience_prompt',
+  'foley_prompt',
+  'sound_notes',
+]
+
+function avaCodexMirrorValuePresentV78(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function avaCodexMirrorSceneFieldsV78(scene = {}) {
+  const out = {}
+  AVA_CODEX_OUTPUT_MIRROR_FIELDS_V78.forEach((field) => {
+    const value = scene[field]
+    if (avaCodexMirrorValuePresentV78(value)) out[field] = value
+  })
+  return out
+}
+
 const SOUND_FIELDS_TO_FILL = [
   'sound_design_needed',
   'sound_role',
@@ -164,6 +231,19 @@ const PRODUCTION_FIELDS_TO_FILL = [
   'video_prompt',
   'prompt_positive',
   'prompt_negative',
+  'approved_still_path',
+  'approved_still_url',
+  'approved_still_filename',
+  'approved_still_notes',
+  'visible_content_summary',
+  'safe_motion_plan',
+  'image_aware_prompt_status',
+  'image_aware_video_prompt_updated',
+  'final_video_prompt',
+  'final_negative_prompt',
+  'final_lipsync_prompt',
+  'final_prompt_ready',
+  'speaking_frame_confirmed',
   ...SOUND_FIELDS_TO_FILL,
 ]
 
@@ -713,7 +793,11 @@ function hasStill(scene = {}) {
     scene.generated_still_url,
     scene.generatedStillUrl,
     scene.still_url,
-    scene.stillUrl
+    scene.stillUrl,
+    scene.approved_still_path,
+    scene.approved_still_url,
+    scene.approvedStillPath,
+    scene.approvedStillUrl
   ))
 }
 
@@ -842,7 +926,11 @@ function actualStillImageFromScene(scene = {}) {
     scene.generated_still_url,
     scene.generatedStillUrl,
     scene.still_url,
-    scene.stillUrl
+    scene.stillUrl,
+    scene.approved_still_url,
+    scene.approvedStillUrl,
+    scene.approved_still_path,
+    scene.approvedStillPath
   )
   const filename = firstText(
     scene.actual_still_image?.filename,
@@ -851,7 +939,11 @@ function actualStillImageFromScene(scene = {}) {
     scene.imageFilename,
     scene.photo_filename,
     scene.photoFilename,
-    scene.planned_photo_filename
+    scene.planned_photo_filename,
+    scene.approved_still_filename,
+    scene.approvedStillFilename,
+    scene.approved_still_path,
+    scene.approvedStillPath
   )
   return {
     asset_id: assetId,
@@ -864,7 +956,9 @@ function actualStillImageFromScene(scene = {}) {
 function imageAwarePromptUpdated(scene = {}) {
   return scene.image_aware_video_prompt_updated === true ||
     scene.imageAwareVideoPromptUpdated === true ||
-    ['updated', 'locked'].includes(String(scene.image_aware_prompt_status || scene.imageAwarePromptStatus || '').toLowerCase())
+    scene.final_prompt_ready === true ||
+    scene.finalPromptReady === true ||
+    ['updated', 'locked', 'ready', 'approved'].includes(String(scene.image_aware_prompt_status || scene.imageAwarePromptStatus || scene.review_status || '').toLowerCase())
 }
 
 
@@ -898,6 +992,7 @@ function rootScenesFromNormalized(normalizedScenes = [], modeId = 'manual_genera
       visual_action: scene.visual_action,
       viewer_should_understand: scene.viewer_should_understand,
       readability_check: scene.readability_check,
+      ...avaCodexMirrorSceneFieldsV78(scene),
       locked: true,
       do_not_change_scene_id: true,
       do_not_change_start_end_duration: true,
@@ -1050,6 +1145,11 @@ function productionScenesFromNormalized(normalizedScenes = [], modeId = 'manual_
       visible_content_summary: firstText(scene.visible_content_summary, scene.visibleContentSummary),
       safe_motion_plan: firstText(scene.safe_motion_plan, scene.safeMotionPlan),
       unsafe_motion_avoid: Array.isArray(scene.unsafe_motion_avoid) ? scene.unsafe_motion_avoid : (Array.isArray(scene.unsafeMotionAvoid) ? scene.unsafeMotionAvoid : []),
+      ...avaCodexMirrorSceneFieldsV78(scene),
+      final_video_prompt: finalVideoPrompt || firstText(scene.final_video_prompt, scene.finalVideoPrompt, scene.video_motion_prompt, scene.videoMotionPrompt, scene.positive_prompt, scene.prompt_positive, scene.video_prompt),
+      final_negative_prompt: finalNegativePrompt || firstText(scene.final_negative_prompt, scene.finalNegativePrompt, scene.video_motion_negative, scene.videoMotionNegative, scene.negative_prompt, scene.prompt_negative),
+      final_lipsync_prompt: finalLipsyncPrompt || firstText(scene.final_lipsync_prompt, scene.finalLipsyncPrompt, scene.lipsync_motion_prompt, scene.lipsyncMotionPrompt),
+      final_prompt_ready: Boolean(scene.final_prompt_ready === true || scene.finalPromptReady === true || (promptValidation.final_prompt_ready && imageAwareUpdated)),
     }
   })
 }
