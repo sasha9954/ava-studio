@@ -123,12 +123,12 @@ export default function ProjectsPage() {
             <p className="avaEyebrow">Удаление проекта</p>
             <h3 id="ava-delete-project-title">Удалить “{projectToDelete.name}”?</h3>
             <p>
-              Проект исчезнет из списка. На этом этапе удаление безопасное: данные помечаются как удалённые,
-              а физическую очистку файлов добавим позже через корзину/хранилище.
+              Проект, все snapshot-данные и связанные файлы на сервере будут удалены безвозвратно.
+              Восстановить проект после этого действия нельзя.
             </p>
             <div className="avaModalActions">
               <button className="avaDangerButton" type="button" onClick={confirmDeleteProject} disabled={deleting}>
-                <Trash2 size={16} /> {deleting ? 'Удаляем…' : 'Удалить'}
+                <Trash2 size={16} /> {deleting ? 'Удаляем…' : 'Удалить безвозвратно'}
               </button>
               <button className="avaSecondaryButton" type="button" onClick={cancelDeleteProject} disabled={deleting}>
                 Отмена

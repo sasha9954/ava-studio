@@ -1792,3 +1792,41 @@
   }
 }
 
+
+
+/* AVA_GENERATOR_CANCEL_AND_CLEAR_V85: real cancel + destructive clear UI */
+.avaGeneratorCancel,
+.avaGeneratorDanger {
+  border: 0;
+  border-radius: 16px;
+  padding: 14px 20px;
+  font-size: 16px;
+  font-weight: 950;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+.avaGeneratorCancel {
+  color: #fff7ed;
+  background: linear-gradient(135deg, rgba(255, 119, 48, 0.98), rgba(255, 58, 86, 0.94));
+  border: 1px solid rgba(255, 205, 160, 0.35);
+}
+
+.avaGeneratorDanger {
+  color: #ffe7e7;
+  background: linear-gradient(135deg, rgba(85, 19, 28, 0.98), rgba(150, 25, 45, 0.95));
+  border: 1px solid rgba(255, 110, 130, 0.36);
+}
+
+.avaGeneratorCancel:disabled,
+.avaGeneratorDanger:disabled,
+.avaGeneratorSecondary:disabled,
+.avaGeneratorGhost:disabled,
+.avaGeneratorAspectBtn:disabled,
+.avaGeneratorQualityBtn:disabled,
+.avaGeneratorSelect:disabled,
+.avaGeneratorRange:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+  filter: grayscale(0.35);
+}

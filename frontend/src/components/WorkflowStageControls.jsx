@@ -37,7 +37,7 @@ export default function WorkflowStageControls({
   clearLabel = 'Очистить',
   clearStages = [],
   clearStorageMatchers = [],
-  clearDescription = 'Будет очищено состояние этой страницы. Медиа-файлы на диске не удаляются.',
+  clearDescription = 'Будет безвозвратно очищено состояние этой страницы и удалены связанные файлы с сервера. Восстановлению не подлежит.',
   compact = false,
 }) {
   const location = useLocation()
@@ -140,7 +140,7 @@ export default function WorkflowStageControls({
             </button>
 
             <div className="avaWorkflowConfirmIcon"><Trash2 size={24} /></div>
-            <p className="avaWorkflowEyebrow">CLEAR STAGE</p>
+            <p className="avaWorkflowEyebrow">DESTRUCTIVE CLEAR</p>
             <h3>{clearLabel}?</h3>
             <p>{clearDescription}</p>
 
@@ -150,7 +150,7 @@ export default function WorkflowStageControls({
               </div>
             ) : (
               <div className="avaWorkflowClearScope">
-                Только локальные настройки / временное состояние
+                Локальное состояние и связанные серверные файлы этого этапа
               </div>
             )}
 
@@ -161,7 +161,7 @@ export default function WorkflowStageControls({
                 Отмена
               </button>
               <button type="button" className="avaWorkflowDanger" onClick={clearNow} disabled={clearing}>
-                {clearing ? 'Очищаю…' : 'Да, очистить'}
+                {clearing ? 'Удаляю…' : 'Да, удалить безвозвратно'}
               </button>
             </div>
           </section>

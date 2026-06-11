@@ -480,6 +480,8 @@ function buildAssistantInstructionsV18() {
       'Never change locked_fields.',
       'If final prompts are dirty, rewrite only final prompt fields.',
       'If media already exists, do not overwrite it.',
+      'When the task is Video Match, create video_match_board_v2 with sourceVideos/V1 contract for direct Video Match Board import.',
+      'For Video Match, source video path alone is not enough: candidates must reference sourceVideoId/source_video_id and the UI must bind the real file to V1 before assembly.',
     ],
     for_codex: [
       'Treat this JSON as a project state patch request, not a full generation request.',
@@ -489,15 +491,57 @@ function buildAssistantInstructionsV18() {
       'Do not overwrite images, videos, audio slices, or MMAudio unless replace_existing=true.',
       'Only update fields allowed by task_scope.allowed_updates.',
       'Return a patched JSON with the same scene count and same scene ids.',
+      'If producing Video Match output, return video_match_board_v2, not ava_project_pack_v1, and include sourceVideos plus sourceVideoId/source_video_id = V1 on every candidate.',
     ],
     output_requirements: [
       'Return patched ava_project_pack_v1 JSON.',
+      'For Video Match direct import, also return video_match_board_v2.json with stable V1 source binding.',
       'Include a patch_report describing what fields were changed.',
       'Include validation_report.',
       'Do not create a new project id.',
       'Do not create new scene ids.',
     ],
   }
+}
+
+
+function buildVideoMatchBoardV2SourceBindingContractV81() {
+  return {
+    schema: 'video_match_board_v2_source_binding_contract_v81',
+    purpose: 'Prevent Video Match import/assembly errors by requiring stable source video IDs and backend file binding.',
+    import_schema_for_video_match_board: 'video_match_board_v2',
+    do_not_import_as: ['ava_project_pack_v1'],
+    stable_source_video_id: 'V1',
+    required_root_fields: [
+      'schema: video_match_board_v2',
+      'sourceVideos[] with id/sourceVideoId/source_video_id = V1',
+      'segments[] with target_t0/target_t1 and selected_candidate_id',
+      'segments[].candidates[] with sourceVideoId/source_video_id = V1',
+      'segments[].candidates[].sourceVideoStartSec/sourceVideoEndSec',
+    ],
+    required_candidate_fields: [
+      'sourceVideoId',
+      'source_video_id',
+      'sourceVideoStartSec',
+      'sourceVideoEndSec',
+      'sourceVideoDurationSec',
+      'confidence',
+      'match_reason or selected_reason',
+    ],
+    required_scene_selected_fields: [
+      'selectedCandidateId or selected_candidate_id',
+      'selectedSourceVideoId: V1',
+      'selectedSourceStartSec',
+      'selectedSourceEndSec',
+      'target_t0',
+      'target_t1',
+      'duration',
+    ],
+    ui_rule_after_import: 'After importing the JSON, bind/upload the real source video file to V1 in the UI once before MP4 assembly.',
+    backend_rule: 'The browser preview may use blob URLs, but MP4 assembly requires a backend-uploaded file path/asset. If V1 is not bound, assembly can fail with source_video_not_found.',
+    codex_rule: 'Codex must return a video_match_board_v2 file for Video Match Board, plus manifests, not only ava_project_pack_v1.',
+    source_selection_rule: 'Use the episode as a visual bank; do not cut equal grid segments; select source ranges by phrase endings, beat strength, main hero visibility, fights, pressure and emotional intensity.',
+  };
 }
 
 function buildPatchReportTemplateV18() {
@@ -1331,6 +1375,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
       ? 'recipe_storyboard_prompts_and_generated_stills'
       : buildCodexTaskForMode(projectMode.id, { status: readiness.stage })?.task_type,
     expected_outputs: expectedOutputsForMode(projectMode.id),
+    video_match_board_v2_import_contract: buildVideoMatchBoardV2SourceBindingContractV81(),
     production_fields_to_fill: PRODUCTION_FIELDS_TO_FILL,
     // AVA_PROJECT_PACK_UNIVERSAL_TASK_CONTRACT_V75
     universal_task_contract: buildUniversalTaskContractV75(projectMode),
@@ -1399,6 +1444,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     project_mode: projectMode,
     mode_contract: modeContract,
     prompt_guidelines: modeContract.prompt_guidelines || {},
+    video_match_board_v2_import_contract: buildVideoMatchBoardV2SourceBindingContractV81(),
     audio: {
       ...(assets.audio || {}),
       durationSec: audioDuration,

@@ -1305,6 +1305,88 @@ def _history(base_url: str, prompt_id: str) -> dict[str, Any]:
         return {"_history_error": str(exc)}
 
 
+# AVA_GENERATOR_CANCEL_SAFE_V84: real cancel/interrupt helpers for Generator.
+def _comfy_post_json(base_url: str, path: str, payload: dict[str, Any] | None = None, *, timeout: int = 12) -> dict[str, Any]:
+    body = json.dumps(payload or {}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{base_url.rstrip()}{path}",
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return json.loads(raw) if raw else {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _comfy_get_json(base_url: str, path: str, *, timeout: int = 12) -> dict[str, Any]:
+    request = urllib.request.Request(f"{base_url.rstrip()}{path}", headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return json.loads(raw) if raw else {}
+    except Exception as exc:
+        return {"_error": str(exc)}
+
+
+def _comfy_queue_prompt_ids(queue_data: Any) -> list[str]:
+    ids: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            for key in ("prompt_id", "promptId"):
+                if value.get(key):
+                    ids.append(str(value.get(key)))
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, (list, tuple)):
+            # Comfy queue rows usually contain prompt id as one of string members.
+            for item in value:
+                if isinstance(item, str) and len(item) >= 16 and re.fullmatch(r"[0-9a-fA-F\-]+", item):
+                    ids.append(item)
+                walk(item)
+
+    walk(queue_data)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for pid in ids:
+        if pid not in seen:
+            seen.add(pid)
+            deduped.append(pid)
+    return deduped
+
+
+def _cancel_comfy_prompt(base_url: str, prompt_id: str | None = None, *, interrupt: bool = True, clear_pending: bool = False) -> dict[str, Any]:
+    result: dict[str, Any] = {"baseUrl": base_url, "promptId": prompt_id or "", "queueDelete": None, "interrupt": None, "clearPending": None}
+    if not base_url:
+        result["error"] = "missing_comfy_base_url"
+        return result
+
+    prompt_ids: list[str] = []
+    if prompt_id:
+        prompt_ids.append(str(prompt_id))
+
+    if clear_pending:
+        queue = _comfy_get_json(base_url, "/queue")
+        discovered = _comfy_queue_prompt_ids(queue)
+        for pid in discovered:
+            if pid not in prompt_ids:
+                prompt_ids.append(pid)
+        if prompt_ids:
+            result["clearPending"] = _comfy_post_json(base_url, "/queue", {"delete": prompt_ids})
+        else:
+            result["clearPending"] = {"ok": True, "deleted": []}
+    elif prompt_ids:
+        result["queueDelete"] = _comfy_post_json(base_url, "/queue", {"delete": prompt_ids})
+
+    if interrupt:
+        result["interrupt"] = _comfy_post_json(base_url, "/interrupt", {})
+    return result
+
+
 def _extract_comfy_outputs(base_url: str, history_data: dict[str, Any]) -> list[dict[str, Any]]:
     outputs: list[dict[str, Any]] = []
     for prompt_id, item in history_data.items():
@@ -1757,6 +1839,57 @@ def _finalize_video_job_from_outputs(job: dict[str, Any], outputs: list[dict[str
 
     return final
 
+
+
+@router.post("/clip/video/cancel/{job_id}")
+def cancel_video_job(job_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    # AVA_GENERATOR_CANCEL_SAFE_V84: Stop polling was misleading; this endpoint requests real Comfy cancel.
+    clean_job_id = str(job_id or "").strip()
+    job = BOARD_VIDEO_JOBS.get(clean_job_id)
+    if not job:
+        # Job may be lost after backend restart, but local Comfy can still have queue items.
+        base_url = _main_comfy_url()
+        cancel_result = _cancel_comfy_prompt(base_url, None, interrupt=True, clear_pending=True)
+        return {"ok": True, "jobId": clean_job_id, "status": "cancel_requested_missing_backend_job", "cancelResult": cancel_result}
+
+    _ava_credit_ensure_job_owner(job, user)
+    prompt_id = str(job.get("promptId") or job.get("prompt_id") or "").strip()
+    base_url = str(job.get("targetComfyBaseUrl") or _main_comfy_url() or "").strip()
+    cancel_result = _cancel_comfy_prompt(base_url, prompt_id, interrupt=True, clear_pending=False)
+
+    job["status"] = "canceled"
+    job["video_status"] = "canceled"
+    job["cancelRequested"] = True
+    job["cancel_requested"] = True
+    job["canceledAt"] = datetime.utcnow().isoformat() + "Z"
+    job["updatedAt"] = job["canceledAt"]
+    job["cancelResult"] = cancel_result
+    BOARD_VIDEO_JOBS[clean_job_id] = job
+    return {"ok": True, "jobId": clean_job_id, "job_id": clean_job_id, "status": "canceled", "cancelResult": cancel_result, **job}
+
+
+@router.post("/clip/video/cancel-active")
+def cancel_active_video_jobs(user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    # AVA_GENERATOR_CANCEL_SAFE_V84: emergency clear for local Generator backlog after accidental multiple submits.
+    base_url = _main_comfy_url()
+    cancel_result = _cancel_comfy_prompt(base_url, None, interrupt=True, clear_pending=True)
+    canceled_jobs: list[str] = []
+    now_cancel = datetime.utcnow().isoformat() + "Z"
+    for jid, job in list(BOARD_VIDEO_JOBS.items()):
+        try:
+            _ava_credit_ensure_job_owner(job, user)
+        except Exception:
+            continue
+        status_text = str(job.get("status") or "").lower()
+        if job.get("videoUrl") or job.get("imageUrl") or "completed" in status_text or "ready" in status_text:
+            continue
+        job["status"] = "canceled"
+        job["video_status"] = "canceled"
+        job["cancelRequested"] = True
+        job["canceledAt"] = now_cancel
+        job["updatedAt"] = now_cancel
+        canceled_jobs.append(jid)
+    return {"ok": True, "status": "canceled_active_generator_jobs", "canceledJobIds": canceled_jobs, "cancelResult": cancel_result}
 
 
 @router.get("/clip/video/status/{job_id}")

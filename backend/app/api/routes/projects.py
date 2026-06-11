@@ -3,6 +3,7 @@ from app.api.deps import ensure_project_access, get_current_user
 from app.core.snapshot_media import media_refs_summary, preserve_media_refs, sanitize_snapshot_runtime_media
 from app.core.security import make_id, now_iso
 from app.core.storage import store
+from app.core.media_cleanup import cleanup_project_media, cleanup_project_stage_media
 from app.schemas import ProjectCreateRequest, ProjectUpdateRequest, SnapshotSaveRequest
 
 router = APIRouter(prefix='/projects', tags=['projects'])
@@ -87,12 +88,25 @@ def has_any(data: dict, keys: list[str]) -> bool:
     return any(bool(data.get(key)) for key in keys)
 
 
+
+# AVA_VIDEO_NODE_NESTED_SUMMARY_V80: Video Match saves data as
+# {schema:'ava_video_node_workspace_snapshot_v1', project:{matchSegments, videoBlocks,...}}.
+# Project/workspace cards should count the nested project too.
+def video_node_snapshot_project(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    nested = data.get('project')
+    if isinstance(nested, dict):
+        return nested
+    return data
+
 def build_project_summary(snapshots: dict) -> dict:
     manual = (snapshots.get('manual_timing') or {}).get('data') or {}
     podcast = (snapshots.get('podcast') or {}).get('data') or {}
     board = (snapshots.get('board') or {}).get('data') or {}
     assembly = (snapshots.get('board_assembly') or {}).get('data') or {}
     video_node = (snapshots.get('video_node') or {}).get('data') or {}
+    video_node_project = video_node_snapshot_project(video_node)
     generator = (snapshots.get('generator') or {}).get('data') or {}
 
     board_scenes_count = count_items(board, ['board_scenes', 'scenes'])
@@ -120,9 +134,9 @@ def build_project_summary(snapshots: dict) -> dict:
             'final_video_ready': has_any(assembly, ['final_video_url', 'finalVideoUrl', 'output_url']),
         },
         'video_node': {
-            'segments_count': count_items(video_node, ['segments']),
-            'candidates_count': count_items(video_node, ['candidates', 'selected_candidates']),
-            'final_video_ready': has_any(video_node, ['final_video_url', 'finalVideoUrl', 'output_url']),
+            'segments_count': count_items(video_node_project, ['matchSegments', 'segments']),
+            'candidates_count': count_items(video_node_project, ['candidates', 'selected_candidates', 'matchSegments']),
+            'final_video_ready': has_any(video_node_project, ['final_video_url', 'finalVideoUrl', 'output_url', 'assembledPreview']),
         },
         'generator': {
             'jobs_count': count_items(generator, ['jobs', 'generations']),
@@ -213,13 +227,11 @@ def update_project(payload: ProjectUpdateRequest, project: dict = Depends(ensure
 @router.delete('/{project_id}')
 def delete_project(project: dict = Depends(ensure_project_access)):
     project_id = project['id']
+    user_id = project.get('user_id')
 
     def op(db):
-        p = db['projects'][project_id]
-        p['status'] = 'deleted'
-        p['deleted_at'] = now_iso()
-        p['updated_at'] = now_iso()
-        return {'deleted': True, 'project_id': project_id}
+        cleanup = cleanup_project_media(db, project_id, user_id=user_id)
+        return {'deleted': True, 'project_id': project_id, 'hard_deleted': True, 'cleanup': cleanup}
 
     return store.update(op)
 
@@ -246,6 +258,14 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
     def op(db):
         db['snapshots'].setdefault(project_id, {})
         current = db['snapshots'][project_id].get(stage)
+        cleanup = None
+        is_destructive_clear = (
+            payload.guard_mode == 'replace'
+            and not (payload.data or {})
+            and str(payload.client_version or '').startswith('workflow-stage-controls-clear')
+        )
+        if is_destructive_clear:
+            cleanup = cleanup_project_stage_media(db, project_id, stage, user_id=project.get('user_id'))
         incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
         if payload.guard_mode == 'safe_merge' and current:
             old_score = state_richness(current.get('data') or {})
@@ -277,6 +297,10 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
         }
         db['snapshots'][project_id][stage] = snapshot
         db['projects'][project_id]['updated_at'] = now_iso()
-        return {'saved': True, 'snapshot': snapshot}
+        result = {'saved': True, 'snapshot': snapshot}
+        if cleanup is not None:
+            result['cleanup'] = cleanup
+            result['hard_cleared'] = True
+        return result
 
     return store.update(op)

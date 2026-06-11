@@ -6,6 +6,17 @@ export const VIDEO_MATCH_BOARD_SCHEMA_V1 = "video_match_board_v1";
 export const VIDEO_MATCH_BOARD_SCHEMA_V2 = "video_match_board_v2";
 export const VIDEO_MATCH_BOARD_SCHEMA_PHOTOSTUDIO_V2 = "photostudio_video_match_board_v2";
 
+export const VIDEO_MATCH_BOARD_V2_SOURCE_BINDING_RULES = {
+  schema: "video_match_board_v2_source_binding_contract_v81",
+  import_schema_for_video_match_board: VIDEO_MATCH_BOARD_SCHEMA_V2,
+  stable_source_video_id: "V1",
+  required_root_fields: ["sourceVideos", "segments"],
+  required_candidate_fields: ["sourceVideoId", "source_video_id", "sourceVideoStartSec", "sourceVideoEndSec"],
+  required_selected_scene_fields: ["selectedCandidateId", "selectedSourceVideoId", "selectedSourceStartSec", "selectedSourceEndSec"],
+  ui_rule_after_import: "Bind/upload the real source video file to V1 before MP4 assembly.",
+  backend_rule: "MP4 assembly needs a backend-uploaded path/asset; a local Windows path from JSON is a reference only.",
+};
+
 function isBlobUrl(value = "") {
   return String(value || "").trim().startsWith("blob:");
 }
@@ -611,7 +622,7 @@ export function normalizeVideoMatchCandidate(candidate = {}, segment = {}, sourc
   const source = candidate && typeof candidate === "object" ? candidate : {};
   const segmentId = String(segment.id || segment.audioSceneId || segment.audio_scene_id || `segment_${String(index + 1).padStart(3, "0")}`).trim();
   const id = String(source.id || source.candidateId || source.candidate_id || source.candidate_id || `${segmentId}_candidate_${String(index + 1).padStart(2, "0")}`).trim();
-  const sourceVideoId = String(source.sourceVideoId || source.source_video_id || source.source_id || source.sourceId || "").trim();
+  const sourceVideoId = String(source.sourceVideoId || source.source_video_id || source.source_id || source.sourceId || segment.sourceVideoId || segment.source_video_id || segment.selectedSourceVideoId || segment.selected_source_video_id || "V1").trim() || "V1";
   const warnings = Array.isArray(source.warnings) ? source.warnings.map((warning) => String(warning || "").trim()).filter(Boolean) : [];
   const sourceCandidateStartSec = toFiniteNumber(source.source_video_start_sec ?? source.sourceVideoStartSec ?? source.video_t0, 0);
   const sourceCandidateEndSec = toFiniteNumber(source.source_video_end_sec ?? source.sourceVideoEndSec ?? source.video_t1, 0);
@@ -712,7 +723,8 @@ export function normalizeVideoMatchSegment(segment = {}, index = 0, sourceVideoU
   const audioSceneId = String(source.audio_scene_id || source.audioSceneId || source.id || `segment_${String(index + 1).padStart(3, "0")}`).trim();
   const storySceneId = String(source.story_scene_id ?? source.storySceneId ?? "").trim();
   const id = audioSceneId || `segment_${String(index + 1).padStart(3, "0")}`;
-  const baseSegment = { id, audioSceneId, storySceneId };
+  const segmentSourceVideoId = String(source.sourceVideoId || source.source_video_id || source.selectedSourceVideoId || source.selected_source_video_id || "V1").trim() || "V1";
+  const baseSegment = { id, audioSceneId, storySceneId, sourceVideoId: segmentSourceVideoId, source_video_id: segmentSourceVideoId };
   const rawCandidates = Array.isArray(source.candidates) ? source.candidates : [];
   const rawSelectedCandidate = source.selected_candidate && typeof source.selected_candidate === "object"
     ? source.selected_candidate
@@ -767,6 +779,14 @@ export function normalizeVideoMatchSegment(segment = {}, index = 0, sourceVideoU
     audio_scene_id: audioSceneId,
     storySceneId,
     story_scene_id: storySceneId,
+    sourceVideoId: segmentSourceVideoId,
+    source_video_id: segmentSourceVideoId,
+    selectedSourceVideoId: String(source.selectedSourceVideoId || source.selected_source_video_id || segmentSourceVideoId).trim() || segmentSourceVideoId,
+    selected_source_video_id: String(source.selected_source_video_id || source.selectedSourceVideoId || segmentSourceVideoId).trim() || segmentSourceVideoId,
+    selectedSourceStartSec: toNullableFiniteNumber(source.selectedSourceStartSec ?? source.selected_source_start_sec),
+    selected_source_start_sec: toNullableFiniteNumber(source.selected_source_start_sec ?? source.selectedSourceStartSec),
+    selectedSourceEndSec: toNullableFiniteNumber(source.selectedSourceEndSec ?? source.selected_source_end_sec),
+    selected_source_end_sec: toNullableFiniteNumber(source.selected_source_end_sec ?? source.selectedSourceEndSec),
     targetStartSec: toFiniteNumber(source.target_t0 ?? source.targetStartSec, 0),
     targetEndSec: toFiniteNumber(source.target_t1 ?? source.targetEndSec, 0),
     text: String(source.text || "").trim(),
@@ -995,11 +1015,17 @@ function normalizeVideoMatchSourceVideos(parsed = {}) {
   const rawList = Array.isArray(parsed?.source_videos)
     ? parsed.source_videos
     : (Array.isArray(parsed?.sourceVideos) ? parsed.sourceVideos : []);
-  const fallback = parsed?.source_video && typeof parsed.source_video === "object" ? [parsed.source_video] : [];
+  const sourceVideoObject = parsed?.source_video && typeof parsed.source_video === "object"
+    ? parsed.source_video
+    : (parsed?.sourceVideo && typeof parsed.sourceVideo === "object" ? parsed.sourceVideo : {});
+  const fallbackPath = String(parsed?.sourceVideoPath || parsed?.source_video_path || sourceVideoObject?.path || sourceVideoObject?.sourceVideoPath || sourceVideoObject?.source_video_path || "").trim();
+  const fallback = Object.keys(sourceVideoObject || {}).length || fallbackPath
+    ? [{ id: "V1", sourceVideoId: "V1", source_video_id: "V1", ...sourceVideoObject, path: fallbackPath || sourceVideoObject.path || "" }]
+    : [];
   const list = rawList.length ? rawList : fallback;
   return list.slice(0, 5).map((item, index) => {
     const source = item && typeof item === "object" ? item : {};
-    const id = String(source.id || source.source_video_id || source.sourceVideoId || `src_${String(index + 1).padStart(2, "0")}`).trim();
+    const id = String(source.id || source.source_video_id || source.sourceVideoId || `V${String(index + 1)}`).trim() || `V${String(index + 1)}`;
     return {
       id,
       sourceVideoId: id,
@@ -1096,6 +1122,8 @@ export function parseVideoMatchBoardJson(jsonText = "", sourceVideoUrl = "") {
     timingContext,
     audioMap,
     audioDurationSec,
+    video_match_board_v2_import_contract: VIDEO_MATCH_BOARD_V2_SOURCE_BINDING_RULES,
+    importWarnings: normalizeVideoMatchSourceVideos(parsed).length ? [] : ["sourceVideos is empty; bind source video V1 before assembly"],
     selectedSegmentId: matchSegments[0]?.id || "",
     selectedCandidateId: matchSegments[0]?.selectedCandidateId || "",
     raw: parsed,

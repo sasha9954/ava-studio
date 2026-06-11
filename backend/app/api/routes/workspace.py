@@ -3,6 +3,7 @@ from app.api.deps import get_current_user
 from app.core.snapshot_media import media_refs_summary, preserve_media_refs, sanitize_snapshot_runtime_media
 from app.core.security import make_id, now_iso
 from app.core.storage import store
+from app.core.media_cleanup import cleanup_workspace_media, cleanup_workspace_stage_media
 from app.schemas import SnapshotSaveRequest
 
 router = APIRouter(prefix='/workspace', tags=['workspace'])
@@ -58,12 +59,25 @@ def has_any(data: dict, keys: list[str]) -> bool:
     return any(bool(data.get(key)) for key in keys)
 
 
+
+# AVA_VIDEO_NODE_NESTED_SUMMARY_V80: Video Match saves data as
+# {schema:'ava_video_node_workspace_snapshot_v1', project:{matchSegments, videoBlocks,...}}.
+# Project/workspace cards should count the nested project too.
+def video_node_snapshot_project(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    nested = data.get('project')
+    if isinstance(nested, dict):
+        return nested
+    return data
+
 def build_workspace_summary(snapshots: dict) -> dict:
     manual = (snapshots.get('manual_timing') or {}).get('data') or {}
     podcast = (snapshots.get('podcast') or {}).get('data') or {}
     board = (snapshots.get('board') or {}).get('data') or {}
     assembly = (snapshots.get('board_assembly') or {}).get('data') or {}
     video_node = (snapshots.get('video_node') or {}).get('data') or {}
+    video_node_project = video_node_snapshot_project(video_node)
     generator = (snapshots.get('generator') or {}).get('data') or {}
 
     return {
@@ -87,9 +101,9 @@ def build_workspace_summary(snapshots: dict) -> dict:
             'final_video_ready': has_any(assembly, ['final_video_url', 'finalVideoUrl', 'output_url']),
         },
         'video_node': {
-            'segments_count': count_items(video_node, ['segments']),
-            'candidates_count': count_items(video_node, ['candidates', 'selected_candidates']),
-            'final_video_ready': has_any(video_node, ['final_video_url', 'finalVideoUrl', 'output_url']),
+            'segments_count': count_items(video_node_project, ['matchSegments', 'segments']),
+            'candidates_count': count_items(video_node_project, ['candidates', 'selected_candidates', 'matchSegments']),
+            'final_video_ready': has_any(video_node_project, ['final_video_url', 'finalVideoUrl', 'output_url', 'assembledPreview']),
         },
         'generator': {
             'jobs_count': count_items(generator, ['jobs', 'generations']),
@@ -140,6 +154,14 @@ def save_workspace_snapshot(stage: str, payload: SnapshotSaveRequest, user: dict
         workspace = get_or_create_workspace(db, user)
         db['workspace_snapshots'].setdefault(workspace['id'], {})
         current = db['workspace_snapshots'][workspace['id']].get(stage)
+        cleanup = None
+        is_destructive_clear = (
+            payload.guard_mode == 'replace'
+            and not (payload.data or {})
+            and str(payload.client_version or '').startswith('workflow-stage-controls-clear')
+        )
+        if is_destructive_clear:
+            cleanup = cleanup_workspace_stage_media(db, workspace['id'], stage, user_id=user.get('id'))
         incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
         preserved_media_refs = 0
         if payload.guard_mode == 'safe_merge' and current:
@@ -160,7 +182,11 @@ def save_workspace_snapshot(stage: str, payload: SnapshotSaveRequest, user: dict
         }
         db['workspace_snapshots'][workspace['id']][stage] = snapshot
         workspace['updated_at'] = now_iso()
-        return {'saved': True, 'workspace': workspace_public(workspace), 'snapshot': snapshot}
+        result = {'saved': True, 'workspace': workspace_public(workspace), 'snapshot': snapshot}
+        if cleanup is not None:
+            result['cleanup'] = cleanup
+            result['hard_cleared'] = True
+        return result
     return store.update(op)
 
 
@@ -168,7 +194,8 @@ def save_workspace_snapshot(stage: str, payload: SnapshotSaveRequest, user: dict
 def clear_workspace(user: dict = Depends(get_current_user)):
     def op(db):
         workspace = get_or_create_workspace(db, user)
+        cleanup = cleanup_workspace_media(db, workspace['id'], user_id=user.get('id'))
         db['workspace_snapshots'][workspace['id']] = {}
         workspace['updated_at'] = now_iso()
-        return {'cleared': True, 'workspace': workspace_public(workspace)}
+        return {'cleared': True, 'hard_cleared': True, 'workspace': workspace_public(workspace), 'cleanup': cleanup}
     return store.update(op)

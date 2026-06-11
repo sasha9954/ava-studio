@@ -55,7 +55,7 @@ export function isDoneStatus(status = '') {
 
 export function isFailedStatus(status = '') {
   const s = String(status || '').toLowerCase()
-  return ['failed', 'error', 'blocked', 'missing', 'not_found'].some((x) => s.includes(x))
+  return ['failed', 'error', 'blocked', 'missing', 'not_found', 'canceled', 'cancelled', 'cancel_requested'].some((x) => s.includes(x))
 }
 
 export function pickVideoUrl(data = {}) {

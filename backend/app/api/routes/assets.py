@@ -799,6 +799,58 @@ def read_asset_meta(asset_id: str, user: dict = Depends(get_current_user)):
     return {'asset': _asset_public(asset)}
 
 
+
+# AVA_GENERATOR_DESTRUCTIVE_FEED_DELETE_V83
+# Deleting a Generator feed card is destructive: remove the asset DB record and
+# the physical file from backend storage. External source files are never touched.
+@router.delete('/{asset_id}')
+def delete_asset(asset_id: str, user: dict = Depends(get_current_user)):
+    clean_asset_id = str(asset_id or '').strip()
+    if not clean_asset_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Missing asset_id')
+
+    def op(db):
+        asset = db.get('assets', {}).get(clean_asset_id)
+        if not asset or asset.get('user_id') != user['id']:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Asset not found')
+
+        deleted_paths: list[str] = []
+        errors: list[dict] = []
+        freed_bytes = 0
+
+        def safe_unlink(path: Path | None):
+            nonlocal freed_bytes
+            if not path:
+                return
+            try:
+                if not path.exists() or not path.is_file():
+                    return
+                size = path.stat().st_size
+                path.unlink()
+                freed_bytes += size
+                deleted_paths.append(str(path))
+            except Exception as exc:
+                errors.append({'path': str(path), 'error': str(exc)})
+
+        path = _asset_file_path_from_record(asset)
+        safe_unlink(path)
+        if path:
+            safe_unlink(_asset_thumb_cache_path(clean_asset_id, path))
+
+        db.setdefault('assets', {}).pop(clean_asset_id, None)
+        return {
+            'deleted': True,
+            'asset_id': clean_asset_id,
+            'assetId': clean_asset_id,
+            'deleted_paths': deleted_paths,
+            'deletedPaths': deleted_paths,
+            'freed_bytes': freed_bytes,
+            'freedBytes': freed_bytes,
+            'errors': errors,
+        }
+
+    return store.update(op)
+
 @router.get('/{asset_id}/file')
 def read_asset_file(asset_id: str, user: dict = Depends(get_current_user)):
     db = store.get_db()

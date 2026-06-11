@@ -587,9 +587,13 @@ export default function AvaShellLayout() {
       jobToastGroup = 'video:error'
     }
 
-    const dedupeKey = jobToastGroup
-      ? `${jobToastGroup}:${projectId || 'workspace'}:${sceneId || message}`
-      : (detail.dedupeKey || `${type}:${title}:${message}:${sceneId}`)
+    // AVA_GENERATOR_TOAST_JOB_DEDUPE_V83:
+    // Job completion toasts must dedupe by the concrete job key when one is provided.
+    // The broader video:ready group is only a fallback.
+    const dedupeKey = detail.dedupeKey
+      || (jobToastGroup
+        ? `${jobToastGroup}:${projectId || 'workspace'}:${sceneId || message}`
+        : `${type}:${title}:${message}:${sceneId}`)
 
     const now = Date.now()
     const lastShownAt = toastDedupeRef.current.get(dedupeKey) || 0

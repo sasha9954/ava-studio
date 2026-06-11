@@ -22,6 +22,7 @@ import {
   safeReadVideoMatchJson,
   writeVideoMatchEmergencyProject,
   sanitizeVideoMatchProjectForStorage,
+  VIDEO_MATCH_BOARD_V2_SOURCE_BINDING_RULES,
 } from "../clip_nodes/video_match/videoMatchBoardDomain.js";
 import "./VideoMatchBoardPage.css";
 /* AVA_VIDEO_NODE_SIMPLE_SLOT_CANDIDATE_FLOW_V24: scene slots stay fixed; add variants without applying; checkmark applies selected candidate and preview/assembly uses it. */
@@ -579,36 +580,87 @@ function pickVideoNodeWorkspaceProject(snapshotResponse = {}) {
   return hasUsefulState ? project : null;
 }
 
+
 async function fetchVideoNodeWorkspaceProject(projectId = "") {
-  const endpoint = projectId
-    ? `${API_BASE}/api/projects/${projectId}/snapshots/video_node`
-    : `${API_BASE}/api/workspace/snapshots/video_node`;
-  const response = await fetch(endpoint, {
-    method: "GET",
-    headers: getVideoNodeAuthHeaders(),
-  });
-  if (!response.ok) throw new Error(`workspace snapshot load failed ${response.status}`);
-  const data = await response.json().catch(() => null);
-  return pickVideoNodeWorkspaceProject(data || {});
+  // V80: project-scoped snapshot is the source of truth, but fallback to workspace
+  // so the same Video Match node opens from another computer or from standalone route.
+  const endpoints = [];
+  if (projectId) endpoints.push(`${API_BASE}/api/projects/${projectId}/snapshots/video_node`);
+  endpoints.push(`${API_BASE}/api/workspace/snapshots/video_node`);
+
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers: getVideoNodeAuthHeaders(),
+      });
+      if (!response.ok) {
+        lastError = new Error(`workspace snapshot load failed ${response.status} ${endpoint}`);
+        continue;
+      }
+      const data = await response.json().catch(() => null);
+      const picked = pickVideoNodeWorkspaceProject(data || {});
+      console.info("[VIDEO MATCH BACKEND WORKSPACE LOAD V80]", {
+        projectId,
+        endpoint,
+        hasProject: Boolean(picked),
+        stats: picked ? getVideoMatchProjectStats(picked) : null,
+      });
+      if (picked) return picked;
+    } catch (error) {
+      lastError = error;
+      console.warn("[VIDEO MATCH BACKEND WORKSPACE LOAD_FAILED V80]", { projectId, endpoint, error: String(error?.message || error) });
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
 }
 
 async function saveVideoNodeWorkspaceProject(project = {}, nodeId = "default", projectId = "") {
+  // V80: save to project snapshot and workspace snapshot. Before this, a project route
+  // could save only to /projects/:id/snapshots/video_node, while another computer opened
+  // /studio or /workspace and saw an empty Video Match node.
   const payload = makeVideoNodeWorkspacePayload(project, nodeId);
-  const endpoint = projectId
-    ? `${API_BASE}/api/projects/${projectId}/snapshots/video_node`
-    : `${API_BASE}/api/workspace/snapshots/video_node`;
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: getVideoNodeAuthHeaders(),
-    body: JSON.stringify({
-      data: payload,
-      client_version: "video-node-f5-patch05",
-      guard_mode: "safe_merge",
-    }),
+  const body = JSON.stringify({
+    data: payload,
+    client_version: "video-node-persist-v80",
+    guard_mode: "safe_merge",
   });
-  if (!response.ok) throw new Error(`workspace snapshot save failed ${response.status}`);
-  return response.json().catch(() => null);
+  const endpoints = [];
+  if (projectId) endpoints.push({ kind: "project", url: `${API_BASE}/api/projects/${projectId}/snapshots/video_node` });
+  endpoints.push({ kind: "workspace", url: `${API_BASE}/api/workspace/snapshots/video_node` });
+
+  const results = [];
+  const errors = [];
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint.url, {
+        method: "POST",
+        headers: getVideoNodeAuthHeaders(),
+        body,
+      });
+      const data = await response.json().catch(() => null);
+      results.push({ kind: endpoint.kind, ok: response.ok, status: response.status, saved: data?.saved, reason: data?.reason || "", data });
+      if (!response.ok) errors.push(new Error(`workspace snapshot save failed ${response.status} ${endpoint.kind}`));
+    } catch (error) {
+      errors.push(error);
+      results.push({ kind: endpoint.kind, ok: false, status: 0, error: String(error?.message || error) });
+    }
+  }
+
+  const anyOk = results.some((item) => item.ok);
+  console.info("[VIDEO MATCH BACKEND WORKSPACE SAVE V80]", {
+    nodeId,
+    projectId,
+    results: results.map((item) => ({ kind: item.kind, ok: item.ok, status: item.status, saved: item.saved, reason: item.reason || item.error || "" })),
+    stats: payload?.stats,
+  });
+  if (!anyOk) throw (errors[0] || new Error("workspace snapshot save failed"));
+  return { saved: anyOk, results };
 }
+
+
 
 
 // AVA_PATCH06_TAKE_FROM_BOARD: Video Node can pull generated clips from Board scene-to-scene.
@@ -1166,8 +1218,34 @@ export default function VideoMatchBoardPage() {
       backendPath: project.sourceVideo?.backendPath || project.uploadedSourceVideoPath || project.sourceVideoPathForAssembly || "",
       sourceVideoPathForAssembly: project.sourceVideoPathForAssembly || project.uploadedSourceVideoPath || project.sourceVideo?.backendPath || "",
     }, 0);
+    // V79: when importing a board JSON, src_01 can contain only the original local Windows path.
+    // After the user presses "Привязать файл", project.sourceVideoPathForAssembly / uploadedSourceVideoPath
+    // receives the backend-uploaded path. Do not let the stale imported src_01 entry overwrite it
+    // with empty backendPath/sourceVideoPathForAssembly fields.
+    const mergePrimarySourceEntry = (item = {}) => {
+      const merged = {
+        ...primaryEntry,
+        ...item,
+        previewUrl: item.previewUrl || primaryEntry.previewUrl,
+        sourceVideoUrl: item.sourceVideoUrl || primaryEntry.sourceVideoUrl,
+        source_video_url: item.source_video_url || primaryEntry.source_video_url || primaryEntry.sourceVideoUrl,
+      };
+      const fallbackBackendPath = String(
+        primaryEntry.sourceVideoPathForAssembly
+        || primaryEntry.source_video_path_for_assembly
+        || primaryEntry.backendPath
+        || primaryEntry.backend_path
+        || ""
+      ).trim();
+      if (fallbackBackendPath) {
+        ["backendPath", "backend_path", "sourceVideoPathForAssembly", "source_video_path_for_assembly"].forEach((field) => {
+          if (!String(merged[field] || "").trim()) merged[field] = fallbackBackendPath;
+        });
+      }
+      return merged;
+    };
     const list = normalized.some((item) => item.id === "src_01")
-      ? normalized.map((item) => item.id === "src_01" ? { ...primaryEntry, ...item, previewUrl: item.previewUrl || primaryEntry.previewUrl, sourceVideoUrl: item.sourceVideoUrl || primaryEntry.sourceVideoUrl } : item)
+      ? normalized.map((item) => item.id === "src_01" ? mergePrimarySourceEntry(item) : item)
       : [primaryEntry, ...normalized];
     return list.slice(0, 5);
   }, [project.sourceVideos, project.source_videos, project.sourceVideo, project.source_video, project.sourceVideoPath, project.uploadedSourceVideoPath, project.sourceVideoPathForAssembly, sourceVideoUrl]);
@@ -1490,7 +1568,7 @@ export default function VideoMatchBoardPage() {
     if (backendSaveTimerRef.current) clearTimeout(backendSaveTimerRef.current);
     backendSaveTimerRef.current = setTimeout(() => {
       saveVideoNodeWorkspaceProject(project, nodeId, projectId)
-        .then(() => console.info("[VIDEO MATCH BACKEND WORKSPACE SAVED]", { nodeId, projectId, stats }))
+        .then((result) => console.info("[VIDEO MATCH BACKEND WORKSPACE SAVED]", { nodeId, projectId, stats, result }))
         .catch((error) => console.warn("[VIDEO MATCH BACKEND WORKSPACE SAVE_FAILED]", { nodeId, projectId, error: String(error?.message || error) }));
     }, 700);
 
@@ -2841,12 +2919,57 @@ export default function VideoMatchBoardPage() {
           fps: Number(data.fps || 0),
           has_audio_stream: Boolean(data.has_audio_stream),
         });
+        const mergedSources = mergeVideoNodeSourceEntry(sourceVideos, backendEntry);
+        const currentPrimaryAssemblyPath = String(
+          project?.sourceVideoPathForAssembly
+          || project?.uploadedSourceVideoPath
+          || project?.sourceVideo?.backendPath
+          || project?.sourceVideo?.sourceVideoPathForAssembly
+          || ""
+        ).trim();
+        const shouldPromoteRelinkedSourceToPrimary = normalizedSourceId === "src_01"
+          || !currentPrimaryAssemblyPath
+          || (Array.isArray(sourceVideos) ? sourceVideos.length : 0) <= 1;
         patchProject({
-          sourceVideos: mergeVideoNodeSourceEntry(sourceVideos, backendEntry),
-          source_videos: mergeVideoNodeSourceEntry(sourceVideos, backendEntry),
+          sourceVideos: mergedSources,
+          source_videos: mergedSources,
+          ...(shouldPromoteRelinkedSourceToPrimary ? {
+            sourceVideoUrl: String(backendSourceVideoUrl || ""),
+            sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
+            uploadedSourceVideoPath: String(data.sourceVideoPathForAssembly || ""),
+            sourceVideo: {
+              ...(project.sourceVideo || {}),
+              id: normalizedSourceId,
+              sourceVideoId: normalizedSourceId,
+              source_video_id: normalizedSourceId,
+              path: String(data.sourceVideoPathForAssembly || ""),
+              backendPath: String(data.sourceVideoPathForAssembly || ""),
+              sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
+              filename: data.filename || file.name || `${normalizedSourceId}.mp4`,
+              name: data.filename || file.name || `${normalizedSourceId}.mp4`,
+              durationSec: Number(data.duration_sec || 0),
+              duration_sec: Number(data.duration_sec || 0),
+              width: Number(data.width || 0),
+              height: Number(data.height || 0),
+              fps: Number(data.fps || 0),
+              has_audio_stream: Boolean(data.has_audio_stream),
+              type: file.type || "video/mp4",
+              size: file.size || 0,
+            },
+            source_video: {
+              ...(project.source_video || {}),
+              id: normalizedSourceId,
+              source_video_id: normalizedSourceId,
+              path: String(data.sourceVideoPathForAssembly || ""),
+              backendPath: String(data.sourceVideoPathForAssembly || ""),
+              sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
+              filename: data.filename || file.name || `${normalizedSourceId}.mp4`,
+              duration_sec: Number(data.duration_sec || 0),
+            },
+          } : {}),
           jsonError: "",
         }, { lastGood: true });
-        setSourceVideoLoadMessage(`${getVideoNodeSourceShortLabel(normalizedSourceId)} загружено: ${backendEntry.filename}`);
+        setSourceVideoLoadMessage(`${getVideoNodeSourceShortLabel(normalizedSourceId)} загружено для preview и MP4-сборки: ${backendEntry.filename}`);
       } catch (error) {
         setSourceVideoLoadMessage(`${getVideoNodeSourceShortLabel(normalizedSourceId)} играет в preview, но НЕ загрузилось на backend: ${String(error?.message || error)}`);
       }
@@ -3484,15 +3607,30 @@ export default function VideoMatchBoardPage() {
       }));
     const sourcePathById = Object.fromEntries(sourceVideosForAssembly.map((source) => [String(source.id || source.sourceVideoId || source.source_video_id || ""), getVideoNodeSourcePathForAssembly(source)]));
     const anySourceVideoPath = sourceVideosForAssembly.map(getVideoNodeSourcePathForAssembly).find(Boolean) || "";
+    const isBackendUploadedVideoMatchSourcePath = (value = "") => {
+      const raw = String(value || "").trim();
+      if (!raw || /^(blob:|data:)/i.test(raw)) return false;
+      return /video_match_sources/i.test(raw) || /static[\/]+assets[\/]+video_match_sources/i.test(raw);
+    };
+    const preferredBackendSourceVideoPath = [
+      project?.sourceVideoPathForAssembly,
+      project?.uploadedSourceVideoPath,
+      project?.sourceVideo?.sourceVideoPathForAssembly,
+      project?.sourceVideo?.backendPath,
+      project?.source_video?.sourceVideoPathForAssembly,
+      project?.source_video?.backendPath,
+      ...sourceVideosForAssembly.map(getVideoNodeSourcePathForAssembly),
+    ].map((value) => String(value || "").trim()).find(isBackendUploadedVideoMatchSourcePath) || "";
     const sourceVideoPath = String(
-      project?.sourceVideoPathForAssembly
+      preferredBackendSourceVideoPath
+      || project?.sourceVideoPathForAssembly
       || project?.uploadedSourceVideoPath
       || project?.sourceVideo?.backendPath
+      || anySourceVideoPath
       || project?.sourceVideo?.path
       || project?.source_video?.path
       || project?.sourceVideoPath
       || project?.source_video_path
-      || anySourceVideoPath
       || "",
     ).trim();
     const isProxySource = isProxySourcePath(sourceVideoPath);
@@ -3555,6 +3693,13 @@ export default function VideoMatchBoardPage() {
         forceMuteVideoAudio: b.forceMuteVideoAudio,
         effectiveOriginalVideoVolume: b.effectiveOriginalVideoVolume,
       })));
+      console.info("[VIDEO MATCH ASSEMBLE SOURCE DEBUG V79]", {
+        sourceVideoPath,
+        preferredBackendSourceVideoPath,
+        anySourceVideoPath,
+        sourceVideoIds: sourceVideosForAssembly.map((source) => String(source.id || source.sourceVideoId || source.source_video_id || "")),
+        sourceVideoPaths: sourceVideosForAssembly.map(getVideoNodeSourcePathForAssembly),
+      });
       const response = await fetchJson("/api/video-match/assemble", {
         method: "POST",
         body: {
@@ -3657,7 +3802,10 @@ export default function VideoMatchBoardPage() {
   const isAssemblyUsingProxySource = isProxySourcePath(effectiveSourceVideoPathForMp4);
   const sampleJson = JSON.stringify({
     schema: "video_match_board_v2",
-    source_video: { filename: "source.mp4", duration_sec: Number(sampleDurationSec.toFixed(3)) },
+    source_video: { id: "V1", sourceVideoId: "V1", source_video_id: "V1", filename: "source.mp4", duration_sec: Number(sampleDurationSec.toFixed(3)) },
+    sourceVideos: [{ id: "V1", sourceVideoId: "V1", source_video_id: "V1", label: "V1", filename: "source.mp4", duration_sec: Number(sampleDurationSec.toFixed(3)), requiredForAssembly: true, needsBackendBinding: true }],
+    assembly: { mode: "source_video_ranges", sourceVideoIds: ["V1"], requiresBackendFileBinding: true },
+    video_match_board_v2_import_contract: VIDEO_MATCH_BOARD_V2_SOURCE_BINDING_RULES,
     segments: [
       {
         audio_scene_id: "seg_01",
@@ -3671,6 +3819,8 @@ export default function VideoMatchBoardPage() {
         candidates: [
           {
             id: "seg_01_a",
+            sourceVideoId: "V1",
+            source_video_id: "V1",
             video_t0: 12.4,
             video_t1: 17.2,
             fit_mode: "exact",
@@ -3691,6 +3841,8 @@ export default function VideoMatchBoardPage() {
           },
           {
             id: "seg_01_b",
+            sourceVideoId: "V1",
+            source_video_id: "V1",
             video_t0: 38.0,
             video_t1: 42.8,
             fit_mode: "trim",
@@ -3710,6 +3862,8 @@ export default function VideoMatchBoardPage() {
           },
           {
             id: "seg_01_c",
+            sourceVideoId: "V1",
+            source_video_id: "V1",
             video_t0: 41.6,
             video_t1: 46.4,
             fit_mode: "fallback",
@@ -4094,6 +4248,33 @@ REAL VIDEO → VISUAL INVENTORY → STORY FROM REAL VIDEO → ROLES → VOICEOVE
 
 TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
 `);
+    zip.file("VIDEO_MATCH_BOARD_IMPORT_RULES.md", `# Video Match Board v2 import rules
+
+Schema for direct Video Match Board import must be:
+
+\`\`\`json
+{ "schema": "video_match_board_v2" }
+\`\`\`
+
+Do not use ava_project_pack_v1 as the direct Video Match Board import file. ava_project_pack_v1 is a project/task pack; Video Match Board needs video_match_board_v2.
+
+Required source binding contract:
+
+- root must contain sourceVideos array.
+- the main source video must have stable id "V1".
+- every candidate must include sourceVideoId/source_video_id = "V1".
+- every candidate must include sourceVideoStartSec/sourceVideoEndSec.
+- every selected scene should include selectedSourceVideoId = "V1", selectedSourceStartSec, selectedSourceEndSec.
+- after JSON import, the real video file must be bound/uploaded to V1 in the UI before MP4 assembly.
+
+Why this matters:
+
+Browser preview can play blob URLs, but backend MP4 assembly needs a real backend-uploaded file path/asset. If sourceVideos/sourceVideoId are missing or V1 is not bound to a real file, assemble may fail with source_video_not_found.
+
+Codex output rule:
+
+Codex must return selected_clips_manifest.json, candidate_manifest.json, final_preview_timeline.json and a direct-import video_match_board_v2.json with stable V1 source binding.
+`);
     zip.file("video_first_story_contract_v1.json", JSON.stringify({
       schema: "video_first_story_contract_v1",
       workflow_name: "PhotoStudio Video-first Travel Documentary",
@@ -4192,13 +4373,24 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
     if (project?.timingContext?.visualSequenceBoard) zip.file("visual_sequence_board_v1.json", JSON.stringify(project.timingContext.visualSequenceBoard, null, 2));
     if (project?.timingContext?.voiceoverScript) zip.file("voiceover_script_by_scene_v1.json", JSON.stringify(project.timingContext.voiceoverScript, null, 2));
     if (matchSegments.length) {
+      const exportedSourceVideos = (Array.isArray(sourceVideos) && sourceVideos.length ? sourceVideos : [project?.sourceVideo || project?.source_video || {}])
+        .filter(Boolean)
+        .map((source, index) => {
+          const normalized = normalizeVideoNodeSourceEntry(source, index);
+          const id = String(normalized.id || normalized.sourceVideoId || normalized.source_video_id || (index === 0 ? "V1" : `V${index + 1}`)).trim() || (index === 0 ? "V1" : `V${index + 1}`);
+          return { ...normalized, id, sourceVideoId: id, source_video_id: id, requiredForAssembly: true, needsBackendBinding: true };
+        });
       const exportedBoard = {
         schema: "video_match_board_v2",
         status: project?.status || "exported_context",
-        source_video: project?.sourceVideo || project?.source_video || {},
+        source_video: exportedSourceVideos[0] || project?.sourceVideo || project?.source_video || {},
+        sourceVideos: exportedSourceVideos,
+        source_videos: exportedSourceVideos,
+        assembly: { mode: "source_video_ranges", sourceVideoIds: exportedSourceVideos.map((source) => source.id || source.sourceVideoId || source.source_video_id).filter(Boolean), requiresBackendFileBinding: true, preserveSelectedCandidates: true },
+        video_match_board_v2_import_contract: VIDEO_MATCH_BOARD_V2_SOURCE_BINDING_RULES,
         audio_duration_sec: Number(project?.timingContext?.audioDurationSec || project?.audioPreviewMeta?.duration_sec || audioDurationSec || 0),
         segments: matchSegments,
-        export_note: "Context export for ChatGPT, not necessarily final import board",
+        export_note: "Context export for ChatGPT. For direct import, keep schema video_match_board_v2 and bind the real source video file to V1 before MP4 assembly.",
       };
       zip.file("video_match_board_v2.json", JSON.stringify(exportedBoard, null, 2));
     }
@@ -4211,7 +4403,7 @@ TEXT FIRST → INVENTED STORY → TRY TO FIND VIDEO → PATCH ERRORS
     a.download = `photostudio_chatgpt_context_${nodeId}.zip`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [audioDurationSec, importWarnings, matchSegments, nodeId, project]);
+  }, [audioDurationSec, importWarnings, matchSegments, nodeId, project, sourceVideos]);
 
   return (
     <div className="videoMatchPage">
