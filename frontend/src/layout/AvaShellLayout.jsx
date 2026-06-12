@@ -447,10 +447,14 @@ export default function AvaShellLayout() {
     return projects.find((project) => String(project?.id || '') === routeProjectId) || null
   }, [projects, routeProjectId])
 
+  // AVA_BOARD_STILL_BUTTONS_ROUTE_PROJECT_V86B: routeProjectId wins over stale activeProject during hard reload.
+  // Prevents the shell from briefly rendering the previously active project
+  // (wrong name/color) before syncActiveProjectFromRoute finishes.
   const effectiveActiveProject = useMemo(() => {
-    if (activeProject) return activeProject
-    if (routeProject) return routeProject
     if (routeProjectId) {
+      if (routeProject) return routeProject
+      const activeProjectId = String(activeProject?.id || activeProject?.project_id || activeProject?.projectId || '').trim()
+      if (activeProject && activeProjectId === routeProjectId) return activeProject
       return {
         id: routeProjectId,
         name: `Проект ${routeProjectId.slice(-6)}`,
@@ -458,6 +462,7 @@ export default function AvaShellLayout() {
         routeSynced: true,
       }
     }
+    if (activeProject) return activeProject
     return null
   }, [activeProject, routeProject, routeProjectId])
 

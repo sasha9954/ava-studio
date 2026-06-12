@@ -6,6 +6,7 @@
 // Unified Project Pack exporter: one normalized scene split is mirrored into root scenes[], timing.scenes[], and production.scenes[].
 import { buildCodexTaskForMode, buildModeContract, normalizeProjectMode, projectModeCatalogForPack, projectTypeForMode } from './projectModes.js'
 
+import { buildCookingPromptMemoryV1, buildCookingPromptWorkflowNotesV1, shouldEmbedCookingPromptMemory } from './cookingPromptMemory.js'
 const PROMPT_POSITIVE_KEYS = ['photo_prompt_positive', 'video_motion_prompt']
 const PROMPT_NEGATIVE_KEYS = ['photo_prompt_negative', 'video_motion_negative', 'negative_prompt', 'prompt_negative']
 const IMAGE_AWARE_VIDEO_PROMPT_FIELDS_TO_UPDATE = [
@@ -1369,6 +1370,10 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
   const updatePolicyV18 = buildUpdatePolicyV18()
   const assistantInstructionsV18 = buildAssistantInstructionsV18()
 
+  const cookingPromptMemoryEnabledV84 = shouldEmbedCookingPromptMemory(board, { projectModeId: projectMode.id, force: projectMode.id === 'recipe_process_v1' })
+  const cookingPromptMemoryV84 = cookingPromptMemoryEnabledV84 ? buildCookingPromptMemoryV1() : null
+  const workflowNotesV84 = cookingPromptMemoryEnabledV84 ? buildCookingPromptWorkflowNotesV1(board.workflow_notes || board.workflowNotes || {}) : null
+
   const codexTask = {
     ...buildCodexTaskForMode(projectMode.id, { status: readiness.stage }),
     task_type: projectMode.id === 'recipe_process_v1'
@@ -1385,6 +1390,8 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     sound_layer_supported: true,
     sound_layer_required: false,
     sound_fields_to_fill: SOUND_FIELDS_TO_FILL,
+    prompt_memory_preset: (typeof cookingPromptMemoryEnabledV84 !== 'undefined' ? cookingPromptMemoryEnabledV84 : cookingPromptMemoryEnabledV83) ? 'outdoor_cooking_i2v_sound' : '',
+    prompt_memory_ref: (typeof cookingPromptMemoryEnabledV84 !== 'undefined' ? cookingPromptMemoryEnabledV84 : cookingPromptMemoryEnabledV83) ? 'cooking_prompt_memory_v1' : '',
       image_aware_video_prompt_pass_required: true,
       image_aware_video_prompt_fields_to_update: IMAGE_AWARE_VIDEO_PROMPT_FIELDS_TO_UPDATE,
       generate_all_precheck: {
@@ -1405,6 +1412,9 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     debug_included: Boolean(includeLegacyRaw),
     status: readiness.stage,
     exported_at: new Date().toISOString(),
+    prompt_memory_preset: (typeof cookingPromptMemoryEnabledV84 !== 'undefined' ? cookingPromptMemoryEnabledV84 : cookingPromptMemoryEnabledV83) ? 'outdoor_cooking_i2v_sound' : '',
+    cooking_prompt_memory_v1: (typeof cookingPromptMemoryV84 !== 'undefined' ? cookingPromptMemoryV84 : cookingPromptMemoryV83),
+    workflow_notes: (typeof workflowNotesV84 !== 'undefined' ? workflowNotesV84 : workflowNotesV83),
     project: {
       id: project.id || project.project_id || '',
       name: project.name || '',
@@ -1527,6 +1537,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
       generated_stills_required_for_full_package: true,
       prompt_guidelines_ref: `${projectMode.contract_ref}.prompt_guidelines`,
       sound_design_guidelines_ref: `${projectMode.contract_ref}.prompt_guidelines.sound_design_prompt`,
+      cooking_prompt_memory_ref: (typeof cookingPromptMemoryEnabledV84 !== 'undefined' ? cookingPromptMemoryEnabledV84 : cookingPromptMemoryEnabledV83) ? 'cooking_prompt_memory_v1' : '',
       sound_layer_supported: true,
       sound_layer_required: false,
       sound_fields_to_fill: SOUND_FIELDS_TO_FILL,

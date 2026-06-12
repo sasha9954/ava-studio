@@ -3,6 +3,7 @@
 /* AVA_BOARD_SELECTED_SCENE_ACCENT_V60C: selected scene color accents Board workspace. */
 /* AVA_BOARD_TIMING_DURATION_LOCK_V38: Timing-imported Board scenes have locked duration independent of route. */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import JSZip from 'jszip'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -29,6 +30,7 @@ import {
 import { useProjects } from '../context/ProjectContext.jsx'
 import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, normalizeAssetFileUrl, normalizeStaticMediaUrl, registerStaticMediaAsset, uploadMediaAsset } from '../services/apiClient.js'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
+import { applyCookingPromptMemoryToBoard } from '../lib/cookingPromptMemory.js'
 import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, clearWorkflowEntry, readWorkflowEntry, makeWorkflowEntry, rememberWorkflowEntry } from '../utils/workflowNavigation.js'
 import '../styles/ava-board.css'
 
@@ -505,7 +507,7 @@ function writeBoardDurableBackup(key = '', boardData = {}) {
   if (!key || typeof localStorage === 'undefined') return;
 
   try {
-    const canonicalBoardData = canonicalizeBoardMediaRefs(boardData)
+    const canonicalBoardData = applyCookingPromptMemoryToBoard(canonicalizeBoardMediaRefs(boardData))
     const payload = {
       ...sanitizeBoardDurableBackup(canonicalBoardData),
       boardVersion: canonicalBoardData?.boardVersion || BOARD_VERSION,
@@ -2746,6 +2748,7 @@ function isBoardVideoDoneStatus(status) {
   const [assemblyConfirmBusy, setAssemblyConfirmBusy] = useState(false)
   const [assemblyConfirmError, setAssemblyConfirmError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [bulkStillsImporting, setBulkStillsImporting] = useState(false)
   const [playback, setPlayback] = useState(null)
   const [collapsedPanels, setCollapsedPanels] = useState({ translation: false })
   const [audioSrc, setAudioSrc] = useState('')
@@ -2755,6 +2758,8 @@ function isBoardVideoDoneStatus(status) {
   const [mmaudioOpen, setMmaudioOpen] = useState(false)
   const audioRef = useRef(null)
   const importRef = useRef(null)
+  const stillFilesImportRef = useRef(null)
+  const stillZipImportRef = useRef(null)
   const boardRef = useRef(board)
   const localVideoQueueRef = useRef([])
   const localVideoQueueStartLockRef = useRef('')
@@ -4223,6 +4228,269 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
   }
 
 
+  // AVA_BOARD_BULK_STILL_IMPORT_V85:
+  // Batch-import still images into scenes by filename: seg_01.png -> scene seg_01.
+  // Supports both selected image files and ZIP archives, using the same asset fields as manual upload.
+  function boardStillImportBasename(fileName = '') {
+    return String(fileName || '')
+      .split(/[\\/]/)
+      .pop()
+      .replace(/\.[^.]+$/, '')
+      .trim()
+      .toLowerCase()
+  }
+
+  function boardStillImportSceneAliases(scene = {}, index = 0) {
+    const rawIds = [scene?.id, scene?.scene_id, scene?.sceneId, scene?.seg_id, scene?.segment_id, `seg_${String(index + 1).padStart(2, '0')}`]
+      .map((value) => boardStillImportBasename(value))
+      .filter(Boolean)
+    const aliases = new Set(rawIds)
+    for (const raw of rawIds) {
+      const numberMatch = raw.match(/(?:seg|scene|sc)?[_\-\s]*(\d{1,4})$/i)
+      if (numberMatch) {
+        const n = String(Number(numberMatch[1])).padStart(2, '0')
+        aliases.add(`seg_${n}`)
+        aliases.add(`sc_${n}`)
+        aliases.add(`scene_${n}`)
+        aliases.add(n)
+      }
+    }
+    return Array.from(aliases)
+  }
+
+  function boardStillImportSceneIdForFile(fileName = '', scenes = []) {
+    const base = boardStillImportBasename(fileName)
+    if (!base) return ''
+    const aliasToSceneId = new Map()
+    asSceneArray(scenes).forEach((scene, index) => {
+      const sceneId = asText(scene?.id || scene?.scene_id || `seg_${String(index + 1).padStart(2, '0')}`)
+      boardStillImportSceneAliases(scene, index).forEach((alias) => aliasToSceneId.set(alias, sceneId))
+    })
+    if (aliasToSceneId.has(base)) return aliasToSceneId.get(base)
+
+    const numberMatch = base.match(/(?:^|[_\-\s])(seg|scene|sc)?[_\-\s]*(\d{1,4})(?:$|[_\-\s])/i) || base.match(/^(\d{1,4})$/)
+    const rawNumber = numberMatch ? (numberMatch[2] || numberMatch[1]) : ''
+    if (rawNumber) {
+      const n = String(Number(rawNumber)).padStart(2, '0')
+      for (const candidate of [`seg_${n}`, `sc_${n}`, `scene_${n}`, n]) {
+        if (aliasToSceneId.has(candidate)) return aliasToSceneId.get(candidate)
+      }
+    }
+    return ''
+  }
+
+  function boardStillImportImageMime(fileName = '') {
+    const lower = String(fileName || '').toLowerCase()
+    if (lower.endsWith('.png')) return 'image/png'
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+    if (lower.endsWith('.webp')) return 'image/webp'
+    return 'image/png'
+  }
+
+  function boardStillImportIsImageFile(file = {}) {
+    const name = String(file?.name || '')
+    const type = String(file?.type || '')
+    return type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(name)
+  }
+
+  function buildBoardStillImportPatch({ fileName = '', assetId = '', assetApiPath = '' } = {}) {
+    const patch = {
+      ...staleVideoPatch('bulk_still_import_image_changed'),
+      image_url: assetApiPath,
+      imageUrl: assetApiPath,
+      image_name: fileName,
+      imageName: fileName,
+      image_status: 'asset_ready',
+      imageStatus: 'asset_ready',
+      image_data_url: '',
+      imageDataUrl: '',
+      image_asset_id: assetId,
+      imageAssetId: assetId,
+      image_api_path: assetApiPath,
+      imageApiPath: assetApiPath,
+      first_frame_url: assetApiPath,
+      firstFrameUrl: assetApiPath,
+      first_frame_name: fileName,
+      firstFrameName: fileName,
+      start_image_url: assetApiPath,
+      startImageUrl: assetApiPath,
+      start_image_data_url: '',
+      startImageDataUrl: '',
+      first_image_asset_id: assetId,
+      firstImageAssetId: assetId,
+      first_image_api_path: assetApiPath,
+      firstImageApiPath: assetApiPath,
+      first_frame_api_path: assetApiPath,
+      firstFrameApiPath: assetApiPath,
+      video_url: '',
+      videoUrl: '',
+      video_api_path: '',
+      videoApiPath: '',
+      video_name: '',
+      videoName: '',
+      original_video_url: '',
+      originalVideoUrl: '',
+      video_result: null,
+      videoResult: null,
+      video_ready_at: '',
+      videoReadyAt: '',
+      video_job_id: '',
+      videoJobId: '',
+      video_status_endpoint: '',
+      videoStatusEndpoint: '',
+      video_error: '',
+      videoError: '',
+      video_status: '',
+      videoStatus: '',
+      video_source_image_debug: {
+        reason: 'bulk_still_import',
+        fileName,
+        assetId,
+        assetApiPath,
+        at: new Date().toISOString(),
+      },
+    }
+    return patch
+  }
+
+  async function importBoardStillFiles(filesInput = [], sourceLabel = 'files') {
+    const files = Array.from(filesInput || []).filter(boardStillImportIsImageFile)
+    if (!files.length) {
+      setStatus('Нет изображений для импорта кадров')
+      pushBoardToast({ type: 'warning', title: 'Импорт кадров', message: 'Не найдено PNG/JPG/WEBP файлов' })
+      return
+    }
+    if (!asSceneArray(boardRef.current?.scenes).length) {
+      setStatus('Нет сцен для импорта кадров')
+      pushBoardToast({ type: 'warning', title: 'Импорт кадров', message: 'Сначала импортируй JSON со сценами' })
+      return
+    }
+
+    setBulkStillsImporting(true)
+    setStatus(`Импорт кадров: найдено файлов ${files.length}`)
+    const scenes = asSceneArray(boardRef.current?.scenes)
+    const results = []
+    const unmatchedFiles = []
+    const usedSceneIds = new Set()
+    const runtimePatch = {}
+
+    try {
+      for (const file of files) {
+        const sceneId = boardStillImportSceneIdForFile(file.name, scenes)
+        if (!sceneId) {
+          unmatchedFiles.push(file.name)
+          continue
+        }
+        const dataUrl = await readFileAsDataUrl(file)
+        const uploaded = await uploadMediaAsset({
+          file,
+          projectId: workspaceMode ? null : projectId,
+          kind: 'image',
+          stage: 'board_images',
+        })
+        const assetId = uploaded.asset_id || uploaded.assetId || ''
+        const assetApiPath = uploaded.asset_api_path || uploaded.assetApiPath || ''
+        if (!assetId || !assetApiPath) throw new Error(`image_asset_upload_missing_asset_id:${file.name}`)
+        results.push({ sceneId, fileName: file.name, assetId, assetApiPath })
+        usedSceneIds.add(sceneId)
+        runtimePatch[sceneId] = {
+          ...(runtimePatch[sceneId] || {}),
+          image: dataUrl,
+          first: dataUrl,
+        }
+        console.log('[BOARD STILL IMPORT]', { sourceLabel, sceneId, fileName: file.name, assetId, assetApiPath })
+      }
+
+      const resultBySceneId = new Map(results.map((item) => [item.sceneId, item]))
+      let nextBoardForSave = null
+      setBoard((current) => {
+        const nextScenes = asSceneArray(current.scenes).map((scene) => {
+          const sceneId = asText(scene.id || scene.scene_id)
+          const result = resultBySceneId.get(sceneId)
+          if (!result) return scene
+          return canonicalizeBoardSceneMediaRefs({
+            ...scene,
+            ...buildBoardStillImportPatch({ fileName: result.fileName, assetId: result.assetId, assetApiPath: result.assetApiPath }),
+          })
+        })
+        nextBoardForSave = {
+          ...current,
+          scenes: nextScenes,
+          updatedAt: new Date().toISOString(),
+          stills_import_last_result: {
+            source: sourceLabel,
+            imported: results.length,
+            unmatchedFiles,
+            missingScenes: asSceneArray(current.scenes)
+              .map((scene) => asText(scene.id || scene.scene_id))
+              .filter((sceneId) => !usedSceneIds.has(sceneId)),
+            at: new Date().toISOString(),
+          },
+        }
+        return nextBoardForSave
+      })
+      setRuntimeSceneMediaUrls((current) => {
+        const next = { ...current }
+        Object.entries(runtimePatch).forEach(([sceneId, value]) => {
+          next[sceneId] = { ...(next[sceneId] || {}), ...value }
+        })
+        return next
+      })
+      window.setTimeout(() => {
+        if (nextBoardForSave) saveBoard(nextBoardForSave, true)
+      }, 0)
+
+      const allSceneIds = new Set(scenes.map((scene) => asText(scene.id || scene.scene_id)))
+      const missingScenes = Array.from(allSceneIds).filter((sceneId) => !usedSceneIds.has(sceneId))
+      setStatus(`Импорт кадров: ${results.length}/${scenes.length}; без совпадения: ${unmatchedFiles.length}; без фото: ${missingScenes.length}`)
+      pushBoardToast({
+        type: results.length ? 'success' : 'warning',
+        title: 'Импорт кадров',
+        message: `Импортировано ${results.length}/${scenes.length}. ZIP/файлы: ${files.length}. Без совпадения: ${unmatchedFiles.length}`,
+      })
+      console.log('[BOARD STILL IMPORT SUMMARY]', { sourceLabel, filesFound: files.length, imported: results.length, missingScenes, unmatchedFiles, snapshotSaved: true })
+    } catch (error) {
+      console.error('[BOARD STILL IMPORT FAILED]', error)
+      setStatus(`Ошибка импорта кадров: ${error?.message || 'unknown error'}`)
+      pushBoardToast({ type: 'error', title: 'Импорт кадров не выполнен', message: error?.message || 'unknown error' })
+    } finally {
+      setBulkStillsImporting(false)
+    }
+  }
+
+  async function importBoardStillFilesFromInput(event) {
+    const files = event.target.files ? Array.from(event.target.files) : []
+    event.target.value = ''
+    await importBoardStillFiles(files, 'selected_files')
+  }
+
+  async function importBoardStillZipFromInput(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setBulkStillsImporting(true)
+    setStatus(`Читаем ZIP кадров: ${file.name}`)
+    try {
+      const zip = await JSZip.loadAsync(file)
+      const imageEntries = Object.values(zip.files).filter((entry) => !entry.dir && /\.(png|jpe?g|webp)$/i.test(entry.name || ''))
+      const files = []
+      for (const entry of imageEntries) {
+        const safeName = String(entry.name || '').split(/[\\/]/).pop()
+        if (!safeName || safeName.includes('..')) continue
+        const blob = await entry.async('blob')
+        files.push(new File([blob], safeName, { type: boardStillImportImageMime(safeName) }))
+      }
+      setBulkStillsImporting(false)
+      await importBoardStillFiles(files, `zip:${file.name}`)
+    } catch (error) {
+      console.error('[BOARD STILL ZIP IMPORT FAILED]', error)
+      setStatus(`Ошибка ZIP импорта: ${error?.message || 'unknown error'}`)
+      pushBoardToast({ type: 'error', title: 'ZIP импорт кадров', message: error?.message || 'unknown error' })
+      setBulkStillsImporting(false)
+    }
+  }
+
+
   async function setSceneFile(scene, fieldUrl, fieldName, statusField, event) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -5088,7 +5356,8 @@ async function importTimingJson(event) {
     if (!file) return
     try {
       const json = JSON.parse(await file.text())
-      const nextBoard = buildBoardFromTiming(json, board)
+      let nextBoard = buildBoardFromTiming(json, board)
+      nextBoard = applyCookingPromptMemoryToBoard(nextBoard, { sourceBoard: json, force: Boolean(json?.cooking_prompt_memory_v1) })
       setBoard(nextBoard)
       setStatus(`Импортировано сцен: ${nextBoard.scenes.length}`)
     } catch (err) {
@@ -5103,7 +5372,7 @@ async function importTimingJson(event) {
 
   function exportBoardJson(event) {
     stopBoardActionEvent(event)
-    const payload = { ...sanitizeBoardDurableBackup(board), exportedAt: new Date().toISOString() }
+    const payload = { ...sanitizeBoardDurableBackup(applyCookingPromptMemoryToBoard(board)), exportedAt: new Date().toISOString() }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -5284,6 +5553,8 @@ async function importTimingJson(event) {
             <Film size={15} /> В монтаж
           </button>
 
+          
+          
           <button
             type="button"
             className="avaBoardHeaderButton avaBoardActionJson avaBoardActionImport"
@@ -5303,6 +5574,33 @@ async function importTimingJson(event) {
             <FileJson size={15} /> Экспорт
           </button>
         </div>
+        <div className="avaBoardStillImportTools" data-ava-patch="AVA_BOARD_STILL_BUTTONS_ROUTE_PROJECT_V86B">
+<button
+            type="button"
+            className="avaBoardHeaderButton avaBoardActionJson avaBoardActionStillImport"
+            disabled={bulkStillsImporting || !boardScenes.length}
+            onClick={(event) => {
+              stopBoardActionEvent(event)
+              stillFilesImportRef.current?.click()
+            }}
+            title="Выбери сразу все seg_01.png ... seg_21.png"
+          >
+            <UploadCloud size={15} /> Кадры
+          </button>
+<button
+            type="button"
+            className="avaBoardHeaderButton avaBoardActionJson avaBoardActionStillImportZip"
+            disabled={bulkStillsImporting || !boardScenes.length}
+            onClick={(event) => {
+              stopBoardActionEvent(event)
+              stillZipImportRef.current?.click()
+            }}
+            title="Загрузи ZIP с seg_01.png ... seg_21.png"
+          >
+            <UploadCloud size={15} /> ZIP кадров
+          </button>
+        </div>
+
       </section>      {/* AVA09G_HIDE_AVA08Z_BOARD_ADD_SCENE_TOP_BUTTON */}
       {manualSceneToolsEnabled ? (
       <section className="avaBoardManualSceneTopBar">
@@ -5318,6 +5616,8 @@ async function importTimingJson(event) {
       ) : null}
 
       <input ref={importRef} className="avaHiddenInput" type="file" accept="application/json,.json" onChange={importTimingJson} />
+      <input ref={stillFilesImportRef} className="avaHiddenInput" type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={importBoardStillFilesFromInput} />
+      <input ref={stillZipImportRef} className="avaHiddenInput" type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={importBoardStillZipFromInput} />
 
       {showTimingToBoardConfirm ? (
         <div className="avaBoardTimingConfirmOverlay" role="dialog" aria-modal="true">
