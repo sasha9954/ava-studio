@@ -1,3 +1,7 @@
+/* AVA_BOARD_STOP_QUEUE_HARD_RESET_MODAL_POLISH_V114: stop queue also clears active/stuck jobs. */
+/* AVA_BOARD_AUTO_GENERATE_CONFIRM_MODAL_V111: preflight confirm modal for Board auto generate all. */
+/* AVA_BOARD_FRONTEND_AUTO_MANUAL_RUNNER_TOPBAR_V110B: move auto manual runner to top toolbar special mode area. */
+/* AVA_BOARD_FRONTEND_AUTO_MANUAL_RUNNER_V110: frontend-only auto runner over manual Board video queue. */
 /* AVA_BOARD_SELECTED_SCENE_ACCENT_MATCH_CARDS_V62: workspace hue matches scene card hue. */
 /* AVA_BOARD_SELECTED_SCENE_ACCENT_RGB_V61: robust selected scene RGB accent. */
 /* AVA_BOARD_SELECTED_SCENE_ACCENT_V60C: selected scene color accents Board workspace. */
@@ -2471,6 +2475,363 @@ function isBoardVideoDoneStatus(status) {
     })
   }
 
+
+  // AVA_BOARD_FRONTEND_AUTO_MANUAL_RUNNER_V110:
+  // Auto queue is frontend-only and reuses the same manual scene queue used by
+  // "Сделать видео". It must not create a second backend queue system.
+  function boardSceneHasVideoResultForAuto(scene) {
+    if (!scene) return false
+    return Boolean(
+      sceneMediaFieldValue(scene, 'video', 'apiPath') ||
+      sceneMediaFieldValue(scene, 'video', 'url') ||
+      scene?.video_api_path ||
+      scene?.videoApiPath ||
+      scene?.video_url ||
+      scene?.videoUrl ||
+      scene?.video_asset_id ||
+      scene?.videoAssetId ||
+      scene?.mmaudio_video_api_path ||
+      scene?.mmaudioVideoApiPath ||
+      scene?.mmaudio_video_url ||
+      scene?.mmaudioVideoUrl ||
+      scene?.mmaudio_video_asset_id ||
+      scene?.mmaudioVideoAssetId ||
+      scene?.result_video_url ||
+      scene?.resultVideoUrl ||
+      scene?.video_name ||
+      scene?.videoName ||
+      scenePreviewVideoUrl(scene)
+    )
+  }
+
+  function boardSceneAutoVideoProblems(scene) {
+    const problems = [...sceneVideoInputProblems(scene)]
+    const promptText = asText(scene?.video_prompt || scene?.videoPrompt || '')
+    if (!promptText) problems.push('нет video prompt')
+    return [...new Set(problems.filter(Boolean))]
+  }
+
+
+  // AVA_BOARD_AUTO_GENERATE_CONFIRM_MODAL_V111:
+  // Preflight plan before starting auto generation.
+  function makeAllScenesVideoQueuePlan() {
+    const currentBoard = boardRef.current || board
+    const scenes = asSceneArray(currentBoard?.scenes)
+    const queuedIds = new Set(localVideoQueueRef.current || [])
+    const ready = []
+    const valid = []
+    const busy = []
+    const invalid = []
+    const alreadyQueued = []
+
+    scenes.forEach((scene) => {
+      const sceneId = asText(scene?.id || scene?.scene_id)
+      if (!sceneId) return
+
+      if (boardSceneHasVideoResultForAuto(scene)) {
+        ready.push({ sceneId, route: scene?.route || '', label: scene?.title || scene?.label || '' })
+        return
+      }
+
+      if (isBoardVideoActiveWorkerStatus(scene)) {
+        busy.push({ sceneId, route: scene?.route || '', status: scene?.video_status || '' })
+        return
+      }
+
+      if (queuedIds.has(sceneId)) {
+        alreadyQueued.push({ sceneId, route: scene?.route || '' })
+        return
+      }
+
+      const problems = boardSceneAutoVideoProblems(scene)
+      if (problems.length) {
+        invalid.push({ sceneId, route: scene?.route || '', problems })
+        return
+      }
+
+      valid.push({ sceneId, route: scene?.route || '' })
+    })
+
+    return {
+      total: scenes.length,
+      valid,
+      ready,
+      busy,
+      alreadyQueued,
+      invalid,
+      validCount: valid.length,
+      readyCount: ready.length,
+      busyCount: busy.length,
+      alreadyQueuedCount: alreadyQueued.length,
+      invalidCount: invalid.length,
+      createdAt: new Date().toISOString(),
+    }
+  }
+
+  function openAllScenesVideoQueueConfirm(event = null) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+
+    const plan = makeAllScenesVideoQueuePlan()
+    setAutoVideoQueueConfirm({ open: true, plan })
+
+    if (!plan.validCount) {
+      setStatus(`Проверка автоочереди: новых сцен нет. Готово: ${plan.readyCount}, не хватает данных: ${plan.invalidCount}.`)
+    } else {
+      setStatus(`Проверка автоочереди: к запуску ${plan.validCount}, готово ${plan.readyCount}, не хватает данных ${plan.invalidCount}.`)
+    }
+  }
+
+  function closeAllScenesVideoQueueConfirm() {
+    setAutoVideoQueueConfirm({ open: false, plan: null })
+  }
+
+  function confirmAllScenesVideoQueueStart(event = null) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+
+    const plan = autoVideoQueueConfirm.plan || makeAllScenesVideoQueuePlan()
+    if (!plan.validCount) {
+      setStatus('Автоочередь не запущена: нет подходящих сцен.')
+      setAutoVideoQueueConfirm({ open: false, plan: null })
+      return
+    }
+
+    setAutoVideoQueueConfirm({ open: false, plan: null })
+    window.setTimeout(() => requestAllScenesVideoQueue(), 0)
+  }
+
+  function requestAllScenesVideoQueue(event = null) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+
+    const currentBoard = boardRef.current || board
+    const scenes = asSceneArray(currentBoard?.scenes)
+    if (!scenes.length) {
+      setStatus('Нет сцен для автоочереди.')
+      return
+    }
+
+    autoVideoQueueStopRef.current = false
+
+    const existingQueued = new Set(localVideoQueueRef.current || [])
+    const addedIds = []
+    const skippedReadyIds = []
+    const skippedBusyIds = []
+    const invalidItems = []
+
+    scenes.forEach((scene) => {
+      const sceneId = asText(scene?.id || scene?.scene_id)
+      if (!sceneId) return
+
+      if (boardSceneHasVideoResultForAuto(scene)) {
+        skippedReadyIds.push(sceneId)
+        return
+      }
+
+      if (isBoardVideoActiveWorkerStatus(scene)) {
+        skippedBusyIds.push(sceneId)
+        return
+      }
+
+      const problems = boardSceneAutoVideoProblems(scene)
+      if (problems.length) {
+        invalidItems.push({ sceneId, problems })
+        return
+      }
+
+      if (!existingQueued.has(sceneId)) {
+        existingQueued.add(sceneId)
+        localVideoQueueRef.current.push(sceneId)
+        addedIds.push(sceneId)
+      }
+    })
+
+    let nextBoardForSave = null
+    if (addedIds.length) {
+      setBoard((current) => {
+        const queuedNow = [...localVideoQueueRef.current]
+        const addedSet = new Set(addedIds)
+        const scenesNext = current.scenes.map((scene) => {
+          const sceneId = asText(scene?.id || scene?.scene_id)
+          if (!addedSet.has(sceneId)) return scene
+          const queuedPosition = queuedNow.indexOf(sceneId) + 1
+          return {
+            ...scene,
+            ...boardVideoQueuedRegenerateResetPatch(queuedPosition, 'auto_generate_all_remaining'),
+          }
+        })
+        nextBoardForSave = {
+          ...current,
+          scenes: scenesNext,
+          video_queue: {
+            ...(current.video_queue || {}),
+            waitingSceneIds: queuedNow,
+            updatedAt: new Date().toISOString(),
+            source: 'auto_generate_all_remaining_v110',
+          },
+          updatedAt: new Date().toISOString(),
+        }
+        return nextBoardForSave
+      })
+
+      window.setTimeout(() => {
+        if (nextBoardForSave) saveBoard(nextBoardForSave, true)
+      }, 0)
+    }
+
+    setAutoVideoQueueState({
+      active: addedIds.length > 0 || Boolean(activeBoardVideoScene(currentBoard)),
+      total: addedIds.length,
+      queued: localVideoQueueRef.current.length,
+      skippedReady: skippedReadyIds.length,
+      invalid: invalidItems.length,
+    })
+
+    const invalidText = invalidItems.length
+      ? ` · пропущено без данных: ${invalidItems.length} (${invalidItems.slice(0, 4).map((item) => `${item.sceneId}: ${item.problems.join('/')}`).join('; ')}${invalidItems.length > 4 ? '…' : ''})`
+      : ''
+
+    if (!addedIds.length) {
+      setStatus(`Автоочередь: нечего запускать. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, без данных: ${invalidItems.length}`)
+      pushBoardToast({
+        type: invalidItems.length ? 'warning' : 'info',
+        title: 'Автоочередь',
+        message: `Новых сцен для запуска нет. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, без данных: ${invalidItems.length}`,
+        dedupeKey: 'board:auto_queue:none',
+      })
+      return
+    }
+
+    setStatus(`Автоочередь: добавлено ${addedIds.length} сцен. Готовые пропущены: ${skippedReadyIds.length}${invalidText}`)
+    pushBoardToast({
+      type: 'info',
+      title: 'Автоочередь запущена',
+      message: `Добавлено: ${addedIds.length}. Готовые пропущены: ${skippedReadyIds.length}. Без данных: ${invalidItems.length}.`,
+      dedupeKey: `board:auto_queue:start:${addedIds.join(',')}`,
+    })
+
+    window.setTimeout(() => {
+      if (!boardHasActiveVideoOrStartLock(boardRef.current)) {
+        processNextQueuedBoardVideo()
+      }
+    }, 500)
+  }
+
+  function stopAllScenesVideoQueue(event = null) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+
+    autoVideoQueueStopRef.current = true
+
+    const stoppedIds = [...localVideoQueueRef.current]
+    localVideoQueueRef.current = []
+
+    const resetSceneIds = []
+    const resetJobIds = []
+    const stoppedSet = new Set(stoppedIds)
+
+    let nextBoardForSave = null
+    setBoard((current) => {
+      let changed = false
+
+      const scenesNext = current.scenes.map((scene) => {
+        const sceneId = asText(scene?.id || scene?.scene_id)
+        const videoStatus = String(scene?.video_status || '').toLowerCase()
+        const hasJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
+        const isActive = hasJob || isBoardVideoActiveWorkerStatus(scene)
+        const isQueuedWaiting = stoppedSet.has(sceneId) || videoStatus === 'queued'
+
+        if (!isActive && !isQueuedWaiting) return scene
+
+        changed = true
+        resetSceneIds.push(sceneId)
+        if (scene?.video_job_id) resetJobIds.push(String(scene.video_job_id))
+
+        const hasReadyVideo = boardSceneHasVideoResultForAuto(scene)
+        const nextMedia = { ...(scene.media || {}) }
+        if (nextMedia.video && typeof nextMedia.video === 'object') {
+          nextMedia.video = {
+            ...nextMedia.video,
+            status: hasReadyVideo ? 'ready' : '',
+            error: '',
+            jobId: '',
+            job_id: '',
+            statusEndpoint: '',
+            status_endpoint: '',
+            progress: 0,
+          }
+        }
+
+        return {
+          ...scene,
+          media: nextMedia,
+          video_status: hasReadyVideo ? 'ready' : '',
+          video_error: '',
+          video_job_id: '',
+          video_prompt_id: '',
+          video_status_endpoint: '',
+          video_queue_position: 0,
+          video_queue_source: '',
+          video_started_at: '',
+          video_updated_at: new Date().toISOString(),
+          video_progress: 0,
+        }
+      })
+
+      if (!changed && !(current.video_queue || {}).waitingSceneIds?.length) return current
+
+      nextBoardForSave = {
+        ...current,
+        scenes: scenesNext,
+        video_queue: {
+          ...(current.video_queue || {}),
+          waitingSceneIds: [],
+          updatedAt: new Date().toISOString(),
+          source: 'hard_stop_queue_and_active_jobs_v114',
+        },
+        updatedAt: new Date().toISOString(),
+      }
+      return nextBoardForSave
+    })
+
+    const resetJobSet = new Set(resetJobIds.filter(Boolean))
+    if (resetJobSet.size) {
+      try {
+        const jobs = readAvaGlobalJobs()
+        const filteredJobs = jobs.filter((job) => {
+          const jobId = String(job?.jobId || job?.job_id || job?.id || '')
+          return !resetJobSet.has(jobId)
+        })
+        writeAvaGlobalJobs(filteredJobs)
+      } catch (error) {
+        console.warn('[Board] failed to clear stopped global jobs', error)
+      }
+    }
+
+    window.setTimeout(() => {
+      if (nextBoardForSave) saveBoard(nextBoardForSave, true)
+    }, 0)
+
+    setAutoVideoQueueState({
+      active: false,
+      total: 0,
+      queued: 0,
+      skippedReady: 0,
+      invalid: 0,
+    })
+
+    const uniqueResetScenes = [...new Set(resetSceneIds.filter(Boolean))]
+    const message = `Очередь остановлена. Убрано из ожидания: ${stoppedIds.length}. Сброшено активных/зависших сцен: ${uniqueResetScenes.length}.`
+    setStatus(message)
+    pushBoardToast({
+      type: uniqueResetScenes.length ? 'warning' : 'info',
+      title: 'Очередь остановлена',
+      message,
+      dedupeKey: `board:auto_queue:hard_stop:${uniqueResetScenes.join(',')}:${stoppedIds.length}`,
+    })
+  }
+
   function boardVideoPatchFromStatus(data, endpoint, jobId) {
     const fallbackVideoUrl = boardVideoUrlFromStatus(data)
     const assetId = boardAssetIdFromRef(
@@ -2764,6 +3125,18 @@ function isBoardVideoDoneStatus(status) {
   const localVideoQueueRef = useRef([])
   const localVideoQueueStartLockRef = useRef('')
   const localVideoQueueStartLockAtRef = useRef(0)
+  const [autoVideoQueueState, setAutoVideoQueueState] = useState({
+    active: false,
+    total: 0,
+    queued: 0,
+    skippedReady: 0,
+    invalid: 0,
+  })
+  const [autoVideoQueueConfirm, setAutoVideoQueueConfirm] = useState({
+    open: false,
+    plan: null,
+  })
+  const autoVideoQueueStopRef = useRef(false)
   const activeVideoPollsRef = useRef(new Set())
   const staticAssetRepairRef = useRef(new Set())
   const seenCompletedJobIdsRef = useRef(readBoardSeenCompletedJobIds())
@@ -5575,6 +5948,37 @@ async function importTimingJson(event) {
           </button>
         </div>
         <div className="avaBoardStillImportTools" data-ava-patch="AVA_BOARD_STILL_BUTTONS_ROUTE_PROJECT_V86B">
+        <div className="avaBoardStillQueueTools" data-ava-patch="AVA_BOARD_FRONTEND_AUTO_MANUAL_RUNNER_TOPBAR_V110B">
+          <button
+            type="button"
+            className={`avaBoardHeaderButton avaBoardActionGenerateAllScenes ${autoVideoQueueState.active ? 'isActive' : ''}`}
+            onClick={(event) => {
+              stopBoardActionEvent(event)
+              openAllScenesVideoQueueConfirm(event)
+            }}
+            title="Спецрежим: поставить в очередь все сцены без готового видео. Использует ту же ручную очередь, что и кнопка Сделать видео."
+          >
+            <Sparkles size={15} /> Сгенерировать все
+          </button>
+
+          <button
+            type="button"
+            className="avaBoardHeaderButton avaBoardActionStopGenerateAllScenes"
+            onClick={(event) => {
+              stopBoardActionEvent(event)
+              stopAllScenesVideoQueue(event)
+            }}
+            title="Остановить спецрежим. Уже запущенный job не отменяется, очищается только ожидание."
+          >
+            <Pause size={15} /> Стоп очередь
+          </button>
+
+          <div className={`avaBoardStillQueueBadge ${autoVideoQueueState.active ? 'isActive' : ''}`}>
+            {autoVideoQueueState.active
+              ? `в очереди ${localVideoQueueRef.current.length}`
+              : 'спецрежим'}
+          </div>
+        </div>
 <button
             type="button"
             className="avaBoardHeaderButton avaBoardActionJson avaBoardActionStillImport"
@@ -5613,6 +6017,133 @@ async function importTimingJson(event) {
           + Сцена
         </button>
       </section>
+      ) : null}
+
+
+      {autoVideoQueueConfirm.open ? (
+        <div
+          className="avaBoardAutoQueueConfirmOverlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Проверка пакетной генерации"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeAllScenesVideoQueueConfirm()
+          }}
+        >
+          <div className="avaBoardAutoQueueConfirmCard">
+            <div className="avaBoardAutoQueueConfirmGlow" />
+            <div className="avaBoardAutoQueueConfirmHeader">
+              <div>
+                <span className="avaBoardAutoQueueEyebrow">Спецрежим Board</span>
+                <h3>Пакетная генерация сцен</h3>
+                <p>Проверили фото, video prompts, готовые видео и обязательные audio slice для lip-sync.</p>
+              </div>
+              <button
+                type="button"
+                className="avaBoardAutoQueueClose"
+                onClick={closeAllScenesVideoQueueConfirm}
+                title="Отмена"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="avaBoardAutoQueueStats">
+              <div className="avaBoardAutoQueueStat isLaunch">
+                <strong>{autoVideoQueueConfirm.plan?.validCount || 0}</strong>
+                <span>к запуску</span>
+              </div>
+              <div className="avaBoardAutoQueueStat isReady">
+                <strong>{autoVideoQueueConfirm.plan?.readyCount || 0}</strong>
+                <span>уже готово</span>
+              </div>
+              <div className="avaBoardAutoQueueStat isBusy">
+                <strong>{(autoVideoQueueConfirm.plan?.busyCount || 0) + (autoVideoQueueConfirm.plan?.alreadyQueuedCount || 0)}</strong>
+                <span>уже в работе</span>
+              </div>
+              <div className={`avaBoardAutoQueueStat ${(autoVideoQueueConfirm.plan?.invalidCount || 0) ? 'isWarn' : 'isOk'}`}>
+                <strong>{autoVideoQueueConfirm.plan?.invalidCount || 0}</strong>
+                <span>не хватает</span>
+              </div>
+            </div>
+
+            <div className="avaBoardAutoQueueDetails">
+              <div className="avaBoardAutoQueueColumn isLaunch">
+                <strong>Будут запущены</strong>
+                <div className="avaBoardAutoQueueSceneList">
+                  {(autoVideoQueueConfirm.plan?.valid || []).length ? (
+                    (autoVideoQueueConfirm.plan?.valid || []).slice(0, 16).map((item) => (
+                      <span key={`auto-valid-${item.sceneId}`}>{item.sceneId}</span>
+                    ))
+                  ) : (
+                    <em>Нет сцен для запуска</em>
+                  )}
+                  {(autoVideoQueueConfirm.plan?.valid || []).length > 16 ? (
+                    <small>+ ещё {(autoVideoQueueConfirm.plan?.valid || []).length - 16}</small>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="avaBoardAutoQueueColumn isReady">
+                <strong>Пропускаем готовые</strong>
+                <div className="avaBoardAutoQueueSceneList">
+                  {(autoVideoQueueConfirm.plan?.ready || []).length ? (
+                    (autoVideoQueueConfirm.plan?.ready || []).slice(0, 16).map((item) => (
+                      <span key={`auto-ready-${item.sceneId}`}>{item.sceneId}</span>
+                    ))
+                  ) : (
+                    <em>Готовых ещё нет</em>
+                  )}
+                  {(autoVideoQueueConfirm.plan?.ready || []).length > 16 ? (
+                    <small>+ ещё {(autoVideoQueueConfirm.plan?.ready || []).length - 16}</small>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="avaBoardAutoQueueColumn isWarn">
+                <strong>Не хватает данных</strong>
+                <div className="avaBoardAutoQueueIssueList">
+                  {(autoVideoQueueConfirm.plan?.invalid || []).length ? (
+                    (autoVideoQueueConfirm.plan?.invalid || []).slice(0, 10).map((item) => (
+                      <div key={`auto-invalid-${item.sceneId}`} className="avaBoardAutoQueueIssue">
+                        <span>{item.sceneId}</span>
+                        <small>{(item.problems || []).join(' · ')}</small>
+                      </div>
+                    ))
+                  ) : (
+                    <em>Все обязательные данные на месте</em>
+                  )}
+                  {(autoVideoQueueConfirm.plan?.invalid || []).length > 10 ? (
+                    <small>+ ещё {(autoVideoQueueConfirm.plan?.invalid || []).length - 10}</small>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="avaBoardAutoQueueFooter">
+              <div className="avaBoardAutoQueueHint">
+                Очередь использует тот же ручной механизм «Сделать видео»: одна сцена → job → ready → следующая.
+              </div>
+              <div className="avaBoardAutoQueueActions">
+                <button
+                  type="button"
+                  className="avaBoardAutoQueueCancel"
+                  onClick={closeAllScenesVideoQueueConfirm}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  className="avaBoardAutoQueueContinue"
+                  disabled={!autoVideoQueueConfirm.plan?.validCount}
+                  onClick={confirmAllScenesVideoQueueStart}
+                >
+                  Продолжить · {autoVideoQueueConfirm.plan?.validCount || 0}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <input ref={importRef} className="avaHiddenInput" type="file" accept="application/json,.json" onChange={importTimingJson} />

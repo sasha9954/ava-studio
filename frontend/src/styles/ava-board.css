@@ -4827,3 +4827,500 @@
   }
 }
 
+
+
+/* AVA_BOARD_FRONTEND_AUTO_MANUAL_RUNNER_TOPBAR_V110B */
+.avaBoardStillQueueTools {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: auto;
+  flex-wrap: wrap;
+}
+
+.avaBoardStillImportTools .avaBoardActionGenerateAllScenes,
+.avaBoardStillImportTools .avaBoardActionStopGenerateAllScenes {
+  min-width: 172px !important;
+  min-height: 38px !important;
+  padding: 8px 14px !important;
+  border-radius: 14px !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.avaBoardStillImportTools .avaBoardActionGenerateAllScenes {
+  color: #fff7ea !important;
+  border-color: rgba(255, 170, 102, 0.52) !important;
+  background:
+    radial-gradient(circle at 14% 14%, rgba(255, 247, 210, 0.22), transparent 28%),
+    linear-gradient(135deg, rgba(118, 54, 255, 0.95) 0%, rgba(255, 136, 56, 0.94) 58%, rgba(255, 201, 91, 0.92) 100%) !important;
+  box-shadow:
+    0 14px 30px rgba(255, 140, 58, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+
+.avaBoardStillImportTools .avaBoardActionGenerateAllScenes.isActive {
+  border-color: rgba(255, 229, 139, 0.74) !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 216, 116, 0.18),
+    0 16px 34px rgba(255, 144, 66, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+  filter: saturate(1.05);
+}
+
+.avaBoardStillImportTools .avaBoardActionStopGenerateAllScenes {
+  color: #f6efff !important;
+  border-color: rgba(174, 138, 255, 0.44) !important;
+  background:
+    radial-gradient(circle at 14% 14%, rgba(199, 176, 255, 0.20), transparent 28%),
+    linear-gradient(135deg, rgba(42, 32, 89, 0.98), rgba(27, 43, 86, 0.92) 54%, rgba(84, 52, 135, 0.90)) !important;
+  box-shadow:
+    0 12px 28px rgba(77, 63, 164, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10) !important;
+}
+
+.avaBoardStillImportTools .avaBoardActionGenerateAllScenes:hover,
+.avaBoardStillImportTools .avaBoardActionStopGenerateAllScenes:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.avaBoardStillQueueBadge {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(232, 241, 255, 0.88);
+  border: 1px solid rgba(124, 149, 255, 0.20);
+  background: rgba(10, 18, 38, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+.avaBoardStillQueueBadge.isActive {
+  color: #fff3d7;
+  border-color: rgba(255, 206, 110, 0.44);
+  background: linear-gradient(135deg, rgba(73, 43, 18, 0.86), rgba(46, 29, 71, 0.86));
+  box-shadow:
+    0 10px 24px rgba(255, 145, 63, 0.12),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+@media (max-width: 1180px) {
+  .avaBoardStillImportTools {
+    justify-content: flex-start;
+  }
+
+  .avaBoardStillQueueTools {
+    width: 100%;
+    margin-right: 0;
+  }
+}
+
+
+/* AVA_BOARD_AUTO_GENERATE_CONFIRM_MODAL_V111 */
+.avaBoardAutoQueueConfirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(48, 218, 255, 0.10), transparent 34%),
+    rgba(2, 6, 18, 0.70);
+  backdrop-filter: blur(10px);
+}
+
+.avaBoardAutoQueueConfirmCard {
+  position: relative;
+  width: min(980px, calc(100vw - 44px));
+  max-height: calc(100vh - 52px);
+  overflow: auto;
+  border-radius: 28px;
+  border: 1px solid rgba(146, 169, 255, 0.28);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 161, 66, 0.16), transparent 34%),
+    radial-gradient(circle at 92% 18%, rgba(74, 231, 255, 0.12), transparent 36%),
+    linear-gradient(145deg, rgba(11, 18, 38, 0.98), rgba(15, 19, 42, 0.96) 52%, rgba(32, 23, 56, 0.94));
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 24px;
+}
+
+.avaBoardAutoQueueConfirmGlow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 215, 128, 0.08),
+    inset 0 0 70px rgba(255, 141, 66, 0.06);
+}
+
+.avaBoardAutoQueueConfirmHeader {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 22px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.avaBoardAutoQueueEyebrow {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: #fff0c8;
+  font-size: 11px;
+  font-weight: 1000;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 204, 116, 0.28);
+  background: rgba(74, 43, 20, 0.52);
+}
+
+.avaBoardAutoQueueConfirmHeader h3 {
+  margin: 12px 0 7px;
+  color: #f8fbff;
+  font-size: 28px;
+  line-height: 1.05;
+}
+
+.avaBoardAutoQueueConfirmHeader p {
+  margin: 0;
+  color: rgba(215, 225, 255, 0.72);
+  font-size: 14px;
+}
+
+.avaBoardAutoQueueClose {
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  border: 1px solid rgba(160, 180, 255, 0.22);
+  background: rgba(17, 26, 52, 0.76);
+  color: rgba(239, 244, 255, 0.88);
+  font-size: 25px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.avaBoardAutoQueueStats {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.avaBoardAutoQueueStat {
+  border-radius: 20px;
+  padding: 15px;
+  border: 1px solid rgba(134, 162, 255, 0.18);
+  background: rgba(9, 16, 35, 0.66);
+  display: grid;
+  gap: 5px;
+}
+
+.avaBoardAutoQueueStat strong {
+  color: #ffffff;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.avaBoardAutoQueueStat span {
+  color: rgba(214, 224, 255, 0.68);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.avaBoardAutoQueueStat.isLaunch {
+  border-color: rgba(255, 181, 92, 0.38);
+  background: linear-gradient(135deg, rgba(94, 51, 20, 0.74), rgba(27, 24, 54, 0.74));
+}
+
+.avaBoardAutoQueueStat.isReady,
+.avaBoardAutoQueueStat.isOk {
+  border-color: rgba(80, 255, 185, 0.35);
+  background: linear-gradient(135deg, rgba(16, 80, 63, 0.62), rgba(13, 24, 41, 0.72));
+}
+
+.avaBoardAutoQueueStat.isBusy {
+  border-color: rgba(91, 206, 255, 0.32);
+  background: linear-gradient(135deg, rgba(18, 65, 96, 0.62), rgba(15, 25, 50, 0.72));
+}
+
+.avaBoardAutoQueueStat.isWarn {
+  border-color: rgba(255, 213, 105, 0.38);
+  background: linear-gradient(135deg, rgba(94, 69, 18, 0.62), rgba(37, 25, 48, 0.72));
+}
+
+.avaBoardAutoQueueDetails {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.25fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.avaBoardAutoQueueColumn {
+  min-height: 160px;
+  border-radius: 20px;
+  padding: 15px;
+  border: 1px solid rgba(132, 160, 255, 0.17);
+  background: rgba(8, 14, 30, 0.62);
+}
+
+.avaBoardAutoQueueColumn > strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #ecf4ff;
+  font-size: 14px;
+}
+
+.avaBoardAutoQueueSceneList,
+.avaBoardAutoQueueIssueList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.avaBoardAutoQueueSceneList span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  color: #eef7ff;
+  background: rgba(27, 39, 74, 0.78);
+  border: 1px solid rgba(139, 169, 255, 0.18);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.avaBoardAutoQueueColumn.isLaunch .avaBoardAutoQueueSceneList span {
+  border-color: rgba(255, 187, 93, 0.32);
+  background: rgba(91, 55, 22, 0.62);
+}
+
+.avaBoardAutoQueueColumn.isReady .avaBoardAutoQueueSceneList span {
+  border-color: rgba(82, 255, 190, 0.28);
+  background: rgba(17, 74, 61, 0.62);
+}
+
+.avaBoardAutoQueueSceneList em,
+.avaBoardAutoQueueIssueList em,
+.avaBoardAutoQueueSceneList small,
+.avaBoardAutoQueueIssueList small {
+  color: rgba(213, 223, 255, 0.60);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.avaBoardAutoQueueIssue {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 210, 100, 0.18);
+  background: rgba(65, 45, 18, 0.44);
+}
+
+.avaBoardAutoQueueIssue span {
+  color: #fff1c8;
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.avaBoardAutoQueueIssue small {
+  color: rgba(246, 229, 184, 0.76);
+  font-size: 11px;
+}
+
+.avaBoardAutoQueueFooter {
+  position: relative;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 16px;
+  border-top: 1px solid rgba(143, 169, 255, 0.14);
+}
+
+.avaBoardAutoQueueHint {
+  color: rgba(213, 224, 255, 0.62);
+  font-size: 12px;
+  max-width: 520px;
+}
+
+.avaBoardAutoQueueActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.avaBoardAutoQueueCancel,
+.avaBoardAutoQueueContinue {
+  min-height: 42px;
+  border-radius: 15px;
+  padding: 0 16px;
+  border: 1px solid rgba(143, 169, 255, 0.22);
+  cursor: pointer;
+  color: #eef4ff;
+  font-weight: 1000;
+}
+
+.avaBoardAutoQueueCancel {
+  background: rgba(20, 29, 55, 0.82);
+}
+
+.avaBoardAutoQueueContinue {
+  border-color: rgba(255, 190, 92, 0.54);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255,255,255,0.22), transparent 30%),
+    linear-gradient(135deg, #855cff, #ff8e3f 58%, #ffd36e);
+  color: #17110c;
+  box-shadow: 0 14px 32px rgba(255, 139, 63, 0.22);
+}
+
+.avaBoardAutoQueueContinue:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.35);
+}
+
+@media (max-width: 900px) {
+  .avaBoardAutoQueueStats,
+  .avaBoardAutoQueueDetails {
+    grid-template-columns: 1fr;
+  }
+
+  .avaBoardAutoQueueFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .avaBoardAutoQueueActions {
+    justify-content: flex-end;
+  }
+}
+
+
+/* AVA_BOARD_STOP_QUEUE_HARD_RESET_MODAL_POLISH_V114 */
+.avaBoardAutoQueueConfirmCard {
+  border-color: rgba(183, 151, 255, 0.34);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 172, 79, 0.18), transparent 34%),
+    radial-gradient(circle at 92% 18%, rgba(78, 235, 255, 0.14), transparent 36%),
+    linear-gradient(145deg, rgba(12, 18, 39, 0.985), rgba(17, 20, 45, 0.968) 52%, rgba(37, 25, 61, 0.955));
+}
+
+.avaBoardAutoQueueConfirmHeader h3 {
+  letter-spacing: -0.03em;
+}
+
+.avaBoardAutoQueueDetails {
+  grid-template-columns: 1.08fr 0.92fr 1.18fr;
+}
+
+.avaBoardAutoQueueColumn.isReady {
+  border-color: rgba(95, 255, 195, 0.25);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(87, 255, 198, 0.10), transparent 42%),
+    rgba(7, 22, 31, 0.62);
+}
+
+.avaBoardAutoQueueColumn.isReady > strong::before {
+  content: "✓";
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 7px;
+  border-radius: 999px;
+  color: #06271e;
+  background: linear-gradient(135deg, #5dffc5, #9cffdf);
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.avaBoardAutoQueueColumn.isReady .avaBoardAutoQueueSceneList {
+  max-height: 122px;
+  overflow: auto;
+  padding-right: 3px;
+  align-content: flex-start;
+}
+
+.avaBoardAutoQueueColumn.isReady .avaBoardAutoQueueSceneList span {
+  min-height: 24px;
+  padding: 0 10px;
+  border-color: rgba(107, 255, 198, 0.28);
+  background:
+    linear-gradient(135deg, rgba(16, 91, 75, 0.72), rgba(12, 52, 55, 0.72));
+  color: #e8fff6;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.avaBoardAutoQueueColumn.isReady .avaBoardAutoQueueSceneList small {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: rgba(219, 255, 243, 0.78);
+  border: 1px dashed rgba(111, 255, 204, 0.22);
+  background: rgba(11, 39, 38, 0.54);
+}
+
+.avaBoardAutoQueueColumn.isLaunch {
+  border-color: rgba(255, 184, 96, 0.24);
+  background:
+    radial-gradient(circle at 16% 0%, rgba(255, 170, 82, 0.10), transparent 42%),
+    rgba(32, 18, 31, 0.58);
+}
+
+.avaBoardAutoQueueColumn.isWarn {
+  border-color: rgba(255, 215, 105, 0.22);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 211, 112, 0.09), transparent 42%),
+    rgba(27, 22, 35, 0.58);
+}
+
+.avaBoardAutoQueueFooter {
+  background: rgba(6, 12, 26, 0.30);
+  border-radius: 18px;
+  padding: 14px 15px 0;
+  margin-top: 4px;
+}
+
+.avaBoardStillImportTools .avaBoardActionStopGenerateAllScenes {
+  border-color: rgba(198, 160, 255, 0.48) !important;
+}
+
+.avaBoardStillImportTools .avaBoardActionStopGenerateAllScenes:hover {
+  border-color: rgba(227, 202, 255, 0.66) !important;
+  box-shadow:
+    0 12px 28px rgba(118, 87, 204, 0.20),
+    inset 0 1px 0 rgba(255,255,255,0.12) !important;
+}
+
+@media (max-width: 900px) {
+  .avaBoardAutoQueueDetails {
+    grid-template-columns: 1fr;
+  }
+
+  .avaBoardAutoQueueColumn.isReady .avaBoardAutoQueueSceneList {
+    max-height: 160px;
+  }
+}
