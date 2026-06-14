@@ -1,3 +1,6 @@
+/* AVA_BOARD_DEFAULT_COLLAPSE_TRANSLATION_V129H: collapse Translation/Sense panel by default for direct/manual Board entry only. */
+/* AVA_BOARD_MANUAL_LIPSYNC_HIDE_SLIDER_V129G: force-hide direct/manual Board ia2v duration slider. */
+/* AVA_BOARD_MANUAL_LIPSYNC_UPLOAD_V129A: standalone Board lip-sync audio upload + F5 runtime player. */
 /* AVA_BOARD_STOP_QUEUE_HARD_RESET_MODAL_POLISH_V114: stop queue also clears active/stuck jobs. */
 /* AVA_BOARD_AUTO_GENERATE_CONFIRM_MODAL_V111: preflight confirm modal for Board auto generate all. */
 /* AVA_BOARD_FRONTEND_AUTO_MANUAL_RUNNER_TOPBAR_V110B: move auto manual runner to top toolbar special mode area. */
@@ -245,6 +248,38 @@ function canonicalizeBoardSceneMediaRefs(scene = {}) {
     apiKeys: ['last_image_api_path', 'lastImageApiPath', 'last_frame_api_path', 'lastFrameApiPath', 'end_image_api_path', 'endImageApiPath'],
     urlKeys: ['last_frame_url', 'lastFrameUrl', 'last_image_url', 'lastImageUrl', 'end_image_url', 'endImageUrl'],
     refKeys: ['last_image_api_path', 'lastImageApiPath', 'last_frame_api_path', 'lastFrameApiPath', 'last_frame_url', 'lastFrameUrl', 'end_image_api_path', 'endImageApiPath'],
+  })
+
+  // AVA_BOARD_MANUAL_LIPSYNC_F5_AUDIO_V129C:
+  // Audio slices are server assets too. Canonicalize them just like image/video refs
+  // so manual lip-sync audio survives F5 and is sent to /clip/video/start as /assets/<id>/file.
+  next = canonicalizeSceneAssetFields(next, {
+    assetKeys: [
+      'audio_slice_asset_id', 'audioSliceAssetId',
+      'audio_asset_id', 'audioAssetId',
+      'manual_lipsync_audio_asset_id', 'manualLipSyncAudioAssetId',
+    ],
+    apiKeys: [
+      'audio_slice_api_path', 'audioSliceApiPath',
+      'audio_api_path', 'audioApiPath',
+      'manual_lipsync_audio_api_path', 'manualLipSyncAudioApiPath',
+    ],
+    urlKeys: [
+      'audio_slice_url', 'audioSliceUrl',
+      'audio_url', 'audioUrl',
+      'manual_lipsync_audio_url', 'manualLipSyncAudioUrl',
+    ],
+    refKeys: [
+      'audio_slice_asset_id', 'audioSliceAssetId',
+      'audio_asset_id', 'audioAssetId',
+      'manual_lipsync_audio_asset_id', 'manualLipSyncAudioAssetId',
+      'audio_slice_api_path', 'audioSliceApiPath',
+      'audio_slice_url', 'audioSliceUrl',
+      'audio_api_path', 'audioApiPath',
+      'audio_url', 'audioUrl',
+      'manual_lipsync_audio_api_path', 'manualLipSyncAudioApiPath',
+      'manual_lipsync_audio_url', 'manualLipSyncAudioUrl',
+    ],
   })
 
   return next
@@ -1301,21 +1336,62 @@ function storyboardSceneCardInlineStyleV71(scene = {}, index = 0, boardState = {
 }
 
 function normalizeAudioSliceStatus(rawScene = {}, savedScene = {}) {
-  const status = asText(savedScene?.audio_slice_status || rawScene?.audio_slice_status || 'not_extracted')
+  const status = asText(
+    savedScene?.audio_slice_status ||
+    savedScene?.audioSliceStatus ||
+    savedScene?.manual_lipsync_audio_status ||
+    savedScene?.manualLipSyncAudioStatus ||
+    rawScene?.audio_slice_status ||
+    rawScene?.audioSliceStatus ||
+    rawScene?.manual_lipsync_audio_status ||
+    rawScene?.manualLipSyncAudioStatus ||
+    'not_extracted'
+  )
+
   const hasServerSlice = Boolean(
+    savedScene?.audio_slice_asset_id ||
+    savedScene?.audioSliceAssetId ||
+    savedScene?.audio_asset_id ||
+    savedScene?.audioAssetId ||
+    savedScene?.manual_lipsync_audio_asset_id ||
+    savedScene?.manualLipSyncAudioAssetId ||
     savedScene?.audio_slice_url ||
     savedScene?.audioSliceUrl ||
     savedScene?.audio_slice_api_path ||
     savedScene?.audioSliceApiPath ||
+    savedScene?.audio_url ||
+    savedScene?.audioUrl ||
+    savedScene?.audio_api_path ||
+    savedScene?.audioApiPath ||
+    savedScene?.manual_lipsync_audio_url ||
+    savedScene?.manualLipSyncAudioUrl ||
+    savedScene?.manual_lipsync_audio_api_path ||
+    savedScene?.manualLipSyncAudioApiPath ||
+    rawScene?.audio_slice_asset_id ||
+    rawScene?.audioSliceAssetId ||
+    rawScene?.audio_asset_id ||
+    rawScene?.audioAssetId ||
+    rawScene?.manual_lipsync_audio_asset_id ||
+    rawScene?.manualLipSyncAudioAssetId ||
     rawScene?.audio_slice_url ||
     rawScene?.audioSliceUrl ||
     rawScene?.audio_slice_api_path ||
-    rawScene?.audioSliceApiPath
+    rawScene?.audioSliceApiPath ||
+    rawScene?.audio_url ||
+    rawScene?.audioUrl ||
+    rawScene?.audio_api_path ||
+    rawScene?.audioApiPath ||
+    rawScene?.manual_lipsync_audio_url ||
+    rawScene?.manualLipSyncAudioUrl ||
+    rawScene?.manual_lipsync_audio_api_path ||
+    rawScene?.manualLipSyncAudioApiPath
   )
 
   if (status === 'ready' && !hasServerSlice) return 'not_extracted'
+  if (hasServerSlice && (!status || status === 'not_extracted' || status === 'empty')) return 'ready'
   return status || 'not_extracted'
 }
+
 
 function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
   const start = toNumber(rawScene?.start_sec ?? rawScene?.start, 0)
@@ -1418,8 +1494,70 @@ function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
     video_name: savedScene?.video_name || savedScene?.videoName || rawScene?.video_name || rawScene?.videoName || '',
     original_video_url: savedScene?.original_video_url || savedScene?.originalVideoUrl || rawScene?.original_video_url || rawScene?.originalVideoUrl || '',
     video_result: savedScene?.video_result || savedScene?.videoResult || rawScene?.video_result || rawScene?.videoResult || null,
-    audio_slice_url: savedScene?.audio_slice_url || rawScene?.audio_slice_url || '',
+    audio_slice_url: firstTextValue(
+      savedScene?.audio_slice_url,
+      savedScene?.audioSliceUrl,
+      savedScene?.audio_slice_api_path,
+      savedScene?.audioSliceApiPath,
+      savedScene?.audio_url,
+      savedScene?.audioUrl,
+      savedScene?.audio_api_path,
+      savedScene?.audioApiPath,
+      savedScene?.manual_lipsync_audio_url,
+      savedScene?.manualLipSyncAudioUrl,
+      savedScene?.manual_lipsync_audio_api_path,
+      savedScene?.manualLipSyncAudioApiPath,
+      rawScene?.audio_slice_url,
+      rawScene?.audioSliceUrl,
+      rawScene?.audio_slice_api_path,
+      rawScene?.audioSliceApiPath,
+      rawScene?.audio_url,
+      rawScene?.audioUrl,
+      rawScene?.audio_api_path,
+      rawScene?.audioApiPath,
+      rawScene?.manual_lipsync_audio_url,
+      rawScene?.manualLipSyncAudioUrl,
+      rawScene?.manual_lipsync_audio_api_path,
+      rawScene?.manualLipSyncAudioApiPath
+    ),
+    audioSliceUrl: firstTextValue(
+      savedScene?.audioSliceUrl,
+      savedScene?.audio_slice_url,
+      savedScene?.audioSliceApiPath,
+      savedScene?.audio_slice_api_path,
+      savedScene?.audioUrl,
+      savedScene?.audio_url,
+      savedScene?.audioApiPath,
+      savedScene?.audio_api_path,
+      savedScene?.manualLipSyncAudioUrl,
+      savedScene?.manual_lipsync_audio_url,
+      savedScene?.manualLipSyncAudioApiPath,
+      savedScene?.manual_lipsync_audio_api_path,
+      rawScene?.audioSliceUrl,
+      rawScene?.audio_slice_url,
+      rawScene?.audioSliceApiPath,
+      rawScene?.audio_slice_api_path,
+      rawScene?.audioUrl,
+      rawScene?.audio_url,
+      rawScene?.audioApiPath,
+      rawScene?.audio_api_path,
+      rawScene?.manualLipSyncAudioUrl,
+      rawScene?.manual_lipsync_audio_url,
+      rawScene?.manualLipSyncAudioApiPath,
+      rawScene?.manual_lipsync_audio_api_path
+    ),
+    audio_slice_api_path: firstTextValue(savedScene?.audio_slice_api_path, savedScene?.audioSliceApiPath, savedScene?.audio_slice_url, savedScene?.audioSliceUrl, rawScene?.audio_slice_api_path, rawScene?.audioSliceApiPath, rawScene?.audio_slice_url, rawScene?.audioSliceUrl),
+    audioSliceApiPath: firstTextValue(savedScene?.audioSliceApiPath, savedScene?.audio_slice_api_path, savedScene?.audioSliceUrl, savedScene?.audio_slice_url, rawScene?.audioSliceApiPath, rawScene?.audio_slice_api_path, rawScene?.audioSliceUrl, rawScene?.audio_slice_url),
+    audio_slice_asset_id: firstTextValue(savedScene?.audio_slice_asset_id, savedScene?.audioSliceAssetId, savedScene?.audio_asset_id, savedScene?.audioAssetId, savedScene?.manual_lipsync_audio_asset_id, savedScene?.manualLipSyncAudioAssetId, rawScene?.audio_slice_asset_id, rawScene?.audioSliceAssetId, rawScene?.audio_asset_id, rawScene?.audioAssetId, rawScene?.manual_lipsync_audio_asset_id, rawScene?.manualLipSyncAudioAssetId),
+    audioSliceAssetId: firstTextValue(savedScene?.audioSliceAssetId, savedScene?.audio_slice_asset_id, savedScene?.audioAssetId, savedScene?.audio_asset_id, savedScene?.manualLipSyncAudioAssetId, savedScene?.manual_lipsync_audio_asset_id, rawScene?.audioSliceAssetId, rawScene?.audio_slice_asset_id, rawScene?.audioAssetId, rawScene?.audio_asset_id, rawScene?.manualLipSyncAudioAssetId, rawScene?.manual_lipsync_audio_asset_id),
+    audio_slice_name: firstTextValue(savedScene?.audio_slice_name, savedScene?.audioSliceName, savedScene?.manual_lipsync_audio_name, savedScene?.manualLipSyncAudioName, rawScene?.audio_slice_name, rawScene?.audioSliceName, rawScene?.manual_lipsync_audio_name, rawScene?.manualLipSyncAudioName),
+    audioSliceName: firstTextValue(savedScene?.audioSliceName, savedScene?.audio_slice_name, savedScene?.manualLipSyncAudioName, savedScene?.manual_lipsync_audio_name, rawScene?.audioSliceName, rawScene?.audio_slice_name, rawScene?.manualLipSyncAudioName, rawScene?.manual_lipsync_audio_name),
+    audio_slice_duration: toNumber(savedScene?.audio_slice_duration ?? savedScene?.audioSliceDuration ?? savedScene?.manual_lipsync_audio_duration ?? savedScene?.manualLipSyncAudioDuration ?? rawScene?.audio_slice_duration ?? rawScene?.audioSliceDuration ?? rawScene?.manual_lipsync_audio_duration ?? rawScene?.manualLipSyncAudioDuration, 0),
+    audioSliceDuration: toNumber(savedScene?.audioSliceDuration ?? savedScene?.audio_slice_duration ?? savedScene?.manualLipSyncAudioDuration ?? savedScene?.manual_lipsync_audio_duration ?? rawScene?.audioSliceDuration ?? rawScene?.audio_slice_duration ?? rawScene?.manualLipSyncAudioDuration ?? rawScene?.manual_lipsync_audio_duration, 0),
     audio_slice_status: normalizeAudioSliceStatus(rawScene, savedScene),
+    audioSliceStatus: normalizeAudioSliceStatus(rawScene, savedScene),
+    audio_slice_error: firstTextValue(savedScene?.audio_slice_error, savedScene?.audioSliceError, rawScene?.audio_slice_error, rawScene?.audioSliceError),
+    audioSliceError: firstTextValue(savedScene?.audioSliceError, savedScene?.audio_slice_error, rawScene?.audioSliceError, rawScene?.audio_slice_error),
     previous_frame_status: savedScene?.previous_frame_status || rawScene?.previous_frame_status || 'empty',
   }
 }
@@ -2117,7 +2255,7 @@ function isBoardVideoDoneStatus(status) {
       ? (sceneMediaFieldValue(scene, 'last', 'apiPath') || sceneMediaFieldValue(scene, 'last', 'url') || scene?.end_image_data_url || scene?.endImageDataUrl || '')
       : ''
 
-    const audioSlice = scene?.audio_slice_url || scene?.audioSliceUrl || ''
+    const audioSlice = manualLipSyncAudioSourceV129A(scene)
 
     const problems = []
     if (!startImage) problems.push('нет первого/основного кадра')
@@ -3111,13 +3249,14 @@ function isBoardVideoDoneStatus(status) {
   const [saving, setSaving] = useState(false)
   const [bulkStillsImporting, setBulkStillsImporting] = useState(false)
   const [playback, setPlayback] = useState(null)
-  const [collapsedPanels, setCollapsedPanels] = useState({ translation: false })
+  const [collapsedPanels, setCollapsedPanels] = useState(() => ({ translation: !openedFromTiming }))
   const [audioSrc, setAudioSrc] = useState('')
   const [selectedVideoBlobUrl, setSelectedVideoBlobUrl] = useState('')
   const [selectedVideoLoadError, setSelectedVideoLoadError] = useState('')
   const [runtimeSceneMediaUrls, setRuntimeSceneMediaUrls] = useState({})
   const [mmaudioOpen, setMmaudioOpen] = useState(false)
   const audioRef = useRef(null)
+  const manualLipSyncAudioInputRefV129A = useRef(null)
   const importRef = useRef(null)
   const stillFilesImportRef = useRef(null)
   const stillZipImportRef = useRef(null)
@@ -3136,6 +3275,8 @@ function isBoardVideoDoneStatus(status) {
     open: false,
     plan: null,
   })
+  const [manualLipSyncAudioUploadingV129A, setManualLipSyncAudioUploadingV129A] = useState({})
+  const [manualLipSyncAudioPreviewUrlsV129A, setManualLipSyncAudioPreviewUrlsV129A] = useState({})
   const autoVideoQueueStopRef = useRef(false)
   const activeVideoPollsRef = useRef(new Set())
   const staticAssetRepairRef = useRef(new Set())
@@ -3181,6 +3322,26 @@ function isBoardVideoDoneStatus(status) {
   // AVA_BOARD_RETURN_TO_TIMING_V66B:
   // Show return only for Timing-imported boards. For standalone/manual boards,
   // manualSceneToolsEnabled stays true and this button remains hidden.
+
+  // AVA_BOARD_MANUAL_LIPSYNC_HIDE_SLIDER_V129F:
+  // In standalone/manual Board, ia2v is lip-sync and its duration is driven by uploaded audio.
+  // Keep Timing-imported boards unchanged: they still use locked Timing duration / audio slice flow.
+  const selectedSceneManualLipSyncRouteV129F = Boolean(
+    manualSceneToolsEnabled &&
+    selectedScene &&
+    (() => {
+      const routeText = String(selectedScene?.route || '').trim().toLowerCase()
+      return (
+        routeText === 'ia2v' ||
+        routeText === 'ia2v_lipsync' ||
+        routeText === 'lip_sync' ||
+        routeText === 'lipsync' ||
+        routeText.includes('ia2v') ||
+        Boolean(selectedScene?.lip_sync_required || selectedScene?.lipSyncRequired)
+      )
+    })()
+  )
+
   const timingReturnButtonEnabled = !manualSceneToolsEnabled
 
 
@@ -3189,6 +3350,46 @@ function isBoardVideoDoneStatus(status) {
     if (!selectedScene) return -1
     return asSceneArray(board.scenes).findIndex((scene) => scene.id === selectedScene.id)
   }, [board.scenes, selectedScene])
+
+
+  useEffect(() => {
+    // AVA_BOARD_MANUAL_LIPSYNC_UPLOAD_V129A:
+    // Audio elements cannot send Authorization headers, so after F5 we fetch the
+    // protected asset once and play it through a runtime blob URL. This blob is
+    // never saved into the board snapshot.
+    if (!manualSceneToolsEnabled || !selectedScene || !isIa2vRoute(selectedScene.route)) return undefined
+    const sceneId = manualLipSyncSceneIdV129A(selectedScene)
+    const source = manualLipSyncAudioSourceV129A(selectedScene)
+    if (!sceneId || !source) return undefined
+    if (manualLipSyncAudioPreviewUrlsV129A[sceneId]) return undefined
+
+    let cancelled = false
+    fetchProtectedBlobUrl(source)
+      .then((blobUrl) => {
+        if (cancelled || !blobUrl) return
+        setManualLipSyncAudioPreviewUrlsV129A((current) => current[sceneId] ? current : { ...current, [sceneId]: blobUrl })
+      })
+      .catch((error) => {
+        console.warn('[Board] manual lip-sync audio preview restore failed', error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    manualSceneToolsEnabled,
+    selectedScene?.id,
+    selectedScene?.scene_id,
+    selectedScene?.route,
+    selectedScene?.audio_slice_url,
+    selectedScene?.audioSliceUrl,
+    selectedScene?.audio_slice_api_path,
+    selectedScene?.audioSliceApiPath,
+    selectedScene?.audio_slice_asset_id,
+    selectedScene?.audioSliceAssetId,
+    selectedScene?.manual_lipsync_audio_url,
+    selectedScene?.manualLipSyncAudioUrl,
+  ])
 
 
   // AVA_BOARD_SELECTED_SCENE_STRIP_FOCUS_V63:
@@ -5029,7 +5230,72 @@ function boardAudioSourcePayloadForBackend() {
     return ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(String(route || ''))
   }
 
-  
+
+  // AVA_BOARD_MANUAL_LIPSYNC_UPLOAD_V129A:
+  // Standalone/manual Board gets its own per-scene audio asset upload.
+  // Timing-imported Board keeps the existing slice-audio flow unchanged.
+  function manualLipSyncSceneIdV129A(scene = {}) {
+    return asText(scene?.id || scene?.scene_id || scene?.sceneId || '')
+  }
+
+  function manualLipSyncAudioAssetIdV129A(scene = {}) {
+    return asText(
+      scene?.audio_slice_asset_id ||
+      scene?.audioSliceAssetId ||
+      scene?.manual_lipsync_audio_asset_id ||
+      scene?.manualLipSyncAudioAssetId ||
+      boardAssetIdFromRef(
+        scene?.audio_slice_api_path,
+        scene?.audioSliceApiPath,
+        scene?.audio_slice_url,
+        scene?.audioSliceUrl,
+        scene?.manual_lipsync_audio_url,
+        scene?.manualLipSyncAudioUrl
+      ) ||
+      ''
+    )
+  }
+
+  function manualLipSyncAudioSourceV129A(scene = {}) {
+    const direct = asText(
+      scene?.audio_slice_api_path ||
+      scene?.audioSliceApiPath ||
+      scene?.audio_slice_url ||
+      scene?.audioSliceUrl ||
+      scene?.manual_lipsync_audio_api_path ||
+      scene?.manualLipSyncAudioApiPath ||
+      scene?.manual_lipsync_audio_url ||
+      scene?.manualLipSyncAudioUrl ||
+      ''
+    )
+
+    // Generation must use a server asset/static ref, never a runtime blob/data URL.
+    if (direct && !direct.startsWith('blob:') && !direct.startsWith('data:')) return direct
+
+    const assetId = manualLipSyncAudioAssetIdV129A(scene)
+    return assetId ? `/assets/${assetId}/file` : ''
+  }
+
+  function manualLipSyncAudioPreviewUrlV129A(scene = {}) {
+    const sceneId = manualLipSyncSceneIdV129A(scene)
+    if (sceneId && manualLipSyncAudioPreviewUrlsV129A[sceneId]) {
+      return manualLipSyncAudioPreviewUrlsV129A[sceneId]
+    }
+    return ''
+  }
+
+  function clearMissingAudioVideoErrorPatchV129A(scene = {}) {
+    const status = String(scene?.video_status || '').toLowerCase()
+    const error = String(scene?.video_error || '')
+    if (status !== 'error') return {}
+    if (!/audio[_\s-]*slice|missing[_\s-]*audio|нет\s+audio/i.test(error)) return {}
+    return {
+      video_status: '',
+      video_error: '',
+      video_start_warnings: [],
+    }
+  }
+
   async function markAudioSlicePlanned() {
     if (!selectedScene) return
 
@@ -5101,6 +5367,160 @@ function boardAudioSourcePayloadForBackend() {
       })
       setStatus(`Не удалось изъять аудио: ${error?.message || 'unknown error'}`)
     }
+  }
+
+
+  async function uploadManualLipSyncAudioFromInputV129A(event) {
+    const file = event?.target?.files?.[0]
+    if (event?.target) event.target.value = ''
+    if (!file || !selectedScene) return
+
+    if (!manualSceneToolsEnabled || !isIa2vRoute(selectedScene.route)) {
+      setStatus('Ручная загрузка audio доступна только в обычной Board lip-sync сцене.')
+      return
+    }
+
+    const sceneId = manualLipSyncSceneIdV129A(selectedScene)
+    if (!sceneId) {
+      setStatus('Сначала выбери сцену для audio.')
+      return
+    }
+
+    const fileName = file.name || 'audio'
+    const looksAudio = /^audio\//i.test(file.type || '') || /\.(mp3|wav|m4a|aac|ogg|oga|webm|flac)$/i.test(fileName)
+    if (!looksAudio) {
+      setStatus('Нужен audio файл: mp3/wav/m4a/aac/ogg/webm/flac.')
+      return
+    }
+
+    let localPreviewUrl = ''
+    try {
+      localPreviewUrl = URL.createObjectURL(file)
+      setManualLipSyncAudioPreviewUrlsV129A((current) => {
+        const previous = current[sceneId]
+        if (previous && previous.startsWith('blob:') && previous !== localPreviewUrl) {
+          try { URL.revokeObjectURL(previous) } catch {}
+        }
+        return { ...current, [sceneId]: localPreviewUrl }
+      })
+    } catch {}
+
+    setManualLipSyncAudioUploadingV129A((current) => ({ ...current, [sceneId]: true }))
+    updateSceneAndSave(sceneId, {
+      ...clearMissingAudioVideoErrorPatchV129A(selectedScene),
+      audio_slice_status: 'uploading',
+      audioSliceStatus: 'uploading',
+      audio_slice_name: fileName,
+      audioSliceName: fileName,
+      audio_slice_error: '',
+      audioSliceError: '',
+    })
+
+    try {
+      setStatus(`Загружаем audio для lip-sync · ${sceneId}`)
+      const uploaded = await uploadMediaAsset({
+        file,
+        projectId: workspaceMode ? null : projectId,
+        kind: 'audio',
+        stage: 'board_manual_lipsync_audio',
+      })
+
+      const assetId = asText(uploaded.asset_id || uploaded.assetId || '')
+      const assetApiPath = asText(uploaded.asset_api_path || uploaded.assetApiPath || (assetId ? `/assets/${assetId}/file` : ''))
+      if (!assetId || !assetApiPath) throw new Error('audio_asset_upload_missing_asset_id')
+
+      const duration = Number(uploaded.duration_sec || uploaded.durationSec || uploaded.audio_duration_sec || 0) || 0
+      updateSceneAndSave(sceneId, {
+        ...clearMissingAudioVideoErrorPatchV129A(selectedScene),
+        audio_slice_status: 'ready',
+        audioSliceStatus: 'ready',
+        audio_slice_url: assetApiPath,
+        audioSliceUrl: assetApiPath,
+        audio_slice_api_path: assetApiPath,
+        audioSliceApiPath: assetApiPath,
+        audio_slice_asset_id: assetId,
+        audioSliceAssetId: assetId,
+        manual_lipsync_audio_url: assetApiPath,
+        manualLipSyncAudioUrl: assetApiPath,
+        manual_lipsync_audio_api_path: assetApiPath,
+        manualLipSyncAudioApiPath: assetApiPath,
+        manual_lipsync_audio_asset_id: assetId,
+        manualLipSyncAudioAssetId: assetId,
+        audio_slice_name: fileName,
+        audioSliceName: fileName,
+        manual_lipsync_audio_name: fileName,
+        manualLipSyncAudioName: fileName,
+        audio_slice_mime: uploaded.mime_type || uploaded.mimeType || file.type || 'audio/mpeg',
+        audioSliceMime: uploaded.mime_type || uploaded.mimeType || file.type || 'audio/mpeg',
+        audio_slice_duration: duration,
+        audioSliceDuration: duration,
+        manual_lipsync_audio_duration: duration,
+        manualLipSyncAudioDuration: duration,
+        audio_slice_source: 'manual_upload_asset_v129a',
+        audioSliceSource: 'manual_upload_asset_v129a',
+        audio_slice_error: '',
+        audioSliceError: '',
+      })
+      setStatus(`Audio для lip-sync готово: ${fileName}`)
+    } catch (error) {
+      console.error('[Board] manual lip-sync audio upload failed', error)
+      updateSceneAndSave(sceneId, {
+        audio_slice_status: 'error',
+        audioSliceStatus: 'error',
+        audio_slice_error: error?.message || 'manual_lipsync_audio_upload_failed',
+        audioSliceError: error?.message || 'manual_lipsync_audio_upload_failed',
+      })
+      setStatus(`Audio не загрузилось: ${error?.message || 'unknown error'}`)
+      pushBoardToast({ type: 'error', title: 'Audio lip-sync', message: error?.message || 'manual_lipsync_audio_upload_failed', sceneId })
+    } finally {
+      setManualLipSyncAudioUploadingV129A((current) => ({ ...current, [sceneId]: false }))
+    }
+  }
+
+  function clearManualLipSyncAudioV129A() {
+    if (!selectedScene) return
+    const sceneId = manualLipSyncSceneIdV129A(selectedScene)
+    if (!sceneId) return
+
+    setManualLipSyncAudioPreviewUrlsV129A((current) => {
+      const previous = current[sceneId]
+      if (previous && previous.startsWith('blob:')) {
+        try { URL.revokeObjectURL(previous) } catch {}
+      }
+      const next = { ...current }
+      delete next[sceneId]
+      return next
+    })
+
+    updateSceneAndSave(sceneId, {
+      audio_slice_status: '',
+      audioSliceStatus: '',
+      audio_slice_url: '',
+      audioSliceUrl: '',
+      audio_slice_api_path: '',
+      audioSliceApiPath: '',
+      audio_slice_asset_id: '',
+      audioSliceAssetId: '',
+      manual_lipsync_audio_url: '',
+      manualLipSyncAudioUrl: '',
+      manual_lipsync_audio_api_path: '',
+      manualLipSyncAudioApiPath: '',
+      manual_lipsync_audio_asset_id: '',
+      manualLipSyncAudioAssetId: '',
+      audio_slice_name: '',
+      audioSliceName: '',
+      manual_lipsync_audio_name: '',
+      manualLipSyncAudioName: '',
+      audio_slice_duration: 0,
+      audioSliceDuration: 0,
+      manual_lipsync_audio_duration: 0,
+      manualLipSyncAudioDuration: 0,
+      audio_slice_source: '',
+      audioSliceSource: '',
+      audio_slice_error: '',
+      audioSliceError: '',
+    })
+    setStatus(`Audio lip-sync очищено · ${sceneId}`)
   }
 
 async function takePreviousLastFrame(event = null) {
@@ -5360,7 +5780,7 @@ async function markVideoPlanned(sceneOverride = null) {
       ? (sceneMediaFieldValue(sceneToStart, 'last', 'apiPath') || sceneMediaFieldValue(sceneToStart, 'last', 'url') || '')
       : ''
 
-    const audioSliceUrl = sceneToStart.audio_slice_url || sceneToStart.audioSliceUrl || ''
+    const audioSliceUrl = manualLipSyncAudioSourceV129A(sceneToStart)
 
     const warnings = []
     if (!imageUrl) warnings.push('missing_start_image')
@@ -6520,7 +6940,7 @@ async function importTimingJson(event) {
                 </div>
               </section>
             ) : (
-              <section className="avaBoardSceneDurationPanel">
+              <section className={`avaBoardSceneDurationPanel ${manualSceneToolsEnabled && selectedScene && isIa2vRoute(selectedScene.route) ? 'isManualLipSyncHiddenV129G' : ''}`}>
                 <label className="avaBoardDurationSlider">
                   <span>Длительность сцены: <strong>{manualSceneDurationSec} сек</strong></span>
                   <input
@@ -6559,11 +6979,62 @@ async function importTimingJson(event) {
                   </button>
                 )}
 
-                {isIa2vRoute(selectedScene.route) && (
+                {isIa2vRoute(selectedScene.route) && manualSceneToolsEnabled ? (() => {
+                  const manualAudioSceneId = manualLipSyncSceneIdV129A(selectedScene)
+                  const manualAudioUploading = Boolean(manualLipSyncAudioUploadingV129A[manualAudioSceneId])
+                  const manualAudioPreviewUrl = manualLipSyncAudioPreviewUrlV129A(selectedScene)
+                  const manualAudioReady = Boolean(manualLipSyncAudioSourceV129A(selectedScene))
+                  const manualAudioDuration = Number(selectedScene.audio_slice_duration || selectedScene.audioSliceDuration || selectedScene.manual_lipsync_audio_duration || selectedScene.manualLipSyncAudioDuration || 0)
+                  const manualAudioName = selectedScene.audio_slice_name || selectedScene.audioSliceName || selectedScene.manual_lipsync_audio_name || selectedScene.manualLipSyncAudioName || 'audio'
+                  return (
+                    <div className="avaBoardManualLipSyncAudioPanelV129A">
+                      <input
+                        ref={manualLipSyncAudioInputRefV129A}
+                        type="file"
+                        accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.oga,.webm,.flac"
+                        className="avaBoardHiddenFileInputV129A"
+                        onChange={uploadManualLipSyncAudioFromInputV129A}
+                      />
+                      <button
+                        type="button"
+                        className={`avaBoardWorkflowButton isAudio ${manualAudioReady ? 'isReady' : manualAudioUploading || selectedScene.audio_slice_status === 'uploading' ? 'isBusy' : selectedScene.audio_slice_status === 'error' ? 'isError' : ''}`}
+                        title={manualAudioName}
+                        onClick={(event) => {
+                          stopBoardActionEvent(event)
+                          manualLipSyncAudioInputRefV129A.current?.click()
+                        }}
+                        disabled={manualAudioUploading}
+                      >
+                        {manualAudioUploading ? <span className="avaBoardButtonSpinnerV15" aria-hidden="true" /> : <AudioLines size={16} />}
+                        <span>{manualAudioReady ? 'Заменить аудио' : 'Загрузить аудио'}</span>
+                        <small>{manualAudioUploading ? 'загружаем asset…' : manualAudioReady ? (manualAudioDuration > 0 ? `audio готов · ${manualAudioDuration.toFixed(2)}с` : 'audio готов') : selectedScene.audio_slice_status === 'error' ? (selectedScene.audio_slice_error || 'ошибка audio') : 'для lip-sync'}</small>
+                      </button>
+                      {manualAudioReady && (
+                        <div className="avaBoardManualLipSyncPlayerV129A">
+                          {manualAudioPreviewUrl ? (
+                            <audio controls src={manualAudioPreviewUrl} preload="metadata" />
+                          ) : (
+                            <small>Плеер восстанавливает audio asset…</small>
+                          )}
+                          <button
+                            type="button"
+                            className="avaBoardMiniGhostButtonV129A"
+                            onClick={(event) => {
+                              stopBoardActionEvent(event)
+                              clearManualLipSyncAudioV129A()
+                            }}
+                          >
+                            Очистить
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })() : isIa2vRoute(selectedScene.route) ? (
                   <button
                     type="button"
                     className={`avaBoardWorkflowButton isAudio ${selectedScene.audio_slice_status === 'ready' ? 'isReady' : selectedScene.audio_slice_status === 'extracting' ? 'isBusy' : selectedScene.audio_slice_status === 'error' ? 'isError' : ''}`}
-                  title={selectedScene.audio_slice_name || selectedScene.audio_slice_url || "audio slice"}
+                    title={selectedScene.audio_slice_name || selectedScene.audio_slice_url || "audio slice"}
                     onClick={(event) => {
                       stopBoardActionEvent(event)
                       markAudioSlicePlanned()
@@ -6573,7 +7044,7 @@ async function importTimingJson(event) {
                     <span>Изъять аудио</span>
                     <small>{selectedScene.audio_slice_status === 'ready' ? ((Number(selectedScene.audio_slice_duration || 0) > 0) ? `MP3 готов · ${Number(selectedScene.audio_slice_duration || 0).toFixed(2)}с` : 'MP3 готов') : selectedScene.audio_slice_status === 'extracting' ? 'режем через backend…' : selectedScene.audio_slice_status === 'error' ? 'ошибка slice' : 'POST slice-audio'}</small>
                   </button>
-                )}
+                ) : null}
 
                 <button
                   type="button"

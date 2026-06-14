@@ -5324,3 +5324,226 @@
     max-height: 160px;
   }
 }
+/* AVA_BOARD_MANUAL_LIPSYNC_UPLOAD_V129A */
+.avaBoardHiddenFileInputV129A {
+  display: none;
+}
+
+.avaBoardManualLipSyncAudioPanelV129A {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.avaBoardManualLipSyncPlayerV129A {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.34);
+}
+
+.avaBoardManualLipSyncPlayerV129A audio {
+  width: 100%;
+  min-width: 180px;
+  height: 34px;
+}
+
+.avaBoardMiniGhostButtonV129A {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.42);
+  color: rgba(226, 232, 240, 0.92);
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.avaBoardMiniGhostButtonV129A:hover {
+  background: rgba(30, 41, 59, 0.72);
+}
+
+/* AVA_BOARD_MANUAL_LIPSYNC_LAYOUT_SKETCH_V129B
+   Manual Board lip-sync action layout only:
+   [Взять последний кадр] [Сделать видео]
+   [Загрузить/Заменить аудио]
+   [audio player]
+   Timing-imported Board keeps its own non-manual audio slice UI.
+*/
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A),
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R) {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+  width: 100% !important;
+}
+
+/* Top row: last-frame left, make-video right. */
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A) > .avaBoardWorkflowButton.isFrame,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R) > .avaBoardWorkflowButton.isFrame {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+}
+
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A) > .avaBoardActionMakeVideoV127U,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R) > .avaBoardActionMakeVideoV127U,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A) > .avaBoardWorkflowButton.isVideo,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R) > .avaBoardWorkflowButton.isVideo {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+}
+
+/* First scene may not have "Взять последний кадр"; then make video can use full row. */
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A):not(:has(> .avaBoardWorkflowButton.isFrame)) > .avaBoardActionMakeVideoV127U,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R):not(:has(> .avaBoardWorkflowButton.isFrame)) > .avaBoardActionMakeVideoV127U,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A):not(:has(> .avaBoardWorkflowButton.isFrame)) > .avaBoardWorkflowButton.isVideo,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R):not(:has(> .avaBoardWorkflowButton.isFrame)) > .avaBoardWorkflowButton.isVideo {
+  grid-column: 1 / -1 !important;
+}
+
+/* Compact shared action buttons in this one block only. */
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A) > .avaBoardWorkflowButton,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R) > .avaBoardWorkflowButton {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 54px !important;
+  min-height: 54px !important;
+  max-height: 54px !important;
+  border-radius: 20px !important;
+  padding: 0 18px !important;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 9px !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+}
+
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A) > .avaBoardWorkflowButton span,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R) > .avaBoardWorkflowButton span {
+  font-size: 13px !important;
+  font-weight: 800 !important;
+}
+
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A) > .avaBoardWorkflowButton small,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R) > .avaBoardWorkflowButton small {
+  display: none !important;
+}
+
+/* Audio upload block: full-width row under the two main buttons. */
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV129A) > .avaBoardManualLipSyncAudioPanelV129A,
+.avaBoardWorkflowButtons:has(.avaBoardManualLipSyncAudioPanelV127R) > .avaBoardManualLipSyncAudioPanelV127R {
+  grid-column: 1 / -1 !important;
+  grid-row: 2 !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  display: grid !important;
+  gap: 12px !important;
+}
+
+.avaBoardManualLipSyncAudioPanelV127R .avaBoardManualLipSyncAudioHeadV127R {
+  display: none !important;
+}
+
+.avaBoardManualLipSyncAudioPanelV127R .avaBoardManualLipSyncAudioControlsV127R,
+.avaBoardManualLipSyncAudioPanelV129A {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+/* Wide upload/replace audio button. */
+.avaBoardManualLipSyncAudioPanelV129A > .avaBoardWorkflowButton.isAudio,
+.avaBoardManualLipSyncAudioPanelV127R label.avaBoardWorkflowButton,
+.avaBoardManualLipSyncAudioPanelV127R .avaBoardWorkflowButton.isManualAudio {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 58px !important;
+  min-height: 58px !important;
+  max-height: 58px !important;
+  border-radius: 22px !important;
+  padding: 0 20px !important;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  white-space: nowrap !important;
+}
+
+.avaBoardManualLipSyncAudioPanelV129A > .avaBoardWorkflowButton.isAudio span,
+.avaBoardManualLipSyncAudioPanelV127R label.avaBoardWorkflowButton span,
+.avaBoardManualLipSyncAudioPanelV127R .avaBoardWorkflowButton.isManualAudio span {
+  font-size: 14px !important;
+  font-weight: 800 !important;
+}
+
+.avaBoardManualLipSyncAudioPanelV129A > .avaBoardWorkflowButton.isAudio small,
+.avaBoardManualLipSyncAudioPanelV127R label.avaBoardWorkflowButton small,
+.avaBoardManualLipSyncAudioPanelV127R .avaBoardWorkflowButton.isManualAudio small {
+  display: none !important;
+}
+
+/* Full-width player row, like the sketch. */
+.avaBoardManualLipSyncPlayerV129A,
+.avaBoardManualLipSyncAudioPlayerV127R {
+  width: 100% !important;
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 0 !important;
+  border: 1px solid rgba(148, 163, 184, .38) !important;
+  background: rgba(15, 23, 42, .72) !important;
+  border-radius: 22px !important;
+  padding: 10px 14px !important;
+  box-shadow: none !important;
+}
+
+.avaBoardManualLipSyncPlayerV129A audio,
+.avaBoardManualLipSyncAudioPlayerV127R audio {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 36px !important;
+}
+
+/* Keep replace audio as the visible way to fix a wrong file; clear button no longer breaks the player row. */
+.avaBoardManualLipSyncPlayerV129A .avaBoardMiniGhostButtonV129A,
+.avaBoardManualLipSyncAudioPlayerV127R button {
+  display: none !important;
+}
+
+.avaBoardManualLipSyncAudioEmptyV127R {
+  width: 100% !important;
+  border: 1px dashed rgba(148, 163, 184, .34) !important;
+  background: rgba(15, 23, 42, .46) !important;
+  border-radius: 22px !important;
+  padding: 13px 14px !important;
+  color: rgba(226, 232, 240, .72) !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  text-align: center !important;
+}
+
+/* AVA_BOARD_MANUAL_LIPSYNC_HIDE_SLIDER_V129G
+   Manual Board ia2v/lip-sync duration comes from uploaded audio, not from the scene duration slider.
+   Timing-imported Board is not affected because the JSX class is added only when manualSceneToolsEnabled is true. */
+.avaBoardSceneDurationPanel.isManualLipSyncHiddenV129G {
+  display: none !important;
+}
+
