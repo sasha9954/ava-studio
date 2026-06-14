@@ -1,3 +1,6 @@
+/* AVA_BOARD_MANUAL_SCENE_DELETE_PROGRESS_V129K: safe manual -scene delete + clear progress polish. */
+/* AVA_BOARD_MANUAL_SCENE_DELETE_REFERENCE_V129J: fix undefined -scene handler after v129i. */
+/* AVA_BOARD_MANUAL_SCENE_CLEAR_PROGRESS_V129I: manual -scene button + clear progress UI. */
 /* AVA_BOARD_DEFAULT_COLLAPSE_TRANSLATION_V129H: collapse Translation/Sense panel by default for direct/manual Board entry only. */
 /* AVA_BOARD_MANUAL_LIPSYNC_HIDE_SLIDER_V129G: force-hide direct/manual Board ia2v duration slider. */
 /* AVA_BOARD_MANUAL_LIPSYNC_UPLOAD_V129A: standalone Board lip-sync audio upload + F5 runtime player. */
@@ -4493,6 +4496,100 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
     }, 0)
   }
 
+  function deleteLastManualSceneV129K() {
+    if (!manualSceneToolsEnabled) {
+      setStatus('Удаление ручных сцен отключено: эта доска привязана к таймингу.')
+      return
+    }
+
+    const sceneIdV129K = (scene = {}, index = -1) => {
+      const raw = scene?.id || scene?.scene_id || scene?.sceneId || scene?.sceneID || scene?.uid || scene?.key || ''
+      const fallback = index >= 0 ? `seg_${String(index + 1).padStart(2, '0')}` : ''
+      return String(raw || fallback || '').trim()
+    }
+
+    const currentBoard = boardRef.current || board || {}
+    const scenes = Array.isArray(currentBoard.scenes) ? currentBoard.scenes : []
+
+    if (!scenes.length) {
+      setStatus('Нет сцен для удаления.')
+      return
+    }
+
+    const lastIndex = scenes.length - 1
+    const lastScene = scenes[lastIndex] || {}
+    const removedSceneId = sceneIdV129K(lastScene, lastIndex)
+    const isManual = (
+      lastScene?.source === 'manual_board_scene' ||
+      lastScene?.importedFrom === 'manual_board' ||
+      lastScene?.source_kind === 'manual_board_scene' ||
+      lastScene?.sourceKind === 'manual_board_scene' ||
+      lastScene?.scene_type === 'manual_board_scene' ||
+      lastScene?.sceneType === 'manual_board_scene' ||
+      lastScene?.durationSource === 'manual_board' ||
+      lastScene?.duration_source === 'manual_board' ||
+      lastScene?.manual === true ||
+      lastScene?.isManual === true
+    )
+
+    if (!isManual) {
+      setStatus('Последняя сцена не ручная. Удаление остановлено, чтобы не снести тайминг.')
+      return
+    }
+
+    const nextScenes = scenes.slice(0, -1).map((scene, index) => ({
+      ...scene,
+      index,
+    }))
+
+    const previousSelectedId = String(currentBoard.selectedSceneId || currentBoard.selected_scene_id || '').trim()
+    const previousSelectedStillExists = Boolean(previousSelectedId) && nextScenes.some((scene, index) => sceneIdV129K(scene, index) === previousSelectedId)
+    const fallbackSelectedId = sceneIdV129K(nextScenes[nextScenes.length - 1] || {}, nextScenes.length - 1)
+    const nextSelectedId = previousSelectedStillExists ? previousSelectedId : fallbackSelectedId
+
+    const nextBoard = {
+      ...currentBoard,
+      scenes: nextScenes,
+      selectedSceneId: nextSelectedId,
+      selected_scene_id: nextSelectedId,
+      updatedAt: new Date().toISOString(),
+    }
+
+    boardRef.current = nextBoard
+    setBoard(nextBoard)
+
+    try {
+      writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), nextBoard)
+    } catch {}
+
+    if (removedSceneId) {
+      try {
+        setRuntimeSceneMediaUrls((current) => {
+          const next = { ...current }
+          delete next[removedSceneId]
+          return next
+        })
+      } catch {}
+      try {
+        localVideoQueueRef.current = Array.isArray(localVideoQueueRef.current)
+          ? localVideoQueueRef.current.filter((sceneId) => String(sceneId || '').trim() !== removedSceneId)
+          : []
+      } catch {}
+      try {
+        activeVideoPollsRef.current?.delete?.(removedSceneId)
+      } catch {}
+    }
+
+    try {
+      saveBoard(nextBoard, true)
+    } catch {}
+
+    setStatus(removedSceneId ? `Удалена последняя сцена: ${removedSceneId}` : 'Удалена последняя сцена.')
+  }
+
+
+
+
   function updateSelectedSceneDuration(nextValue) {
     const safeDuration = Math.max(2, Math.min(12, toNumber(nextValue, 6)))
     setManualSceneDurationSec(safeDuration)
@@ -6433,9 +6530,20 @@ async function importTimingJson(event) {
           <span>Добавляй сцены без тайминга — они встанут в конец доски.</span>
         </div>
 
-        <button type="button" className="avaBoardAddSceneButton" onClick={createManualScene}>
-          + Сцена
-        </button>
+        <div className="avaBoardManualSceneActionsV129I">
+          <button
+            type="button"
+            className="avaBoardRemoveLastSceneButtonV129I"
+            onClick={deleteLastManualSceneV129K}
+            disabled={!manualSceneToolsEnabled || !boardScenes.length}
+            title="Удалить последнюю ручную сцену"
+          >
+            − Сцена
+          </button>
+          <button type="button" className="avaBoardAddSceneButton" onClick={createManualScene}>
+            + Сцена
+          </button>
+        </div>
       </section>
       ) : null}
 

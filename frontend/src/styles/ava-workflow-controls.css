@@ -216,3 +216,93 @@
     width: 100%;
   }
 }
+
+/* AVA_BOARD_MANUAL_SCENE_CLEAR_PROGRESS_V129I: visible destructive clear progress */
+.avaWorkflowClearScope.isClearingV129I {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  overflow: hidden;
+  color: rgba(246, 251, 255, 0.9);
+  border: 1px solid rgba(125, 228, 255, 0.18);
+  background:
+    radial-gradient(circle at 8% 50%, rgba(125, 228, 255, 0.16), transparent 34%),
+    rgba(255, 255, 255, 0.07);
+}
+
+.avaWorkflowScopePulseV129I {
+  width: 44px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(125, 228, 255, 0.18), rgba(125, 228, 255, 0.96), rgba(255, 209, 102, 0.96));
+  box-shadow: 0 0 18px rgba(125, 228, 255, 0.24);
+  animation: avaWorkflowPulseSlideV129I 0.9s ease-in-out infinite alternate;
+}
+
+.avaWorkflowDanger .avaWorkflowButtonSpinnerV129I {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border-radius: 999px;
+  border: 2px solid rgba(24, 6, 10, 0.24);
+  border-top-color: rgba(24, 6, 10, 0.82);
+  animation: avaWorkflowSpinV126Z 0.72s linear infinite;
+}
+
+@keyframes avaWorkflowPulseSlideV129I {
+  from { transform: translateX(-8px); opacity: 0.62; }
+  to { transform: translateX(6px); opacity: 1; }
+}
+
+/* AVA_BOARD_MANUAL_SCENE_DELETE_PROGRESS_V129K: full-width clear progress rail */
+.avaWorkflowClearScope.isClearingV129I {
+  position: relative;
+  min-height: 48px;
+  padding-bottom: 20px;
+  overflow: hidden;
+}
+
+.avaWorkflowClearScope.isClearingV129I::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.avaWorkflowClearScope.isClearingV129I .avaWorkflowScopePulseV129I {
+  position: absolute;
+  z-index: 2;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  width: auto;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgba(125, 228, 255, 0.10) 0%,
+    rgba(125, 228, 255, 0.92) 35%,
+    rgba(255, 209, 102, 0.96) 52%,
+    rgba(125, 228, 255, 0.18) 72%,
+    rgba(125, 228, 255, 0.10) 100%);
+  background-size: 220% 100%;
+  box-shadow: 0 0 18px rgba(125, 228, 255, 0.26);
+  animation: avaWorkflowClearRailV129K 1.05s linear infinite;
+  transform: none;
+}
+
+@keyframes avaWorkflowClearRailV129K {
+  from { background-position: 220% 0; opacity: 0.72; }
+  50% { opacity: 1; }
+  to { background-position: -120% 0; opacity: 0.72; }
+}
+

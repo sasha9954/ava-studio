@@ -1,3 +1,4 @@
+// AVA_BOARD_MANUAL_SCENE_CLEAR_PROGRESS_V129I: clearer destructive clear progress indicator.
 import { useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Trash2, X } from 'lucide-react'
@@ -145,12 +146,14 @@ export default function WorkflowStageControls({
             <p>{clearDescription}</p>
 
             {normalizedClearStages.length ? (
-              <div className="avaWorkflowClearScope">
-                Snapshot: {normalizedClearStages.join(', ')}
+              <div className={`avaWorkflowClearScope ${clearing ? 'isClearingV129I' : ''}`}>
+                <span>Snapshot: {normalizedClearStages.join(', ')}</span>
+                {clearing ? <i className="avaWorkflowScopePulseV129I" aria-hidden="true" /> : null}
               </div>
             ) : (
-              <div className="avaWorkflowClearScope">
-                Локальное состояние и связанные серверные файлы этого этапа
+              <div className={`avaWorkflowClearScope ${clearing ? 'isClearingV129I' : ''}`}>
+                <span>Локальное состояние и связанные серверные файлы этого этапа</span>
+                {clearing ? <i className="avaWorkflowScopePulseV129I" aria-hidden="true" /> : null}
               </div>
             )}
 
@@ -161,7 +164,12 @@ export default function WorkflowStageControls({
                 Отмена
               </button>
               <button type="button" className="avaWorkflowDanger" onClick={clearNow} disabled={clearing}>
-                {clearing ? 'Удаляю…' : 'Да, удалить безвозвратно'}
+                {clearing ? (
+                  <>
+                    <span className="avaWorkflowButtonSpinnerV129I" aria-hidden="true" />
+                    Очищаю…
+                  </>
+                ) : 'Да, удалить безвозвратно'}
               </button>
             </div>
           </section>

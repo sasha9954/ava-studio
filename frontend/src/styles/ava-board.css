@@ -5547,3 +5547,57 @@
   display: none !important;
 }
 
+/* AVA_BOARD_MANUAL_SCENE_CLEAR_PROGRESS_V129I: compact manual -scene button */
+.avaBoardManualSceneActionsV129I,
+.avaBoardManualSceneActionsV127A {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.avaBoardManualSceneTopBar .avaBoardRemoveLastSceneButtonV129I,
+.avaBoardManualSceneTopBar .avaBoardRemoveLastSceneButtonV127A {
+  min-width: 112px;
+  min-height: 42px;
+  border: 1px solid rgba(255, 136, 136, 0.38);
+  border-radius: 16px;
+  padding: 9px 15px;
+  color: rgba(255, 238, 242, 0.98);
+  background:
+    radial-gradient(circle at 20% 12%, rgba(255, 255, 255, 0.14), transparent 24%),
+    linear-gradient(135deg, rgba(95, 24, 53, 0.94), rgba(178, 45, 84, 0.88));
+  font-weight: 1000;
+  cursor: pointer;
+  box-shadow:
+    0 14px 30px rgba(255, 70, 112, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transition: transform 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
+}
+
+.avaBoardManualSceneTopBar .avaBoardRemoveLastSceneButtonV129I:hover:not(:disabled),
+.avaBoardManualSceneTopBar .avaBoardRemoveLastSceneButtonV127A:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
+.avaBoardManualSceneTopBar .avaBoardRemoveLastSceneButtonV129I:disabled,
+.avaBoardManualSceneTopBar .avaBoardRemoveLastSceneButtonV127A:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .avaBoardManualSceneActionsV129I,
+  .avaBoardManualSceneActionsV127A {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .avaBoardManualSceneActionsV129I button,
+  .avaBoardManualSceneActionsV127A button {
+    flex: 1 1 0;
+  }
+}
+
