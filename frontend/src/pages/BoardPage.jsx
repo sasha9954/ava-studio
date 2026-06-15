@@ -1,3 +1,7 @@
+/* AVA_BOARD_MANUAL_DURATION_REHYDRATE_SELECTED_V131S: selected scene duration slider is rehydrated from loaded board data after F5. */
+/* AVA_BOARD_SERVER_BATCH_VIDEO_EPOCH_READY_V131O: server batch video refs are bound to current image epoch and marked ready. */
+/* AVA_BOARD_SERVER_BATCH_REFRESH_UI_V131N_FIX: repairs malformed chooseBoardDataForLoad after v131n. */
+/* AVA_BOARD_SERVER_BATCH_REFRESH_UI_V131N: F5/server-snapshot refresh for backend video batch results. */
 /* AVA_BOARD_DELETE_DIRECT_REPLACE_V129U: direct replace-save image delete, no safe_merge restore. */
 /* AVA_BOARD_MEDIA_DELETE_BACKEND_GUARD_V129T: comprehensive delete/reset aliases + stale poll skip. */
 /* AVA_BOARD_DELETE_MEDIA_HARD_V129S: hard clear image/delete path, stale video poll guard, import progress. */
@@ -640,14 +644,178 @@ function boardDataForStandaloneEntry(boardData = {}) {
   return existing;
 }
 
+
+// AVA_BOARD_SERVER_BATCH_REFRESH_UI_V131N:
+// Server batch now owns "Сгенерировать все". These helpers make loaded/polled
+// server snapshots win over stale local durable cache when they contain newer
+// video/job/batch state. This fixes F5 wiping "queued/ready" badges and videos
+// not appearing in Board until manual reopen.
+const BOARD_SERVER_BATCH_ACTIVE_STATUSES_V131N = new Set(['queued', 'running', 'starting', 'preparing', 'submitting', 'queued_no_prompt_id'])
+
+function boardSceneVideoStateScoreV131N(scene = {}) {
+  if (!scene || typeof scene !== 'object') return 0
+  let score = 0
+  if (scene.video_asset_id || scene.videoAssetId || scene.video_api_path || scene.videoApiPath || scene.video_url || scene.videoUrl) score += 1000
+  if (scene.video_result || scene.videoResult) score += 300
+  if (scene.video_job_id || scene.videoJobId || scene.video_status_endpoint || scene.videoStatusEndpoint) score += 100
+  const status = String(scene.video_status || scene.videoStatus || '').toLowerCase()
+  if (['ready', 'completed', 'done', 'success'].includes(status)) score += 500
+  if (BOARD_SERVER_BATCH_ACTIVE_STATUSES_V131N.has(status)) score += 80
+  const queuePosition = Number(scene.video_queue_position || scene.videoQueuePosition || 0)
+  if (queuePosition > 0) score += 10
+  return score
+}
+
+function boardVideoStateScoreV131N(boardData = {}) {
+  const scenes = asArray(boardData?.scenes)
+  let score = scenes.reduce((sum, scene) => sum + boardSceneVideoStateScoreV131N(scene), 0)
+  const queue = boardData?.video_queue || boardData?.videoQueue || {}
+  const batch = boardData?.video_batch || boardData?.videoBatch || boardData?.board_video_batch || boardData?.boardVideoBatch || {}
+  const queueWaiting = asArray(queue.waitingSceneIds || queue.waiting_scene_ids)
+  const batchWaiting = asArray(batch.waitingSceneIds || batch.waiting_scene_ids || batch.queued || batch.queuedSceneIds || batch.queued_scene_ids)
+  score += queueWaiting.length * 15
+  score += batchWaiting.length * 15
+  const status = String(batch.status || batch.batch_status || batch.video_status || '').toLowerCase()
+  if (BOARD_SERVER_BATCH_ACTIVE_STATUSES_V131N.has(status)) score += 250
+  if (batch.batchId || batch.batch_id || batch.id) score += 80
+  return score
+}
+
+const BOARD_SERVER_VIDEO_KEYS_V131N = [
+  'video_url', 'videoUrl',
+  'video_api_path', 'videoApiPath',
+  'video_asset_id', 'videoAssetId',
+  'video_static_url', 'videoStaticUrl',
+  'video_path', 'videoPath',
+  'video_result', 'videoResult',
+  'video_status', 'videoStatus',
+  'video_error', 'videoError',
+  'video_job_id', 'videoJobId',
+  'video_status_endpoint', 'videoStatusEndpoint',
+  'video_queue_position', 'videoQueuePosition',
+  'video_queue_source', 'videoQueueSource',
+  'video_review', 'videoReview',
+  'video_review_state', 'videoReviewState',
+  'last_video_job_id', 'lastVideoJobId',
+  'result_video_url', 'resultVideoUrl',
+  'result_video_api_path', 'resultVideoApiPath',
+  'result_video_asset_id', 'resultVideoAssetId',
+]
+
+function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
+  if (!serverBoard || !Array.isArray(serverBoard.scenes)) return baseBoard || {}
+  const baseScenes = asArray(baseBoard?.scenes)
+  const serverScenes = asArray(serverBoard?.scenes)
+  if (!baseScenes.length) return serverBoard || {}
+
+  const serverById = new Map(serverScenes.map((scene) => [asText(scene?.id || scene?.scene_id), scene]))
+  let changed = false
+  const scenes = baseScenes.map((scene) => {
+    const id = asText(scene?.id || scene?.scene_id)
+    const serverScene = serverById.get(id)
+    if (!serverScene) return scene
+
+    const serverScore = boardSceneVideoStateScoreV131N(serverScene)
+    const localScore = boardSceneVideoStateScoreV131N(scene)
+    const shouldCopy = serverScore > localScore || serverScene.video_asset_id || serverScene.videoAssetId || serverScene.video_api_path || serverScene.videoApiPath || serverScene.video_url || serverScene.videoUrl
+    if (!shouldCopy) return scene
+
+    const next = { ...scene }
+    for (const key of BOARD_SERVER_VIDEO_KEYS_V131N) {
+      if (Object.prototype.hasOwnProperty.call(serverScene, key)) {
+        next[key] = serverScene[key]
+      }
+    }
+
+    // AVA_BOARD_SERVER_BATCH_VIDEO_EPOCH_READY_V131O:
+    // Backend server batch may register a fresh video asset without the frontend-only
+    // video_source_image_mutation_epoch marker. Board then treats the new video as
+    // stale and keeps the card badge at "кадр обновлён" after F5/refresh.
+    // When server snapshot brings a real video ref, bind it to the current image epoch
+    // and mark it ready so the UI can show the returned video immediately.
+    const hasServerVideoRefV131O = Boolean(
+      serverScene.video_asset_id || serverScene.videoAssetId ||
+      serverScene.video_api_path || serverScene.videoApiPath ||
+      serverScene.video_url || serverScene.videoUrl ||
+      serverScene.result_video_asset_id || serverScene.resultVideoAssetId ||
+      serverScene.result_video_api_path || serverScene.resultVideoApiPath ||
+      serverScene.result_video_url || serverScene.resultVideoUrl
+    )
+    if (hasServerVideoRefV131O) {
+      const imageEpochV131O = Number(
+        next.image_mutation_epoch ?? next.imageMutationEpoch ??
+        serverScene.image_mutation_epoch ?? serverScene.imageMutationEpoch ??
+        0
+      )
+      const hasVideoEpochV131O = Boolean(
+        next.video_source_image_mutation_epoch ||
+        next.videoSourceImageMutationEpoch ||
+        serverScene.video_source_image_mutation_epoch ||
+        serverScene.videoSourceImageMutationEpoch
+      )
+      if (imageEpochV131O > 0 && !hasVideoEpochV131O) {
+        next.video_source_image_mutation_epoch = imageEpochV131O
+        next.videoSourceImageMutationEpoch = imageEpochV131O
+      }
+      const nowV131O = new Date().toISOString()
+      if (!next.video_source_image_mutation_at && !next.videoSourceImageMutationAt) {
+        const imageAtV131O = next.image_mutation_at || next.imageMutationAt || serverScene.image_mutation_at || serverScene.imageMutationAt || nowV131O
+        next.video_source_image_mutation_at = imageAtV131O
+        next.videoSourceImageMutationAt = imageAtV131O
+      }
+      if (!['running', 'queued', 'starting', 'preparing', 'submitting'].includes(String(next.video_status || next.videoStatus || '').toLowerCase())) {
+        next.video_status = 'ready'
+        next.videoStatus = 'ready'
+      }
+      next.video_ready_at = next.video_ready_at || next.videoReadyAt || nowV131O
+      next.videoReadyAt = next.videoReadyAt || next.video_ready_at || nowV131O
+    }
+
+    changed = true
+    return canonicalizeBoardSceneMediaRefs(next)
+  })
+
+  const nextBoard = {
+    ...(baseBoard || {}),
+    scenes,
+    video_queue: serverBoard.video_queue || serverBoard.videoQueue || baseBoard.video_queue || baseBoard.videoQueue || {},
+    videoQueue: serverBoard.videoQueue || serverBoard.video_queue || baseBoard.videoQueue || baseBoard.video_queue || {},
+    video_batch: serverBoard.video_batch || serverBoard.videoBatch || serverBoard.board_video_batch || serverBoard.boardVideoBatch || baseBoard.video_batch || baseBoard.videoBatch || {},
+    videoBatch: serverBoard.videoBatch || serverBoard.video_batch || serverBoard.boardVideoBatch || serverBoard.board_video_batch || baseBoard.videoBatch || baseBoard.video_batch || {},
+    board_video_batch: serverBoard.board_video_batch || serverBoard.video_batch || serverBoard.videoBatch || baseBoard.board_video_batch || baseBoard.video_batch || {},
+    boardVideoBatch: serverBoard.boardVideoBatch || serverBoard.videoBatch || serverBoard.video_batch || baseBoard.boardVideoBatch || baseBoard.videoBatch || {},
+    updatedAt: serverBoard.updatedAt || baseBoard.updatedAt || new Date().toISOString(),
+  }
+
+  if (!changed && boardVideoStateScoreV131N(serverBoard) <= boardVideoStateScoreV131N(baseBoard)) return baseBoard || {}
+  return nextBoard
+}
+
+function boardNeedsServerBatchRefreshV131N(boardData = {}) {
+  return boardVideoStateScoreV131N(boardData) > 0
+}
+
+
 function chooseBoardDataForLoad(serverBoardData = {}, localBoardData = null) {
   if (!localBoardData || !Array.isArray(localBoardData.scenes)) return serverBoardData || {};
 
   const serverScenes = asArray(serverBoardData?.scenes);
   const localScenes = asArray(localBoardData?.scenes);
   if (!serverScenes.length && localScenes.length) return localBoardData;
-  if (localScenes.length > serverScenes.length) return localBoardData;
-  if (boardHasManualScenes(localBoardData) && !boardHasManualScenes(serverBoardData)) return localBoardData;
+  if (localScenes.length > serverScenes.length) {
+    const merged = boardMergeServerVideoStateV131N(localBoardData, serverBoardData)
+    return boardVideoStateScoreV131N(merged) > boardVideoStateScoreV131N(localBoardData) ? merged : localBoardData;
+  }
+  if (boardHasManualScenes(localBoardData) && !boardHasManualScenes(serverBoardData)) {
+    const merged = boardMergeServerVideoStateV131N(localBoardData, serverBoardData)
+    return boardVideoStateScoreV131N(merged) > boardVideoStateScoreV131N(localBoardData) ? merged : localBoardData;
+  }
+
+  const serverVideoScore = boardVideoStateScoreV131N(serverBoardData)
+  const localVideoScore = boardVideoStateScoreV131N(localBoardData)
+  if (serverVideoScore > localVideoScore) {
+    return boardMergeServerVideoStateV131N(localBoardData, serverBoardData)
+  }
 
   const serverUpdated = Date.parse(serverBoardData?.updatedAt || serverBoardData?.durableSavedAt || '') || 0;
   const localUpdated = Date.parse(localBoardData?.updatedAt || localBoardData?.durableSavedAt || '') || 0;
@@ -655,6 +823,7 @@ function chooseBoardDataForLoad(serverBoardData = {}, localBoardData = null) {
 
   return serverBoardData || {};
 }
+
 
 
 const emptyBoard = {
@@ -2844,7 +3013,25 @@ function isBoardVideoDoneStatus(status) {
     }, 900)
   }
 
+
+  function boardServerBatchIsActiveV131M(boardData = null) {
+    // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M:
+    // While backend owns "Сгенерировать все", the browser must not run the old local queue,
+    // direct /clip/video/start, or old status pollers. Otherwise Comfy gets duplicate prompts.
+    const source = boardData || boardRef.current || board || {}
+    const batch = source.video_batch || source.videoBatch || source.board_video_batch || source.boardVideoBatch || {}
+    const status = String(batch.status || batch.batch_status || batch.video_status || '').toLowerCase()
+    const windowFlag = typeof window !== 'undefined' && Boolean(window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__)
+    return windowFlag || ['queued', 'running', 'starting', 'preparing', 'submitting'].includes(status)
+  }
+
   function processNextQueuedBoardVideo() {
+    // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M: do not let old local queue start /clip/video/start while server batch is active.
+    if (boardServerBatchIsActiveV131M()) {
+      console.log('[BOARD SERVER BATCH FRONTEND GUARD V131M] block processNextQueuedBoardVideo')
+      return
+    }
+
     const currentBoard = boardRef.current
 
     // AVA_BOARD_QUEUE_HARD_SINGLE_ACTIVE_V61:
@@ -2894,6 +3081,13 @@ function isBoardVideoDoneStatus(status) {
   }
 
   function requestSceneVideoQueue() {
+    // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M: manual scene start is blocked while backend server batch is active.
+    if (boardServerBatchIsActiveV131M()) {
+      setStatus('Серверная очередь активна: локальный запуск сцены заблокирован.')
+      console.log('[BOARD SERVER BATCH FRONTEND GUARD V131M] block requestSceneVideoQueue')
+      return
+    }
+
     if (!selectedScene) return
 
     const selectedStatus = String(selectedScene.video_status || '').toLowerCase()
@@ -3072,31 +3266,274 @@ function isBoardVideoDoneStatus(status) {
     window.setTimeout(() => requestAllScenesVideoQueue(), 0)
   }
 
-  function requestAllScenesVideoQueue(event = null) {
+  async function requestAllScenesVideoQueue(event = null) {
+    // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M: once user starts "Сгенерировать все", backend owns the whole queue.
+    if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = true
+    localVideoQueueRef.current = []
+
+    // AVA_BOARD_SERVER_BATCH_ENSURE_IMAGE_ASSETS_V131C:
+    // Server-owned batch cannot use browser-only previews. Before calling the backend batch
+    // endpoint, make sure every visible start image has a durable /assets/.../file reference.
     event?.preventDefault?.()
     event?.stopPropagation?.()
 
     const currentBoard = boardRef.current || board
-    const scenes = asSceneArray(currentBoard?.scenes)
+    let scenes = asSceneArray(currentBoard?.scenes)
+
+    // AVA_BOARD_SERVER_BATCH_IDENTITY_FALLBACK_V131D:
+    // Some local BoardPage versions do not have boardSceneIdentityV127K.
+    // Server batch needs only a stable scene id, so use direct scene fields.
+    const serverBatchSceneIdV131D = (scene = {}) => String(
+      scene?.id ||
+      scene?.scene_id ||
+      scene?.sceneId ||
+      scene?.seg_id ||
+      scene?.segment_id ||
+      ''
+    ).trim()
+
     if (!scenes.length) {
-      setStatus('Нет сцен для автоочереди.')
+      setStatus('Нет сцен для серверной очереди.')
       return
     }
 
-    autoVideoQueueStopRef.current = false
+    if (workspaceMode || !projectId) {
+      setStatus('Серверная очередь доступна только внутри проекта.')
+      pushBoardToast({
+        type: 'warning',
+        title: 'Серверная очередь',
+        message: 'Открой проект, чтобы backend мог сам вести очередь генерации.',
+        dedupeKey: 'board:server_batch:no_project',
+      })
+      return
+    }
 
-    const existingQueued = new Set(localVideoQueueRef.current || [])
+    async function ensureSceneStartAsset(scene = {}) {
+      const sceneId = serverBatchSceneIdV131D(scene)
+      if (!sceneId) return scene
+
+      const existingApiPath = (
+        sceneMediaFieldValue(scene, 'image', 'apiPath') ||
+        sceneMediaFieldValue(scene, 'first', 'apiPath') ||
+        scene?.image_api_path ||
+        scene?.imageApiPath ||
+        scene?.first_image_api_path ||
+        scene?.firstImageApiPath ||
+        scene?.first_frame_api_path ||
+        scene?.firstFrameApiPath ||
+        scene?.start_image_api_path ||
+        scene?.startImageApiPath ||
+        ''
+      )
+
+      if (existingApiPath && !String(existingApiPath).startsWith('blob:') && !String(existingApiPath).startsWith('data:')) {
+        return scene
+      }
+
+      const runtimeMedia = runtimeSceneMediaUrls?.[sceneId] || {}
+      const previewRef = asText(
+        runtimeMedia.image ||
+        runtimeMedia.first ||
+        sceneMediaFieldValue(scene, 'image', 'url') ||
+        sceneMediaFieldValue(scene, 'first', 'url') ||
+        scene?.image_data_url ||
+        scene?.imageDataUrl ||
+        scene?.start_image_data_url ||
+        scene?.startImageDataUrl ||
+        scene?.first_image_data_url ||
+        scene?.firstImageDataUrl ||
+        scene?.first_frame_data_url ||
+        scene?.firstFrameDataUrl ||
+        ''
+      )
+
+      const existingAssetId = asText(
+        scene?.image_asset_id ||
+        scene?.imageAssetId ||
+        scene?.first_image_asset_id ||
+        scene?.firstImageAssetId ||
+        scene?.first_frame_asset_id ||
+        scene?.firstFrameAssetId ||
+        scene?.start_image_asset_id ||
+        scene?.startImageAssetId ||
+        ''
+      )
+      if (existingAssetId) {
+        const assetApiPath = boardCanonicalAssetApiPath(existingAssetId)
+        return {
+          ...scene,
+          image_asset_id: existingAssetId,
+          imageAssetId: existingAssetId,
+          image_api_path: assetApiPath,
+          imageApiPath: assetApiPath,
+          image_url: assetApiPath,
+          imageUrl: assetApiPath,
+          first_image_asset_id: existingAssetId,
+          firstImageAssetId: existingAssetId,
+          first_image_api_path: assetApiPath,
+          firstImageApiPath: assetApiPath,
+          first_frame_api_path: assetApiPath,
+          firstFrameApiPath: assetApiPath,
+          first_frame_url: assetApiPath,
+          firstFrameUrl: assetApiPath,
+          start_image_asset_id: existingAssetId,
+          startImageAssetId: existingAssetId,
+          start_image_api_path: assetApiPath,
+          startImageApiPath: assetApiPath,
+          start_image_url: assetApiPath,
+          startImageUrl: assetApiPath,
+          image_status: 'ready',
+          imageStatus: 'ready',
+        }
+      }
+
+      if (!previewRef) return scene
+
+      let uploaded = null
+      const fileName = asText(scene?.image_name || scene?.imageName || scene?.first_frame_name || scene?.firstFrameName || scene?.start_image_name || scene?.startImageName || `${sceneId}.png`)
+
+      if (previewRef.startsWith('/assets/') || previewRef.startsWith('/api/assets/') || previewRef.includes('/assets/')) {
+        const assetId = boardAssetIdFromRef(previewRef)
+        if (assetId) {
+          const assetApiPath = boardCanonicalAssetApiPath(assetId)
+          return {
+            ...scene,
+            image_asset_id: assetId,
+            imageAssetId: assetId,
+            image_api_path: assetApiPath,
+            imageApiPath: assetApiPath,
+            image_url: assetApiPath,
+            imageUrl: assetApiPath,
+            first_image_asset_id: assetId,
+            firstImageAssetId: assetId,
+            first_image_api_path: assetApiPath,
+            firstImageApiPath: assetApiPath,
+            first_frame_api_path: assetApiPath,
+            firstFrameApiPath: assetApiPath,
+            first_frame_url: assetApiPath,
+            firstFrameUrl: assetApiPath,
+            start_image_asset_id: assetId,
+            startImageAssetId: assetId,
+            start_image_api_path: assetApiPath,
+            startImageApiPath: assetApiPath,
+            start_image_url: assetApiPath,
+            startImageUrl: assetApiPath,
+            image_status: 'ready',
+            imageStatus: 'ready',
+          }
+        }
+      }
+
+      if (previewRef.startsWith('data:') || previewRef.startsWith('blob:')) {
+        const response = await fetch(previewRef)
+        const blob = await response.blob()
+        const file = new File([blob], fileName, { type: blob.type || 'image/png' })
+        uploaded = await uploadMediaAsset({
+          file,
+          projectId: workspaceMode ? null : projectId,
+          kind: 'image',
+          stage: 'board_images',
+        })
+      } else {
+        const staticUrl = boardStaticMediaUrl(previewRef)
+        if (staticUrl) {
+          uploaded = await registerStaticMediaAsset({
+            url: staticUrl,
+            projectId: workspaceMode ? null : projectId,
+            kind: 'image',
+            stage: 'board_images',
+            originalName: fileName,
+            sceneId,
+          })
+        }
+      }
+
+      const assetId = uploaded?.asset_id || uploaded?.assetId || ''
+      const assetApiPath = uploaded?.asset_api_path || uploaded?.assetApiPath || (assetId ? boardCanonicalAssetApiPath(assetId) : '')
+      if (!assetId || !assetApiPath) return scene
+
+      return {
+        ...scene,
+        image_asset_id: assetId,
+        imageAssetId: assetId,
+        image_api_path: assetApiPath,
+        imageApiPath: assetApiPath,
+        image_url: assetApiPath,
+        imageUrl: assetApiPath,
+        first_image_asset_id: assetId,
+        firstImageAssetId: assetId,
+        first_image_api_path: assetApiPath,
+        firstImageApiPath: assetApiPath,
+        first_frame_asset_id: assetId,
+        firstFrameAssetId: assetId,
+        first_frame_api_path: assetApiPath,
+        firstFrameApiPath: assetApiPath,
+        first_frame_url: assetApiPath,
+        firstFrameUrl: assetApiPath,
+        start_image_asset_id: assetId,
+        startImageAssetId: assetId,
+        start_image_api_path: assetApiPath,
+        startImageApiPath: assetApiPath,
+        start_image_url: assetApiPath,
+        startImageUrl: assetApiPath,
+        image_status: 'ready',
+        imageStatus: 'ready',
+        image_name: fileName,
+        imageName: fileName,
+        first_frame_name: fileName,
+        firstFrameName: fileName,
+        start_image_name: fileName,
+        startImageName: fileName,
+        server_batch_image_asset_ready_v131c: true,
+      }
+    }
+
+    try {
+      setStatus('Серверная очередь: проверяю, что кадры сохранены в assets...')
+      const ensuredScenes = []
+      let changedImages = false
+      for (const scene of scenes) {
+        const ensured = await ensureSceneStartAsset(scene)
+        ensuredScenes.push(ensured)
+        if (JSON.stringify(ensured) !== JSON.stringify(scene)) changedImages = true
+      }
+
+      if (changedImages) {
+        const ensuredById = new Map(ensuredScenes.map((scene) => [serverBatchSceneIdV131D(scene), scene]))
+        const nextBoard = {
+          ...currentBoard,
+          scenes: scenes.map((scene) => ensuredById.get(serverBatchSceneIdV131D(scene)) || scene),
+          updatedAt: new Date().toISOString(),
+        }
+        scenes = asSceneArray(nextBoard.scenes)
+        boardRef.current = nextBoard
+        setBoard(nextBoard)
+        await saveBoard(nextBoard, true)
+      } else {
+        scenes = ensuredScenes
+      }
+    } catch (error) {
+      console.warn('[BOARD SERVER BATCH] ensure image assets failed', error)
+      setStatus(`Не удалось подготовить кадры для сервера: ${error?.message || error}`)
+      pushBoardToast({
+        type: 'error',
+        title: 'Кадры не подготовлены',
+        message: error?.message || String(error),
+        dedupeKey: `board:server_batch:ensure_images:${Date.now()}`,
+      })
+      return
+    }
+
     const addedIds = []
     const skippedReadyIds = []
     const skippedBusyIds = []
     const invalidItems = []
 
     scenes.forEach((scene) => {
-      const sceneId = asText(scene?.id || scene?.scene_id)
+      const sceneId = serverBatchSceneIdV131D(scene)
       if (!sceneId) return
 
-      const markedBadForReview = boardSceneHasBadVideoReview(scene)
-      if (boardSceneHasVideoResultForAuto(scene) && !markedBadForReview) {
+      if (boardSceneHasVideoResultForAuto(scene)) {
         skippedReadyIds.push(sceneId)
         return
       }
@@ -3112,54 +3549,7 @@ function isBoardVideoDoneStatus(status) {
         return
       }
 
-      if (!existingQueued.has(sceneId)) {
-        existingQueued.add(sceneId)
-        localVideoQueueRef.current.push(sceneId)
-        addedIds.push(sceneId)
-      }
-    })
-
-    let nextBoardForSave = null
-    if (addedIds.length) {
-      setBoard((current) => {
-        const queuedNow = [...localVideoQueueRef.current]
-        const addedSet = new Set(addedIds)
-        const scenesNext = current.scenes.map((scene) => {
-          const sceneId = asText(scene?.id || scene?.scene_id)
-          if (!addedSet.has(sceneId)) return scene
-          const queuedPosition = queuedNow.indexOf(sceneId) + 1
-          const markedBadForReview = boardSceneHasBadVideoReview(scene)
-          return {
-            ...scene,
-            ...boardVideoQueuedRegenerateResetPatch(queuedPosition, markedBadForReview ? 'auto_regenerate_bad_review' : 'auto_generate_all_remaining'),
-            ...boardVideoReviewRegenerateFlagPatch(markedBadForReview, markedBadForReview ? 'auto_regenerate_bad_review' : ''),
-          }
-        })
-        nextBoardForSave = {
-          ...current,
-          scenes: scenesNext,
-          video_queue: {
-            ...(current.video_queue || {}),
-            waitingSceneIds: queuedNow,
-            updatedAt: new Date().toISOString(),
-            source: 'auto_generate_all_remaining_v110',
-          },
-          updatedAt: new Date().toISOString(),
-        }
-        return nextBoardForSave
-      })
-
-      window.setTimeout(() => {
-        if (nextBoardForSave) saveBoard(nextBoardForSave, true)
-      }, 0)
-    }
-
-    setAutoVideoQueueState({
-      active: addedIds.length > 0 || Boolean(activeBoardVideoScene(currentBoard)),
-      total: addedIds.length,
-      queued: localVideoQueueRef.current.length,
-      skippedReady: skippedReadyIds.length,
-      invalid: invalidItems.length,
+      addedIds.push(sceneId)
     })
 
     const invalidText = invalidItems.length
@@ -3167,36 +3557,108 @@ function isBoardVideoDoneStatus(status) {
       : ''
 
     if (!addedIds.length) {
-      setStatus(`Автоочередь: нечего запускать. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, без данных: ${invalidItems.length}`)
+      setStatus(`Серверная очередь: новых сцен нет. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, без данных: ${invalidItems.length}`)
       pushBoardToast({
         type: invalidItems.length ? 'warning' : 'info',
-        title: 'Автоочередь',
+        title: 'Серверная очередь',
         message: `Новых сцен для запуска нет. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, без данных: ${invalidItems.length}`,
-        dedupeKey: 'board:auto_queue:none',
+        dedupeKey: 'board:server_batch:none',
       })
       return
     }
 
-    setStatus(`Автоочередь: добавлено ${addedIds.length} сцен. Готовые пропущены: ${skippedReadyIds.length}${invalidText}`)
-    pushBoardToast({
-      type: 'info',
-      title: 'Автоочередь запущена',
-      message: `Добавлено: ${addedIds.length}. Готовые пропущены: ${skippedReadyIds.length}. Без данных: ${invalidItems.length}.`,
-      dedupeKey: `board:auto_queue:start:${addedIds.join(',')}`,
+    // AVA_BOARD_SERVER_BATCH_NO_LEGACY_FRONT_QUEUE_V131I: server owns the batch; keep old browser queue stopped.
+    autoVideoQueueStopRef.current = true
+    localVideoQueueRef.current = []
+    setAutoVideoQueueState({
+      active: false,
+      serverBatchActive: true,
+      total: addedIds.length,
+      queued: addedIds.length,
+      skippedReady: skippedReadyIds.length,
+      invalid: invalidItems.length,
     })
 
-    window.setTimeout(() => {
-      if (!boardHasActiveVideoOrStartLock(boardRef.current)) {
-        processNextQueuedBoardVideo()
+    setStatus(`Серверная очередь: отправляю ${addedIds.length} сцен на backend...${invalidText}`)
+
+    apiRequest(`/projects/${projectId}/board/video-batch/start`, {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: 'overwrite',
+        overwrite: true,
+        source: 'board_page_server_batch_v131e',
+        sceneIds: addedIds,
+        scene_ids: addedIds,
+        scenes,
+      }),
+    }).then((result) => {
+      const nextBoard = result?.board || result?.snapshot?.data || null
+      if (nextBoard && Array.isArray(nextBoard.scenes)) {
+        boardRef.current = nextBoard
+        setBoard(nextBoard)
       }
-    }, 500)
+
+      setAutoVideoQueueState({
+        active: false,
+        serverBatchActive: true,
+        total: addedIds.length,
+        queued: addedIds.length,
+        skippedReady: skippedReadyIds.length,
+        invalid: invalidItems.length,
+      })
+
+      setStatus(`Серверная очередь запущена: ${addedIds.length} сцен · batch ${result?.batchId || result?.batch_id || ''}`)
+      pushBoardToast({
+        type: 'info',
+        title: 'Серверная очередь запущена',
+        message: `Backend сам сделает ${addedIds.length} сцен. Можно уходить из Board.`,
+        dedupeKey: `board:server_batch:start:${result?.batchId || Date.now()}`,
+      })
+
+      if (typeof notifyTelegramBoardEvent === 'function') {
+
+      notifyTelegramBoardEvent({
+        event: 'server_video_batch_start',
+        counts: {
+          queued: addedIds.length,
+          skippedReady: skippedReadyIds.length,
+          invalid: invalidItems.length,
+          sceneIds: addedIds,
+          batchId: result?.batchId || result?.batch_id || '',
+        },
+      })
+
+      }
+    }).catch((error) => {
+      console.warn('[BOARD SERVER BATCH] start failed', error)
+      // server_batch_start_failed_release_v131m
+      if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = false
+      setAutoVideoQueueState((current) => ({ ...(current || {}), active: false }))
+      setStatus(`Серверная очередь не запущена: ${error?.message || error}`)
+      pushBoardToast({
+        type: 'error',
+        title: 'Серверная очередь не запущена',
+        message: error?.message || String(error),
+        dedupeKey: `board:server_batch:error:${Date.now()}`,
+      })
+    })
   }
 
     function stopAllScenesVideoQueue(event = null) {
+    // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M: user stop releases frontend guard too.
+    if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = false
+
     event?.preventDefault?.()
     event?.stopPropagation?.()
 
     autoVideoQueueStopRef.current = true
+
+    if (!workspaceMode && projectId) {
+      apiRequest(`/projects/${projectId}/board/video-batch/stop`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'user_stop_from_board_page_v131b' }),
+      }).catch((error) => console.warn('[BOARD SERVER BATCH] stop failed', error))
+    }
 
     const currentBoard = boardRef.current || board
     const waitingIds = boardMergeWaitingSceneIdsV57B(currentBoard, localVideoQueueRef.current || [])
@@ -3453,6 +3915,12 @@ function isBoardVideoDoneStatus(status) {
     const maxAttempts = 240
 
     const tick = async () => {
+      // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M: old browser pollers must stop while backend server batch is active.
+      if (boardServerBatchIsActiveV131M()) {
+        console.log('[BOARD SERVER BATCH FRONTEND GUARD V131M] stop old poll')
+        finishPoll()
+        return
+      }
       attempt += 1
       try {
         const prePollCurrentV129R = boardVideoPollStillCurrentV129P(sceneId, normalizedEndpoint, jobId)
@@ -3708,6 +4176,30 @@ function isBoardVideoDoneStatus(status) {
   }, [board.scenes, board.selectedSceneId])
 
   const selectedSceneDurationLock = useMemo(() => boardSceneTimingLockInfo(selectedScene), [selectedScene])
+
+  useEffect(() => {
+    // AVA_BOARD_MANUAL_DURATION_REHYDRATE_SELECTED_V131S:
+    // After F5/direct Board entry the duration slider state starts from its React default (6)
+    // until the user clicks a scene. Rehydrate it from the selected scene whenever Board data
+    // is loaded/refreshed so the visible slider matches the currently selected scene.
+    if (!selectedScene || selectedSceneDurationLock.locked) return
+    const nextDuration = Number(durationOf(selectedScene) || selectedScene.duration_sec || selectedScene.duration || 0)
+    if (!Number.isFinite(nextDuration) || nextDuration <= 0) return
+    const safeDuration = Math.max(2, Math.min(12, Number(nextDuration.toFixed(3))))
+    setManualSceneDurationSec((current) => (
+      Math.abs(Number(current || 0) - safeDuration) > 0.001 ? safeDuration : current
+    ))
+  }, [
+    selectedScene?.id,
+    selectedScene?.scene_id,
+    selectedScene?.start,
+    selectedScene?.start_sec,
+    selectedScene?.end,
+    selectedScene?.end_sec,
+    selectedScene?.duration,
+    selectedScene?.duration_sec,
+    selectedSceneDurationLock.locked,
+  ])
   const selectedSceneTimingLocked = Boolean(selectedSceneDurationLock.locked)
   const selectedSceneLockedDurationLabel = formatBoardDurationShort(selectedSceneDurationLock.duration)
   // AVA_BOARD_HIDE_MANUAL_ADD_FOR_TIMING_V65B:
@@ -3973,6 +4465,45 @@ function isBoardVideoDoneStatus(status) {
     load()
     return () => { active = false }
   }, [projectId, workspaceMode])
+
+  useEffect(() => {
+    // AVA_BOARD_SERVER_BATCH_REFRESH_UI_V131N:
+    // While backend server batch is rendering, Board must periodically pull the project
+    // snapshot and merge server video refs/statuses into React state. This is deliberately
+    // independent from old /clip/video/status browser pollers.
+    if (workspaceMode || !projectId) return undefined
+
+    let cancelled = false
+    let timer = null
+
+    const tick = async () => {
+      try {
+        const serverBoardData = await loadStage(projectId, STAGE)
+        if (cancelled || !serverBoardData || !Array.isArray(serverBoardData.scenes)) return
+        const serverScore = boardVideoStateScoreV131N(serverBoardData)
+        const localScore = boardVideoStateScoreV131N(boardRef.current || board)
+        if (serverScore > localScore || boardNeedsServerBatchRefreshV131N(serverBoardData)) {
+          setBoard((current) => {
+            const merged = boardMergeServerVideoStateV131N(current, serverBoardData)
+            if (merged === current) return current
+            writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), merged)
+            return merged
+          })
+        }
+      } catch (error) {
+        console.warn('[BOARD SERVER BATCH REFRESH V131N] failed', error)
+      } finally {
+        if (!cancelled) timer = window.setTimeout(tick, 3500)
+      }
+    }
+
+    timer = window.setTimeout(tick, 1800)
+    return () => {
+      cancelled = true
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [projectId, workspaceMode, loadStage])
+
 
   useEffect(() => {
     let cancelled = false
@@ -7088,6 +7619,12 @@ async function takePreviousLastFrame(event = null) {
   }
 
 async function markVideoPlanned(sceneOverride = null) {
+    // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M: this function sends /clip/video/start; backend batch must be the only starter.
+    if (boardServerBatchIsActiveV131M()) {
+      console.log('[BOARD SERVER BATCH FRONTEND GUARD V131M] block markVideoPlanned')
+      return
+    }
+
     // AVA_BOARD_PERSIST_MARK_VIDEO_PLANNED_V51: persist start/job/error scene patches so F5 can restore active regeneration.
 
     const sceneToStart = sceneOverride || selectedScene

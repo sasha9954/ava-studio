@@ -1,3 +1,5 @@
+# AVA_BOARD_SERVER_BATCH_REMOVE_TIME_NAME_V131L: direct time.<member> references are replaced with __import__('time').<member>.
+# AVA_BOARD_SERVER_BATCH_SAFE_TIME_SLEEP_V131K: replaced __import__('time').sleep with __import__('time').sleep to avoid stale import scope issues.
 from __future__ import annotations
 
 import base64
@@ -25,6 +27,7 @@ from app.api.deps import ensure_project_access, get_current_user
 from app.core.security import make_id, now_iso
 from app.core.config import get_settings
 from app.core.storage import store
+from app.core.snapshot_media import media_refs_summary, preserve_media_refs
 
 
 router = APIRouter(tags=["ltx-board"])
@@ -38,6 +41,8 @@ BACKEND_ENV_FILE = BACKEND_DIR / ".env"
 BOARD_VIDEO_JOBS: dict[str, dict[str, Any]] = {}
 BOARD_MMAUDIO_JOBS: dict[str, dict[str, Any]] = {}
 BOARD_ASSEMBLY_JOBS: dict[str, dict[str, Any]] = {}
+BOARD_VIDEO_BATCHES: dict[str, dict[str, Any]] = {}
+BOARD_VIDEO_BATCH_THREADS: dict[str, threading.Thread] = {}
 
 
 # AVA_BOARD_VIDEO_JOB_PERSIST_V62:
@@ -280,6 +285,18 @@ class VideoStartIn(BaseModel):
     scene_end_sec: float | None = None
     sceneEndSec: float | None = None
 
+
+class BoardVideoBatchStartIn(BaseModel):
+    mode: str | None = "missing"
+    source: str | None = None
+    scene_ids: list[str] | None = None
+    sceneIds: list[str] | None = None
+    scenes: list[dict[str, Any]] | None = None
+    overwrite: bool | None = False
+
+
+class BoardVideoBatchStopIn(BaseModel):
+    reason: str | None = None
 
 class MmaudioStartIn(BaseModel):
     scene_id: str | None = None
@@ -1946,6 +1963,690 @@ def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[st
 
 
     return {"ok": True, **job}
+
+
+
+
+
+# AVA_BOARD_SERVER_VIDEO_BATCH_QUEUE_V131A:
+# Backend-owned Board video queue. The browser/Board page only submits the batch and displays
+# the project snapshot. The backend starts scenes, polls Comfy jobs, writes completed videos
+# into the Board snapshot, and starts the next scene even when the user is not on Board.
+def _board_batch_now() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _board_batch_scene_id(scene: dict[str, Any]) -> str:
+    return str(scene.get("id") or scene.get("scene_id") or scene.get("sceneId") or "").strip()
+
+
+def _board_batch_field(scene: dict[str, Any], *names: str, default: Any = None) -> Any:
+    for name in names:
+        value = scene.get(name)
+        if value is not None and value != "":
+            return value
+    return default
+
+
+def _board_batch_media_ref(scene: dict[str, Any], names: list[str]) -> str:
+    for name in names:
+        value = str(scene.get(name) or "").strip()
+        if value and not value.startswith("blob:") and not value.startswith("data:"):
+            return value
+    return ""
+
+
+
+# AVA_BOARD_SERVER_BATCH_ASSET_ID_REFS_V131C:
+# Server batch accepts restored scenes that have only asset ids but missed apiPath aliases.
+def _board_batch_asset_api_path_from_ids(scene: dict[str, Any], names: list[str]) -> str:
+    for name in names:
+        value = str(scene.get(name) or "").strip()
+        if value.startswith("asset_"):
+            return f"/assets/{value}/file"
+    return ""
+
+def _board_batch_scene_image_ref(scene: dict[str, Any]) -> str:
+    ref = _board_batch_media_ref(scene, [
+        "image_api_path", "imageApiPath", "image_url", "imageUrl",
+        "first_image_api_path", "firstImageApiPath", "first_frame_api_path", "firstFrameApiPath",
+        "first_image_url", "firstImageUrl", "first_frame_url", "firstFrameUrl",
+        "start_image_api_path", "startImageApiPath", "start_image_url", "startImageUrl",
+    ])
+    return ref or _board_batch_asset_api_path_from_ids(scene, [
+        "image_asset_id", "imageAssetId",
+        "first_image_asset_id", "firstImageAssetId",
+        "first_frame_asset_id", "firstFrameAssetId",
+        "start_image_asset_id", "startImageAssetId",
+    ])
+
+
+def _board_batch_scene_end_image_ref(scene: dict[str, Any]) -> str:
+    ref = _board_batch_media_ref(scene, [
+        "last_image_api_path", "lastImageApiPath", "last_frame_api_path", "lastFrameApiPath",
+        "last_image_url", "lastImageUrl", "last_frame_url", "lastFrameUrl",
+        "end_image_api_path", "endImageApiPath", "end_image_url", "endImageUrl",
+    ])
+    return ref or _board_batch_asset_api_path_from_ids(scene, [
+        "last_image_asset_id", "lastImageAssetId",
+        "last_frame_asset_id", "lastFrameAssetId",
+        "end_image_asset_id", "endImageAssetId",
+    ])
+
+
+def _board_batch_scene_audio_ref(scene: dict[str, Any]) -> str:
+    return _board_batch_media_ref(scene, [
+        "audio_slice_api_path", "audioSliceApiPath", "audio_slice_url", "audioSliceUrl",
+        "manual_lipsync_audio_api_path", "manualLipSyncAudioApiPath",
+        "manual_lipsync_audio_url", "manualLipSyncAudioUrl",
+        "audio_api_path", "audioApiPath", "audio_url", "audioUrl",
+    ])
+
+
+def _board_batch_prompt(scene: dict[str, Any]) -> str:
+    return str(
+        scene.get("video_prompt") or scene.get("videoPrompt") or
+        scene.get("positive_prompt") or scene.get("positivePrompt") or
+        scene.get("prompt") or ""
+    ).strip()
+
+
+def _board_batch_negative_prompt(scene: dict[str, Any]) -> str:
+    return str(scene.get("negative_prompt") or scene.get("negativePrompt") or "text, watermark, logo, distorted face, extra limbs, low quality").strip()
+
+
+def _board_batch_duration(scene: dict[str, Any]) -> float:
+    for key in ["target_duration_sec", "targetDurationSec", "duration_sec", "durationSec"]:
+        try:
+            value = float(scene.get(key) or 0)
+            if value > 0:
+                return value
+        except Exception:
+            pass
+    try:
+        start = float(scene.get("start") or scene.get("scene_start_sec") or scene.get("sceneStartSec") or 0)
+        end = float(scene.get("end") or scene.get("scene_end_sec") or scene.get("sceneEndSec") or 0)
+        if end > start:
+            return max(0.05, end - start)
+    except Exception:
+        pass
+    return 4.0
+
+
+def _board_batch_size(scene: dict[str, Any]) -> tuple[int, int]:
+    try:
+        width = int(scene.get("width") or scene.get("video_width") or scene.get("videoWidth") or 0)
+        height = int(scene.get("height") or scene.get("video_height") or scene.get("videoHeight") or 0)
+        if width > 0 and height > 0:
+            return width, height
+    except Exception:
+        pass
+    fmt = str(scene.get("format") or scene.get("aspect_ratio") or scene.get("aspectRatio") or "").lower()
+    if "9:16" in fmt or "vertical" in fmt:
+        return 720, 1280
+    return 1280, 720
+
+
+# AVA_BOARD_SERVER_BATCH_IGNORE_IMAGE_AS_VIDEO_V131E:
+# Old Board snapshots sometimes copied the still image asset into video_url/video_api_path while
+# video_status stayed empty. That made the server batch think the scene already had a video and
+# return "nothing_to_queue". Treat video refs that equal the start-image ref as NOT a completed video.
+def _board_batch_scene_has_video(scene: dict[str, Any]) -> bool:
+    status = str(scene.get("video_status") or scene.get("videoStatus") or "").strip().lower()
+    active_or_empty = {
+        "",
+        "empty",
+        "queued",
+        "starting",
+        "preparing",
+        "submitting",
+        "running",
+        "queued_no_prompt_id",
+        "generating",
+        "processing",
+    }
+    if status in active_or_empty:
+        return False
+
+    video_ref = _board_batch_media_ref(scene, [
+        "video_api_path", "videoApiPath",
+        "video_url", "videoUrl",
+        "result_video_api_path", "resultVideoApiPath",
+        "result_video_url", "resultVideoUrl",
+    ])
+    video_asset_id = str(
+        scene.get("video_asset_id") or scene.get("videoAssetId") or
+        scene.get("result_video_asset_id") or scene.get("resultVideoAssetId") or ""
+    ).strip()
+
+    if not video_ref and not video_asset_id and not scene.get("video_name") and not scene.get("videoName"):
+        return False
+
+    image_ref = _board_batch_scene_image_ref(scene)
+    image_asset_id = str(
+        scene.get("image_asset_id") or scene.get("imageAssetId") or
+        scene.get("first_image_asset_id") or scene.get("firstImageAssetId") or
+        scene.get("first_frame_asset_id") or scene.get("firstFrameAssetId") or
+        scene.get("start_image_asset_id") or scene.get("startImageAssetId") or ""
+    ).strip()
+
+    if video_ref and image_ref and str(video_ref).strip() == str(image_ref).strip():
+        return False
+    if video_asset_id and image_asset_id and video_asset_id == image_asset_id:
+        return False
+
+    ready_markers = {"ready", "completed", "complete", "done", "success", "succeeded", "finished"}
+    if status in ready_markers:
+        return True
+    if scene.get("video_ready_at") or scene.get("videoReadyAt"):
+        return True
+    if video_asset_id and not image_asset_id:
+        return True
+    if video_ref and image_ref and str(video_ref).strip() != str(image_ref).strip():
+        return True
+
+    return False
+
+def _board_batch_input_problems(scene: dict[str, Any]) -> list[str]:
+    route = str(scene.get("route") or "i2v").strip() or "i2v"
+    problems: list[str] = []
+    if not _board_batch_prompt(scene):
+        problems.append("нет video prompt")
+    if route not in {"txt2img", "text_to_image", "image_from_text"} and not _board_batch_scene_image_ref(scene):
+        problems.append("нет первого/основного кадра")
+    if route.startswith("first_last") and not _board_batch_scene_end_image_ref(scene):
+        problems.append("нет последнего кадра")
+    if route in {"ia2v", "ia2v_lipsync", "lip_sync"} and not _board_batch_scene_audio_ref(scene):
+        problems.append("нет audio slice для lip-sync")
+    return problems
+
+
+def _board_batch_video_payload(scene: dict[str, Any], project_id: str) -> VideoStartIn:
+    route = str(scene.get("route") or "i2v").strip() or "i2v"
+    width, height = _board_batch_size(scene)
+    duration = _board_batch_duration(scene)
+    start_ref = _board_batch_scene_image_ref(scene)
+    end_ref = _board_batch_scene_end_image_ref(scene)
+    audio_ref = _board_batch_scene_audio_ref(scene)
+    fmt = str(scene.get("format") or scene.get("aspect_ratio") or scene.get("aspectRatio") or ("9:16" if height > width else "16:9")).strip()
+    return VideoStartIn(
+        scene_id=_board_batch_scene_id(scene),
+        sceneId=_board_batch_scene_id(scene),
+        project_id=project_id,
+        projectId=project_id,
+        route=route,
+        workflow_key=str(scene.get("workflow_key") or scene.get("workflowKey") or WORKFLOW_ROUTE_MAP.get(route) or ""),
+        workflowKey=str(scene.get("workflow_key") or scene.get("workflowKey") or WORKFLOW_ROUTE_MAP.get(route) or ""),
+        image_url=start_ref,
+        imageUrl=start_ref,
+        start_image_url=start_ref,
+        startImageUrl=start_ref,
+        end_image_url=end_ref,
+        endImageUrl=end_ref,
+        audio_slice_url=audio_ref,
+        audioSliceUrl=audio_ref,
+        video_prompt=_board_batch_prompt(scene),
+        videoPrompt=_board_batch_prompt(scene),
+        positive_prompt=_board_batch_prompt(scene),
+        positivePrompt=_board_batch_prompt(scene),
+        negative_prompt=_board_batch_negative_prompt(scene),
+        negativePrompt=_board_batch_negative_prompt(scene),
+        width=width,
+        height=height,
+        format=fmt,
+        duration_sec=duration,
+        durationSec=duration,
+        target_duration_sec=duration,
+        targetDurationSec=duration,
+        scene_start_sec=float(scene.get("start") or scene.get("scene_start_sec") or scene.get("sceneStartSec") or 0),
+        sceneStartSec=float(scene.get("start") or scene.get("scene_start_sec") or scene.get("sceneStartSec") or 0),
+        scene_end_sec=float(scene.get("end") or scene.get("scene_end_sec") or scene.get("sceneEndSec") or duration),
+        sceneEndSec=float(scene.get("end") or scene.get("scene_end_sec") or scene.get("sceneEndSec") or duration),
+    )
+
+
+def _board_batch_read_snapshot(project_id: str) -> dict[str, Any]:
+    db = store.get_db()
+    snapshot = (db.get("snapshots") or {}).get(project_id, {}).get("board") or {}
+    data = snapshot.get("data") if isinstance(snapshot, dict) else {}
+    return copy.deepcopy(data or {})
+
+
+def _board_batch_save_snapshot(project_id: str, board_data: dict[str, Any], client_version: str = "board-server-video-batch-v131a") -> None:
+    def op(db: dict[str, Any]) -> dict[str, Any]:
+        db.setdefault("snapshots", {}).setdefault(project_id, {})
+        current = db["snapshots"].get(project_id, {}).get("board") or {}
+        current_data = current.get("data") if isinstance(current, dict) else {}
+        incoming, preserved = preserve_media_refs(current_data or {}, copy.deepcopy(board_data or {}))
+        print("[BOARD SERVER BATCH SNAPSHOT]", {
+            "project_id": project_id,
+            **media_refs_summary(incoming),
+            "preservedAssetRefsCount": preserved,
+            "client_version": client_version,
+        }, flush=True)
+        snapshot = {
+            "stage": "board",
+            "data": incoming,
+            "client_version": client_version,
+            "updated_at": now_iso(),
+        }
+        db["snapshots"][project_id]["board"] = snapshot
+        if project_id in db.get("projects", {}):
+            db["projects"][project_id]["updated_at"] = now_iso()
+        return snapshot
+    store.update(op)
+
+
+def _board_batch_result_patch(data: dict[str, Any], job: dict[str, Any]) -> dict[str, Any]:
+    asset_id = str(data.get("videoAssetId") or data.get("video_asset_id") or data.get("assetId") or data.get("asset_id") or "").strip()
+    api_path = str(data.get("videoApiPath") or data.get("video_api_path") or data.get("resultVideoApiPath") or data.get("result_video_api_path") or "").strip()
+    url = api_path or str(data.get("videoUrl") or data.get("video_url") or data.get("resultVideoUrl") or data.get("result_video_url") or "").strip()
+    return {
+        "video_url": url,
+        "videoUrl": url,
+        "video_api_path": api_path or url,
+        "videoApiPath": api_path or url,
+        "video_asset_id": asset_id,
+        "videoAssetId": asset_id,
+        "video_name": data.get("videoName") or data.get("video_name") or "video.mp4",
+        "videoName": data.get("videoName") or data.get("video_name") or "video.mp4",
+        "original_video_url": data.get("originalVideoUrl") or data.get("original_video_url") or "",
+        "originalVideoUrl": data.get("originalVideoUrl") or data.get("original_video_url") or "",
+        "video_status": "ready",
+        "videoStatus": "ready",
+        "video_job_id": "",
+        "videoJobId": "",
+        "video_status_endpoint": "",
+        "videoStatusEndpoint": "",
+        "video_queue_position": 0,
+        "videoQueuePosition": 0,
+        "video_error": "",
+        "videoError": "",
+        "video_result": data or None,
+        "videoResult": data or None,
+        "video_ready_at": _board_batch_now(),
+        "videoReadyAt": _board_batch_now(),
+        "server_batch_job_id": job.get("jobId") or job.get("job_id") or "",
+        "serverBatchJobId": job.get("jobId") or job.get("job_id") or "",
+    }
+
+
+def _board_batch_job_active_patch(start_data: dict[str, Any], scene: dict[str, Any]) -> dict[str, Any]:
+    job_id = str(start_data.get("jobId") or start_data.get("job_id") or "").strip()
+    endpoint = start_data.get("statusEndpoint") or (f"/api/clip/video/status/{job_id}" if job_id else "")
+    return {
+        "video_status": start_data.get("status") or "queued",
+        "videoStatus": start_data.get("status") or "queued",
+        "video_job_id": job_id,
+        "videoJobId": job_id,
+        "video_status_endpoint": endpoint,
+        "videoStatusEndpoint": endpoint,
+        "video_queue_position": 0,
+        "videoQueuePosition": 0,
+        "video_error": "",
+        "videoError": "",
+        "video_result": start_data or None,
+        "videoResult": start_data or None,
+        "video_url": "",
+        "videoUrl": "",
+        "video_api_path": "",
+        "videoApiPath": "",
+        "video_asset_id": "",
+        "videoAssetId": "",
+    }
+
+
+def _board_batch_error_patch(status: str, detail: Any = None) -> dict[str, Any]:
+    return {
+        "video_status": status or "error",
+        "videoStatus": status or "error",
+        "video_error": str(detail or status or "error"),
+        "videoError": str(detail or status or "error"),
+        "video_job_id": "",
+        "videoJobId": "",
+        "video_status_endpoint": "",
+        "videoStatusEndpoint": "",
+        "video_queue_position": 0,
+        "videoQueuePosition": 0,
+    }
+
+
+def _board_batch_update_scene(project_id: str, scene_id: str, patch: dict[str, Any], batch_patch: dict[str, Any] | None = None) -> dict[str, Any]:
+    board_data = _board_batch_read_snapshot(project_id)
+    scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
+    next_scenes = []
+    changed = False
+    for scene in scenes:
+        if _board_batch_scene_id(scene) == scene_id:
+            next_scenes.append({**scene, **patch})
+            changed = True
+        else:
+            next_scenes.append(scene)
+    if changed:
+        board_data["scenes"] = next_scenes
+    if batch_patch is not None:
+        current_batch = board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict) else {}
+        board_data["board_video_batch"] = {**current_batch, **batch_patch, "updatedAt": _board_batch_now(), "updated_at": _board_batch_now()}
+        q_patch = batch_patch.get("video_queue") if isinstance(batch_patch.get("video_queue"), dict) else None
+        if q_patch is not None:
+            current_queue = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
+            board_data["video_queue"] = {**current_queue, **q_patch, "updatedAt": _board_batch_now()}
+    board_data["updatedAt"] = _board_batch_now()
+    _board_batch_save_snapshot(project_id, board_data)
+    return board_data
+
+
+def _board_batch_start_scene(project_id: str, batch_id: str, scene: dict[str, Any], user: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    scene_id = _board_batch_scene_id(scene)
+    payload = _board_batch_video_payload(scene, project_id)
+    start_data = start_video(payload, user)
+    job_id = str(start_data.get("jobId") or start_data.get("job_id") or "").strip()
+    if not job_id:
+        raise RuntimeError("video_start_returned_no_job_id")
+    _board_batch_update_scene(project_id, scene_id, _board_batch_job_active_patch(start_data, scene), {
+        "batch_id": batch_id,
+        "batchId": batch_id,
+        "status": "running",
+        "active_scene_id": scene_id,
+        "activeSceneId": scene_id,
+        "active_job_id": job_id,
+        "activeJobId": job_id,
+        "active_status_endpoint": start_data.get("statusEndpoint") or f"/api/clip/video/status/{job_id}",
+        "activeStatusEndpoint": start_data.get("statusEndpoint") or f"/api/clip/video/status/{job_id}",
+        "video_queue": {
+            "activeSceneId": scene_id,
+            "activeJobId": job_id,
+            "activeStatusEndpoint": start_data.get("statusEndpoint") or f"/api/clip/video/status/{job_id}",
+        },
+    })
+    print("[BOARD SERVER BATCH START SCENE]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id, "job_id": job_id}, flush=True)
+    return job_id, start_data
+
+
+def _board_batch_wait_job(project_id: str, batch_id: str, scene_id: str, job_id: str, user: dict[str, Any], max_attempts: int = 240) -> tuple[str, dict[str, Any]]:
+    for attempt in range(1, max_attempts + 1):
+        batch = BOARD_VIDEO_BATCHES.get(batch_id) or {}
+        if batch.get("cancelRequested"):
+            return "canceled", {"status": "canceled"}
+        try:
+            data = video_status(job_id, user)
+        except Exception as exc:
+            data = {"status": "poll_error", "error": str(exc)}
+        status_text = str(data.get("status") or data.get("video_status") or "running").lower()
+        video_url = data.get("videoUrl") or data.get("video_url") or data.get("videoApiPath") or data.get("video_api_path")
+        if video_url:
+            return "ready", data
+        if status_text.startswith("blocked_") or status_text in {"error", "failed", "queued_no_prompt_id", "output_download_failed", "output_finalize_failed", "completed_without_video_output", "not_found"}:
+            return "error", data
+        __import__('time').sleep(3.5)
+    return "timeout", {"status": "timeout", "error": "board server batch polling timeout"}
+
+
+def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, Any]) -> None:
+    # AVA_BOARD_SERVER_BATCH_LOCAL_TIME_IMPORT_V131H: runner uses __import__('time').sleep while polling Comfy/job status.
+    import time
+    batch = BOARD_VIDEO_BATCHES.get(batch_id)
+    if not isinstance(batch, dict):
+        return
+    try:
+        waiting_ids = list(batch.get("waitingSceneIds") or [])
+        completed: list[str] = []
+        failed: list[str] = []
+        while waiting_ids:
+            if batch.get("cancelRequested"):
+                batch["status"] = "canceled"
+                break
+            scene_id = waiting_ids.pop(0)
+            board_data = _board_batch_read_snapshot(project_id)
+            scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
+            scene = next((item for item in scenes if _board_batch_scene_id(item) == scene_id), None)
+            if not scene:
+                failed.append(scene_id)
+                continue
+            problems = _board_batch_input_problems(scene)
+            if problems:
+                failed.append(scene_id)
+                _board_batch_update_scene(project_id, scene_id, _board_batch_error_patch("error", ", ".join(problems)), {
+                    "batch_id": batch_id,
+                    "status": "running" if waiting_ids else "finished_with_errors",
+                    "failed_scene_ids": failed,
+                    "failedSceneIds": failed,
+                    "waiting_scene_ids": waiting_ids,
+                    "waitingSceneIds": waiting_ids,
+                    "video_queue": {"waitingSceneIds": waiting_ids, "waiting_scene_ids": waiting_ids},
+                })
+                continue
+
+            batch.update({"activeSceneId": scene_id, "waitingSceneIds": waiting_ids, "updatedAt": _board_batch_now()})
+            job_id = ""
+            try:
+                job_id, start_data = _board_batch_start_scene(project_id, batch_id, scene, user)
+                batch.update({"activeJobId": job_id, "activeStatusEndpoint": start_data.get("statusEndpoint") or f"/api/clip/video/status/{job_id}"})
+            except Exception as exc:
+                failed.append(scene_id)
+                _board_batch_update_scene(project_id, scene_id, _board_batch_error_patch("error", exc), {
+                    "batch_id": batch_id,
+                    "status": "running" if waiting_ids else "finished_with_errors",
+                    "failed_scene_ids": failed,
+                    "failedSceneIds": failed,
+                    "waiting_scene_ids": waiting_ids,
+                    "waitingSceneIds": waiting_ids,
+                    "video_queue": {"waitingSceneIds": waiting_ids, "waiting_scene_ids": waiting_ids},
+                })
+                continue
+
+            result_status, result_data = _board_batch_wait_job(project_id, batch_id, scene_id, job_id, user)
+            if result_status == "ready":
+                completed.append(scene_id)
+                _board_batch_update_scene(project_id, scene_id, _board_batch_result_patch(result_data, {"jobId": job_id, "projectId": project_id}), {
+                    "batch_id": batch_id,
+                    "batchId": batch_id,
+                    "status": "running" if waiting_ids else "finished",
+                    "active_scene_id": "" if not waiting_ids else scene_id,
+                    "activeSceneId": "" if not waiting_ids else scene_id,
+                    "active_job_id": "",
+                    "activeJobId": "",
+                    "active_status_endpoint": "",
+                    "activeStatusEndpoint": "",
+                    "completed_scene_ids": completed,
+                    "completedSceneIds": completed,
+                    "failed_scene_ids": failed,
+                    "failedSceneIds": failed,
+                    "waiting_scene_ids": waiting_ids,
+                    "waitingSceneIds": waiting_ids,
+                    "video_queue": {
+                        "activeSceneId": "",
+                        "activeJobId": "",
+                        "activeStatusEndpoint": "",
+                        "waitingSceneIds": waiting_ids,
+                        "waiting_scene_ids": waiting_ids,
+                    },
+                })
+                print("[BOARD SERVER BATCH READY SCENE]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id, "job_id": job_id, "waiting": len(waiting_ids)}, flush=True)
+            else:
+                failed.append(scene_id)
+                _board_batch_update_scene(project_id, scene_id, _board_batch_error_patch(result_data.get("status") or result_status, result_data.get("error") or result_data.get("detail") or result_status), {
+                    "batch_id": batch_id,
+                    "status": "running" if waiting_ids else "finished_with_errors",
+                    "completed_scene_ids": completed,
+                    "completedSceneIds": completed,
+                    "failed_scene_ids": failed,
+                    "failedSceneIds": failed,
+                    "waiting_scene_ids": waiting_ids,
+                    "waitingSceneIds": waiting_ids,
+                    "video_queue": {"waitingSceneIds": waiting_ids, "waiting_scene_ids": waiting_ids},
+                })
+
+        final_status = "canceled" if batch.get("cancelRequested") else ("finished_with_errors" if failed else "finished")
+        batch.update({
+            "status": final_status,
+            "activeSceneId": "",
+            "activeJobId": "",
+            "activeStatusEndpoint": "",
+            "waitingSceneIds": [],
+            "completedSceneIds": completed,
+            "failedSceneIds": failed,
+            "finishedAt": _board_batch_now(),
+            "updatedAt": _board_batch_now(),
+        })
+        board_data = _board_batch_read_snapshot(project_id)
+        current_batch = board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict) else {}
+        board_data["board_video_batch"] = {**current_batch, **batch, "updatedAt": _board_batch_now(), "updated_at": _board_batch_now()}
+        current_queue = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
+        board_data["video_queue"] = {**current_queue, "activeSceneId": "", "activeJobId": "", "activeStatusEndpoint": "", "waitingSceneIds": [], "waiting_scene_ids": [], "source": "server_batch_finished_v131a", "updatedAt": _board_batch_now()}
+        board_data["updatedAt"] = _board_batch_now()
+        _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-finished-v131a")
+        print("[BOARD SERVER BATCH FINISHED]", {"project_id": project_id, "batch_id": batch_id, "status": final_status, "completed": completed, "failed": failed}, flush=True)
+    except Exception as exc:
+        batch["status"] = "error"
+        batch["error"] = str(exc)
+        batch["updatedAt"] = _board_batch_now()
+        print("[BOARD SERVER BATCH ERROR]", {"project_id": project_id, "batch_id": batch_id, "error": str(exc)}, flush=True)
+
+
+@router.post("/projects/{project_id}/board/video-batch/start")
+def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    project = ensure_project_access(project_id, user)
+    mode = str(payload.mode or "missing").strip().lower()
+    incoming_scenes = payload.scenes if isinstance(payload.scenes, list) else None
+    board_data = _board_batch_read_snapshot(project_id)
+    if incoming_scenes is not None:
+        board_data["scenes"] = copy.deepcopy(incoming_scenes)
+    scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
+    if not scenes:
+        raise HTTPException(status_code=400, detail="Board snapshot has no scenes")
+
+    requested_ids = [str(item or "").strip() for item in ((payload.scene_ids or payload.sceneIds or []) if (payload.scene_ids or payload.sceneIds) else [])]
+    requested_set = set(requested_ids)
+    waiting_ids: list[str] = []
+    invalid: list[dict[str, Any]] = []
+    for scene in scenes:
+        scene_id = _board_batch_scene_id(scene)
+        if not scene_id:
+            continue
+        if requested_set and scene_id not in requested_set:
+            continue
+        if mode in {"missing", "remaining"} and _board_batch_scene_has_video(scene):
+            continue
+        problems = _board_batch_input_problems(scene)
+        if problems:
+            invalid.append({"sceneId": scene_id, "problems": problems})
+            continue
+        waiting_ids.append(scene_id)
+
+    if not waiting_ids:
+        return {"ok": False, "status": "nothing_to_queue", "queued": [], "invalid": invalid}
+
+    batch_id = f"boardbatch_{uuid4().hex[:14]}"
+    now_value = _board_batch_now()
+    waiting_set = set(waiting_ids)
+    scenes_next: list[dict[str, Any]] = []
+    for scene in scenes:
+        scene_id = _board_batch_scene_id(scene)
+        if scene_id in waiting_set:
+            pos = waiting_ids.index(scene_id) + 1
+            scenes_next.append({
+                **scene,
+                "video_status": "queued",
+                "videoStatus": "queued",
+                "video_error": "",
+                "videoError": "",
+                "video_job_id": "",
+                "videoJobId": "",
+                "video_status_endpoint": "",
+                "videoStatusEndpoint": "",
+                "video_queue_position": pos,
+                "videoQueuePosition": pos,
+                "video_queue_source": "server_batch_v131a",
+                "videoQueueSource": "server_batch_v131a",
+                "video_url": "",
+                "videoUrl": "",
+                "video_api_path": "",
+                "videoApiPath": "",
+                "video_asset_id": "",
+                "videoAssetId": "",
+                "video_name": "",
+                "videoName": "",
+                "video_result": None,
+                "videoResult": None,
+            })
+        else:
+            scenes_next.append(scene)
+
+    batch = {
+        "batch_id": batch_id,
+        "batchId": batch_id,
+        "project_id": project_id,
+        "projectId": project_id,
+        "status": "queued",
+        "source": payload.source or "server_board_video_batch_v131a",
+        "mode": mode,
+        "waitingSceneIds": waiting_ids,
+        "waiting_scene_ids": waiting_ids,
+        "completedSceneIds": [],
+        "completed_scene_ids": [],
+        "failedSceneIds": [],
+        "failed_scene_ids": [],
+        "invalid": invalid,
+        "activeSceneId": "",
+        "activeJobId": "",
+        "activeStatusEndpoint": "",
+        "createdAt": now_value,
+        "updatedAt": now_value,
+    }
+    BOARD_VIDEO_BATCHES[batch_id] = batch
+
+    board_data["scenes"] = scenes_next
+    board_data["board_video_batch"] = batch
+    board_data["video_queue"] = {
+        **(board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}),
+        "activeSceneId": "",
+        "activeJobId": "",
+        "activeStatusEndpoint": "",
+        "waitingSceneIds": waiting_ids,
+        "waiting_scene_ids": waiting_ids,
+        "source": "server_batch_v131a",
+        "updatedAt": now_value,
+    }
+    board_data["updatedAt"] = now_value
+    _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-start-v131a")
+
+    # AVA_BOARD_SERVER_BATCH_LOCAL_THREADING_IMPORT_V131G: keep the import local so this endpoint works even if module-level imports were not patched.
+    import threading
+    thread = threading.Thread(target=_board_video_batch_runner, args=(project_id, batch_id, dict(user)), daemon=True)
+    BOARD_VIDEO_BATCH_THREADS[batch_id] = thread
+    thread.start()
+
+    return {"ok": True, "status": "queued", "batchId": batch_id, "batch_id": batch_id, "queued": waiting_ids, "invalid": invalid, "board": board_data}
+
+
+@router.get("/projects/{project_id}/board/video-batch/status")
+def board_video_batch_status(project_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    ensure_project_access(project_id, user)
+    board_data = _board_batch_read_snapshot(project_id)
+    batch = board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict) else {}
+    batch_id = str(batch.get("batchId") or batch.get("batch_id") or "").strip()
+    live = BOARD_VIDEO_BATCHES.get(batch_id) if batch_id else None
+    return {"ok": True, "batch": live or batch or {}, "board_video_batch": live or batch or {}}
+
+
+@router.post("/projects/{project_id}/board/video-batch/stop")
+def stop_board_video_batch(project_id: str, payload: BoardVideoBatchStopIn | None = None, user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    ensure_project_access(project_id, user)
+    board_data = _board_batch_read_snapshot(project_id)
+    batch = board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict) else {}
+    batch_id = str(batch.get("batchId") or batch.get("batch_id") or "").strip()
+    live = BOARD_VIDEO_BATCHES.get(batch_id) if batch_id else None
+    if live is not None:
+        live["cancelRequested"] = True
+        live["status"] = "cancel_requested"
+        live["updatedAt"] = _board_batch_now()
+    board_data["board_video_batch"] = {**batch, "status": "cancel_requested", "cancelRequested": True, "stopReason": getattr(payload, "reason", None) if payload else "", "updatedAt": _board_batch_now()}
+    q = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
+    board_data["video_queue"] = {**q, "waitingSceneIds": [], "waiting_scene_ids": [], "source": "server_batch_stop_v131a", "updatedAt": _board_batch_now()}
+    board_data["updatedAt"] = _board_batch_now()
+    _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-stop-v131a")
+    return {"ok": True, "status": "cancel_requested", "batchId": batch_id}
 
 
 
