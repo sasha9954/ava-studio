@@ -5619,3 +5619,135 @@
 @keyframes avaBoardButtonSpinV129S {
   to { transform: rotate(360deg); }
 }
+
+/* AVA_BOARD_VIDEO_REVIEW_FLAGS_V130J */
+.avaBoardVideoReviewToggle,
+.avaBoardVideoReviewHeaderToggle,
+.avaBoardVideoReviewAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, .26);
+  background: rgba(15, 23, 42, .62);
+  color: rgba(226, 232, 240, .78);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+.avaBoardVideoReviewToggle {
+  padding: 5px 7px;
+  margin-left: 6px;
+}
+.avaBoardVideoReviewToggle i,
+.avaBoardVideoReviewHeaderToggle i,
+.avaBoardVideoReviewAction i {
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1;
+}
+.avaBoardVideoReviewToggle em {
+  font-style: normal;
+  text-transform: lowercase;
+}
+.avaBoardVideoReviewToggle.isBad,
+.avaBoardVideoReviewHeaderToggle.isBad,
+.avaBoardVideoReviewAction.isBad {
+  border-color: rgba(248, 113, 113, .72);
+  background: linear-gradient(135deg, rgba(127, 29, 29, .86), rgba(185, 28, 28, .46));
+  color: #fecaca;
+  box-shadow: 0 0 18px rgba(248, 113, 113, .20);
+}
+.avaBoardVideoReviewToggle.isReview,
+.avaBoardVideoReviewHeaderToggle.isReview,
+.avaBoardVideoReviewAction.isReview {
+  border-color: rgba(251, 191, 36, .74);
+  background: linear-gradient(135deg, rgba(120, 53, 15, .86), rgba(217, 119, 6, .46));
+  color: #fde68a;
+  box-shadow: 0 0 18px rgba(251, 191, 36, .18);
+}
+.avaBoardVideoReviewHeaderToggle {
+  padding: 6px 9px;
+}
+.avaBoardVideoReviewAction {
+  padding: 8px 10px;
+}
+.avaBoardAutoQueueStat.isBadReview,
+.avaBoardAutoQueueColumn.isBadReview {
+  border-color: rgba(248, 113, 113, .38);
+  background: linear-gradient(135deg, rgba(127, 29, 29, .30), rgba(15, 23, 42, .72));
+}
+.avaBoardAssemblyBadReviewList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.avaBoardAssemblyBadReviewList span {
+  border: 1px solid rgba(248, 113, 113, .55);
+  background: rgba(127, 29, 29, .34);
+  color: #fecaca;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+/* AVA_BOARD_VIDEO_REVIEW_LAYOUT_GATE_V130K */
+.avaBoardSceneBadges .avaBoardVideoReviewToggle {
+  align-self: flex-start;
+  margin-left: 0;
+  margin-top: 2px;
+  min-height: 22px;
+}
+.avaBoardSceneCardTop .avaBoardVideoReviewToggle {
+  display: none;
+}
+.avaBoardVideoReviewInlineToggle {
+  width: fit-content;
+  margin-top: 8px;
+  margin-left: 0;
+  padding: 7px 10px;
+}
+/* AVA_BOARD_VIDEO_REVIEW_META_RIGHT_V130L */
+.avaBoardVideoReviewHeaderToggle.avaBoardVideoReviewMetaToggle {
+  align-self: flex-end;
+  margin-top: 8px;
+  min-height: 22px;
+  padding: 5px 9px;
+  gap: 5px;
+  border-radius: 9px;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: .01em;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .22), inset 0 0 0 1px rgba(255, 255, 255, .08);
+  backdrop-filter: blur(10px);
+}
+.avaBoardVideoReviewHeaderToggle.avaBoardVideoReviewMetaToggle i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  font-size: 0;
+}
+.avaBoardVideoReviewHeaderToggle.avaBoardVideoReviewMetaToggle span {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: lowercase;
+}
+.avaBoardVideoReviewHeaderToggle.avaBoardVideoReviewMetaToggle.isBad {
+  border-color: rgba(255, 106, 121, .8);
+  background: linear-gradient(135deg, rgba(160, 37, 58, .92), rgba(76, 18, 35, .9));
+  color: #ffdbe0;
+}
+.avaBoardVideoReviewHeaderToggle.avaBoardVideoReviewMetaToggle.isNeedsReview {
+  border-color: rgba(255, 190, 93, .9);
+  background: linear-gradient(135deg, rgba(172, 105, 20, .92), rgba(76, 45, 14, .9));
+  color: #ffe6bc;
+}
+.avaBoardVideoReviewHeaderToggle.avaBoardVideoReviewInlineToggle {
+  display: none;
+}
+.avaBoardSceneMiniMeta .avaBoardVideoReviewMetaToggle {
+  pointer-events: auto;
+}
