@@ -5601,3 +5601,21 @@
   }
 }
 
+
+
+/* AVA_BOARD_DELETE_MEDIA_HARD_V129S: small spinner for immediate still/zip import feedback */
+.avaBoardButtonSpinnerV129S {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255,255,255,.32);
+  border-top-color: rgba(255,255,255,.95);
+  border-radius: 999px;
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: -2px;
+  animation: avaBoardButtonSpinV129S .75s linear infinite;
+}
+
+@keyframes avaBoardButtonSpinV129S {
+  to { transform: rotate(360deg); }
+}

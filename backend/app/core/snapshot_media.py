@@ -32,6 +32,32 @@ def _is_media_key(key: str) -> bool:
     return any(token in lowered for token in MEDIA_KEY_TOKENS)
 
 
+
+
+# AVA_BOARD_MEDIA_DELETE_BACKEND_GUARD_V129T: when frontend sends explicit scene media reset markers,
+# do not let safe_merge preserve old image/video/audio refs from the previous snapshot.
+MEDIA_RESET_MARKER_KEYS = {
+    "media_reset_generation_v129s",
+    "mediaResetGenerationV129S",
+    "media_reset_generation_v129t",
+    "mediaResetGenerationV129T",
+    "image_delete_reason_v129s",
+    "imageDeleteReasonV129S",
+    "image_delete_reason_v129t",
+    "imageDeleteReasonV129T",
+    "source_image_changed_at",
+    "sourceImageChangedAt",
+    "video_stale_after_image_change_v129p",
+    "videoStaleAfterImageChangeV129P",
+}
+
+
+def _has_media_reset_marker(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return any(bool(value.get(key)) for key in MEDIA_RESET_MARKER_KEYS)
+
+
 def sanitize_snapshot_runtime_media(value: Any) -> tuple[Any, int]:
     if isinstance(value, list):
         removed = 0
@@ -64,10 +90,15 @@ def preserve_media_refs(current: Any, incoming: Any) -> tuple[Any, int]:
     if isinstance(current, dict) and isinstance(incoming, dict):
         changed = 0
         merged = deepcopy(incoming)
+        media_reset = _has_media_reset_marker(incoming)
         for key, old_value in current.items():
             if key not in merged:
                 continue
             new_value = merged.get(key)
+            # AVA_BOARD_MEDIA_DELETE_BACKEND_GUARD_V129T: explicit scene reset wins over safe_merge.
+            # Empty media fields are intentional here, so never resurrect old refs.
+            if media_reset and _is_media_key(key):
+                continue
             if isinstance(old_value, (dict, list)) and isinstance(new_value, type(old_value)):
                 merged_value, count = preserve_media_refs(old_value, new_value)
                 if count:
@@ -92,6 +123,10 @@ def preserve_media_refs(current: Any, incoming: Any) -> tuple[Any, int]:
             if isinstance(new_item, dict):
                 scene_id = str(new_item.get("scene_id") or new_item.get("sceneId") or new_item.get("id") or "")
                 old_item = current_by_scene.get(scene_id) or old_item
+            if isinstance(new_item, dict) and _has_media_reset_marker(new_item):
+                # AVA_BOARD_MEDIA_DELETE_BACKEND_GUARD_V129T: this scene intentionally reset media; keep incoming exactly.
+                merged[index] = deepcopy(new_item)
+                continue
             if isinstance(old_item, (dict, list)) and isinstance(new_item, type(old_item)):
                 merged_item, count = preserve_media_refs(old_item, new_item)
                 if count:
