@@ -2600,6 +2600,140 @@ function isBoardVideoDoneStatus(status) {
     })
   }
 
+  // AVA_BOARD_QUEUE_FINISH_STOP_V130H:
+  // Keep the working video pipeline untouched, but make the frontend queue finish cleanly.
+  // A completed scene is removed from the waiting queue, stale queued badges are cleaned,
+  // and the next scene starts only after the ready patch has had time to land in Board state.
+  function finishBoardVideoQueueStepV130H(sceneId = '', jobId = '', reason = 'completed') {
+    const safeSceneId = asText(sceneId)
+    const safeJobId = asText(jobId)
+    if (safeSceneId) {
+      localVideoQueueRef.current = (localVideoQueueRef.current || []).filter((id) => asText(id) !== safeSceneId)
+    }
+
+    window.setTimeout(() => {
+      const currentBoard = boardRef.current || {}
+      const waitingIds = boardMergeWaitingSceneIdsV57B(currentBoard, localVideoQueueRef.current || [])
+        .filter((id) => asText(id) && asText(id) !== safeSceneId)
+      localVideoQueueRef.current = waitingIds
+
+      let nextBoardForSave = null
+      setBoard((current) => {
+        let changed = false
+        const scenesNext = asSceneArray(current.scenes).map((scene) => {
+          const id = asText(scene?.id || scene?.scene_id)
+          const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+          const hasJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint)
+          const hasReadyVideo = boardSceneHasVideoResultForAuto(scene)
+          const isWaiting = waitingIds.includes(id)
+          const waitingPosition = isWaiting ? waitingIds.indexOf(id) + 1 : 0
+
+          if (id === safeSceneId && hasReadyVideo) {
+            const patch = {
+              ...scene,
+              video_status: 'ready',
+              videoStatus: 'ready',
+              video_error: '',
+              videoError: '',
+              video_job_id: '',
+              videoJobId: '',
+              video_status_endpoint: '',
+              videoStatusEndpoint: '',
+              video_queue_position: 0,
+              videoQueuePosition: 0,
+              video_queue_source: '',
+              videoQueueSource: '',
+            }
+            changed = true
+            return canonicalizeBoardSceneMediaRefs(patch)
+          }
+
+          if (!isWaiting && status === 'queued' && !hasJob) {
+            changed = true
+            return {
+              ...scene,
+              video_status: hasReadyVideo ? 'ready' : '',
+              videoStatus: hasReadyVideo ? 'ready' : '',
+              video_error: '',
+              videoError: '',
+              video_queue_position: 0,
+              videoQueuePosition: 0,
+              video_queue_source: '',
+              videoQueueSource: '',
+            }
+          }
+
+          if (isWaiting && !hasJob) {
+            if (status === 'queued' && Number(scene?.video_queue_position || scene?.videoQueuePosition || 0) === waitingPosition) return scene
+            changed = true
+            return {
+              ...scene,
+              video_status: 'queued',
+              videoStatus: 'queued',
+              video_queue_position: waitingPosition,
+              videoQueuePosition: waitingPosition,
+              video_queue_source: scene?.video_queue_source || scene?.videoQueueSource || 'queue_waiting_v130h',
+              videoQueueSource: scene?.videoQueueSource || scene?.video_queue_source || 'queue_waiting_v130h',
+            }
+          }
+
+          return scene
+        })
+
+        const queueChanged = JSON.stringify(current?.video_queue?.waitingSceneIds || []) !== JSON.stringify(waitingIds)
+        if (!changed && !queueChanged) return current
+
+        nextBoardForSave = {
+          ...current,
+          scenes: scenesNext,
+          video_queue: {
+            ...(current.video_queue || {}),
+            waitingSceneIds: waitingIds,
+            waiting_scene_ids: waitingIds,
+            updatedAt: new Date().toISOString(),
+            source: `queue_finish_${reason}_v130h`,
+          },
+          updatedAt: new Date().toISOString(),
+        }
+        return nextBoardForSave
+      })
+
+      window.setTimeout(() => {
+        if (nextBoardForSave) saveBoard(nextBoardForSave, true)
+
+        const afterBoard = nextBoardForSave || boardRef.current || {}
+        const activeScene = activeBoardVideoScene(afterBoard)
+        const activeSceneId = asText(activeScene?.id || activeScene?.scene_id)
+        const activeJobId = asText(activeScene?.video_job_id || activeScene?.videoJobId || '')
+        const activeIsJustFinished = safeSceneId && activeSceneId === safeSceneId && (!safeJobId || activeJobId === safeJobId)
+        const hasActive = Boolean(activeScene && !activeIsJustFinished) || Boolean(boardVideoQueueStartInFlight()) || Boolean(activeVideoPollsRef.current?.size)
+
+        setAutoVideoQueueState((current) => {
+          if (waitingIds.length || hasActive) {
+            return {
+              ...current,
+              active: true,
+              queued: waitingIds.length,
+            }
+          }
+          return {
+            ...current,
+            active: false,
+            total: 0,
+            queued: 0,
+          }
+        })
+
+        if (waitingIds.length) {
+          window.setTimeout(processNextQueuedBoardVideo, 350)
+        } else if (!hasActive) {
+          setStatus('Очередь видео завершена')
+          console.log('[BOARD VIDEO QUEUE FINISHED V130H]', { sceneId: safeSceneId, jobId: safeJobId, reason })
+        }
+      }, 0)
+    }, 900)
+  }
+
   function processNextQueuedBoardVideo() {
     const currentBoard = boardRef.current
 
@@ -2938,37 +3072,53 @@ function isBoardVideoDoneStatus(status) {
     }, 500)
   }
 
-  function stopAllScenesVideoQueue(event = null) {
+    function stopAllScenesVideoQueue(event = null) {
     event?.preventDefault?.()
     event?.stopPropagation?.()
 
     autoVideoQueueStopRef.current = true
 
-    const stoppedIds = [...localVideoQueueRef.current]
+    const currentBoard = boardRef.current || board
+    const waitingIds = boardMergeWaitingSceneIdsV57B(currentBoard, localVideoQueueRef.current || [])
+    const stoppedSet = new Set(waitingIds.map((id) => asText(id)).filter(Boolean))
     localVideoQueueRef.current = []
 
-    const resetSceneIds = []
-    const resetJobIds = []
-    const stoppedSet = new Set(stoppedIds)
-
     let nextBoardForSave = null
+    let clearedWaitingCount = 0
+    let activeKeptCount = 0
+
     setBoard((current) => {
       let changed = false
-
-      const scenesNext = current.scenes.map((scene) => {
+      const scenesNext = asSceneArray(current.scenes).map((scene) => {
         const sceneId = asText(scene?.id || scene?.scene_id)
-        const videoStatus = String(scene?.video_status || '').toLowerCase()
-        const hasJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
-        const isActive = hasJob || isBoardVideoActiveWorkerStatus(scene)
-        const isQueuedWaiting = stoppedSet.has(sceneId) || videoStatus === 'queued'
-
-        if (!isActive && !isQueuedWaiting) return scene
-
-        changed = true
-        resetSceneIds.push(sceneId)
-        if (scene?.video_job_id) resetJobIds.push(String(scene.video_job_id))
-
+        const videoStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+        const hasJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint)
         const hasReadyVideo = boardSceneHasVideoResultForAuto(scene)
+        const waitingOnly = stoppedSet.has(sceneId) || (videoStatus === 'queued' && !hasJob)
+
+        // Stop queue must not kill the job that is already on backend/Comfy.
+        // That active scene continues as “видео делается” and will apply when completed.
+        if (hasJob) {
+          if (['queued', 'starting', 'preparing', 'submitting'].includes(videoStatus)) {
+            activeKeptCount += 1
+            changed = true
+            return {
+              ...scene,
+              video_status: 'running',
+              videoStatus: 'running',
+              video_queue_position: 0,
+              videoQueuePosition: 0,
+              video_queue_source: '',
+              videoQueueSource: '',
+            }
+          }
+          return scene
+        }
+
+        if (!waitingOnly) return scene
+
+        clearedWaitingCount += 1
+        changed = true
         const nextMedia = { ...(scene.media || {}) }
         if (nextMedia.video && typeof nextMedia.video === 'object') {
           nextMedia.video = {
@@ -2987,19 +3137,28 @@ function isBoardVideoDoneStatus(status) {
           ...scene,
           media: nextMedia,
           video_status: hasReadyVideo ? 'ready' : '',
+          videoStatus: hasReadyVideo ? 'ready' : '',
           video_error: '',
+          videoError: '',
           video_job_id: '',
+          videoJobId: '',
           video_prompt_id: '',
+          videoPromptId: '',
           video_status_endpoint: '',
+          videoStatusEndpoint: '',
           video_queue_position: 0,
+          videoQueuePosition: 0,
           video_queue_source: '',
-          video_started_at: '',
+          videoQueueSource: '',
           video_updated_at: new Date().toISOString(),
+          videoUpdatedAt: new Date().toISOString(),
           video_progress: 0,
+          videoProgress: 0,
         }
       })
 
-      if (!changed && !(current.video_queue || {}).waitingSceneIds?.length) return current
+      const queueChanged = Boolean((current.video_queue || {}).waitingSceneIds?.length || (current.video_queue || {}).waiting_scene_ids?.length)
+      if (!changed && !queueChanged) return current
 
       nextBoardForSave = {
         ...current,
@@ -3007,48 +3166,35 @@ function isBoardVideoDoneStatus(status) {
         video_queue: {
           ...(current.video_queue || {}),
           waitingSceneIds: [],
+          waiting_scene_ids: [],
           updatedAt: new Date().toISOString(),
-          source: 'hard_stop_queue_and_active_jobs_v114',
+          source: 'stop_waiting_queue_keep_active_v130h',
         },
         updatedAt: new Date().toISOString(),
       }
       return nextBoardForSave
     })
 
-    const resetJobSet = new Set(resetJobIds.filter(Boolean))
-    if (resetJobSet.size) {
-      try {
-        const jobs = readAvaGlobalJobs()
-        const filteredJobs = jobs.filter((job) => {
-          const jobId = String(job?.jobId || job?.job_id || job?.id || '')
-          return !resetJobSet.has(jobId)
-        })
-        writeAvaGlobalJobs(filteredJobs)
-      } catch (error) {
-        console.warn('[Board] failed to clear stopped global jobs', error)
-      }
-    }
-
     window.setTimeout(() => {
       if (nextBoardForSave) saveBoard(nextBoardForSave, true)
+      const activeScene = activeBoardVideoScene(nextBoardForSave || boardRef.current || {})
+      setAutoVideoQueueState((current) => ({
+        ...current,
+        active: Boolean(activeScene),
+        queued: 0,
+        total: Boolean(activeScene) ? current.total : 0,
+      }))
     }, 0)
 
-    setAutoVideoQueueState({
-      active: false,
-      total: 0,
-      queued: 0,
-      skippedReady: 0,
-      invalid: 0,
-    })
-
-    const uniqueResetScenes = [...new Set(resetSceneIds.filter(Boolean))]
-    const message = `Очередь остановлена. Убрано из ожидания: ${stoppedIds.length}. Сброшено активных/зависших сцен: ${uniqueResetScenes.length}.`
+    const message = activeKeptCount
+      ? `Очередь остановлена. Ожидающие сцены очищены: ${clearedWaitingCount}. Активное видео продолжит делаться.`
+      : `Очередь остановлена. Ожидающие сцены очищены: ${clearedWaitingCount}.`
     setStatus(message)
     pushBoardToast({
-      type: uniqueResetScenes.length ? 'warning' : 'info',
+      type: activeKeptCount ? 'info' : 'warning',
       title: 'Очередь остановлена',
       message,
-      dedupeKey: `board:auto_queue:hard_stop:${uniqueResetScenes.join(',')}:${stoppedIds.length}`,
+      dedupeKey: `board:auto_queue:stop_waiting_v130h:${clearedWaitingCount}:${activeKeptCount}`,
     })
   }
 
@@ -3304,7 +3450,7 @@ function isBoardVideoDoneStatus(status) {
           markBoardJobSeen(data?.jobId || data?.job_id || jobId || '')
           setStatus(`Видео готово: ${sceneId}`)
           pushBoardToast({ type: 'success', title: 'Видео готово', message: `Сцена ${sceneId}`, sceneId })
-          window.setTimeout(processNextQueuedBoardVideo, 650)
+          finishBoardVideoQueueStepV130H(sceneId, data?.jobId || data?.job_id || jobId || '', 'completed_ready')
           return
         }
 
