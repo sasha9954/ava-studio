@@ -2391,38 +2391,44 @@ function isBoardVideoDoneStatus(status) {
     return invalidIds.length
   }
 
+
   function sceneVideoActionState(scene) {
-    // AVA_BOARD_RESTORE_NATIVE_ACTION_BUTTON_V48: queued/running states use the native action-state shape below.
-
-
-    const videoStatus = String(scene?.video_status || '').toLowerCase()
+    // AVA_BOARD_LIPSYNC_VIDEO_BUTTON_STATUS_V130I:
+    // The action button must follow the real server job state even when a scene still has
+    // old/ready video refs. This is especially visible in manual ia2v lip-sync: the shared
+    // button should turn into the same running/queued state as regular i2v, both for manual
+    // launch and for the global queue.
+    const videoStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
     const hasVideo = boardSceneHasCurrentVideoResultV129P(scene)
-    const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
+    const hasServerJob = Boolean(
+      scene?.video_job_id || scene?.videoJobId ||
+      scene?.video_status_endpoint || scene?.videoStatusEndpoint
+    )
     const problems = sceneVideoInputProblems(scene)
     const hasInputProblems = problems.length > 0
+    const activeStatuses = ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id']
+    const isActiveServerJob = activeStatuses.includes(videoStatus) || (videoStatus === 'queued' && hasServerJob)
     const isLocalQueued = videoStatus === 'queued' && !hasServerJob && !hasInputProblems
-    const isBusy = !hasVideo && (
-      ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(videoStatus) ||
-      (videoStatus === 'queued' && hasServerJob)
-    )
+    const isBlocked = videoStatus === 'blocked_missing_comfy_base_url'
+    const isError = videoStatus === 'error' || videoStatus === 'failed'
 
     return {
-      className: `avaBoardWorkflowButton isVideo ${isBusy ? 'isBusy' : isLocalQueued ? 'isQueued' : videoStatus === 'blocked_missing_comfy_base_url' ? 'isBlocked' : videoStatus === 'error' ? 'isError' : ''}`.trim(),
-      label: isLocalQueued ? 'В очереди' : isBusy ? 'Видео делается' : 'Сделать видео',
+      className: `avaBoardWorkflowButton isVideo ${isActiveServerJob ? 'isBusy' : isLocalQueued ? 'isQueued' : isBlocked ? 'isBlocked' : isError ? 'isError' : ''}`.trim(),
+      label: isLocalQueued ? 'В очереди' : isActiveServerJob ? 'Видео делается' : 'Сделать видео',
       hint: isLocalQueued
         ? `ждёт очередь${scene?.video_queue_position ? ` · #${scene.video_queue_position}` : ''}`
-        : isBusy
-          ? 'job выполняется…'
-          : videoStatus === 'blocked_missing_comfy_base_url'
+        : isActiveServerJob
+          ? (hasServerJob ? 'job выполняется…' : 'отправляем job…')
+          : isBlocked
             ? 'нужен COMFY_BASE_URL'
-            : videoStatus === 'error'
-              ? (scene?.video_error || 'ошибка')
+            : isError
+              ? (scene?.video_error || scene?.videoError || 'ошибка')
               : hasInputProblems
                 ? `нужно: ${problems.join(', ')}`
                 : hasVideo
                   ? 'готово · можно заново'
-                  : (scene?.workflow_key || 'workflow будет выбран автоматически'),
-      disabled: isBusy || isLocalQueued,
+                  : (scene?.workflow_key || scene?.workflowKey || 'workflow будет выбран автоматически'),
+      disabled: isActiveServerJob || isLocalQueued,
     }
   }
 
