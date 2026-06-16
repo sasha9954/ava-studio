@@ -1,3 +1,19 @@
+// AVA_BOARD_READY_VIDEO_WINS_BUSY_STATUS_V133E: current ready video refs must beat stale queued/running poll state.
+/* AVA_BOARD_REVIEW_CLEAR_ON_IMAGE_CHANGE_V133B: image replacement must clear stale bad/posmotri review state. */
+/* AVA_BOARD_MANUAL_SCENE_IMMEDIATE_COLORS_V133A: manual scenes get their final per-scene color immediately, before F5/rehydrate. */
+/* AVA_BOARD_REVIEW_ACCEPT_PERSIST_V132Z: posmotri/bad accepted state is explicit and survives F5/server preserve. */
+/* AVA_BOARD_REVIEW_TOGGLE_ACCEPT_POSMOTRI_V132X: clicking orange posmotri accepts/clears review instead of jumping to bad. */
+/* AVA_BOARD_RELOAD_SAVE_GUARD_V132W: prevent F5/re-enter from losing server video refs; merge backend snapshot again after Board build and protect durable cache writes. */
+/* AVA_BOARD_RELOAD_VIDEO_REHYDRATE_V132T: after F5/re-enter always merge server video/result/review refs over stale local durable cache. */
+/* AVA_BOARD_STATUS_REHYDRATE_COMBINED_V132V: fixes V132U syntax issue, V132S isError crash, and combines V132S status flow with V132T reload video rehydrate. */
+/* AVA_BOARD_BATCH_STATUS_FLOW_V132S: precise Board server-batch states: submitting -> running/queued -> ready. */
+/* AVA_BOARD_BATCH_BUSY_REVIEW_V132R: server batch immediately marks scenes busy and keeps old preview overlay during bad-review regeneration. */
+/* AVA_BOARD_MEDIA_STATUS_INDICATORS_V132O: UI-only media indicators for image restore/upload and video regeneration review. */
+/* AVA_BOARD_IMAGE_UPLOAD_FORCE_COMMIT_V132N4: manual image uploads force asset refs into scene snapshot and clear stale video/review state. */
+/* AVA_BOARD_REVIEW_READY_PLUS_LOOK_V132F: video-ready badge stays green while review badge shows bad/posmotri; needs_review beats stale bad flags. */
+/* AVA_BOARD_REVIEW_BAD_READY_LABEL_SPLIT_V132E: main video badge stays green ready; review badge shows bad/посмотри. */
+/* AVA_BOARD_BAD_REVIEW_STATUS_PRIORITY_V132D2: review status has priority over generic video-ready labels and F5 normalization. */
+/* AVA_BOARD_BAD_REVIEW_SERVER_BATCH_QUEUE_V132A: red bad-review videos are queued by server batch instead of skipped as ready. */
 /* AVA_BOARD_MANUAL_DURATION_REHYDRATE_SELECTED_V131S: selected scene duration slider is rehydrated from loaded board data after F5. */
 /* AVA_BOARD_SERVER_BATCH_VIDEO_EPOCH_READY_V131O: server batch video refs are bound to current image epoch and marked ready. */
 /* AVA_BOARD_SERVER_BATCH_REFRESH_UI_V131N_FIX: repairs malformed chooseBoardDataForLoad after v131n. */
@@ -562,12 +578,33 @@ function writeBoardDurableBackup(key = '', boardData = {}) {
   if (!key || typeof localStorage === 'undefined') return;
 
   try {
+    // AVA_BOARD_DURABLE_VIDEO_REF_GUARD_V132W:
+    // Never let an autosave/reload paint with fewer video refs overwrite a richer durable cache.
+    // The project snapshot still remains source of truth, but this prevents the next Board entry
+    // from booting from a locally stripped copy before server rehydrate finishes.
     const canonicalBoardData = applyCookingPromptMemoryToBoard(canonicalizeBoardMediaRefs(boardData))
+    const existingDurableV132W = readBoardDurableBackup(key)
+    let durableSourceV132W = canonicalBoardData
+    try {
+      if (existingDurableV132W && Array.isArray(existingDurableV132W.scenes)) {
+        const existingScoreV132W = boardVideoStateScoreV131N(existingDurableV132W)
+        const incomingScoreV132W = boardVideoStateScoreV131N(canonicalBoardData)
+        if (existingScoreV132W > incomingScoreV132W) {
+          durableSourceV132W = boardMergeServerVideoStateV131N(canonicalBoardData, existingDurableV132W)
+          console.log('[BOARD DURABLE VIDEO REFS PRESERVED V132W]', {
+            existingScore: existingScoreV132W,
+            incomingScore: incomingScoreV132W,
+          })
+        }
+      }
+    } catch (guardErrorV132W) {
+      console.warn('[BOARD DURABLE VIDEO REF GUARD V132W] skipped', guardErrorV132W)
+    }
     const payload = {
-      ...sanitizeBoardDurableBackup(canonicalBoardData),
-      boardVersion: canonicalBoardData?.boardVersion || BOARD_VERSION,
+      ...sanitizeBoardDurableBackup(durableSourceV132W),
+      boardVersion: durableSourceV132W?.boardVersion || BOARD_VERSION,
       durableSavedAt: new Date().toISOString(),
-      updatedAt: canonicalBoardData?.updatedAt || new Date().toISOString(),
+      updatedAt: durableSourceV132W?.updatedAt || new Date().toISOString(),
     };
     localStorage.setItem(key, JSON.stringify(payload));
   } catch (error) {
@@ -656,6 +693,11 @@ function boardSceneVideoStateScoreV131N(scene = {}) {
   if (!scene || typeof scene !== 'object') return 0
   let score = 0
   if (scene.video_asset_id || scene.videoAssetId || scene.video_api_path || scene.videoApiPath || scene.video_url || scene.videoUrl) score += 1000
+  // AVA_BOARD_RELOAD_VIDEO_REHYDRATE_V132T: score backend result refs and review marks too, otherwise stale local durable cache may hide the returned video after F5.
+  if (scene.result_video_asset_id || scene.resultVideoAssetId || scene.result_video_api_path || scene.resultVideoApiPath || scene.result_video_url || scene.resultVideoUrl || scene.result_url || scene.resultUrl) score += 1000
+  const reviewStatusV132T = String(scene.video_review_status || scene.videoReviewStatus || scene.review_status || scene.reviewStatus || '').toLowerCase()
+  if (['needs_review', 'review', 'check', 'посмотри', 'на проверку'].includes(reviewStatusV132T)) score += 650
+  if (['bad', 'poor', 'reject', 'rejected', 'плохое', 'плохая'].includes(reviewStatusV132T)) score += 320
   if (scene.video_result || scene.videoResult) score += 300
   if (scene.video_job_id || scene.videoJobId || scene.video_status_endpoint || scene.videoStatusEndpoint) score += 100
   const status = String(scene.video_status || scene.videoStatus || '').toLowerCase()
@@ -700,6 +742,16 @@ const BOARD_SERVER_VIDEO_KEYS_V131N = [
   'result_video_url', 'resultVideoUrl',
   'result_video_api_path', 'resultVideoApiPath',
   'result_video_asset_id', 'resultVideoAssetId',
+  // AVA_BOARD_RELOAD_VIDEO_REHYDRATE_V132T: keep review/status/source binding from server snapshot.
+  'video_review_status', 'videoReviewStatus',
+  'review_status', 'reviewStatus',
+  'video_review_updated_at', 'videoReviewUpdatedAt',
+  'video_review_reason', 'videoReviewReason',
+  'video_review_regenerate_from_bad', 'videoReviewRegenerateFromBad',
+  'video_source_image_mutation_epoch', 'videoSourceImageMutationEpoch',
+  'video_source_image_mutation_at', 'videoSourceImageMutationAt',
+  'video_ready_at', 'videoReadyAt',
+  'video_name', 'videoName',
 ]
 
 function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
@@ -717,7 +769,18 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
 
     const serverScore = boardSceneVideoStateScoreV131N(serverScene)
     const localScore = boardSceneVideoStateScoreV131N(scene)
-    const shouldCopy = serverScore > localScore || serverScene.video_asset_id || serverScene.videoAssetId || serverScene.video_api_path || serverScene.videoApiPath || serverScene.video_url || serverScene.videoUrl
+    const hasServerVideoRefV132T = Boolean(
+      serverScene.video_asset_id || serverScene.videoAssetId ||
+      serverScene.video_api_path || serverScene.videoApiPath ||
+      serverScene.video_url || serverScene.videoUrl ||
+      serverScene.result_video_asset_id || serverScene.resultVideoAssetId ||
+      serverScene.result_video_api_path || serverScene.resultVideoApiPath ||
+      serverScene.result_video_url || serverScene.resultVideoUrl ||
+      serverScene.result_url || serverScene.resultUrl
+    )
+    const serverReviewStatusV132T = String(serverScene.video_review_status || serverScene.videoReviewStatus || serverScene.review_status || serverScene.reviewStatus || '').toLowerCase()
+    const hasServerReviewStatusV132T = ['bad', 'poor', 'reject', 'rejected', 'плохое', 'плохая', 'needs_review', 'review', 'check', 'посмотри', 'на проверку'].includes(serverReviewStatusV132T)
+    const shouldCopy = serverScore > localScore || hasServerVideoRefV132T || hasServerReviewStatusV132T
     if (!shouldCopy) return scene
 
     const next = { ...scene }
@@ -819,7 +882,13 @@ function chooseBoardDataForLoad(serverBoardData = {}, localBoardData = null) {
 
   const serverUpdated = Date.parse(serverBoardData?.updatedAt || serverBoardData?.durableSavedAt || '') || 0;
   const localUpdated = Date.parse(localBoardData?.updatedAt || localBoardData?.durableSavedAt || '') || 0;
-  if (localUpdated > serverUpdated) return localBoardData;
+  if (localUpdated > serverUpdated) {
+    // AVA_BOARD_RELOAD_VIDEO_REHYDRATE_V132T: local prompt edits may be newer, but server video results/review state must still rehydrate after F5/re-enter.
+    const mergedV132T = boardMergeServerVideoStateV131N(localBoardData, serverBoardData)
+    const serverScoreV132T = boardVideoStateScoreV131N(serverBoardData)
+    if (serverScoreV132T > 0 && mergedV132T && Array.isArray(mergedV132T.scenes)) return mergedV132T
+    return localBoardData
+  }
 
   return serverBoardData || {};
 }
@@ -1335,7 +1404,8 @@ function storyboardSceneColor(scene, index = 0) {
     scene?.block_number
   )
 
-  if (blockKey) {
+  const isManualBoardBlockV133A = ['manual', 'manual_board', 'manual board', 'ручные сцены', 'ручная сцена'].includes(blockKey.toLowerCase())
+  if (blockKey && !isManualBoardBlockV133A) {
     if (Number.isFinite(blockNumber)) {
       return 185 + ((blockNumber * 47) % 150)
     }
@@ -1650,8 +1720,9 @@ function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
     sound_prompt: asText(savedScene?.sound_prompt || rawScene?.sound_prompt),
     image_status: savedScene?.image_status || rawScene?.image_status || 'empty',
     video_status: savedScene?.video_status || rawScene?.video_status || 'empty',
-    video_review_status: boardSceneVideoReviewStatus(savedScene || rawScene),
-    videoReviewStatus: boardSceneVideoReviewStatus(savedScene || rawScene),
+    /* AVA_BOARD_REVIEW_MERGE_PRIORITY_V132R: raw/server needs_review must beat stale local bad after regeneration. */
+    video_review_status: boardSceneVideoReviewStatus({ ...(savedScene || {}), ...(rawScene || {}) }),
+    videoReviewStatus: boardSceneVideoReviewStatus({ ...(savedScene || {}), ...(rawScene || {}) }),
     image_url: imageUrl,
     imageUrl,
     image_api_path: sceneMediaFieldValue({ ...(rawScene || {}), ...(savedScene || {}) }, 'image', 'apiPath'),
@@ -1818,11 +1889,29 @@ function boardSceneHasServerVideoJobV130F(scene) {
 }
 
 function boardSceneVideoUiStatusV130F(scene) {
+  // AVA_BOARD_READY_VIDEO_WINS_BUSY_STATUS_V133E:
+  // Old local polling can briefly write queued/running after the server already saved a video.
+  // A current video ref must win, otherwise preview is hidden and UI shows "в очереди".
+  if (typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)) return 'ready'
   const rawStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
   if (rawStatus === 'queued' && boardSceneHasServerVideoJobV130F(scene)) return 'running'
   return rawStatus
 }
 
+
+
+
+function boardSceneBusyVideoLabelV132P(scene = {}) {
+  const status = String(boardSceneVideoUiStatusV130F(scene) || '').toLowerCase()
+  // AVA_BOARD_BATCH_STATUS_FLOW_V132S:
+  // submitting/starting/preparing = request is being sent/prepared;
+  // queued without server job = waiting turn;
+  // queued with server job is normalized by boardSceneVideoUiStatusV130F to running.
+  if (status === 'starting' || status === 'submitting' || status === 'preparing') return 'отправляется'
+  if (status === 'queued') return 'в очереди'
+  if (status === 'running' || status === 'processing') return 'видео делается'
+  return ''
+}
 
 function scenePreviewVideoUrl(scene) {
   if (!scene) return ''
@@ -1841,7 +1930,7 @@ function scenePreviewVideoUrl(scene) {
   )
   if (mmaudioVideo) return normalizeBoardMediaUrl(mmaudioVideo)
 
-  if (isVideoBusyStatus(scene.video_status || scene.videoStatus)) return ''
+  if (isVideoBusyStatus(scene.video_status || scene.videoStatus) && !boardVideoBusyCanKeepPreviewV132O(scene)) return ''
 
   return normalizeBoardMediaUrl(
     scene.video_api_path ||
@@ -1871,7 +1960,7 @@ function scenePreviewAssetApiPath(scene) {
   )
   if (mmaudioAssetPath) return boardProtectedAssetApiPath(mmaudioAssetPath)
 
-  if (isVideoBusyStatus(scene.video_status || scene.videoStatus)) return ''
+  if (isVideoBusyStatus(scene.video_status || scene.videoStatus) && !boardVideoBusyCanKeepPreviewV132O(scene)) return ''
 
   return boardProtectedAssetApiPath(
     scene.video_api_path ||
@@ -1898,7 +1987,7 @@ function sceneStaticVideoCandidate(scene) {
     if (staticUrl) return staticUrl
   }
 
-  if (isVideoBusyStatus(scene.video_status || scene.videoStatus)) return ''
+  if (isVideoBusyStatus(scene.video_status || scene.videoStatus) && !boardVideoBusyCanKeepPreviewV132O(scene)) return ''
 
   const values = [
     scene.video_url,
@@ -1940,6 +2029,176 @@ function boardVideoMatchesCurrentImageV129P(scene = {}) {
   return Boolean(videoEpoch && videoEpoch >= imageEpoch)
 }
 
+// AVA_BOARD_MEDIA_STATUS_INDICATORS_V132O:
+// UI-only helpers. They do not change persistence; they only explain what the user is waiting for.
+function boardSceneDirectVideoPreviewRefV132O(scene = {}) {
+  return asText(
+    scene?.mmaudio_video_api_path ||
+    scene?.mmaudioVideoApiPath ||
+    scene?.mmaudio_video_url ||
+    scene?.mmaudioVideoUrl ||
+    sceneMediaFieldValue(scene, 'video', 'apiPath') ||
+    sceneMediaFieldValue(scene, 'video', 'url') ||
+    scene?.video_api_path ||
+    scene?.videoApiPath ||
+    scene?.video_url ||
+    scene?.videoUrl ||
+    scene?.result_video_api_path ||
+    scene?.resultVideoApiPath ||
+    scene?.result_video_asset_id ||
+    scene?.resultVideoAssetId ||
+    scene?.result_video_api_path ||
+    scene?.resultVideoApiPath ||
+    scene?.result_video_url ||
+    scene?.resultVideoUrl ||
+    scene?.video_result?.video_api_path ||
+    scene?.videoResult?.videoApiPath ||
+    scene?.video_result?.video_url ||
+    scene?.videoResult?.videoUrl ||
+    ''
+  )
+}
+
+function boardVideoBusyCanKeepPreviewV132O(scene = {}) {
+  const status = boardSceneVideoUiStatusV130F(scene)
+  if (!isVideoBusyStatus(status)) return false
+  if (!boardVideoMatchesCurrentImageV129P(scene)) return false
+  if (!boardSceneDirectVideoPreviewRefV132O(scene)) return false
+  const queueSource = String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase()
+  const reviewStatus = boardSceneVideoReviewStatus(scene)
+  return Boolean(
+    reviewStatus === 'bad' ||
+    reviewStatus === 'needs_review' ||
+    boardVideoWasBadBeforeRegenerate(scene) ||
+    queueSource.includes('bad_review') ||
+    queueSource.includes('regeneration')
+  )
+}
+
+function boardSceneImageSlotUiStateV132O(scene = {}, slot = 'image', previewUrl = '', runtimeMedia = {}) {
+  if (!scene) return { busy: false, busyLabel: '', busyHint: '', statusLabel: '', statusClassName: '' }
+  const safeSlot = ['image', 'first', 'last'].includes(slot) ? slot : 'image'
+  const preview = asText(previewUrl)
+  const apiPath = sceneMediaFieldValue(scene, safeSlot, 'apiPath')
+  const url = sceneMediaFieldValue(scene, safeSlot, 'url')
+  const name = asText(
+    safeSlot === 'last'
+      ? (scene?.last_frame_name || scene?.lastFrameName || scene?.last_image_name || scene?.lastImageName || scene?.end_image_name || scene?.endImageName)
+      : safeSlot === 'first'
+        ? (scene?.first_frame_name || scene?.firstFrameName || scene?.first_image_name || scene?.firstImageName || scene?.start_image_name || scene?.startImageName || scene?.image_name || scene?.imageName)
+        : (scene?.image_name || scene?.imageName || scene?.first_frame_name || scene?.firstFrameName)
+  )
+  const dataUrl = asText(
+    safeSlot === 'last'
+      ? (scene?.end_image_data_url || scene?.endImageDataUrl || scene?.last_image_data_url || scene?.lastImageDataUrl)
+      : safeSlot === 'first'
+        ? (scene?.start_image_data_url || scene?.startImageDataUrl || scene?.first_image_data_url || scene?.firstImageDataUrl || scene?.image_data_url || scene?.imageDataUrl)
+        : (scene?.image_data_url || scene?.imageDataUrl || scene?.start_image_data_url || scene?.startImageDataUrl)
+  )
+  const slotStatus = String(
+    safeSlot === 'last'
+      ? (scene?.last_frame_status || scene?.lastFrameStatus || scene?.image_status || scene?.imageStatus || '')
+      : safeSlot === 'first'
+        ? (scene?.first_frame_status || scene?.firstFrameStatus || scene?.image_status || scene?.imageStatus || '')
+        : (scene?.image_status || scene?.imageStatus || scene?.first_frame_status || scene?.firstFrameStatus || '')
+  ).toLowerCase()
+  const cleared = Boolean(
+    safeSlot === 'last'
+      ? runtimeMedia?.lastClearedV129O
+      : safeSlot === 'first'
+        ? runtimeMedia?.firstClearedV129O
+        : runtimeMedia?.imageClearedV129O
+  )
+  const hasProtectedRef = Boolean(
+    (apiPath && isProtectedBoardAssetApiPath(apiPath)) ||
+    (url && isProtectedBoardAssetApiPath(url))
+  )
+  const hasImageRef = Boolean(preview || apiPath || url || dataUrl || name)
+  const assetReady = slotStatus.includes('asset_ready') || slotStatus.includes('server_frame_ready') || slotStatus.includes('ready')
+  const uploadFlag = Boolean(scene?.image_uploading_v129q || scene?.imageUploadingV129Q) && !assetReady
+  const savingFlag = Boolean(scene?.mediaMutationReplaceSave || scene?.forceReplaceSave) && !assetReady
+  const uploading = !assetReady && (uploadFlag || slotStatus.includes('upload') || slotStatus.includes('local_pending') || slotStatus.includes('local_preview'))
+  const extracting = slotStatus.includes('extracting') || slotStatus.includes('from_previous_video')
+  const failed = slotStatus.includes('error') || slotStatus.includes('failed')
+  const restoring = hasProtectedRef && !preview && !cleared
+
+  if (failed) {
+    return { busy: false, busyLabel: '', busyHint: '', statusLabel: 'ошибка кадра', statusClassName: 'isError' }
+  }
+  if (extracting) {
+    return { busy: true, busyLabel: 'Берём кадр…', busyHint: 'Извлекаем последний кадр из предыдущего видео.', statusLabel: 'извлекаем', statusClassName: 'isBusy' }
+  }
+  if (uploading && preview) {
+    return { busy: true, busyLabel: 'Сохраняем кадр…', busyHint: 'Preview уже на экране, asset пишется в проект.', statusLabel: 'сохраняем', statusClassName: 'isBusy' }
+  }
+  if (uploading || savingFlag) {
+    return { busy: true, busyLabel: 'Загружаем фото…', busyHint: 'Готовим preview и asset для snapshot.', statusLabel: 'загрузка', statusClassName: 'isBusy' }
+  }
+  if (restoring) {
+    return { busy: true, busyLabel: 'Подгружаем…', busyHint: 'Восстанавливаем protected asset после F5.', statusLabel: 'подгружаем', statusClassName: 'isBusy' }
+  }
+  if (hasImageRef) {
+    return { busy: false, busyLabel: '', busyHint: '', statusLabel: 'кадр готов', statusClassName: 'isReady' }
+  }
+  return { busy: false, busyLabel: '', busyHint: '', statusLabel: '', statusClassName: '' }
+}
+
+function boardSceneVideoUiIndicatorV132O(scene = {}, { previewLoading = false, hasPreview = false, loadError = '' } = {}) {
+  if (!scene) {
+    return { headerLabel: 'empty', className: 'isEmpty', showSpinner: false, overlay: false, overlayTitle: '', overlayHint: '', emptyTitle: 'Видео ещё не создано', emptyHint: '' }
+  }
+  if (loadError) {
+    return { headerLabel: 'preview error', className: 'isError', showSpinner: false, overlay: false, overlayTitle: '', overlayHint: '', emptyTitle: 'Видео preview недоступно', emptyHint: loadError }
+  }
+  if (previewLoading) {
+    return { headerLabel: 'подгружаем видео', className: 'isLoading', showSpinner: true, overlay: false, overlayTitle: '', overlayHint: '', emptyTitle: 'Загружаем видео…', emptyHint: 'Получаем protected asset preview.' }
+  }
+
+  const status = boardSceneVideoUiStatusV130F(scene)
+  const busy = isVideoBusyStatus(status)
+  const keepOldPreview = boardVideoBusyCanKeepPreviewV132O(scene)
+  const reviewInfo = boardSceneVideoReviewInfo(scene)
+  const hasCurrentVideo = boardSceneHasCurrentVideoResultV129P(scene)
+  const staleVideo = boardSceneRawVideoRefsV129P(scene) && !boardVideoMatchesCurrentImageV129P(scene)
+
+  if (busy) {
+    const byStatus = status === 'starting'
+      ? { headerLabel: 'видео отправлено', title: 'Видео отправлено…', hint: 'Создаём job и ждём ответ сервера.' }
+      : status === 'queued'
+        ? { headerLabel: 'видео делается', title: 'Видео делается…', hint: scene?.video_queue_position ? `Позиция #${scene.video_queue_position}` : 'Ждём свободный слот генерации.' }
+        : (status === 'preparing' || status === 'submitting')
+          ? { headerLabel: 'видео делается', title: 'Видео делается…', hint: 'Передаём фото, аудио и prompt на backend/Comfy.' }
+          : { headerLabel: 'видео делается', title: 'Видео делается…', hint: scene?.video_job_id ? `job · ${scene.video_job_id}` : 'Сервер генерирует видео.' }
+    if (keepOldPreview && hasPreview) {
+      return {
+        headerLabel: 'перегенерация',
+        className: 'isRegenerating',
+        showSpinner: true,
+        overlay: true,
+        overlayTitle: 'Перегенерация…',
+        overlayHint: 'Старое видео оставлено на экране, ждём новый результат.',
+        emptyTitle: byStatus.title,
+        emptyHint: byStatus.hint,
+      }
+    }
+    return { headerLabel: byStatus.headerLabel, className: 'isBusy', showSpinner: true, overlay: false, overlayTitle: '', overlayHint: '', emptyTitle: byStatus.title, emptyHint: byStatus.hint }
+  }
+
+  if (reviewInfo.status === 'needs_review') {
+    return { headerLabel: 'посмотри', className: 'isReview', showSpinner: false, overlay: false, overlayTitle: '', overlayHint: '', emptyTitle: 'Видео готово — посмотри', emptyHint: 'Это результат после перегенерации плохого видео.' }
+  }
+  if (reviewInfo.status === 'bad') {
+    return { headerLabel: 'плохое', className: 'isBad', showSpinner: false, overlay: false, overlayTitle: '', overlayHint: '', emptyTitle: 'Видео помечено плохим', emptyHint: 'Оно попадёт в перегенерацию.' }
+  }
+  if (hasCurrentVideo) {
+    return { headerLabel: 'видео готово', className: 'isReady', showSpinner: false, overlay: false, overlayTitle: '', overlayHint: '', emptyTitle: 'Видео готово', emptyHint: '' }
+  }
+  if (staleVideo) {
+    return { headerLabel: 'нужно новое видео', className: 'isStale', showSpinner: false, overlay: false, overlayTitle: '', overlayHint: '', emptyTitle: 'Видео очищено после замены фото', emptyHint: 'Нужно отправить сцену на генерацию заново.' }
+  }
+  return { headerLabel: 'empty', className: 'isEmpty', showSpinner: false, overlay: false, overlayTitle: '', overlayHint: '', emptyTitle: 'Видео ещё не создано', emptyHint: '' }
+}
+
 function boardSceneRawVideoRefsV129P(scene = {}) {
   return Boolean(
     sceneMediaFieldValue(scene, 'video', 'apiPath') ||
@@ -1970,8 +2229,27 @@ function boardSceneHasCurrentVideoResultV129P(scene = {}) {
   return boardSceneRawVideoRefsV129P(scene) && boardVideoMatchesCurrentImageV129P(scene)
 }
 
+
+function boardSceneCanShowVideoReviewV133B(scene = {}) {
+  // AVA_BOARD_REVIEW_CLEAR_ON_IMAGE_CHANGE_V133B:
+  // Do not show "посмотри" for a scene that only has a fresh still and no current video.
+  if (!scene) return false
+  if (typeof boardSceneHasCurrentVideoResultV129P === 'function') {
+    return Boolean(boardSceneHasCurrentVideoResultV129P(scene))
+  }
+  return Boolean(
+    scene?.video_api_path || scene?.videoApiPath ||
+    scene?.video_url || scene?.videoUrl ||
+    scene?.result_video_api_path || scene?.resultVideoApiPath ||
+    scene?.result_video_url || scene?.resultVideoUrl ||
+    scene?.video_asset_id || scene?.videoAssetId
+  )
+}
+
 function scenePreviewVideoLabel(scene) {
   if (!scene) return 'empty'
+  const reviewStatusPreviewV132D2 = boardSceneVideoReviewStatus(scene)
+  // AVA_BOARD_REVIEW_BAD_READY_LABEL_SPLIT_V132E: preview readiness label stays ready; review badge handles bad/посмотри.
   const videoMatchesImage = boardVideoMatchesCurrentImageV129P(scene)
   const mmaudioStatus = String(scene.mmaudio_status || scene.mmaudioStatus || '').toLowerCase()
   if (['starting', 'queued', 'preparing', 'running'].includes(mmaudioStatus)) return 'MMAudio делается'
@@ -1986,7 +2264,7 @@ function scenePreviewVideoLabel(scene) {
   if (isVideoBusyStatus(status)) {
     if (status === 'starting') return 'отправляется'
     if (status === 'queued') return 'в очереди'
-    if (status === 'preparing' || status === 'submitting') return 'подготовка'
+    if (status === 'preparing' || status === 'submitting') return 'отправляется'
     return 'видео делается'
   }
   if ((status === 'ready' || boardSceneRawVideoRefsV129P(scene)) && !videoMatchesImage) return 'stale image'
@@ -2006,6 +2284,47 @@ function normalizeLoadedBoardVideoStatuses(boardData = {}) {
     const status = String(scene?.video_status || '').toLowerCase()
     const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
     const hasVideo = boardSceneHasCurrentVideoResultV129P(scene)
+    const reviewStatusV132D2 = boardSceneVideoReviewStatus(scene)
+    const badReviewRegenerationV132D2 = Boolean(
+      reviewStatusV132D2 === 'bad' ||
+      scene?.video_review_regenerate_from_bad ||
+      scene?.videoReviewRegenerateFromBad ||
+      String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase() === 'bad_review_regeneration'
+    )
+    // AVA_BOARD_BAD_REVIEW_STATUS_PRIORITY_V132D2:
+    // Bad-review regeneration keeps the old video visible while a new video is queued/running.
+    // Do not normalize it back to ready on F5 just because hasVideo is true.
+    if (hasVideo && badReviewRegenerationV132D2 && (reviewStatusV132D2 === 'needs_review' || scene?.video_ready_at || scene?.videoReadyAt || !hasServerJob)) {
+      // AVA_BOARD_FINISHED_BAD_REGEN_READY_V132W:
+      // After F5/re-enter a completed bad-regeneration can still carry old queue flags.
+      // If the video ref is present and review says needs_review/posmotri, show it as ready.
+      changed = true
+      return {
+        ...scene,
+        video_status: 'ready',
+        videoStatus: 'ready',
+        video_error: '',
+        videoError: '',
+        video_job_id: '',
+        videoJobId: '',
+        video_status_endpoint: '',
+        videoStatusEndpoint: '',
+        video_queue_position: 0,
+        videoQueuePosition: 0,
+        video_review_status: reviewStatusV132D2 === 'needs_review' ? 'needs_review' : (scene?.video_review_status || scene?.videoReviewStatus || ''),
+        videoReviewStatus: reviewStatusV132D2 === 'needs_review' ? 'needs_review' : (scene?.videoReviewStatus || scene?.video_review_status || ''),
+        review_status: reviewStatusV132D2 === 'needs_review' ? 'needs_review' : (scene?.review_status || scene?.reviewStatus || ''),
+        reviewStatus: reviewStatusV132D2 === 'needs_review' ? 'needs_review' : (scene?.reviewStatus || scene?.review_status || ''),
+        video_review_regenerate_from_bad: false,
+        videoReviewRegenerateFromBad: false,
+        video_review_regenerate_reason: '',
+        videoReviewRegenerateReason: '',
+      }
+    }
+
+    if (hasVideo && isVideoBusyStatus(status) && badReviewRegenerationV132D2) {
+      return scene
+    }
 
     if (hasVideo && isVideoBusyStatus(status)) {
       changed = true
@@ -2053,6 +2372,16 @@ function normalizeLoadedBoardVideoStatuses(boardData = {}) {
 }
 
 function sceneStatus(scene) {
+  const reviewStatusPriorityV132D2 = boardSceneVideoReviewStatus(scene)
+  const rawVideoStatusPriorityV132D2 = boardSceneVideoUiStatusV130F(scene)
+  if (isVideoBusyStatus(rawVideoStatusPriorityV132D2)) {
+    if (rawVideoStatusPriorityV132D2 === 'starting') return { label: 'отправляется', className: 'isRunning' }
+    if (rawVideoStatusPriorityV132D2 === 'queued') return { label: 'в очереди', className: 'isRunning' }
+    if (rawVideoStatusPriorityV132D2 === 'preparing' || rawVideoStatusPriorityV132D2 === 'submitting') return { label: 'отправляется', className: 'isRunning' }
+    return { label: 'видео делается', className: 'isRunning' }
+  }
+  // AVA_BOARD_REVIEW_BAD_READY_LABEL_SPLIT_V132E:
+  // Main card badge stays about video readiness. Review state is shown by the separate review badge.
   const status = boardSceneVideoUiStatusV130F(scene)
   const hasPrompt = Boolean(asText(scene?.video_prompt))
   const hasImage = Boolean(
@@ -2066,7 +2395,7 @@ function sceneStatus(scene) {
 
   if (status === 'starting') return { label: 'отправляется', className: 'isRunning' }
   if (status === 'queued') return { label: 'в очереди', className: 'isRunning' }
-  if (status === 'preparing' || status === 'submitting') return { label: 'подготовка', className: 'isRunning' }
+  if (status === 'preparing' || status === 'submitting') return { label: 'отправляется', className: 'isRunning' }
   if (status === 'running') return { label: 'видео делается', className: 'isRunning' }
   if (status === 'error') return { label: 'ошибка видео', className: 'isError' }
   if (hasCurrentVideo) return { label: 'видео готово', className: 'isReady' }
@@ -2076,6 +2405,8 @@ function sceneStatus(scene) {
 }
 
 function videoButtonState(scene) {
+  const reviewStatusButtonV132D2 = boardSceneVideoReviewStatus(scene)
+  // AVA_BOARD_REVIEW_BAD_READY_LABEL_SPLIT_V132E: keep video button behavior separate from review badge.
   const status = boardSceneVideoUiStatusV130F(scene)
   const hasCurrentVideo = boardSceneHasCurrentVideoResultV129P(scene)
   const hasStaleVideo = boardSceneRawVideoRefsV129P(scene) && !boardVideoMatchesCurrentImageV129P(scene)
@@ -2115,6 +2446,18 @@ function videoButtonState(scene) {
 //   bad           -> red mark, should be regenerated by "Сгенерировать все"
 //   needs_review  -> orange mark after regenerating a bad video; user should watch it again
 function boardSceneVideoReviewStatus(scene = {}) {
+  // AVA_BOARD_REVIEW_READY_PLUS_LOOK_V132F:
+  // After bad-video regeneration backend writes needs_review. If old bad helper
+  // flags are still present in the scene object, needs_review must win so UI shows
+  // orange "посмотри", not red "плохое".
+  const explicitReviewV132F = String(
+    scene?.video_review_status ||
+    scene?.videoReviewStatus ||
+    scene?.review_status ||
+    scene?.reviewStatus ||
+    ''
+  ).toLowerCase().trim()
+  if (['needs_review', 'review', 'check', 'посмотри', 'на проверку'].includes(explicitReviewV132F)) return 'needs_review'
   const raw = asText(
     scene?.video_review_status ||
     scene?.videoReviewStatus ||
@@ -2145,7 +2488,7 @@ function boardSceneVideoReviewInfo(scene = {}) {
       className: 'isReview',
       label: 'посмотри',
       shortLabel: 'посмотри',
-      title: 'Видео было перегенерировано. Посмотри и реши: оставить или пометить плохим.',
+      title: 'Видео было перегенерировано. Один клик — принять/снять посмотри; если плохо — пометь плохим отдельно.',
       square: '■',
     }
   }
@@ -2202,9 +2545,11 @@ function boardVideoWasBadBeforeRegenerate(scene = {}) {
   return Boolean(scene?.video_review_regenerate_from_bad || scene?.videoReviewRegenerateFromBad)
 }
 
-function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
+function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = false, busyLabel = '', busyHint = '', statusLabel = '', statusClassName = '' }) {
   const [imageLoading, setImageLoading] = useState(Boolean(value))
   const [imageFailed, setImageFailed] = useState(false)
+  const showBusyOverlay = Boolean(busy || imageLoading)
+  const loaderText = busyLabel || (imageLoading ? 'Загружаем фото…' : 'Подгружаем…')
 
   useEffect(() => {
     setImageFailed(false)
@@ -2212,15 +2557,18 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
   }, [value])
 
   return (
-    <div className="avaBoardImageSlot">
+    <div className={`avaBoardImageSlot ${busy ? 'isBusyV132O' : ''}`}>
       <div className="avaBoardImageSlotHeader">
         <div>
           <strong>{title}</strong>
           <span>{subtitle}</span>
         </div>
-        {name && <small>{name}</small>}
+        <div className="avaBoardImageSlotMetaV132O">
+          {statusLabel ? <small className={`avaBoardImageSlotStatusV132O ${statusClassName || ''}`}>{statusLabel}</small> : null}
+          {name && <small>{name}</small>}
+        </div>
       </div>
-      <div className={`avaBoardImagePreview ${imageLoading ? 'isLoadingMedia' : ''} ${imageFailed ? 'isMissingMedia' : ''}`}>
+      <div className={`avaBoardImagePreview ${showBusyOverlay ? 'isLoadingMedia' : ''} ${imageFailed ? 'isMissingMedia' : ''}`}>
         {value ? (
           <>
             {!imageFailed ? (
@@ -2231,11 +2579,12 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
                 onError={() => { setImageLoading(false); setImageFailed(true) }}
               />
             ) : null}
-            {imageLoading ? (
-              <div className="avaMediaLoadingOverlay avaBoardMediaSpinnerOverlayV15">
-                {/* AVA_BOARD_MEDIA_LOADING_SPINNERS_V15: small loader for restored image assets */}
+            {showBusyOverlay ? (
+              <div className="avaMediaLoadingOverlay avaBoardMediaSpinnerOverlayV15 avaBoardImageStatusOverlayV132O">
+                {/* AVA_BOARD_MEDIA_STATUS_INDICATORS_V132O: image restore/upload/save overlay */}
                 <span className="avaBoardTinyMediaSpinner" aria-hidden="true" />
-                <span className="avaBoardMediaLoaderText">Загружаем фото…</span>
+                <span className="avaBoardMediaLoaderText">{loaderText}</span>
+                {busyHint ? <small>{busyHint}</small> : null}
               </div>
             ) : null}
             {imageFailed ? (
@@ -2245,7 +2594,19 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear }) {
               </div>
             ) : null}
           </>
-        ) : <div><ImageIcon size={30} /><span>Нет изображения</span></div>}
+        ) : (
+          <>
+            <div><ImageIcon size={30} /><span>{busy ? 'Подгружаем изображение…' : 'Нет изображения'}</span></div>
+            {showBusyOverlay ? (
+              <div className="avaMediaLoadingOverlay avaBoardMediaSpinnerOverlayV15 avaBoardImageStatusOverlayV132O">
+                {/* AVA_BOARD_MEDIA_STATUS_INDICATORS_V132O: protected asset may exist before blob URL is ready */}
+                <span className="avaBoardTinyMediaSpinner" aria-hidden="true" />
+                <span className="avaBoardMediaLoaderText">{loaderText}</span>
+                {busyHint ? <small>{busyHint}</small> : null}
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
       <div className="avaBoardSlotActions">
         <label className="avaBoardSmallButton" title="Ручная замена фото в этой сцене — имя файла может быть любым">
@@ -2665,45 +3026,49 @@ function isBoardVideoDoneStatus(status) {
   }
 
 
-  function sceneVideoActionState(scene) {
-    // AVA_BOARD_LIPSYNC_VIDEO_BUTTON_STATUS_V130I:
-    // The action button must follow the real server job state even when a scene still has
-    // old/ready video refs. This is especially visible in manual ia2v lip-sync: the shared
-    // button should turn into the same running/queued state as regular i2v, both for manual
-    // launch and for the global queue.
-    const videoStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
-    const hasVideo = boardSceneHasCurrentVideoResultV129P(scene)
-    const hasServerJob = Boolean(
-      scene?.video_job_id || scene?.videoJobId ||
-      scene?.video_status_endpoint || scene?.videoStatusEndpoint
-    )
-    const problems = sceneVideoInputProblems(scene)
-    const hasInputProblems = problems.length > 0
-    const activeStatuses = ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id']
-    const isActiveServerJob = activeStatuses.includes(videoStatus) || (videoStatus === 'queued' && hasServerJob)
-    const isLocalQueued = videoStatus === 'queued' && !hasServerJob && !hasInputProblems
-    const isBlocked = videoStatus === 'blocked_missing_comfy_base_url'
-    const isError = videoStatus === 'error' || videoStatus === 'failed'
+  
+function sceneVideoActionState(scene) {
+  // AVA_BOARD_ACTION_LABEL_FLOW_V132S:
+  // Full replacement because the first V132S repair accidentally removed const isError,
+  // causing runtime ReferenceError after page load.
+  const rawVideoStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+  const videoStatus = String(boardSceneVideoUiStatusV130F(scene) || rawVideoStatus || '').toLowerCase()
+  const hasVideo = boardSceneHasCurrentVideoResultV129P(scene)
+  const hasServerJob = Boolean(
+    scene?.video_job_id || scene?.videoJobId ||
+    scene?.video_status_endpoint || scene?.videoStatusEndpoint
+  )
+  const problems = sceneVideoInputProblems(scene)
+  const hasInputProblems = problems.length > 0
+  const submittingStatuses = ['starting', 'preparing', 'submitting']
+  const activeStatuses = ['running', 'processing', 'queued_no_prompt_id']
+  const isSubmitting = submittingStatuses.includes(rawVideoStatus) || submittingStatuses.includes(videoStatus)
+  const isRunning = activeStatuses.includes(rawVideoStatus) || activeStatuses.includes(videoStatus) || (rawVideoStatus === 'queued' && hasServerJob)
+  const isActiveServerJob = isSubmitting || isRunning
+  const isLocalQueued = rawVideoStatus === 'queued' && !hasServerJob && !hasInputProblems
+  const isBlocked = rawVideoStatus === 'blocked_missing_comfy_base_url' || videoStatus === 'blocked_missing_comfy_base_url'
+  const isError = rawVideoStatus === 'error' || rawVideoStatus === 'failed' || videoStatus === 'error' || videoStatus === 'failed'
+  const actionBusyLabelV132S = isSubmitting ? 'Отправляется' : 'Видео делается'
 
-    return {
-      className: `avaBoardWorkflowButton isVideo ${isActiveServerJob ? 'isBusy' : isLocalQueued ? 'isQueued' : isBlocked ? 'isBlocked' : isError ? 'isError' : ''}`.trim(),
-      label: isLocalQueued ? 'В очереди' : isActiveServerJob ? 'Видео делается' : 'Сделать видео',
-      hint: isLocalQueued
-        ? `ждёт очередь${scene?.video_queue_position ? ` · #${scene.video_queue_position}` : ''}`
-        : isActiveServerJob
-          ? (hasServerJob ? 'job выполняется…' : 'отправляем job…')
-          : isBlocked
-            ? 'нужен COMFY_BASE_URL'
-            : isError
-              ? (scene?.video_error || scene?.videoError || 'ошибка')
-              : hasInputProblems
-                ? `нужно: ${problems.join(', ')}`
-                : hasVideo
-                  ? 'готово · можно заново'
-                  : (scene?.workflow_key || scene?.workflowKey || 'workflow будет выбран автоматически'),
-      disabled: isActiveServerJob || isLocalQueued,
-    }
+  return {
+    className: `avaBoardWorkflowButton isVideo ${isActiveServerJob ? 'isBusy' : isLocalQueued ? 'isQueued' : isBlocked ? 'isBlocked' : isError ? 'isError' : ''}`.trim(),
+    label: isLocalQueued ? 'В очереди' : isActiveServerJob ? actionBusyLabelV132S : 'Сделать видео',
+    hint: isLocalQueued
+      ? `ждёт очередь${scene?.video_queue_position ? ` · #${scene.video_queue_position}` : ''}`
+      : isActiveServerJob
+        ? (isSubmitting ? 'отправляем на backend…' : (hasServerJob ? 'job выполняется…' : 'ожидаем backend…'))
+        : isBlocked
+          ? 'нужен COMFY_BASE_URL'
+          : isError
+            ? (scene?.video_error || scene?.videoError || 'ошибка')
+            : hasInputProblems
+              ? `нужно: ${problems.join(', ')}`
+              : hasVideo
+                ? 'готово · можно заново'
+                : (scene?.workflow_key || scene?.workflowKey || 'workflow будет выбран автоматически'),
+    disabled: isActiveServerJob || isLocalQueued,
   }
+}
 
   function isBoardVideoActiveWorkerStatus(scene) {
     const status = String(scene?.video_status || '').toLowerCase()
@@ -3533,7 +3898,11 @@ function isBoardVideoDoneStatus(status) {
       const sceneId = serverBatchSceneIdV131D(scene)
       if (!sceneId) return
 
-      if (boardSceneHasVideoResultForAuto(scene)) {
+      const markedBadForReviewV132A = boardSceneHasBadVideoReview(scene)
+      // AVA_BOARD_BAD_REVIEW_SERVER_BATCH_QUEUE_V132A:
+      // Ready videos normally skip server batch, but a red "плохое" review mark means
+      // this scene is intentionally selected for regeneration.
+      if (boardSceneHasVideoResultForAuto(scene) && !markedBadForReviewV132A) {
         skippedReadyIds.push(sceneId)
         return
       }
@@ -3581,6 +3950,49 @@ function isBoardVideoDoneStatus(status) {
 
     setStatus(`Серверная очередь: отправляю ${addedIds.length} сцен на backend...${invalidText}`)
 
+    // AVA_BOARD_SERVER_BATCH_MARK_ADDED_SCENES_BUSY_V132R:
+    // AVA_BOARD_SERVER_BATCH_SUBMITTING_STAGE_V132S: before backend answers, scenes are only отправляется, not video делается.
+    // Backend batch may take time before per-scene status polling updates the snapshot.
+    // Mark every submitted scene as busy immediately and send that busy state in the batch payload.
+    const addedSceneIdSetV132R = new Set(addedIds)
+    const serverBatchStartedAtV132R = new Date().toISOString()
+    scenes = scenes.map((scene) => {
+      const sceneIdV132R = serverBatchSceneIdV131D(scene)
+      if (!addedSceneIdSetV132R.has(sceneIdV132R)) return scene
+      const wasBadV132R = boardSceneHasBadVideoReview(scene)
+      return {
+        ...scene,
+        video_status: 'submitting',
+        videoStatus: 'submitting',
+        video_error: '',
+        videoError: '',
+        video_queue_position: Math.max(1, addedIds.indexOf(sceneIdV132R) + 1),
+        videoQueuePosition: Math.max(1, addedIds.indexOf(sceneIdV132R) + 1),
+        video_queue_source: wasBadV132R ? 'bad_review_regeneration_submitting_v132s' : 'server_batch_submitting_v132s',
+        videoQueueSource: wasBadV132R ? 'bad_review_regeneration_submitting_v132s' : 'server_batch_submitting_v132s',
+        video_batch_active_v132r: true,
+        video_batch_stage_v132s: 'submitting',
+        videoBatchActiveV132R: true,
+        videoBatchStageV132S: 'submitting',
+        video_batch_started_at_v132r: serverBatchStartedAtV132R,
+        videoBatchStartedAtV132R: serverBatchStartedAtV132R,
+        video_review_regenerate_from_bad: wasBadV132R,
+        videoReviewRegenerateFromBad: wasBadV132R,
+        video_review_regenerate_reason: wasBadV132R ? 'server_batch_bad_review_regeneration_v132r' : '',
+        videoReviewRegenerateReason: wasBadV132R ? 'server_batch_bad_review_regeneration_v132r' : '',
+      }
+    })
+    setBoard((current) => {
+      const nextScenesV132R = asSceneArray(current?.scenes).map((scene) => {
+        const sceneIdV132R = serverBatchSceneIdV131D(scene)
+        const patchedSceneV132R = scenes.find((item) => serverBatchSceneIdV131D(item) === sceneIdV132R)
+        return patchedSceneV132R || scene
+      })
+      const nextBoardV132R = { ...(current || {}), scenes: nextScenesV132R, updatedAt: serverBatchStartedAtV132R }
+      boardRef.current = nextBoardV132R
+      return nextBoardV132R
+    })
+
     apiRequest(`/projects/${projectId}/board/video-batch/start`, {
       method: 'POST',
       body: JSON.stringify({
@@ -3592,10 +4004,70 @@ function isBoardVideoDoneStatus(status) {
         scenes,
       }),
     }).then((result) => {
-      const nextBoard = result?.board || result?.snapshot?.data || null
+      // AVA_BOARD_SERVER_BATCH_ACCEPTED_QUEUE_ORDER_V132S:
+      // Once backend accepted the batch, exactly the first submitted scene is shown as video делается,
+      // and the rest are shown as в очереди until snapshot/status polling promotes them.
+      const batchAcceptedAtV132S = new Date().toISOString()
+      const applyServerBatchAcceptedOrderV132S = (boardDataV132S = {}) => {
+        const acceptedScenesV132S = asSceneArray(boardDataV132S?.scenes)
+        if (!acceptedScenesV132S.length) return boardDataV132S
+        const addedSceneIdSetV132S = new Set(addedIds)
+        return {
+          ...(boardDataV132S || {}),
+          scenes: acceptedScenesV132S.map((scene) => {
+            const sceneIdV132S = serverBatchSceneIdV131D(scene)
+            if (!addedSceneIdSetV132S.has(sceneIdV132S)) return scene
+            const queueIndexV132S = addedIds.indexOf(sceneIdV132S)
+            const queuePositionV132S = Math.max(1, queueIndexV132S + 1)
+            const oldStatusV132S = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+            if (['error', 'failed', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(oldStatusV132S)) return scene
+            const wasBadV132S = Boolean(
+              boardSceneHasBadVideoReview(scene) ||
+              scene?.video_review_regenerate_from_bad ||
+              scene?.videoReviewRegenerateFromBad ||
+              String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase().includes('bad_review')
+            )
+            const nextStatusV132S = queueIndexV132S === 0 ? 'running' : 'queued'
+            return {
+              ...scene,
+              video_status: nextStatusV132S,
+              videoStatus: nextStatusV132S,
+              video_error: '',
+              videoError: '',
+              video_queue_position: queuePositionV132S,
+              videoQueuePosition: queuePositionV132S,
+              video_queue_source: wasBadV132S
+                ? (queueIndexV132S === 0 ? 'bad_review_regeneration_running_v132s' : 'bad_review_regeneration_waiting_v132s')
+                : (queueIndexV132S === 0 ? 'server_batch_running_v132s' : 'server_batch_waiting_v132s'),
+              videoQueueSource: wasBadV132S
+                ? (queueIndexV132S === 0 ? 'bad_review_regeneration_running_v132s' : 'bad_review_regeneration_waiting_v132s')
+                : (queueIndexV132S === 0 ? 'server_batch_running_v132s' : 'server_batch_waiting_v132s'),
+              video_batch_active_v132r: true,
+              videoBatchActiveV132R: true,
+              video_batch_stage_v132s: nextStatusV132S,
+              videoBatchStageV132S: nextStatusV132S,
+              video_batch_accepted_at_v132s: batchAcceptedAtV132S,
+              videoBatchAcceptedAtV132S: batchAcceptedAtV132S,
+              video_review_regenerate_from_bad: wasBadV132S,
+              videoReviewRegenerateFromBad: wasBadV132S,
+              video_review_regenerate_reason: wasBadV132S ? 'server_batch_bad_review_regeneration_v132s' : '',
+              videoReviewRegenerateReason: wasBadV132S ? 'server_batch_bad_review_regeneration_v132s' : '',
+            }
+          }),
+          updatedAt: batchAcceptedAtV132S,
+        }
+      }
+      let nextBoard = result?.board || result?.snapshot?.data || null
       if (nextBoard && Array.isArray(nextBoard.scenes)) {
+        nextBoard = applyServerBatchAcceptedOrderV132S(nextBoard)
         boardRef.current = nextBoard
         setBoard(nextBoard)
+      } else {
+        setBoard((current) => {
+          const nextBoardV132S = applyServerBatchAcceptedOrderV132S(current)
+          boardRef.current = nextBoardV132S
+          return nextBoardV132S
+        })
       }
 
       setAutoVideoQueueState({
@@ -4440,7 +4912,24 @@ function isBoardVideoDoneStatus(status) {
           }
         }
         const hydratedCompleted = applyCompletedJobsToBoard(nextBoard, { projectId: projectId || '', workspaceMode })
-        nextBoard = normalizeLoadedBoardVideoStatuses(hydratedCompleted.board)
+        nextBoard = hydratedCompleted.board
+        // AVA_BOARD_LOAD_FORCE_SERVER_VIDEO_REHYDRATE_V132W:
+        // buildBoardFromTiming/normalization can rebuild scene objects from older local data.
+        // On project Board entry, merge backend video/result/review refs again after the rebuild.
+        if (!workspaceMode && serverBoardData && Array.isArray(serverBoardData.scenes) && boardVideoStateScoreV131N(serverBoardData) > 0) {
+          const beforeScoreV132W = boardVideoStateScoreV131N(nextBoard)
+          nextBoard = boardMergeServerVideoStateV131N(nextBoard, serverBoardData)
+          const afterScoreV132W = boardVideoStateScoreV131N(nextBoard)
+          if (afterScoreV132W >= beforeScoreV132W) {
+            writeBoardDurableBackup(durableKey, nextBoard)
+          }
+          console.log('[BOARD LOAD SERVER VIDEO REHYDRATE V132W]', {
+            beforeScore: beforeScoreV132W,
+            afterScore: afterScoreV132W,
+            serverScore: boardVideoStateScoreV131N(serverBoardData),
+          })
+        }
+        nextBoard = normalizeLoadedBoardVideoStatuses(nextBoard)
         if (hydratedCompleted.usedKeys.length) {
           const used = new Set(hydratedCompleted.usedKeys)
           writeAvaCompletedJobs(readAvaCompletedJobs().filter((job) => !used.has(job.key)))
@@ -4651,7 +5140,9 @@ function isBoardVideoDoneStatus(status) {
         if (!cancelled) setSelectedVideoBlobUrl(objectUrl)
       } catch (error) {
         if (!cancelled) {
-          setStatus(`Видео preview недоступен: ${error?.message || 'asset_fetch_failed'}`)
+          const message = error?.message || 'asset_fetch_failed'
+          setSelectedVideoLoadError(message)
+          setStatus(`Видео preview недоступен: ${message}`)
         }
       }
     }
@@ -5515,6 +6006,14 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
     })
   }
 
+
+  function manualSceneHueV133A(index = 0) {
+    // AVA_BOARD_MANUAL_SCENE_IMMEDIATE_COLORS_V133A:
+    // Same hue formula as normalized/reloaded Board scenes, but applied immediately on + Scene.
+    const n = Number(index || 0)
+    return 185 + (((Number.isFinite(n) ? n : 0) * 47) % 150)
+  }
+
   function createManualScene() {
     if (!manualSceneToolsEnabled) {
       setStatus('Добавление ручных сцен отключено: эта доска привязана к таймингу.')
@@ -5547,6 +6046,7 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
       const end = Number((start + safeDuration).toFixed(3))
       const format = current.format || current.aspect_ratio || '16:9'
       const titleNumber = scenes.length + 1
+      const manualSceneColorV133A = manualSceneHueV133A(scenes.length)
       createdId = nextId
 
       const nextScene = {
@@ -5575,6 +6075,16 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
         block_id: '',
         blockTitle: 'Manual',
         block_title: 'Manual',
+        // AVA_BOARD_MANUAL_SCENE_IMMEDIATE_COLORS_V133A:
+        // Do not wait for F5/normalizeBoardScene to derive final card/workspace color.
+        blockColor: manualSceneColorV133A,
+        block_color: manualSceneColorV133A,
+        color: manualSceneColorV133A,
+        sceneColor: manualSceneColorV133A,
+        scene_color: manualSceneColorV133A,
+        user_scene_color: manualSceneColorV133A,
+        timelineColor: manualSceneColorV133A,
+        cardColor: manualSceneColorV133A,
         roleLabels: [],
         source_phrase_ids: [],
         scene_word_text: '',
@@ -6331,6 +6841,24 @@ function updateSelectedSceneDuration(nextValue) {
       original_video_url: '',
       originalVideoUrl: '',
 
+      // AVA_BOARD_REVIEW_CLEAR_ON_IMAGE_CHANGE_V133B:
+      // A review belongs to the old video. When the source photo/frame changes,
+      // bad/needs_review/posmotri must not survive into the new still state.
+      video_review_status: '',
+      videoReviewStatus: '',
+      video_review_reason: '',
+      videoReviewReason: '',
+      video_review_cleared_at: new Date().toISOString(),
+      videoReviewClearedAt: new Date().toISOString(),
+      video_review_clear_reason: 'source_image_changed_v133b',
+      videoReviewClearReason: 'source_image_changed_v133b',
+      video_review_clear_token_v133b: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      videoReviewClearTokenV133B: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      video_review_reset_on_image_change_v133b: true,
+      videoReviewResetOnImageChangeV133B: true,
+      video_review_accept_token_v132z: '',
+      videoReviewAcceptTokenV132Z: '',
+
       result_url: '',
       resultUrl: '',
       result_video_url: '',
@@ -6774,6 +7302,191 @@ function updateSelectedSceneDuration(nextValue) {
     }
   }
 
+
+  // AVA_BOARD_IMAGE_UPLOAD_FORCE_COMMIT_V132N4:
+  // Strong manual image upload patch. It is applied after the image asset is uploaded,
+  // before saving the Board snapshot. It writes the new asset/apiPath into every known
+  // image field for the selected slot and clears stale video/review/job state.
+  function buildImageUploadForceCommitPatchV132N4({
+    fieldUrl = '',
+    fieldName = '',
+    statusField = '',
+    mediaSlot = 'image',
+    fileName = '',
+    assetId = '',
+    assetApiPath = '',
+    dataUrl = '',
+    reason = 'manual_image_asset_ready_v132n4',
+  } = {}) {
+    const imageMutationEpochV132N4 = Date.now()
+    const imageSourceV132N4 = assetApiPath || dataUrl || ''
+    const patch = {
+      image_mutation_epoch: imageMutationEpochV132N4,
+      imageMutationEpoch: imageMutationEpochV132N4,
+      image_mutation_at: new Date().toISOString(),
+      imageMutationAt: new Date().toISOString(),
+
+      video_asset_id: '',
+      videoAssetId: '',
+      video_api_path: '',
+      videoApiPath: '',
+      video_url: '',
+      videoUrl: '',
+      video_static_url: '',
+      videoStaticUrl: '',
+      result_video_asset_id: '',
+      resultVideoAssetId: '',
+      result_video_api_path: '',
+      resultVideoApiPath: '',
+      result_video_url: '',
+      resultVideoUrl: '',
+      video_source_image_asset_id: '',
+      videoSourceImageAssetId: '',
+      video_source_image_api_path: '',
+      videoSourceImageApiPath: '',
+      video_source_image_url: '',
+      videoSourceImageUrl: '',
+      video_source_image_mutation_epoch: '',
+      videoSourceImageMutationEpoch: '',
+      video_source_bound_at: '',
+      videoSourceBoundAt: '',
+
+      video_status: '',
+      videoStatus: '',
+      video_error: '',
+      videoError: '',
+      video_job_id: '',
+      videoJobId: '',
+      video_status_endpoint: '',
+      videoStatusEndpoint: '',
+      video_queue_position: null,
+      videoQueuePosition: null,
+      video_queue_source: '',
+      videoQueueSource: '',
+
+      video_review_status: '',
+      videoReviewStatus: '',
+      review_status: '',
+      reviewStatus: '',
+      video_review_reason: '',
+      videoReviewReason: '',
+      review_reason: '',
+      reviewReason: '',
+      video_review_regenerate_from_bad: false,
+      videoReviewRegenerateFromBad: false,
+      video_review_regenerate_reason: '',
+      videoReviewRegenerateReason: '',
+      bad_video_review: false,
+      badVideoReview: false,
+      video_review_bad: false,
+      videoReviewBad: false,
+      video_bad: false,
+      videoBad: false,
+      is_bad_video: false,
+      isBadVideo: false,
+
+      image_asset_committed_v132n4: true,
+      imageAssetCommittedV132N4: true,
+      image_replace_reason_v132n4: reason,
+      imageReplaceReasonV132N4: reason,
+    }
+
+    if (fieldUrl) patch[fieldUrl] = imageSourceV132N4
+    if (fieldName) patch[fieldName] = fileName
+    if (statusField) patch[statusField] = assetApiPath ? 'asset_ready' : (dataUrl ? 'local_pending' : '')
+
+    const dataField = sceneDataFieldByUrlField(fieldUrl)
+    if (dataField) patch[dataField] = assetApiPath ? '' : dataUrl
+
+    if (mediaSlot === 'last') {
+      Object.assign(patch, {
+        last_frame_url: imageSourceV132N4,
+        lastFrameUrl: imageSourceV132N4,
+        last_frame_name: fileName,
+        lastFrameName: fileName,
+        last_frame_api_path: assetApiPath,
+        lastFrameApiPath: assetApiPath,
+        last_frame_asset_id: assetId,
+        lastFrameAssetId: assetId,
+
+        last_image_url: imageSourceV132N4,
+        lastImageUrl: imageSourceV132N4,
+        last_image_name: fileName,
+        lastImageName: fileName,
+        last_image_asset_id: assetId,
+        lastImageAssetId: assetId,
+        last_image_api_path: assetApiPath,
+        lastImageApiPath: assetApiPath,
+
+        end_image_url: imageSourceV132N4,
+        endImageUrl: imageSourceV132N4,
+        end_image_name: fileName,
+        endImageName: fileName,
+        end_image_data_url: assetApiPath ? '' : dataUrl,
+        endImageDataUrl: assetApiPath ? '' : dataUrl,
+        end_image_asset_id: assetId,
+        endImageAssetId: assetId,
+        end_image_api_path: assetApiPath,
+        endImageApiPath: assetApiPath,
+
+        last_image_mutation_epoch: imageMutationEpochV132N4,
+        lastImageMutationEpoch: imageMutationEpochV132N4,
+      })
+      return patch
+    }
+
+    Object.assign(patch, {
+      image_url: imageSourceV132N4,
+      imageUrl: imageSourceV132N4,
+      image_name: fileName,
+      imageName: fileName,
+      image_data_url: assetApiPath ? '' : dataUrl,
+      imageDataUrl: assetApiPath ? '' : dataUrl,
+      image_asset_id: assetId,
+      imageAssetId: assetId,
+      image_api_path: assetApiPath,
+      imageApiPath: assetApiPath,
+      mediaUrl: imageSourceV132N4,
+      media_url: imageSourceV132N4,
+
+      first_frame_url: imageSourceV132N4,
+      firstFrameUrl: imageSourceV132N4,
+      first_frame_name: fileName,
+      firstFrameName: fileName,
+      first_frame_api_path: assetApiPath,
+      firstFrameApiPath: assetApiPath,
+      first_frame_asset_id: assetId,
+      firstFrameAssetId: assetId,
+
+      first_image_url: imageSourceV132N4,
+      firstImageUrl: imageSourceV132N4,
+      first_image_name: fileName,
+      firstImageName: fileName,
+      first_image_asset_id: assetId,
+      firstImageAssetId: assetId,
+      first_image_api_path: assetApiPath,
+      firstImageApiPath: assetApiPath,
+
+      start_image_url: imageSourceV132N4,
+      startImageUrl: imageSourceV132N4,
+      start_image_name: fileName,
+      startImageName: fileName,
+      start_image_data_url: assetApiPath ? '' : dataUrl,
+      startImageDataUrl: assetApiPath ? '' : dataUrl,
+      start_image_asset_id: assetId,
+      startImageAssetId: assetId,
+      start_image_api_path: assetApiPath,
+      startImageApiPath: assetApiPath,
+
+      start_image_mutation_epoch: imageMutationEpochV132N4,
+      startImageMutationEpoch: imageMutationEpochV132N4,
+      first_image_mutation_epoch: imageMutationEpochV132N4,
+      firstImageMutationEpoch: imageMutationEpochV132N4,
+    })
+
+    return patch
+  }
+
   async function setSceneFile(scene, fieldUrl, fieldName, statusField, event) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -6829,6 +7542,18 @@ function updateSelectedSceneDuration(nextValue) {
       const dataField = sceneDataFieldByUrlField(fieldUrl)
       if (dataField) patch[dataField] = ''
 
+      Object.assign(patch, buildImageUploadForceCommitPatchV132N4({
+        fieldUrl,
+        fieldName,
+        statusField,
+        mediaSlot,
+        fileName: file.name,
+        assetId,
+        assetApiPath,
+        dataUrl,
+        reason: `manual_image_replaced_${fieldUrl}_v132n4`,
+      }))
+
       let nextBoardForSave = null
       setBoard((current) => {
         let changed = false
@@ -6853,6 +7578,7 @@ function updateSelectedSceneDuration(nextValue) {
         if (nextBoardForSave) saveBoard(nextBoardForSave, true)
       }, 0)
 
+      console.log('[BOARD IMAGE ASSET COMMITTED V132N4]', { sceneId, slot: mediaSlot, fileName: file.name, assetId, assetApiPath, sourceField: fieldUrl, success: true })
       console.log('[BOARD IMAGE MANUAL REPLACE]', { sceneId, slot: mediaSlot, assetId, apiPath: assetApiPath, sourceField: fieldUrl, success: true, replaceSave: true })
       setStatus(`Фото сцены заменено: ${file.name}; старые video refs очищены, F5 сохранит asset ref`)
     } catch (error) {
@@ -8071,14 +8797,57 @@ async function importTimingJson(event) {
   }
 
 
+  
   function setSceneVideoReviewStatus(sceneId, status = '', reason = 'manual') {
     const safeSceneId = asText(sceneId)
     if (!safeSceneId) return
-    updateSceneAndSave(safeSceneId, boardVideoReviewPatch(status, reason))
-    const label = status === 'bad' ? 'плохое' : status === 'needs_review' ? 'посмотри' : 'метка снята'
+    const rawStatusV132Z = String(status || '').toLowerCase()
+    const safeStatusV132Z = ['bad', 'needs_review'].includes(rawStatusV132Z) ? rawStatusV132Z : ''
+    const reviewPatchV132Z = { ...boardVideoReviewPatch(safeStatusV132Z, reason) }
+
+    // AVA_BOARD_REVIEW_ACCEPT_PERSIST_V132Z:
+    // Clearing red bad or orange posmotri must be explicit, not just absent.
+    // We store accepted + clear token so backend V132J/V132B preserve cannot resurrect old review.
+    if (!safeStatusV132Z) {
+      const acceptedAtV132Z = new Date().toISOString()
+      const clearTokenV132Z = `review_accept_${acceptedAtV132Z}_${Math.random().toString(36).slice(2, 8)}`
+      Object.assign(reviewPatchV132Z, {
+        video_review_status: 'accepted',
+        videoReviewStatus: 'accepted',
+        review_status: 'accepted',
+        reviewStatus: 'accepted',
+        video_review_updated_at: acceptedAtV132Z,
+        videoReviewUpdatedAt: acceptedAtV132Z,
+        video_review_cleared_at: acceptedAtV132Z,
+        videoReviewClearedAt: acceptedAtV132Z,
+        video_review_accepted_at: acceptedAtV132Z,
+        videoReviewAcceptedAt: acceptedAtV132Z,
+        video_review_clear_token_v132y: clearTokenV132Z,
+        videoReviewClearTokenV132Y: clearTokenV132Z,
+        video_review_accept_token_v132z: clearTokenV132Z,
+        videoReviewAcceptTokenV132Z: clearTokenV132Z,
+        video_review_clear_reason: reason || 'manual_review_accept_v132z',
+        videoReviewClearReason: reason || 'manual_review_accept_v132z',
+        video_review_reason: reason || 'manual_review_accept_v132z',
+        videoReviewReason: reason || 'manual_review_accept_v132z',
+        video_review_regenerate_from_bad: false,
+        videoReviewRegenerateFromBad: false,
+        video_review_regenerate_reason: '',
+        videoReviewRegenerateReason: '',
+        bad_video_review: false,
+        badVideoReview: false,
+        video_review_bad: false,
+        videoReviewBad: false,
+      })
+    }
+
+    updateSceneAndSave(safeSceneId, reviewPatchV132Z)
+    const label = safeStatusV132Z === 'bad' ? 'плохое' : safeStatusV132Z === 'needs_review' ? 'посмотри' : 'метка снята'
     setStatus(`Review: ${safeSceneId} · ${label}`)
   }
 
+  
+  
   function toggleSceneVideoReview(scene, event = null) {
     stopBoardActionEvent(event)
     const sceneId = asText(scene?.id || scene?.scene_id)
@@ -8087,9 +8856,17 @@ async function importTimingJson(event) {
       setStatus(`Review: ${sceneId} · сначала нужно готовое видео`)
       return
     }
+
+    // AVA_BOARD_REVIEW_TOGGLE_ACCEPT_POSMOTRI_V132X + AVA_BOARD_REVIEW_ACCEPT_PERSIST_V132Z:
+    // good <-> bad, and orange posmotri -> accepted/good in one click.
     const current = boardSceneVideoReviewStatus(scene)
-    const next = current === 'bad' ? '' : 'bad'
-    setSceneVideoReviewStatus(sceneId, next, next ? 'manual_bad_toggle' : 'manual_bad_clear')
+    const next = current === 'bad' ? '' : current === 'needs_review' ? '' : 'bad'
+    const reason = current === 'needs_review'
+      ? 'manual_needs_review_accept_v132z'
+      : next
+        ? 'manual_bad_toggle'
+        : 'manual_bad_accept_v132z'
+    setSceneVideoReviewStatus(sceneId, next, reason)
   }
 
   function exportBoardJson(event) {
@@ -8156,6 +8933,15 @@ async function importTimingJson(event) {
   const selectedImagePreviewUrl = selectedScene ? boardSlotPreviewUrlV129O(selectedScene, 'image', selectedRuntimeMedia) : ''
   const selectedFirstImagePreviewUrl = selectedScene ? boardSlotPreviewUrlV129O(selectedScene, 'first', selectedRuntimeMedia) : ''
   const selectedLastImagePreviewUrl = selectedScene ? boardSlotPreviewUrlV129O(selectedScene, 'last', selectedRuntimeMedia) : ''
+  const selectedFirstSlotPreviewUrlV132O = selectedFirstImagePreviewUrl || selectedImagePreviewUrl
+  const selectedImageSlotStateV132O = boardSceneImageSlotUiStateV132O(selectedScene, 'image', selectedImagePreviewUrl, selectedRuntimeMedia)
+  const selectedFirstImageSlotStateV132O = boardSceneImageSlotUiStateV132O(selectedScene, 'first', selectedFirstSlotPreviewUrlV132O, selectedRuntimeMedia)
+  const selectedLastImageSlotStateV132O = boardSceneImageSlotUiStateV132O(selectedScene, 'last', selectedLastImagePreviewUrl, selectedRuntimeMedia)
+  const selectedVideoIndicatorV132O = boardSceneVideoUiIndicatorV132O(selectedScene, {
+    previewLoading: selectedPreviewVideoLoading,
+    hasPreview: Boolean(selectedPreviewVideoUrl),
+    loadError: selectedVideoLoadError,
+  })
   const boardScenes = asSceneArray(board.scenes)
   const readiness = {
     total: boardScenes.length,
@@ -8620,7 +9406,7 @@ async function importTimingJson(event) {
                 {scene.roleLabels?.map((label) => <em key={label}>{label}</em>)}
                 {scene.phrase_cut_warning && <em className="isWarn">срез</em>}
                 {scene.blockTitle && <em>{scene.blockTitle}</em>}
-                {boardSceneCanReviewVideo(scene) ? (
+                {boardSceneCanReviewVideo(scene) && boardSceneCanShowVideoReviewV133B(scene) ? (
                   <span
                     role="button"
                     tabIndex={0}
@@ -8665,7 +9451,7 @@ async function importTimingJson(event) {
               <div className="avaBoardSceneMiniMeta">
                 <span>#{selectedIndex + 1} из {boardScenes.length}</span>
                 <span>{selectedScene.source_phrase_ids?.join(', ') || 'phrases: —'}</span>
-                {boardSceneCanReviewVideo(selectedScene) ? (() => {
+                {boardSceneCanReviewVideo(selectedScene) && boardSceneCanShowVideoReviewV133B(selectedScene) ? (() => {
                   const reviewInfo = boardSceneVideoReviewInfo(selectedScene)
                   return (
                     <button
@@ -8852,8 +9638,13 @@ async function importTimingJson(event) {
                   key={`${selectedSceneIdForMediaV129O}:first`}
                   title="Первый кадр"
                   subtitle="start frame"
-                  value={selectedFirstImagePreviewUrl || selectedImagePreviewUrl}
+                  value={selectedFirstSlotPreviewUrlV132O}
                   name={selectedScene.first_frame_name}
+                  busy={selectedFirstImageSlotStateV132O.busy}
+                  busyLabel={selectedFirstImageSlotStateV132O.busyLabel}
+                  busyHint={selectedFirstImageSlotStateV132O.busyHint}
+                  statusLabel={selectedFirstImageSlotStateV132O.statusLabel}
+                  statusClassName={selectedFirstImageSlotStateV132O.statusClassName}
                   onSelect={(event) => setSceneFile(selectedScene, 'first_frame_url', 'first_frame_name', 'image_status', event)}
                   onClear={() => clearSceneFile(selectedScene, ['first_frame_url', 'first_frame_name'])}
                 />
@@ -8863,6 +9654,11 @@ async function importTimingJson(event) {
                   subtitle="end frame"
                   value={selectedLastImagePreviewUrl}
                   name={selectedScene.last_frame_name}
+                  busy={selectedLastImageSlotStateV132O.busy}
+                  busyLabel={selectedLastImageSlotStateV132O.busyLabel}
+                  busyHint={selectedLastImageSlotStateV132O.busyHint}
+                  statusLabel={selectedLastImageSlotStateV132O.statusLabel}
+                  statusClassName={selectedLastImageSlotStateV132O.statusClassName}
                   onSelect={(event) => setSceneFile(selectedScene, 'last_frame_url', 'last_frame_name', 'image_status', event)}
                   onClear={() => clearSceneFile(selectedScene, ['last_frame_url', 'last_frame_name'])}
                 />
@@ -8874,6 +9670,11 @@ async function importTimingJson(event) {
                 subtitle="основной кадр для i2v / ia2v"
                 value={selectedImagePreviewUrl}
                 name={selectedScene.image_name}
+                busy={selectedImageSlotStateV132O.busy}
+                busyLabel={selectedImageSlotStateV132O.busyLabel}
+                busyHint={selectedImageSlotStateV132O.busyHint}
+                statusLabel={selectedImageSlotStateV132O.statusLabel}
+                statusClassName={selectedImageSlotStateV132O.statusClassName}
                 onSelect={(event) => setSceneFile(selectedScene, 'image_url', 'image_name', 'image_status', event)}
                 onClear={() => clearSceneFile(selectedScene, ['image_url', 'image_name'])}
               />
@@ -8882,7 +9683,10 @@ async function importTimingJson(event) {
             <div className="avaBoardVideoPreview">
               <div className="avaBoardVideoHeader">
                 <strong><Film size={16} /> Видео preview</strong>
-                <span>{scenePreviewVideoLabel(selectedScene)}</span>
+                <span className={`avaBoardVideoHeaderStatusV132O ${selectedVideoIndicatorV132O.className || ''}`}>
+                  {selectedVideoIndicatorV132O.showSpinner ? <i className="avaBoardTinyMediaSpinner isGold" aria-hidden="true" /> : null}
+                  {selectedVideoIndicatorV132O.headerLabel || scenePreviewVideoLabel(selectedScene)}
+                </span>
               </div>
               {selectedPreviewVideoUrl && !selectedVideoLoadError ? (
                 <>
@@ -8923,11 +9727,22 @@ async function importTimingJson(event) {
                         </div>
                       </div>
                     )}
+
+                    {selectedVideoIndicatorV132O.overlay ? (
+                      <div className={`avaBoardVideoStatusOverlayV132O ${selectedVideoIndicatorV132O.className || ''}`}>
+                        {/* AVA_BOARD_MEDIA_STATUS_INDICATORS_V132O: keep old preview visible during bad-review regeneration */}
+                        <span className="avaBoardTinyMediaSpinner isGold" aria-hidden="true" />
+                        <div>
+                          <strong>{selectedVideoIndicatorV132O.overlayTitle}</strong>
+                          <small>{selectedVideoIndicatorV132O.overlayHint}</small>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                    <div className="avaBoardVideoActions">
                      <button type="button" onClick={openSelectedSceneVideo}>Смотреть видео</button>
                      <button type="button" onClick={downloadSelectedSceneVideo}>Скачать видео</button>
-                     {boardSceneCanReviewVideo(selectedScene) ? (() => {
+                     {boardSceneCanReviewVideo(selectedScene) && boardSceneCanShowVideoReviewV133B(selectedScene) ? (() => {
                        const reviewInfo = boardSceneVideoReviewInfo(selectedScene)
                        return (
                          <button
@@ -8946,8 +9761,8 @@ async function importTimingJson(event) {
                 <div className="avaBoardVideoEmpty isBusy avaBoardMediaSpinnerOverlayV15">
                   {/* AVA_BOARD_VIDEO_PREVIEW_LOADING_SPINNER_V15 */}
                   <span className="avaBoardTinyMediaSpinner isGold" aria-hidden="true" />
-                  <span>Загружаем видео</span>
-                  <small>Получаем protected asset preview.</small>
+                  <span>{selectedVideoIndicatorV132O.emptyTitle}</span>
+                  <small>{selectedVideoIndicatorV132O.emptyHint}</small>
                 </div>
               ) : selectedVideoLoadError ? (
                 <div className="avaBoardVideoEmpty isError">
@@ -8956,17 +9771,17 @@ async function importTimingJson(event) {
                   <small>{selectedVideoLoadError}</small>
                 </div>
               ) : (
-                <div className={`avaBoardVideoEmpty ${isVideoBusyStatus(selectedScene.video_status) ? 'isBusy isGeneratingVideoV15' : ''}`}>
-                  {/* AVA_BOARD_VIDEO_GENERATION_SPINNER_V15 */}
-                  {isVideoBusyStatus(selectedScene.video_status) ? (
+                <div className={`avaBoardVideoEmpty ${selectedVideoIndicatorV132O.showSpinner ? 'isBusy isGeneratingVideoV15' : ''}`}>
+                  {/* AVA_BOARD_MEDIA_STATUS_INDICATORS_V132O: explicit video queue/generation status */}
+                  {selectedVideoIndicatorV132O.showSpinner ? (
                     <span className="avaBoardTinyMediaSpinner isGold" aria-hidden="true" />
                   ) : (
                     <Film size={34} />
                   )}
-                  <span>{scenePreviewVideoLabel(selectedScene) === 'stale image' ? 'Видео очищено после замены фото' : (isVideoBusyStatus(selectedScene.video_status) ? sceneStatus(selectedScene).label : 'Видео ещё не создано')}</span>
-                  {isVideoBusyStatus(selectedScene.video_status) && (
-                    <small>Генерация активна: ждём новый результат.</small>
-                  )}
+                  <span>{selectedVideoIndicatorV132O.emptyTitle}</span>
+                  {selectedVideoIndicatorV132O.emptyHint ? (
+                    <small>{selectedVideoIndicatorV132O.emptyHint}</small>
+                  ) : null}
                 </div>
               )}
             </div>            {/* AVA_BOARD_TIMING_DURATION_LOCK_V38: lock duration by scene data, not by entry route. */}

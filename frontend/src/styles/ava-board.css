@@ -5751,3 +5751,337 @@
 .avaBoardSceneMiniMeta .avaBoardVideoReviewMetaToggle {
   pointer-events: auto;
 }
+
+
+/* AVA_BOARD_MEDIA_STATUS_INDICATORS_V132O: Board media status overlays, UI-only */
+.avaBoardImageSlotMetaV132O {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.avaBoardImageSlotStatusV132O {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid rgba(148, 163, 184, .26);
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: rgba(15, 23, 42, .58);
+  color: rgba(226, 232, 240, .76);
+  font-size: 10px !important;
+  line-height: 1;
+  font-weight: 900;
+  text-transform: lowercase;
+}
+
+.avaBoardImageSlotStatusV132O.isReady {
+  border-color: rgba(52, 211, 153, .42);
+  background: rgba(6, 95, 70, .24);
+  color: #a7f3d0;
+}
+
+.avaBoardImageSlotStatusV132O.isBusy {
+  border-color: rgba(251, 191, 36, .48);
+  background: rgba(120, 53, 15, .28);
+  color: #fde68a;
+}
+
+.avaBoardImageSlotStatusV132O.isError {
+  border-color: rgba(248, 113, 113, .48);
+  background: rgba(127, 29, 29, .30);
+  color: #fecaca;
+}
+
+.avaBoardImageStatusOverlayV132O small {
+  max-width: 84%;
+  color: rgba(226, 232, 240, .72);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.avaBoardImageSlot.isBusyV132O .avaBoardImagePreview {
+  border-color: rgba(251, 191, 36, .30);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, .08), 0 0 22px rgba(251, 191, 36, .08);
+}
+
+.avaBoardVideoHeaderStatusV132O {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 7px;
+  min-height: 23px;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(15, 23, 42, .55);
+  color: rgba(226, 232, 240, .78);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+.avaBoardVideoHeaderStatusV132O .avaBoardTinyMediaSpinner {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+}
+
+.avaBoardVideoHeaderStatusV132O.isReady {
+  border-color: rgba(52, 211, 153, .44);
+  background: rgba(6, 95, 70, .24);
+  color: #a7f3d0;
+}
+
+.avaBoardVideoHeaderStatusV132O.isBusy,
+.avaBoardVideoHeaderStatusV132O.isLoading,
+.avaBoardVideoHeaderStatusV132O.isRegenerating {
+  border-color: rgba(251, 191, 36, .54);
+  background: linear-gradient(135deg, rgba(120, 53, 15, .42), rgba(15, 23, 42, .58));
+  color: #fde68a;
+}
+
+.avaBoardVideoHeaderStatusV132O.isReview {
+  border-color: rgba(251, 146, 60, .62);
+  background: linear-gradient(135deg, rgba(154, 80, 16, .48), rgba(15, 23, 42, .56));
+  color: #fed7aa;
+}
+
+.avaBoardVideoHeaderStatusV132O.isBad,
+.avaBoardVideoHeaderStatusV132O.isError {
+  border-color: rgba(248, 113, 113, .56);
+  background: rgba(127, 29, 29, .34);
+  color: #fecaca;
+}
+
+.avaBoardVideoHeaderStatusV132O.isStale {
+  border-color: rgba(96, 165, 250, .42);
+  background: rgba(30, 64, 175, .22);
+  color: #bfdbfe;
+}
+
+.avaBoardVideoFrameV64 {
+  position: relative;
+}
+
+.avaBoardVideoStatusOverlayV132O {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px;
+  border: 1px solid rgba(251, 191, 36, .38);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(251, 191, 36, .20), transparent 36%),
+    rgba(3, 7, 18, .78);
+  color: #fff7d6;
+  backdrop-filter: blur(10px) saturate(1.08);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255, 255, 255, .08);
+  pointer-events: none;
+}
+
+.avaBoardVideoStatusOverlayV132O strong,
+.avaBoardVideoStatusOverlayV132O small {
+  display: block;
+  text-align: left;
+}
+
+.avaBoardVideoStatusOverlayV132O strong {
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.avaBoardVideoStatusOverlayV132O small {
+  margin-top: 2px;
+  color: rgba(255, 247, 214, .74);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.avaBoardVideoStatusOverlayV132O.isReview,
+.avaBoardVideoStatusOverlayV132O.isRegenerating {
+  border-color: rgba(251, 146, 60, .48);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(251, 146, 60, .22), transparent 38%),
+    rgba(3, 7, 18, .78);
+}
+
+
+/* AVA_ASSEMBLY_COMPACT_TRANSITIONS_STYLE_V134B: compact side-panel xfade control */
+.avaAssemblyTransitionMini {
+  margin-top: 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255,255,255,.045), rgba(69,216,255,.035));
+  padding: 10px 11px;
+  display: grid;
+  gap: 8px;
+}
+
+.avaAssemblyTransitionMini.isOn {
+  border-color: rgba(74,255,174,.24);
+  background: linear-gradient(135deg, rgba(74,255,174,.075), rgba(69,216,255,.04));
+}
+
+.avaAssemblyTransitionMini.isBlocked {
+  border-color: rgba(255,214,100,.26);
+  background: linear-gradient(135deg, rgba(255,214,100,.08), rgba(255,255,255,.035));
+}
+
+.avaAssemblyTransitionMiniHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+}
+
+.avaAssemblyTransitionMiniHead label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #eaf2ff;
+  cursor: pointer;
+}
+
+.avaAssemblyTransitionMiniHead label > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.avaAssemblyTransitionMiniHead strong {
+  font-size: 12px;
+  line-height: 1.1;
+  color: #eaf2ff;
+}
+
+.avaAssemblyTransitionMiniHead em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaAssemblyTransitionMiniHead b {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(3, 7, 18, .38);
+  color: #dce8ff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.avaAssemblyTransitionMiniControls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px;
+  gap: 8px;
+  align-items: center;
+}
+
+.avaAssemblyTransitionMiniControls input[type='range'] {
+  width: 100%;
+  min-width: 0;
+}
+
+.avaAssemblyTransitionMiniControls input[type='number'] {
+  width: 58px;
+  box-sizing: border-box;
+  border: 1px solid rgba(69,216,255,.18);
+  border-radius: 10px;
+  background: rgba(8, 14, 30, .74);
+  color: #eaf2ff;
+  padding: 6px 7px;
+  font-size: 11px;
+  font-weight: 800;
+  outline: none;
+}
+
+
+/* AVA_ASSEMBLY_PANEL_ALIGN_COMPACT_V134C:
+   Keep the montage right tools column compact and visually align the left column bottom. */
+.avaAssemblyTransitionMini {
+  padding: 8px 10px !important;
+  gap: 6px !important;
+  border-radius: 14px !important;
+}
+
+.avaAssemblyTransitionMiniHead strong {
+  font-size: 11px !important;
+}
+
+.avaAssemblyTransitionMiniHead em {
+  font-size: 9px !important;
+}
+
+.avaAssemblyTransitionMiniHead b {
+  padding: 4px 7px !important;
+  font-size: 9px !important;
+}
+
+.avaAssemblyTransitionMiniControls {
+  grid-template-columns: minmax(0, 1fr) 52px !important;
+  gap: 7px !important;
+}
+
+.avaAssemblyTransitionMiniControls input[type='number'] {
+  width: 52px !important;
+  padding: 5px 6px !important;
+  font-size: 10px !important;
+}
+
+.avaAssemblyWorkspace,
+.avaAssemblyLayout,
+.avaAssemblyMain,
+.avaAssemblyGrid,
+.avaAssemblyShell,
+.avaAssemblyEditor {
+  align-items: stretch !important;
+}
+
+.avaAssemblyWorkspace > :first-child,
+.avaAssemblyLayout > :first-child,
+.avaAssemblyMain > :first-child,
+.avaAssemblyGrid > :first-child,
+.avaAssemblyShell > :first-child,
+.avaAssemblyEditor > :first-child {
+  min-height: 100%;
+}
+
+.avaAssemblyWorkspace > :first-child,
+.avaAssemblyLayout > :first-child,
+.avaAssemblyMain > :first-child,
+.avaAssemblyGrid > :first-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.avaAssemblyWorkspace > :first-child::after,
+.avaAssemblyLayout > :first-child::after,
+.avaAssemblyMain > :first-child::after,
+.avaAssemblyGrid > :first-child::after {
+  content: "";
+  flex: 1 1 auto;
+  min-height: 72px;
+  margin-top: 12px;
+  border: 1px solid rgba(128, 156, 255, 0.10);
+  border-radius: 0 0 24px 24px;
+  background: linear-gradient(180deg, rgba(10,16,31,.08), rgba(10,16,31,.34));
+  pointer-events: none;
+}
+

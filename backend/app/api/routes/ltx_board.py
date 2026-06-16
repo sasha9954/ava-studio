@@ -1,3 +1,8 @@
+# AVA_BOARD_BIND_RESULT_TO_CURRENT_IMAGE_V132I: bind returned server-batch video to current scene image after image replacement.
+# AVA_BOARD_BAD_REVIEW_FORCE_POSMOTRI_V132G: regenerated bad videos become ready + needs_review/посмотри.
+# AVA_BOARD_BAD_REVIEW_RESULT_NEEDS_REVIEW_V132E: regenerated bad video becomes ready + needs_review instead of remaining bad.
+# AVA_BOARD_BAD_REVIEW_KEEP_OLD_VIDEO_WHILE_REGEN_V132C: bad review regen keeps old video visible but queued until replacement.
+# AVA_BOARD_BAD_REVIEW_NEEDS_REVIEW_PERSIST_V132B: bad-review server batch result persists needs_review after F5/return.\n# AVA_BOARD_BAD_REVIEW_SERVER_BATCH_V132A: bad review scenes regenerate and return as needs_review.
 # AVA_BOARD_SERVER_BATCH_REMOVE_TIME_NAME_V131L: direct time.<member> references are replaced with __import__('time').<member>.
 # AVA_BOARD_SERVER_BATCH_SAFE_TIME_SLEEP_V131K: replaced __import__('time').sleep with __import__('time').sleep to avoid stale import scope issues.
 from __future__ import annotations
@@ -2237,6 +2242,103 @@ def _board_batch_save_snapshot(project_id: str, board_data: dict[str, Any], clie
     store.update(op)
 
 
+
+# AVA_BOARD_BAD_REVIEW_SERVER_BATCH_V132A
+# Board review flow:
+#   bad          -> red mark: regenerate this video, even if old video refs exist.
+#   needs_review -> orange mark after regeneration: user must watch and accept/mark bad again.
+def _board_batch_review_status(scene: dict[str, Any] | None) -> str:
+    if not isinstance(scene, dict):
+        return ""
+    raw = str(
+        scene.get("video_review_status")
+        or scene.get("videoReviewStatus")
+        or scene.get("review_status")
+        or scene.get("reviewStatus")
+        or ""
+    ).strip().lower()
+    if raw in {"bad", "poor", "reject", "rejected", "плохое", "плохая"}:
+        return "bad"
+    if raw in {"needs_review", "review", "check", "посмотри", "на проверку"}:
+        return "needs_review"
+    return ""
+
+
+def _board_batch_scene_has_bad_review(scene: dict[str, Any] | None) -> bool:
+    return _board_batch_review_status(scene) == "bad"
+
+
+def _board_batch_scene_was_bad_before_regenerate(scene: dict[str, Any] | None) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    return bool(scene.get("video_review_regenerate_from_bad") or scene.get("videoReviewRegenerateFromBad")) or _board_batch_scene_has_bad_review(scene)
+
+
+def _board_batch_review_patch(status: str = "", reason: str = "manual") -> dict[str, Any]:
+    safe_status = str(status or "").strip().lower()
+    if safe_status not in {"bad", "needs_review"}:
+        safe_status = ""
+    now_value = _board_batch_now()
+    return {
+        "video_review_status": safe_status,
+        "videoReviewStatus": safe_status,
+        "review_status": safe_status,
+        "reviewStatus": safe_status,
+        "video_review_updated_at": now_value,
+        "videoReviewUpdatedAt": now_value,
+        "video_review_reason": reason,
+        "videoReviewReason": reason,
+    }
+
+
+def _board_batch_review_regenerate_flag_patch(was_bad: bool = False, reason: str = "") -> dict[str, Any]:
+    return {
+        "video_review_regenerate_from_bad": bool(was_bad),
+        "videoReviewRegenerateFromBad": bool(was_bad),
+        "video_review_regenerate_reason": reason,
+        "videoReviewRegenerateReason": reason,
+    }
+
+
+def _board_batch_bad_review_start_patch(scene: dict[str, Any] | None = None, was_bad: bool = False) -> dict[str, Any]:
+    if not was_bad:
+        return _board_batch_review_regenerate_flag_patch(False, "")
+
+    # AVA_BOARD_BAD_REVIEW_KEEP_OLD_VIDEO_WHILE_REGEN_V132C:
+    # For "плохое" review regeneration we must NOT remove the old video immediately.
+    # The old video stays visible, but the scene is marked queued/running. When the
+    # new result returns it replaces this video and becomes needs_review ("посмотри").
+    patch: dict[str, Any] = {}
+    patch.update(_board_batch_review_patch("bad", "bad_video_regeneration_started"))
+    patch.update(_board_batch_review_regenerate_flag_patch(True, "server_batch_regenerate_bad_review"))
+
+    if isinstance(scene, dict):
+        for key in (
+            "video_asset_id", "videoAssetId",
+            "video_api_path", "videoApiPath",
+            "video_url", "videoUrl",
+            "video_static_url", "videoStaticUrl",
+            "video_path", "videoPath",
+            "video_name", "videoName",
+            "video_result", "videoResult",
+            "result_video_asset_id", "resultVideoAssetId",
+            "result_video_api_path", "resultVideoApiPath",
+            "result_video_url", "resultVideoUrl",
+        ):
+            if key in scene:
+                patch[key] = copy.deepcopy(scene.get(key))
+
+    patch.update({
+        "video_status": "queued",
+        "videoStatus": "queued",
+        "video_queue_source": "bad_review_regeneration",
+        "videoQueueSource": "bad_review_regeneration",
+        "video_reset_reason": "bad_review_regeneration_started",
+        "videoResetReason": "bad_review_regeneration_started",
+    })
+    return patch
+
+
 def _board_batch_result_patch(data: dict[str, Any], job: dict[str, Any]) -> dict[str, Any]:
     asset_id = str(data.get("videoAssetId") or data.get("video_asset_id") or data.get("assetId") or data.get("asset_id") or "").strip()
     api_path = str(data.get("videoApiPath") or data.get("video_api_path") or data.get("resultVideoApiPath") or data.get("result_video_api_path") or "").strip()
@@ -2438,7 +2540,164 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
             result_status, result_data = _board_batch_wait_job(project_id, batch_id, scene_id, job_id, user)
             if result_status == "ready":
                 completed.append(scene_id)
-                _board_batch_update_scene(project_id, scene_id, _board_batch_result_patch(result_data, {"jobId": job_id, "projectId": project_id}), {
+                live_board_data_v132b = _board_batch_read_snapshot(project_id)
+                live_scenes_v132b = live_board_data_v132b.get("scenes") if isinstance(live_board_data_v132b.get("scenes"), list) else []
+                live_scene_for_ready_v132b = next((item for item in live_scenes_v132b if _board_batch_scene_id(item) == scene_id), {}) or {}
+                bad_review_ids_v132b = set(batch.get("badReviewSceneIds") or batch.get("bad_review_scene_ids") or [])
+                was_bad_review_regeneration_v132a = (
+                    scene_id in bad_review_ids_v132b
+                    or _board_batch_scene_was_bad_before_regenerate(scene)
+                    or _board_batch_scene_was_bad_before_regenerate(live_scene_for_ready_v132b)
+                )
+                ready_patch_v132a = _board_batch_result_patch(result_data, {"jobId": job_id, "projectId": project_id})
+
+                # AVA_BOARD_BIND_RESULT_TO_CURRENT_IMAGE_V132I:
+                # When a scene image is replaced, the new server-batch video result must be
+                # bound to that current image. Otherwise the frontend stale-image guard can
+                # hide the returned video and show only "кадр готов".
+                source_scene_for_video_current_v132i = (
+                    live_scene_for_ready_v132b
+                    if isinstance(live_scene_for_ready_v132b, dict) and live_scene_for_ready_v132b
+                    else scene
+                )
+                source_map_v132i = {
+                    "video_source_image_mutation_epoch": (
+                        "image_mutation_epoch", "imageMutationEpoch",
+                        "start_image_mutation_epoch", "startImageMutationEpoch",
+                        "first_image_mutation_epoch", "firstImageMutationEpoch",
+                    ),
+                    "videoSourceImageMutationEpoch": (
+                        "image_mutation_epoch", "imageMutationEpoch",
+                        "start_image_mutation_epoch", "startImageMutationEpoch",
+                        "first_image_mutation_epoch", "firstImageMutationEpoch",
+                    ),
+                    "video_source_image_asset_id": (
+                        "image_asset_id", "imageAssetId",
+                        "start_image_asset_id", "startImageAssetId",
+                        "first_image_asset_id", "firstImageAssetId",
+                        "photo_asset_id", "photoAssetId",
+                    ),
+                    "videoSourceImageAssetId": (
+                        "image_asset_id", "imageAssetId",
+                        "start_image_asset_id", "startImageAssetId",
+                        "first_image_asset_id", "firstImageAssetId",
+                        "photo_asset_id", "photoAssetId",
+                    ),
+                    "video_source_image_api_path": (
+                        "image_api_path", "imageApiPath",
+                        "start_image_api_path", "startImageApiPath",
+                        "first_image_api_path", "firstImageApiPath",
+                        "photo_api_path", "photoApiPath",
+                    ),
+                    "videoSourceImageApiPath": (
+                        "image_api_path", "imageApiPath",
+                        "start_image_api_path", "startImageApiPath",
+                        "first_image_api_path", "firstImageApiPath",
+                        "photo_api_path", "photoApiPath",
+                    ),
+                    "video_source_image_url": (
+                        "image_url", "imageUrl",
+                        "start_image_url", "startImageUrl",
+                        "first_image_url", "firstImageUrl",
+                        "photo_url", "photoUrl",
+                    ),
+                    "videoSourceImageUrl": (
+                        "image_url", "imageUrl",
+                        "start_image_url", "startImageUrl",
+                        "first_image_url", "firstImageUrl",
+                        "photo_url", "photoUrl",
+                    ),
+                }
+                if isinstance(source_scene_for_video_current_v132i, dict):
+                    for target_key_v132i, source_keys_v132i in source_map_v132i.items():
+                        for source_key_v132i in source_keys_v132i:
+                            value_v132i = source_scene_for_video_current_v132i.get(source_key_v132i)
+                            if value_v132i not in (None, ""):
+                                ready_patch_v132a[target_key_v132i] = value_v132i
+                                break
+                    ready_patch_v132a["video_source_bound_at"] = __import__("time").time()
+                    ready_patch_v132a["videoSourceBoundAt"] = ready_patch_v132a["video_source_bound_at"]
+                    print("[BOARD SERVER BATCH VIDEO BOUND TO IMAGE V132I]", {
+                        "project_id": project_id,
+                        "batch_id": batch_id,
+                        "scene_id": scene_id,
+                        "job_id": job_id,
+                        "sourceImageAssetId": ready_patch_v132a.get("video_source_image_asset_id") or ready_patch_v132a.get("videoSourceImageAssetId"),
+                        "sourceImageApiPath": ready_patch_v132a.get("video_source_image_api_path") or ready_patch_v132a.get("videoSourceImageApiPath"),
+                        "sourceImageEpoch": ready_patch_v132a.get("video_source_image_mutation_epoch") or ready_patch_v132a.get("videoSourceImageMutationEpoch"),
+                    }, flush=True)
+                ready_patch_v132a.update(_board_batch_review_regenerate_flag_patch(False, "completed"))
+                if was_bad_review_regeneration_v132a:
+                    ready_patch_v132a.update(_board_batch_review_patch("needs_review", "bad_video_regenerated"))
+                    # AVA_BOARD_BAD_REVIEW_FORCE_POSMOTRI_BACKEND_V132G:
+                    # After a bad video is regenerated, the new result is video-ready
+                    # and must be shown as orange "посмотри", not red "плохое".
+                    ready_patch_v132a.update({
+                        "video_status": "ready",
+                        "videoStatus": "ready",
+                        "video_review_status": "needs_review",
+                        "videoReviewStatus": "needs_review",
+                        "review_status": "needs_review",
+                        "reviewStatus": "needs_review",
+                        "video_review_reason": "bad_video_regenerated",
+                        "videoReviewReason": "bad_video_regenerated",
+                        "video_review_regenerate_from_bad": False,
+                        "videoReviewRegenerateFromBad": False,
+                        "video_review_regenerate_reason": "",
+                        "videoReviewRegenerateReason": "",
+                        "video_queue_source": "",
+                        "videoQueueSource": "",
+                        "video_queue_position": None,
+                        "videoQueuePosition": None,
+                        "video_reset_reason": "",
+                        "videoResetReason": "",
+                        "bad_video_review": False,
+                        "badVideoReview": False,
+                        "video_review_bad": False,
+                        "videoReviewBad": False,
+                        "video_bad": False,
+                        "videoBad": False,
+                        "is_bad_video": False,
+                        "isBadVideo": False,
+                    })
+                    # AVA_BOARD_BAD_REVIEW_RESULT_NEEDS_REVIEW_V132E:
+                    # A regenerated bad video is now a fresh result. Keep the video ready,
+                    # but switch review from red "плохое" to orange "посмотри".
+                    # Clear all "bad/regenerate" helper flags so UI does not keep showing "плохое".
+                    ready_patch_v132a.update({
+                        "video_status": "ready",
+                        "videoStatus": "ready",
+                        "video_review_status": "needs_review",
+                        "videoReviewStatus": "needs_review",
+                        "review_status": "needs_review",
+                        "reviewStatus": "needs_review",
+                        "video_review_reason": "bad_video_regenerated",
+                        "videoReviewReason": "bad_video_regenerated",
+                        "video_review_regenerate_from_bad": False,
+                        "videoReviewRegenerateFromBad": False,
+                        "video_review_regenerate_reason": "",
+                        "videoReviewRegenerateReason": "",
+                        "video_queue_source": "",
+                        "videoQueueSource": "",
+                        "video_queue_position": None,
+                        "videoQueuePosition": None,
+                        "video_reset_reason": "",
+                        "videoResetReason": "",
+                        "bad_video_review": False,
+                        "badVideoReview": False,
+                        "video_review_bad": False,
+                        "videoReviewBad": False,
+                        "video_bad": False,
+                        "videoBad": False,
+                    })
+                    print("[BOARD SERVER BATCH REVIEW NEEDS_REVIEW V132B]", {
+                        "project_id": project_id,
+                        "batch_id": batch_id,
+                        "scene_id": scene_id,
+                        "job_id": job_id,
+                        "reason": "bad_video_regenerated",
+                    }, flush=True)
+                _board_batch_update_scene(project_id, scene_id, ready_patch_v132a, {
                     "batch_id": batch_id,
                     "batchId": batch_id,
                     "status": "running" if waiting_ids else "finished",
@@ -2526,7 +2785,7 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
             continue
         if requested_set and scene_id not in requested_set:
             continue
-        if mode in {"missing", "remaining"} and _board_batch_scene_has_video(scene):
+        if mode in {"missing", "remaining"} and _board_batch_scene_has_video(scene) and not _board_batch_scene_has_bad_review(scene):
             continue
         problems = _board_batch_input_problems(scene)
         if problems:
@@ -2540,6 +2799,11 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     batch_id = f"boardbatch_{uuid4().hex[:14]}"
     now_value = _board_batch_now()
     waiting_set = set(waiting_ids)
+    bad_review_waiting_ids_v132b = [
+        _board_batch_scene_id(scene)
+        for scene in scenes
+        if _board_batch_scene_id(scene) in waiting_set and _board_batch_scene_was_bad_before_regenerate(scene)
+    ]
     scenes_next: list[dict[str, Any]] = []
     for scene in scenes:
         scene_id = _board_batch_scene_id(scene)
@@ -2569,6 +2833,7 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
                 "videoName": "",
                 "video_result": None,
                 "videoResult": None,
+                **_board_batch_bad_review_start_patch(scene, _board_batch_scene_has_bad_review(scene)),
             })
         else:
             scenes_next.append(scene)
@@ -2583,6 +2848,8 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
         "mode": mode,
         "waitingSceneIds": waiting_ids,
         "waiting_scene_ids": waiting_ids,
+        "badReviewSceneIds": bad_review_waiting_ids_v132b,
+        "bad_review_scene_ids": bad_review_waiting_ids_v132b,
         "completedSceneIds": [],
         "completed_scene_ids": [],
         "failedSceneIds": [],
@@ -3432,6 +3699,434 @@ def _assembly_scene_audio_volume_for_item(item: dict[str, Any], audio_mode: str,
 
     return max(0.0, float(scene_volume))
 
+
+# AVA_BOARD_ASSEMBLY_SAFE_XFADE_V134D:
+# Optional post-concat visual xfade. It never changes the stable plain concat path first.
+# Flow: build normal scene_concat_path -> if transitions enabled and allowed, try visual xfade into temp -> replace concat.
+# If xfade fails, keep normal concat and finish job.
+def _assembly_transition_config_v134d(payload: dict[str, Any], audio_mode: str, original_audio_path: Path | None) -> dict[str, Any]:
+    transitions = payload.get("transitions") if isinstance(payload.get("transitions"), dict) else {}
+    requested = _assembly_bool(
+        transitions.get("enabled")
+        or transitions.get("requestedEnabled")
+        or payload.get("smoothTransitionsEnabledV134B")
+        or payload.get("smoothTransitionsEnabled")
+    )
+    duration = _assembly_float(
+        transitions.get("duration_sec")
+        or transitions.get("durationSec")
+        or payload.get("smoothTransitionDurationSecV134B")
+        or payload.get("smoothTransitionDurationSec"),
+        0.5,
+    )
+    duration = max(0.1, min(3.0, float(duration or 0.5)))
+    mode = str(audio_mode or "").lower()
+    allowed = bool(requested and not original_audio_path and mode in {"scene_only", "music_plus_scene"})
+    return {
+        "requested": requested,
+        "allowed": allowed,
+        "applied": False,
+        "durationSec": duration,
+        "mode": "background_video_only_v134d",
+        "reason": "" if allowed else ("" if not requested else "requires_scene_or_music_mode_without_original_audio"),
+    }
+
+
+def _render_assembly_visual_xfade_v134d(paths: list[Path], target: Path, transition_sec: float) -> dict[str, Any]:
+    if len(paths) < 2:
+        return {"applied": False, "reason": "not_enough_clips"}
+
+    durations = [float(_ffprobe_duration(path) or 0.0) for path in paths]
+    if any(value <= 0.1 for value in durations):
+        return {"applied": False, "reason": "clip_duration_missing", "durations": durations}
+
+    safe_transition = max(0.1, min(3.0, float(transition_sec or 0.5)))
+    max_by_shortest = min(durations) - 0.05
+    if max_by_shortest < 0.1:
+        return {"applied": False, "reason": "clips_too_short", "durations": durations}
+    safe_transition = min(safe_transition, max_by_shortest)
+
+    args = ["-y"]
+    for path in paths:
+        args.extend(["-i", str(path)])
+
+    filters: list[str] = []
+    for index in range(len(paths)):
+        filters.append(f"[{index}:v]setpts=PTS-STARTPTS[v{index}]")
+
+    video_label = "v0"
+    combined_duration = durations[0]
+    for index in range(1, len(paths)):
+        next_video_label = f"vxf{index}"
+        offset = max(0.0, combined_duration - safe_transition)
+        filters.append(
+            f"[{video_label}][v{index}]xfade=transition=fade:duration={safe_transition:.3f}:offset={offset:.3f}[{next_video_label}]"
+        )
+        video_label = next_video_label
+        combined_duration = combined_duration + durations[index] - safe_transition
+
+    # Keep a silent audio stream so later assembly/watermark/player steps stay compatible.
+    silence_index = len(paths)
+    args.extend(["-f", "lavfi", "-t", f"{max(combined_duration, 0.1):.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"])
+
+    _run_ffmpeg([
+        *args,
+        "-filter_complex", ";".join(filters),
+        "-map", f"[{video_label}]",
+        "-map", f"{silence_index}:a:0",
+        "-shortest",
+        "-c:v", "libx264",
+        "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+        "-crf", AVA_BOARD_ASSEMBLY_CRF,
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        str(target),
+    ])
+
+    return {
+        "applied": True,
+        "reason": "visual_xfade_v134d",
+        "durationSec": safe_transition,
+        "inputDurations": durations,
+        "expectedDurationSec": combined_duration,
+    }
+
+
+
+# AVA_BOARD_ASSEMBLY_TRANSITION_STATUS_DEBUG_V134E:
+# Debug helper for assembly transition payload; does not change stable assembly logic.
+def _assembly_transition_debug_v134e(payload: dict[str, Any], audio_mode: str, original_audio_path: Path | None, job_id: str) -> dict[str, Any]:
+    transitions = payload.get("transitions") if isinstance(payload.get("transitions"), dict) else {}
+    requested = _assembly_bool(
+        transitions.get("enabled")
+        or transitions.get("requestedEnabled")
+        or transitions.get("active")
+        or payload.get("smoothTransitionsEnabledV134B")
+        or payload.get("smoothTransitionsEnabled")
+    )
+    duration = _assembly_float(
+        transitions.get("duration_sec")
+        or transitions.get("durationSec")
+        or payload.get("smoothTransitionDurationSecV134B")
+        or payload.get("smoothTransitionDurationSec"),
+        0.5,
+    )
+    audio_mode_safe = str(audio_mode or "").lower()
+    allowed = bool(requested and not original_audio_path and audio_mode_safe in {"scene_only", "music_plus_scene"})
+    info = {
+        "job_id": job_id,
+        "requested": requested,
+        "allowed": allowed,
+        "durationSec": max(0.1, min(3.0, float(duration or 0.5))),
+        "audioMode": audio_mode_safe,
+        "hasOriginalAudio": bool(original_audio_path),
+        "rawTransitions": transitions,
+        "reason": "" if allowed else ("" if not requested else "requires_scene_or_music_mode_without_original_audio"),
+    }
+    print("[BOARD ASSEMBLY TRANSITION DEBUG V134E]", info)
+    return info
+
+
+# AVA_BOARD_ASSEMBLY_FORCE_POST_XFADE_V134F:
+# Apply visual xfade AFTER the stable normal concat, never instead of it.
+# If checkbox is off, it only logs. If xfade fails, normal concat stays.
+def _assembly_transition_request_v134f(payload: dict[str, Any], original_audio_path: Path | None, job_id: str) -> dict[str, Any]:
+    transitions = payload.get("transitions") if isinstance(payload.get("transitions"), dict) else {}
+    requested = any(_assembly_bool(value) for value in [
+        transitions.get("enabled"),
+        transitions.get("requestedEnabled"),
+        transitions.get("active"),
+        transitions.get("forceEnabled"),
+        payload.get("smoothTransitionsEnabledV134B"),
+        payload.get("smoothTransitionsEnabled"),
+    ])
+    duration = _assembly_float(
+        transitions.get("duration_sec")
+        or transitions.get("durationSec")
+        or payload.get("smoothTransitionDurationSecV134B")
+        or payload.get("smoothTransitionDurationSec"),
+        0.5,
+    )
+    duration = max(0.1, min(3.0, float(duration or 0.5)))
+    preserve_timing = _assembly_bool(transitions.get("preserveTiming")) or "preserve" in str(transitions.get("mode") or "").lower()
+    allowed = bool(requested and (preserve_timing or not original_audio_path))
+    info = {
+        "job_id": job_id,
+        "requested": requested,
+        "allowed": allowed,
+        "preserveTiming": preserve_timing,
+        "durationSec": duration,
+        "hasOriginalAudio": bool(original_audio_path),
+        "rawTransitions": transitions,
+        "reason": "" if allowed else ("" if not requested else "blocked_original_audio"),
+    }
+    print("[BOARD ASSEMBLY TRANSITION REQUEST V134F]", info)
+    return info
+
+
+def _assembly_apply_visual_xfade_v134f(paths: list[Path], target: Path, transition_sec: float, job_id: str) -> dict[str, Any]:
+    if len(paths) < 2:
+        return {"applied": False, "reason": "not_enough_clips"}
+
+    durations = [float(_ffprobe_duration(path) or 0.0) for path in paths]
+    if any(value <= 0.1 for value in durations):
+        return {"applied": False, "reason": "clip_duration_missing", "durations": durations}
+
+    safe_transition = max(0.1, min(3.0, float(transition_sec or 0.5)))
+    max_by_shortest = min(durations) - 0.05
+    if max_by_shortest < 0.1:
+        return {"applied": False, "reason": "clips_too_short", "durations": durations}
+    safe_transition = min(safe_transition, max_by_shortest)
+
+    expected_duration = durations[0]
+    args = ["-y"]
+    filters: list[str] = []
+    for index, path in enumerate(paths):
+        args.extend(["-i", str(path)])
+        filters.append(f"[{index}:v]setpts=PTS-STARTPTS[v{index}]")
+
+    video_label = "v0"
+    for index in range(1, len(paths)):
+        next_label = f"vxf{index}"
+        offset = max(0.0, expected_duration - safe_transition)
+        filters.append(
+            f"[{video_label}][v{index}]xfade=transition=fade:duration={safe_transition:.3f}:offset={offset:.3f}[{next_label}]"
+        )
+        video_label = next_label
+        expected_duration = expected_duration + durations[index] - safe_transition
+
+    silence_index = len(paths)
+    args.extend([
+        "-f", "lavfi",
+        "-t", f"{max(expected_duration, 0.1):.3f}",
+        "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+    ])
+
+    temp_target = target.with_name(target.stem + "_xfade_v134f.mp4")
+    try:
+        _run_ffmpeg([
+            *args,
+            "-filter_complex", ";".join(filters),
+            "-map", f"[{video_label}]",
+            "-map", f"{silence_index}:a:0",
+            "-shortest",
+            "-c:v", "libx264",
+            "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+            "-crf", AVA_BOARD_ASSEMBLY_CRF,
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(temp_target),
+        ])
+        if not temp_target.exists():
+            return {"applied": False, "reason": "xfade_output_missing"}
+        shutil.copy2(temp_target, target)
+        result = {
+            "applied": True,
+            "reason": "visual_xfade_v134f",
+            "durationSec": safe_transition,
+            "inputDurations": durations,
+            "expectedDurationSec": expected_duration,
+            "actualDurationSec": _ffprobe_duration(target) or 0.0,
+        }
+        print("[BOARD ASSEMBLY XFADE APPLIED V134F]", {"job_id": job_id, **result})
+        return result
+    finally:
+        try:
+            temp_target.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+
+# AVA_BOARD_ASSEMBLY_PRESERVE_TIMING_XFADE_V134G:
+# Timing-safe visual xfade. It preserves total montage duration by adding freeze handles to outgoing clips.
+def _assembly_apply_visual_xfade_preserve_timing_v134g(paths: list[Path], target: Path, transition_sec: float, job_id: str) -> dict[str, Any]:
+    if len(paths) < 2:
+        return {"applied": False, "reason": "not_enough_clips"}
+
+    durations = [float(_ffprobe_duration(path) or 0.0) for path in paths]
+    if any(value <= 0.1 for value in durations):
+        return {"applied": False, "reason": "clip_duration_missing", "durations": durations}
+
+    safe_transition = max(0.1, min(3.0, float(transition_sec or 0.5)))
+    max_by_shortest = min(durations) - 0.05
+    if max_by_shortest < 0.1:
+        return {"applied": False, "reason": "clips_too_short", "durations": durations}
+    safe_transition = min(safe_transition, max_by_shortest)
+
+    original_total = sum(durations)
+    adjusted_durations = [
+        (duration + safe_transition) if index < len(paths) - 1 else duration
+        for index, duration in enumerate(durations)
+    ]
+
+    args = ["-y"]
+    filters: list[str] = []
+    for index, path in enumerate(paths):
+        args.extend(["-i", str(path)])
+        if index < len(paths) - 1:
+            filters.append(
+                f"[{index}:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={safe_transition:.3f}[v{index}]"
+            )
+        else:
+            filters.append(f"[{index}:v]setpts=PTS-STARTPTS[v{index}]")
+
+    video_label = "v0"
+    combined_duration = adjusted_durations[0]
+    for index in range(1, len(paths)):
+        next_label = f"vxfp{index}"
+        offset = max(0.0, combined_duration - safe_transition)
+        filters.append(
+            f"[{video_label}][v{index}]xfade=transition=fade:duration={safe_transition:.3f}:offset={offset:.3f}[{next_label}]"
+        )
+        video_label = next_label
+        combined_duration = combined_duration + adjusted_durations[index] - safe_transition
+
+    silence_index = len(paths)
+    args.extend([
+        "-f", "lavfi",
+        "-t", f"{max(original_total, 0.1):.3f}",
+        "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+    ])
+
+    temp_target = target.with_name(target.stem + "_xfade_preserve_v134g.mp4")
+    try:
+        _run_ffmpeg([
+            *args,
+            "-filter_complex", ";".join(filters),
+            "-map", f"[{video_label}]",
+            "-map", f"{silence_index}:a:0",
+            "-t", f"{max(original_total, 0.1):.3f}",
+            "-shortest",
+            "-c:v", "libx264",
+            "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+            "-crf", AVA_BOARD_ASSEMBLY_CRF,
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(temp_target),
+        ])
+        if not temp_target.exists():
+            return {"applied": False, "reason": "xfade_preserve_output_missing"}
+        shutil.copy2(temp_target, target)
+        result = {
+            "applied": True,
+            "reason": "visual_xfade_preserve_timing_v134g",
+            "preserveTiming": True,
+            "durationSec": safe_transition,
+            "inputDurations": durations,
+            "expectedDurationSec": original_total,
+            "actualDurationSec": _ffprobe_duration(target) or 0.0,
+        }
+        print("[BOARD ASSEMBLY XFADE PRESERVE TIMING APPLIED V134G]", {"job_id": job_id, **result})
+        return result
+    finally:
+        try:
+            temp_target.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+
+# AVA_BOARD_ASSEMBLY_PRESERVE_TIMING_AUDIO_FIX_V134H:
+# Override V134G timing-safe xfade to keep the already-built stable concat audio.
+# V134G preserved duration visually but used silent audio, so scene audio could disappear after transitions.
+def _assembly_apply_visual_xfade_preserve_timing_v134g(paths: list[Path], target: Path, transition_sec: float, job_id: str) -> dict[str, Any]:
+    if len(paths) < 2:
+        return {"applied": False, "reason": "not_enough_clips"}
+
+    durations = [float(_ffprobe_duration(path) or 0.0) for path in paths]
+    if any(value <= 0.1 for value in durations):
+        return {"applied": False, "reason": "clip_duration_missing", "durations": durations}
+
+    safe_transition = max(0.1, min(3.0, float(transition_sec or 0.5)))
+    max_by_shortest = min(durations) - 0.05
+    if max_by_shortest < 0.1:
+        return {"applied": False, "reason": "clips_too_short", "durations": durations}
+    safe_transition = min(safe_transition, max_by_shortest)
+
+    original_total = sum(durations)
+    adjusted_durations = [
+        (duration + safe_transition) if index < len(paths) - 1 else duration
+        for index, duration in enumerate(durations)
+    ]
+
+    # target is the stable normal concat at this point. Keep it as the audio source.
+    audio_source = target.with_name(target.stem + "_pre_xfade_audio_v134h.mp4")
+    shutil.copy2(target, audio_source)
+
+    args = ["-y"]
+    filters: list[str] = []
+    for index, path in enumerate(paths):
+        args.extend(["-i", str(path)])
+        if index < len(paths) - 1:
+            filters.append(
+                f"[{index}:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={safe_transition:.3f}[v{index}]"
+            )
+        else:
+            filters.append(f"[{index}:v]setpts=PTS-STARTPTS[v{index}]")
+
+    video_label = "v0"
+    combined_duration = adjusted_durations[0]
+    for index in range(1, len(paths)):
+        next_label = f"vxfp{index}"
+        offset = max(0.0, combined_duration - safe_transition)
+        filters.append(
+            f"[{video_label}][v{index}]xfade=transition=fade:duration={safe_transition:.3f}:offset={offset:.3f}[{next_label}]"
+        )
+        video_label = next_label
+        combined_duration = combined_duration + adjusted_durations[index] - safe_transition
+
+    # Add the original stable concat as final input and preserve its audio.
+    audio_input_index = len(paths)
+    args.extend(["-i", str(audio_source)])
+
+    temp_target = target.with_name(target.stem + "_xfade_preserve_audio_v134h.mp4")
+    try:
+        _run_ffmpeg([
+            *args,
+            "-filter_complex", ";".join(filters),
+            "-map", f"[{video_label}]",
+            "-map", f"{audio_input_index}:a?",
+            "-t", f"{max(original_total, 0.1):.3f}",
+            "-shortest",
+            "-c:v", "libx264",
+            "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+            "-crf", AVA_BOARD_ASSEMBLY_CRF,
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            str(temp_target),
+        ])
+        if not temp_target.exists():
+            return {"applied": False, "reason": "xfade_preserve_audio_output_missing"}
+        shutil.copy2(temp_target, target)
+        result = {
+            "applied": True,
+            "reason": "visual_xfade_preserve_timing_audio_v134h",
+            "preserveTiming": True,
+            "audioPreserved": True,
+            "durationSec": safe_transition,
+            "inputDurations": durations,
+            "expectedDurationSec": original_total,
+            "actualDurationSec": _ffprobe_duration(target) or 0.0,
+        }
+        print("[BOARD ASSEMBLY XFADE PRESERVE TIMING AUDIO APPLIED V134H]", {"job_id": job_id, **result})
+        return result
+    finally:
+        for tmp in (temp_target, audio_source):
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
 def _run_board_assembly_job(job_id: str) -> None:
     job = BOARD_ASSEMBLY_JOBS.get(job_id)
     if not job:
@@ -3459,6 +4154,7 @@ def _run_board_assembly_job(job_id: str) -> None:
         music_fade_out = bool(music_payload.get("fade_out", True))
         wants_original_audio = audio_mode in {"original_only", "original_plus_scene", "original_plus_music_scene"}
         wants_music_audio = audio_mode in {"music_plus_scene", "original_plus_music_scene"}
+        transition_debug_v134e = _assembly_transition_debug_v134e(payload, audio_mode, original_audio_path, job_id)
         width = _assembly_int(payload.get("width"), 1280)
         height = _assembly_int(payload.get("height"), 720)
         fps = _assembly_int(payload.get("fps"), 30)
@@ -3682,7 +4378,59 @@ def _run_board_assembly_job(job_id: str) -> None:
             str(scene_concat_path),
         ])
 
+        transition_config_v134d = _assembly_transition_config_v134d(payload, audio_mode, original_audio_path)
+        transition_result_v134d = dict(transition_config_v134d)
+        if transition_config_v134d.get("allowed"):
+            transition_tmp_v134d = scene_concat_path.with_name(scene_concat_path.stem + "_xfade_v134d.mp4")
+            try:
+                transition_result_v134d = _render_assembly_visual_xfade_v134d(
+                    normalized_paths,
+                    transition_tmp_v134d,
+                    float(transition_config_v134d.get("durationSec") or 0.5),
+                )
+                if transition_result_v134d.get("applied") and transition_tmp_v134d.exists():
+                    shutil.copy2(transition_tmp_v134d, scene_concat_path)
+                    print("[BOARD ASSEMBLY XFADE APPLIED V134D]", {
+                        "job_id": job_id,
+                        "durationSec": transition_result_v134d.get("durationSec"),
+                        "items": len(normalized_paths),
+                    })
+            except Exception as exc:
+                transition_result_v134d = {"applied": False, "reason": f"xfade_failed: {exc}"}
+                print("[BOARD ASSEMBLY XFADE SKIPPED V134D]", {
+                    "job_id": job_id,
+                    "reason": str(exc),
+                })
+            finally:
+                try:
+                    transition_tmp_v134d.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
         scene_concat_duration = _ffprobe_duration(scene_concat_path) or 0.0
+
+        transition_request_v134f = _assembly_transition_request_v134f(payload, original_audio_path, job_id)
+        transition_result_v134f = dict(transition_request_v134f)
+        if transition_request_v134f.get("allowed"):
+            try:
+                if transition_request_v134f.get("preserveTiming"):
+                    transition_result_v134f = _assembly_apply_visual_xfade_preserve_timing_v134g(
+                        normalized_paths,
+                        scene_concat_path,
+                        float(transition_request_v134f.get("durationSec") or 0.5),
+                        job_id,
+                    )
+                else:
+                    transition_result_v134f = _assembly_apply_visual_xfade_v134f(
+                        normalized_paths,
+                        scene_concat_path,
+                        float(transition_request_v134f.get("durationSec") or 0.5),
+                        job_id,
+                    )
+                scene_concat_duration = _ffprobe_duration(scene_concat_path) or scene_concat_duration
+            except Exception as exc:
+                transition_result_v134f = {"applied": False, "reason": f"xfade_failed: {exc}"}
+                print("[BOARD ASSEMBLY XFADE SKIPPED V134F]", {"job_id": job_id, "reason": str(exc)})
 
         use_original_audio = wants_original_audio and bool(original_audio_path)
         use_music_audio = wants_music_audio and bool(music_audio_path)
@@ -3797,6 +4545,18 @@ def _run_board_assembly_job(job_id: str) -> None:
             "watermarkError": watermark_error,
             "watermarkText": watermark_text if watermark_requested else "",
             "watermark": watermark_payload if watermark_requested else {},
+            "transitionRequestedV134F": bool(locals().get("transition_request_v134f", {}).get("requested")),
+            "transitionAllowedV134F": bool(locals().get("transition_request_v134f", {}).get("allowed")),
+            "transitionAppliedV134F": bool(locals().get("transition_result_v134f", {}).get("applied")),
+            "transitionPreserveTimingV134G": bool(locals().get("transition_request_v134f", {}).get("preserveTiming")),
+            "transitionDurationSecV134F": float(locals().get("transition_result_v134f", {}).get("durationSec") or locals().get("transition_request_v134f", {}).get("durationSec") or 0.0),
+            "transitionReasonV134F": locals().get("transition_result_v134f", {}).get("reason") or locals().get("transition_request_v134f", {}).get("reason") or "",
+            "transitionRequested": bool(locals().get("transition_config_v134d", {}).get("requested")),
+            "transitionAllowed": bool(locals().get("transition_config_v134d", {}).get("allowed")),
+            "transitionApplied": bool(locals().get("transition_result_v134d", {}).get("applied")),
+            "transitionDurationSec": float(locals().get("transition_result_v134d", {}).get("durationSec") or locals().get("transition_config_v134d", {}).get("durationSec") or 0.0),
+            "transitionMode": locals().get("transition_config_v134d", {}).get("mode") or "background_video_only_v134d",
+            "transitionReason": locals().get("transition_result_v134d", {}).get("reason") or locals().get("transition_config_v134d", {}).get("reason") or "",
             "videoUrl": urls["url"],
             "video_url": urls["url"],
             "videoApiPath": urls["apiPath"],

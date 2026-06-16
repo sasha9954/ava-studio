@@ -1,3 +1,7 @@
+// AVA_ASSEMBLY_TWO_TRANSITION_MODES_V134G: two mutually-exclusive transition modes: shorten vs preserve timing.
+// AVA_ASSEMBLY_FORCE_POST_XFADE_PAYLOAD_V134F: send transition checkbox as the real backend switch.
+// AVA_ASSEMBLY_FORCE_TRANSITION_PAYLOAD_V134E: send transition checkbox to backend even when UI says mode is blocked.
+// AVA_ASSEMBLY_COMPACT_TRANSITIONS_V134B: compact right-panel transition control, safe after stats initialization.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { ArrowLeft, Clapperboard, Download, Music, RefreshCcw, SlidersHorizontal, UploadCloud, Volume2, Wand2 } from 'lucide-react'
@@ -433,6 +437,10 @@ export default function BoardAssemblyPage() {
   const [audioMode, setAudioMode] = useState('original_plus_scene')
   const [preferMmaudio, setPreferMmaudio] = useState(true)
   const [skipMissing, setSkipMissing] = useState(false)
+  const [smoothTransitionsEnabledV134B, setSmoothTransitionsEnabledV134B] = useState(false)
+  const [smoothTransitionDurationSecV134B, setSmoothTransitionDurationSecV134B] = useState(0.5)
+  const [smoothTransitionsTimingEnabledV134G, setSmoothTransitionsTimingEnabledV134G] = useState(false)
+  const [smoothTransitionTimingDurationSecV134G, setSmoothTransitionTimingDurationSecV134G] = useState(0.5)
   const [originalVolume, setOriginalVolume] = useState(100)
   const [sceneVolume, setSceneVolume] = useState(25)
   const [musicVolume, setMusicVolume] = useState(15)
@@ -469,6 +477,10 @@ export default function BoardAssemblyPage() {
     setAudioMode(savedSettings.audioMode || 'original_plus_scene')
     setPreferMmaudio(savedSettings.preferMmaudio ?? true)
     setSkipMissing(savedSettings.skipMissing ?? false)
+    setSmoothTransitionsEnabledV134B(Boolean(savedSettings.smoothTransitionsEnabledV134B ?? savedSettings.smoothTransitionsEnabled ?? false))
+    setSmoothTransitionDurationSecV134B(clampNumber(savedSettings.smoothTransitionDurationSecV134B ?? savedSettings.smoothTransitionDurationSec, 0.1, 3, 0.5))
+    setSmoothTransitionsTimingEnabledV134G(Boolean(savedSettings.smoothTransitionsTimingEnabledV134G ?? false))
+    setSmoothTransitionTimingDurationSecV134G(clampNumber(savedSettings.smoothTransitionTimingDurationSecV134G ?? savedSettings.smoothTransitionDurationSecV134G, 0.1, 3, 0.5))
     setOriginalVolume(clampNumber(savedSettings.originalVolume, 0, 150, 100))
     setSceneVolume(clampNumber(savedSettings.sceneVolume, 0, 150, 25))
     setMusicVolume(clampNumber(savedSettings.musicVolume, 0, 150, 15))
@@ -580,6 +592,29 @@ export default function BoardAssemblyPage() {
     return { total, ready, withSound, missing, duration, hasOriginalAudio, canAssemble }
   }, [sceneItems, board])
 
+  const smoothTransitionDurationSafeV134B = Number(clampNumber(smoothTransitionDurationSecV134B, 0.1, 3, 0.5).toFixed(1))
+  const smoothTransitionsAllowedV134B = Boolean(!stats.hasOriginalAudio && ['scene_only', 'music_plus_scene'].includes(audioMode))
+  const smoothTransitionsActiveV134B = Boolean(smoothTransitionsEnabledV134B && smoothTransitionsAllowedV134B)
+  const smoothTransitionsHintV134B = smoothTransitionsActiveV134B
+    ? `fade ${smoothTransitionDurationSafeV134B.toFixed(1)} сек`
+    : smoothTransitionsEnabledV134B
+      ? 'сокращает ролик'
+      : 'выкл'
+  const smoothTransitionTimingDurationSafeV134G = Number(clampNumber(smoothTransitionTimingDurationSecV134G, 0.1, 3, 0.5).toFixed(1))
+  const smoothTransitionsTimingActiveV134G = Boolean(smoothTransitionsTimingEnabledV134G)
+  const smoothTransitionsTimingHintV134G = smoothTransitionsTimingActiveV134G
+    ? `длина сохраняется · ${smoothTransitionTimingDurationSafeV134G.toFixed(1)} сек`
+    : 'выкл'
+  const assemblyTransitionModeV134G = smoothTransitionsTimingEnabledV134G
+    ? 'preserve_timing_v134g'
+    : smoothTransitionsEnabledV134B
+      ? 'shorten_v134f'
+      : 'off'
+  const assemblyTransitionRequestedV134G = Boolean(smoothTransitionsEnabledV134B || smoothTransitionsTimingEnabledV134G)
+  const assemblyTransitionDurationSafeV134G = smoothTransitionsTimingEnabledV134G
+    ? smoothTransitionTimingDurationSafeV134G
+    : smoothTransitionDurationSafeV134B
+
 
   function buildAssemblySnapshotForSave({ source = 'board_assembly_autosave_v8', overrides = {} } = {}) {
     const scenes = asArray(board?.scenes)
@@ -632,6 +667,17 @@ export default function BoardAssemblyPage() {
       audioMode: overrides.audioMode ?? audioMode,
       preferMmaudio: overrides.preferMmaudio ?? preferMmaudio,
       skipMissing: overrides.skipMissing ?? skipMissing,
+      smoothTransitionsEnabledV134B: overrides.smoothTransitionsEnabledV134B ?? smoothTransitionsEnabledV134B,
+      smoothTransitionDurationSecV134B: overrides.smoothTransitionDurationSecV134B ?? smoothTransitionDurationSafeV134B,
+      smoothTransitionsAllowedV134B: overrides.smoothTransitionsAllowedV134B ?? smoothTransitionsAllowedV134B,
+      smoothTransitionsActiveV134B: overrides.smoothTransitionsActiveV134B ?? smoothTransitionsActiveV134B,
+      smoothTransitionsModeV134B: 'background_video_only_v134b',
+      smoothTransitionsTimingEnabledV134G,
+      smoothTransitionTimingDurationSecV134G: smoothTransitionTimingDurationSafeV134G,
+      assemblyTransitionModeV134G,
+      smoothTransitionsTimingEnabledV134G: overrides.smoothTransitionsTimingEnabledV134G ?? smoothTransitionsTimingEnabledV134G,
+      smoothTransitionTimingDurationSecV134G: overrides.smoothTransitionTimingDurationSecV134G ?? smoothTransitionTimingDurationSafeV134G,
+      assemblyTransitionModeV134G: overrides.assemblyTransitionModeV134G ?? assemblyTransitionModeV134G,
       originalVolume: overrides.originalVolume ?? originalVolume,
       sceneVolume: overrides.sceneVolume ?? sceneVolume,
       musicVolume: overrides.musicVolume ?? musicVolume,
@@ -676,6 +722,10 @@ export default function BoardAssemblyPage() {
     setAudioMode(raw.audioMode || (isGeneratorAssemblyBoard(nextBoard) ? 'scene_only' : 'original_plus_scene'))
     setPreferMmaudio(raw.preferMmaudio ?? true)
     setSkipMissing(raw.skipMissing ?? false)
+    setSmoothTransitionsEnabledV134B(Boolean(raw.smoothTransitionsEnabledV134B ?? raw.smoothTransitionsEnabled ?? false))
+    setSmoothTransitionDurationSecV134B(clampNumber(raw.smoothTransitionDurationSecV134B ?? raw.smoothTransitionDurationSec, 0.1, 3, 0.5))
+    setSmoothTransitionsTimingEnabledV134G(Boolean(raw.smoothTransitionsTimingEnabledV134G ?? false))
+    setSmoothTransitionTimingDurationSecV134G(clampNumber(raw.smoothTransitionTimingDurationSecV134G ?? raw.smoothTransitionDurationSecV134G, 0.1, 3, 0.5))
     setOriginalVolume(clampNumber(raw.originalVolume, 0, 150, isGeneratorAssemblyBoard(nextBoard) ? 0 : 100))
     setSceneVolume(clampNumber(raw.sceneVolume, 0, 150, isGeneratorAssemblyBoard(nextBoard) ? 100 : 25))
     setMusicVolume(clampNumber(raw.musicVolume, 0, 150, 15))
@@ -712,8 +762,11 @@ export default function BoardAssemblyPage() {
     if (['music_plus_scene', 'original_plus_music_scene'].includes(audioMode) && !musicFile) {
       list.push('Фоновая музыка пока не загружена. Можно собрать без неё или загрузить MP3/WAV.')
     }
+    if (smoothTransitionsEnabledV134B && !smoothTransitionsAllowedV134B) {
+      list.push('Плавные переходы включены, но не применятся: этот режим только для фоновых видео без original/master audio.')
+    }
     return list
-  }, [stats, audioMode, musicFile, board])
+  }, [stats, audioMode, musicFile, board, smoothTransitionsEnabledV134B, smoothTransitionsAllowedV134B])
 
   // AVA_ASSEMBLY_FORCE_BOARD_IMPORT_V11:
   // Board → Montage must import the *current* Board snapshot as source-of-truth.
@@ -788,6 +841,11 @@ export default function BoardAssemblyPage() {
       audioMode: nextBoard?.audioMode || 'original_plus_scene',
       preferMmaudio: true,
       skipMissing: false,
+      smoothTransitionsEnabledV134B,
+      smoothTransitionDurationSecV134B: smoothTransitionDurationSafeV134B,
+      smoothTransitionsAllowedV134B,
+      smoothTransitionsActiveV134B,
+      smoothTransitionsModeV134B: 'background_video_only_v134b',
       musicAsset,
       watermark: {
         enabled: watermarkEnabled,
@@ -941,6 +999,10 @@ export default function BoardAssemblyPage() {
     watermarkPosition,
     watermarkOpacity,
     watermarkSize,
+    smoothTransitionsEnabledV134B,
+    smoothTransitionDurationSecV134B,
+    smoothTransitionsTimingEnabledV134G,
+    smoothTransitionTimingDurationSecV134G,
   ])
 
 
@@ -951,6 +1013,11 @@ export default function BoardAssemblyPage() {
       audioMode,
       preferMmaudio,
       skipMissing,
+      smoothTransitionsEnabledV134B,
+      smoothTransitionDurationSecV134B: smoothTransitionDurationSafeV134B,
+      smoothTransitionsAllowedV134B,
+      smoothTransitionsActiveV134B,
+      smoothTransitionsModeV134B: 'background_video_only_v134b',
       originalVolume,
       sceneVolume,
       musicVolume,
@@ -1004,6 +1071,15 @@ export default function BoardAssemblyPage() {
     watermarkOpacity,
     watermarkSize,
     watermarkMotion,
+    smoothTransitionsEnabledV134B,
+    smoothTransitionDurationSafeV134B,
+    smoothTransitionsAllowedV134B,
+    smoothTransitionsActiveV134B,
+    smoothTransitionsTimingEnabledV134G,
+    smoothTransitionTimingDurationSafeV134G,
+    assemblyTransitionModeV134G,
+    assemblyTransitionRequestedV134G,
+    assemblyTransitionDurationSafeV134G,
     musicPanelOpen,
     watermarkPanelOpen,
     selectedSceneId,
@@ -1209,6 +1285,19 @@ export default function BoardAssemblyPage() {
         size: watermarkSize,
         motion: watermarkMotion,
       },
+      transitions: {
+        enabled: assemblyTransitionRequestedV134G,
+        requestedEnabled: assemblyTransitionRequestedV134G,
+        preserveTiming: Boolean(smoothTransitionsTimingEnabledV134G),
+        shortenTimeline: Boolean(smoothTransitionsEnabledV134B),
+        allowed: true,
+        type: 'fade',
+        duration_sec: assemblyTransitionDurationSafeV134G,
+        durationSec: assemblyTransitionDurationSafeV134G,
+        mode: assemblyTransitionModeV134G,
+        forceEnabled: assemblyTransitionRequestedV134G,
+        forcePayloadV134G: true,
+      },
       items,
     }
   }
@@ -1282,6 +1371,8 @@ export default function BoardAssemblyPage() {
         totalItems: payload.items.length,
         videoItems: payload.items.filter((item) => item.video_url || item.video_api_path).length,
         placeholderItems: payload.items.filter((item) => item.placeholder || item.missing_video).length,
+        smoothTransitions: payload.transitions,
+        transitionPayloadDebugV134E: '[ASSEMBLY TRANSITIONS PAYLOAD V134E]',
         firstItems: payload.items.slice(0, 8).map((item) => ({
           scene_id: item.scene_id,
           start_sec: item.start_sec,
@@ -1649,6 +1740,84 @@ export default function BoardAssemblyPage() {
             <input type="checkbox" checked={skipMissing} onChange={(event) => setSkipMissing(event.target.checked)} />
             Пропускать сцены без видео
           </label>
+
+          <div className={`avaAssemblyTransitionMini ${smoothTransitionsEnabledV134B ? 'isOn' : ''} ${smoothTransitionsEnabledV134B && !smoothTransitionsAllowedV134B ? 'isBlocked' : ''}`}>
+            <div className="avaAssemblyTransitionMiniHead">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={smoothTransitionsEnabledV134B}
+                  onChange={(event) => {
+                    const next = event.target.checked
+                    setSmoothTransitionsEnabledV134B(next)
+                    if (next) setSmoothTransitionsTimingEnabledV134G(false)
+                  }}
+                />
+                <span>
+                  <strong>Плавные переходы</strong>
+                  <em>{smoothTransitionsHintV134B}</em>
+                </span>
+              </label>
+              <b>{smoothTransitionDurationSafeV134B.toFixed(1)}с</b>
+            </div>
+            <div className="avaAssemblyTransitionMiniControls">
+              <input
+                type="range"
+                min="0.1"
+                max="3"
+                step="0.1"
+                value={smoothTransitionDurationSafeV134B}
+                onChange={(event) => setSmoothTransitionDurationSecV134B(Number(event.target.value))}
+              />
+              <input
+                type="number"
+                min="0.1"
+                max="3"
+                step="0.1"
+                value={smoothTransitionDurationSafeV134B}
+                onChange={(event) => setSmoothTransitionDurationSecV134B(clampNumber(event.target.value, 0.1, 3, 0.5))}
+              />
+            </div>
+          </div>
+
+          <div className={`avaAssemblyTransitionMini avaAssemblyTransitionMiniTimingV134G ${smoothTransitionsTimingEnabledV134G ? 'isOn' : ''}`}>
+            <div className="avaAssemblyTransitionMiniHead">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={smoothTransitionsTimingEnabledV134G}
+                  onChange={(event) => {
+                    const next = event.target.checked
+                    setSmoothTransitionsTimingEnabledV134G(next)
+                    if (next) setSmoothTransitionsEnabledV134B(false)
+                  }}
+                />
+                <span>
+                  <strong>Сохранять тайминг</strong>
+                  <em>{smoothTransitionsTimingHintV134G}</em>
+                </span>
+              </label>
+              <b>{smoothTransitionTimingDurationSafeV134G.toFixed(1)}с</b>
+            </div>
+            <div className="avaAssemblyTransitionMiniControls">
+              <input
+                type="range"
+                min="0.1"
+                max="3"
+                step="0.1"
+                value={smoothTransitionTimingDurationSafeV134G}
+                onChange={(event) => setSmoothTransitionTimingDurationSecV134G(Number(event.target.value))}
+              />
+              <input
+                type="number"
+                min="0.1"
+                max="3"
+                step="0.1"
+                value={smoothTransitionTimingDurationSafeV134G}
+                onChange={(event) => setSmoothTransitionTimingDurationSecV134G(clampNumber(event.target.value, 0.1, 3, 0.5))}
+              />
+            </div>
+          </div>
 
           <div className={`avaAssemblyMusicBox ${musicPanelOpen ? 'isOpen' : 'isCollapsed'}`}>
             <button type="button" className="avaAssemblyPanelToggle" onClick={() => setMusicPanelOpen((value) => !value)}>
