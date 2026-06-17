@@ -1901,11 +1901,39 @@ function boardSceneHasServerVideoJobV130F(scene) {
 }
 
 function boardSceneVideoUiStatusV130F(scene) {
+  // AVA_BOARD_BAD_REGEN_RUNTIME_STATUS_V136I:
+  // Runtime-only bad-review regeneration status must win over old ready video refs.
+  // This lets cards/preview show отправляется/в очереди/видео делается while keeping
+  // queued/submitting out of the persisted project snapshot.
+  const runtimeStatusV136I = String(
+    scene?.video_runtime_status_v136i ||
+    scene?.videoRuntimeStatusV136I ||
+    ''
+  ).toLowerCase()
+  if (runtimeStatusV136I && isVideoBusyStatus(runtimeStatusV136I)) return runtimeStatusV136I
+
+  const rawStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+  const queueSourceV136I = String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase()
+  const badRegenActiveJobV136I = Boolean(
+    isVideoBusyStatus(rawStatus) &&
+    boardSceneHasServerVideoJobV130F(scene) &&
+    (
+      scene?.video_review_regenerate_from_bad ||
+      scene?.videoReviewRegenerateFromBad ||
+      scene?.video_batch_active_v132r ||
+      scene?.videoBatchActiveV132R ||
+      queueSourceV136I.includes('bad_review') ||
+      queueSourceV136I.includes('regeneration')
+    )
+  )
+  if (badRegenActiveJobV136I) {
+    return rawStatus === 'queued' ? 'running' : rawStatus
+  }
+
   // AVA_BOARD_READY_VIDEO_WINS_BUSY_STATUS_V133E:
   // Old local polling can briefly write queued/running after the server already saved a video.
   // A current video ref must win, otherwise preview is hidden and UI shows "в очереди".
   if (typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)) return 'ready'
-  const rawStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
   if (rawStatus === 'queued' && boardSceneHasServerVideoJobV130F(scene)) return 'running'
   return rawStatus
 }
@@ -3996,48 +4024,22 @@ function sceneVideoActionState(scene) {
 
     setStatus(`Серверная очередь: отправляю ${addedIds.length} сцен на backend...${invalidText}`)
 
-    // AVA_BOARD_SERVER_BATCH_MARK_ADDED_SCENES_BUSY_V132R:
-    // AVA_BOARD_SERVER_BATCH_SUBMITTING_STAGE_V132S: before backend answers, scenes are only отправляется, not video делается.
-    // Backend batch may take time before per-scene status polling updates the snapshot.
-    // Mark every submitted scene as busy immediately and send that busy state in the batch payload.
-    const addedSceneIdSetV132R = new Set(addedIds)
-    const serverBatchStartedAtV132R = new Date().toISOString()
-    scenes = scenes.map((scene) => {
-      const sceneIdV132R = serverBatchSceneIdV131D(scene)
-      if (!addedSceneIdSetV132R.has(sceneIdV132R)) return scene
-      const wasBadV132R = boardSceneHasBadVideoReview(scene)
+    // AVA_BOARD_BAD_REGEN_RUNTIME_STATUS_V136I:
+    // Do not write submitting/queued/running into scene snapshot here. The backend gets clean
+    // scene data, while Board cards/preview get an immediate runtime-only overlay.
+    const serverBatchStartedAtV136I = new Date().toISOString()
+    const scenesByIdV136I = new Map(scenes.map((scene) => [serverBatchSceneIdV131D(scene), scene]))
+    patchBadRegenRuntimeStatusesV136I(addedIds.map((sceneId, index) => {
+      const sourceScene = scenesByIdV136I.get(sceneId) || {}
       return {
-        ...scene,
-        video_status: 'submitting',
-        videoStatus: 'submitting',
-        video_error: '',
-        videoError: '',
-        video_queue_position: Math.max(1, addedIds.indexOf(sceneIdV132R) + 1),
-        videoQueuePosition: Math.max(1, addedIds.indexOf(sceneIdV132R) + 1),
-        video_queue_source: wasBadV132R ? 'bad_review_regeneration_submitting_v132s' : 'server_batch_submitting_v132s',
-        videoQueueSource: wasBadV132R ? 'bad_review_regeneration_submitting_v132s' : 'server_batch_submitting_v132s',
-        video_batch_active_v132r: true,
-        video_batch_stage_v132s: 'submitting',
-        videoBatchActiveV132R: true,
-        videoBatchStageV132S: 'submitting',
-        video_batch_started_at_v132r: serverBatchStartedAtV132R,
-        videoBatchStartedAtV132R: serverBatchStartedAtV132R,
-        video_review_regenerate_from_bad: wasBadV132R,
-        videoReviewRegenerateFromBad: wasBadV132R,
-        video_review_regenerate_reason: wasBadV132R ? 'server_batch_bad_review_regeneration_v132r' : '',
-        videoReviewRegenerateReason: wasBadV132R ? 'server_batch_bad_review_regeneration_v132r' : '',
+        sceneId,
+        status: 'submitting',
+        queuePosition: index + 1,
+        fromBad: boardSceneHasBadVideoReview(sourceScene),
+        startedAt: serverBatchStartedAtV136I,
+        source: 'server_batch_submitting_runtime_v136i',
       }
-    })
-    setBoard((current) => {
-      const nextScenesV132R = asSceneArray(current?.scenes).map((scene) => {
-        const sceneIdV132R = serverBatchSceneIdV131D(scene)
-        const patchedSceneV132R = scenes.find((item) => serverBatchSceneIdV131D(item) === sceneIdV132R)
-        return patchedSceneV132R || scene
-      })
-      const nextBoardV132R = { ...(current || {}), scenes: nextScenesV132R, updatedAt: serverBatchStartedAtV132R }
-      boardRef.current = nextBoardV132R
-      return nextBoardV132R
-    })
+    }))
 
     apiRequest(`/projects/${projectId}/board/video-batch/start`, {
       method: 'POST',
@@ -4050,70 +4052,30 @@ function sceneVideoActionState(scene) {
         scenes,
       }),
     }).then((result) => {
-      // AVA_BOARD_SERVER_BATCH_ACCEPTED_QUEUE_ORDER_V132S:
-      // Once backend accepted the batch, exactly the first submitted scene is shown as video делается,
-      // and the rest are shown as в очереди until snapshot/status polling promotes them.
-      const batchAcceptedAtV132S = new Date().toISOString()
-      const applyServerBatchAcceptedOrderV132S = (boardDataV132S = {}) => {
-        const acceptedScenesV132S = asSceneArray(boardDataV132S?.scenes)
-        if (!acceptedScenesV132S.length) return boardDataV132S
-        const addedSceneIdSetV132S = new Set(addedIds)
+      // AVA_BOARD_BAD_REGEN_RUNTIME_STATUS_V136I:
+      // Backend accepted the batch. Keep accepted queue order runtime-only; do not patch
+      // Board scenes with queued/running fields and do not save this state to snapshot.
+      const batchAcceptedAtV136I = new Date().toISOString()
+      const batchIdV136I = result?.batchId || result?.batch_id || ''
+      patchBadRegenRuntimeStatusesV136I(addedIds.map((sceneId, index) => {
+        const sourceScene = scenesByIdV136I.get(sceneId) || {}
         return {
-          ...(boardDataV132S || {}),
-          scenes: acceptedScenesV132S.map((scene) => {
-            const sceneIdV132S = serverBatchSceneIdV131D(scene)
-            if (!addedSceneIdSetV132S.has(sceneIdV132S)) return scene
-            const queueIndexV132S = addedIds.indexOf(sceneIdV132S)
-            const queuePositionV132S = Math.max(1, queueIndexV132S + 1)
-            const oldStatusV132S = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
-            if (['error', 'failed', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(oldStatusV132S)) return scene
-            const wasBadV132S = Boolean(
-              boardSceneHasBadVideoReview(scene) ||
-              scene?.video_review_regenerate_from_bad ||
-              scene?.videoReviewRegenerateFromBad ||
-              String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase().includes('bad_review')
-            )
-            const nextStatusV132S = queueIndexV132S === 0 ? 'running' : 'queued'
-            return {
-              ...scene,
-              video_status: nextStatusV132S,
-              videoStatus: nextStatusV132S,
-              video_error: '',
-              videoError: '',
-              video_queue_position: queuePositionV132S,
-              videoQueuePosition: queuePositionV132S,
-              video_queue_source: wasBadV132S
-                ? (queueIndexV132S === 0 ? 'bad_review_regeneration_running_v132s' : 'bad_review_regeneration_waiting_v132s')
-                : (queueIndexV132S === 0 ? 'server_batch_running_v132s' : 'server_batch_waiting_v132s'),
-              videoQueueSource: wasBadV132S
-                ? (queueIndexV132S === 0 ? 'bad_review_regeneration_running_v132s' : 'bad_review_regeneration_waiting_v132s')
-                : (queueIndexV132S === 0 ? 'server_batch_running_v132s' : 'server_batch_waiting_v132s'),
-              video_batch_active_v132r: true,
-              videoBatchActiveV132R: true,
-              video_batch_stage_v132s: nextStatusV132S,
-              videoBatchStageV132S: nextStatusV132S,
-              video_batch_accepted_at_v132s: batchAcceptedAtV132S,
-              videoBatchAcceptedAtV132S: batchAcceptedAtV132S,
-              video_review_regenerate_from_bad: wasBadV132S,
-              videoReviewRegenerateFromBad: wasBadV132S,
-              video_review_regenerate_reason: wasBadV132S ? 'server_batch_bad_review_regeneration_v132s' : '',
-              videoReviewRegenerateReason: wasBadV132S ? 'server_batch_bad_review_regeneration_v132s' : '',
-            }
-          }),
-          updatedAt: batchAcceptedAtV132S,
+          sceneId,
+          status: index === 0 ? 'running' : 'queued',
+          queuePosition: index + 1,
+          batchId: batchIdV136I,
+          fromBad: boardSceneHasBadVideoReview(sourceScene),
+          startedAt: serverBatchStartedAtV136I,
+          updatedAt: batchAcceptedAtV136I,
+          source: 'server_batch_accepted_runtime_v136i',
         }
-      }
-      let nextBoard = result?.board || result?.snapshot?.data || null
+      }))
+
+      const nextBoard = result?.board || result?.snapshot?.data || null
       if (nextBoard && Array.isArray(nextBoard.scenes)) {
-        nextBoard = applyServerBatchAcceptedOrderV132S(nextBoard)
         boardRef.current = nextBoard
         setBoard(nextBoard)
-      } else {
-        setBoard((current) => {
-          const nextBoardV132S = applyServerBatchAcceptedOrderV132S(current)
-          boardRef.current = nextBoardV132S
-          return nextBoardV132S
-        })
+        reconcileBadRegenRuntimeWithBoardV136I(nextBoard, { sceneIds: addedIds })
       }
 
       setAutoVideoQueueState({
@@ -4149,6 +4111,7 @@ function sceneVideoActionState(scene) {
       }
     }).catch((error) => {
       console.warn('[BOARD SERVER BATCH] start failed', error)
+      clearBadRegenRuntimeStatusesV136I(addedIds)
       // server_batch_start_failed_release_v131m
       if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = false
       setAutoVideoQueueState((current) => ({ ...(current || {}), active: false }))
@@ -4170,6 +4133,7 @@ function sceneVideoActionState(scene) {
     event?.stopPropagation?.()
 
     autoVideoQueueStopRef.current = true
+    clearBadRegenRuntimeStatusesV136I()
 
     if (!workspaceMode && projectId) {
       apiRequest(`/projects/${projectId}/board/video-batch/stop`, {
@@ -4657,6 +4621,7 @@ function sceneVideoActionState(scene) {
   const [selectedVideoBlobUrl, setSelectedVideoBlobUrl] = useState('')
   const [selectedVideoLoadError, setSelectedVideoLoadError] = useState('')
   const [runtimeSceneMediaUrls, setRuntimeSceneMediaUrls] = useState({})
+  const [badRegenRuntimeStatus, setBadRegenRuntimeStatus] = useState({})
   const [mmaudioOpen, setMmaudioOpen] = useState(false)
   const audioRef = useRef(null)
   const manualLipSyncAudioInputRefV129A = useRef(null)
@@ -4684,14 +4649,303 @@ function sceneVideoActionState(scene) {
   const activeVideoPollsRef = useRef(new Set())
   const staticAssetRepairRef = useRef(new Set())
   const imageBlobUrlCacheRefV129O = useRef(new Map())
+  const badRegenRuntimeStatusRef = useRef({})
   const seenCompletedJobIdsRef = useRef(readBoardSeenCompletedJobIds())
   const sceneStripRef = useRef(null)
   const sceneCardRefs = useRef(new Map())
 
-  const selectedScene = useMemo(() => {
+  const badRegenRuntimeActiveStatusesV136I = new Set(['starting', 'preparing', 'submitting', 'queued', 'running', 'processing'])
+
+  function setBadRegenRuntimeStatusMapV136I(nextMap = {}) {
+    badRegenRuntimeStatusRef.current = nextMap
+    setBadRegenRuntimeStatus(nextMap)
+  }
+
+  function patchBadRegenRuntimeStatusesV136I(entries = []) {
+    const safeEntries = asArray(entries).filter((entry) => asText(entry?.sceneId || entry?.scene_id || entry?.id))
+    if (!safeEntries.length) return
+    const now = new Date().toISOString()
+    const nextMap = { ...(badRegenRuntimeStatusRef.current || {}) }
+    safeEntries.forEach((entry) => {
+      const sceneId = asText(entry.sceneId || entry.scene_id || entry.id)
+      const status = String(entry.status || 'submitting').toLowerCase()
+      if (!badRegenRuntimeActiveStatusesV136I.has(status)) {
+        delete nextMap[sceneId]
+        return
+      }
+      // AVA_BOARD_BAD_REGEN_STICKY_RUNTIME_V136K:
+      // Once a runtime overlay is known to come from a bad-review regeneration,
+      // keep that flag sticky. Some refresh/status payloads do not repeat the
+      // bad-review reason, and downgrading fromBad=false lets old ready snapshots
+      // erase the live queued/running badge.
+      const previousFromBadV136K = Boolean(nextMap[sceneId]?.fromBad)
+      const incomingFromBadV136K = entry.fromBad ?? entry.from_bad
+      nextMap[sceneId] = {
+        ...(nextMap[sceneId] || {}),
+        sceneId,
+        status,
+        queuePosition: Number(entry.queuePosition || entry.queue_position || 0) || 0,
+        batchId: asText(entry.batchId || entry.batch_id || nextMap[sceneId]?.batchId || ''),
+        jobId: asText(entry.jobId || entry.job_id || nextMap[sceneId]?.jobId || ''),
+        statusEndpoint: asText(entry.statusEndpoint || entry.status_endpoint || nextMap[sceneId]?.statusEndpoint || ''),
+        fromBad: Boolean(previousFromBadV136K || incomingFromBadV136K),
+        startedAt: asText(entry.startedAt || entry.started_at || nextMap[sceneId]?.startedAt || now),
+        updatedAt: now,
+        source: entry.source || 'bad_regen_runtime_v136i',
+      }
+    })
+    setBadRegenRuntimeStatusMapV136I(nextMap)
+  }
+
+  function clearBadRegenRuntimeStatusesV136I(sceneIds = []) {
+    const current = badRegenRuntimeStatusRef.current || {}
+    const ids = asArray(sceneIds).map((id) => asText(id)).filter(Boolean)
+    if (!ids.length) {
+      if (Object.keys(current).length) setBadRegenRuntimeStatusMapV136I({})
+      return
+    }
+    let changed = false
+    const nextMap = { ...current }
+    ids.forEach((sceneId) => {
+      if (Object.prototype.hasOwnProperty.call(nextMap, sceneId)) {
+        delete nextMap[sceneId]
+        changed = true
+      }
+    })
+    if (changed) setBadRegenRuntimeStatusMapV136I(nextMap)
+  }
+
+  function reconcileBadRegenRuntimeWithBoardV136I(boardData = {}, options = {}) {
+    const current = badRegenRuntimeStatusRef.current || {}
+    const currentIds = Object.keys(current)
+    if (!currentIds.length) return
+    const onlyIds = new Set(asArray(options.sceneIds || options.scene_ids).map((id) => asText(id)).filter(Boolean))
+    const scenesById = new Map(asSceneArray(boardData?.scenes).map((scene) => [asText(scene?.id || scene?.scene_id), scene]))
+    if (!scenesById.size) return
+
+    let changed = false
+    const nextMap = { ...current }
+    currentIds.forEach((sceneId) => {
+      if (onlyIds.size && !onlyIds.has(sceneId)) return
+      const scene = scenesById.get(sceneId)
+      if (!scene) return
+      const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+      const hasServerJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint)
+      const reviewStatus = boardSceneVideoReviewStatus(scene)
+      const hasCurrentVideo = boardSceneHasCurrentVideoResultV129P(scene)
+      const runtimeWasBad = Boolean(nextMap[sceneId]?.fromBad)
+      // AVA_BOARD_BAD_REGEN_STICKY_RUNTIME_V136K:
+      // During server bad-review regeneration the project snapshot can still carry
+      // the old ready video refs + the old red bad mark until backend binds the new
+      // result and writes needs_review. Do not let that stale ready snapshot clear
+      // the runtime queued/running overlay.
+      const stillBadRegenPendingV136K = Boolean(
+        runtimeWasBad &&
+        reviewStatus === 'bad' &&
+        !isBoardVideoErrorStatus(status)
+      )
+      const doneOrFailed = Boolean(
+        isBoardVideoErrorStatus(status) ||
+        reviewStatus === 'needs_review' ||
+        (!stillBadRegenPendingV136K && (
+          isBoardVideoDoneStatus(status) ||
+          (hasCurrentVideo && !isVideoBusyStatus(status) && status !== 'queued_no_prompt_id')
+        ))
+      )
+      if (doneOrFailed) {
+        delete nextMap[sceneId]
+        changed = true
+        return
+      }
+      if (hasServerJob && badRegenRuntimeActiveStatusesV136I.has(status)) {
+        nextMap[sceneId] = {
+          ...(nextMap[sceneId] || {}),
+          status: status === 'queued' ? 'running' : status,
+          jobId: asText(scene?.video_job_id || scene?.videoJobId || nextMap[sceneId]?.jobId || ''),
+          statusEndpoint: asText(scene?.video_status_endpoint || scene?.videoStatusEndpoint || nextMap[sceneId]?.statusEndpoint || ''),
+          queuePosition: Number(scene?.video_queue_position || scene?.videoQueuePosition || nextMap[sceneId]?.queuePosition || 0) || 0,
+          updatedAt: new Date().toISOString(),
+        }
+        changed = true
+      }
+    })
+    if (changed) setBadRegenRuntimeStatusMapV136I(nextMap)
+  }
+
+  // AVA_BOARD_BAD_REGEN_F5_RUNTIME_REHYDRATE_V136J:
+  // F5 clears React runtime state, but the backend server batch can keep rendering.
+  // Rebuild only the UI overlay from the live batch/status endpoint; never persist these fields.
+  const badRegenRuntimeBatchActiveStatusesV136J = new Set(['queued', 'running', 'starting', 'preparing', 'submitting', 'processing'])
+
+  function boardBatchSceneIdsV136J(value) {
+    return asArray(value).map((id) => asText(id)).filter(Boolean)
+  }
+
+  function boardBatchFreshEnoughV136J(batch = {}) {
+    const stamp = Date.parse(
+      batch?.updatedAt ||
+      batch?.updated_at ||
+      batch?.createdAt ||
+      batch?.created_at ||
+      ''
+    )
+    if (!Number.isFinite(stamp) || stamp <= 0) return true
+    return (Date.now() - stamp) < (12 * 60 * 60 * 1000)
+  }
+
+  function rehydrateBadRegenRuntimeFromServerBatchV136J(batchData = {}, boardData = {}, options = {}) {
+    const batch = (batchData && typeof batchData === 'object') ? batchData : {}
+    const batchStatus = String(batch?.status || batch?.batch_status || '').toLowerCase()
+    const batchId = asText(batch?.batchId || batch?.batch_id || '')
+    const activeSceneId = asText(batch?.activeSceneId || batch?.active_scene_id || '')
+    const activeJobId = asText(batch?.activeJobId || batch?.active_job_id || '')
+    const activeStatusEndpoint = asText(batch?.activeStatusEndpoint || batch?.active_status_endpoint || '')
+    const waitingIds = boardBatchSceneIdsV136J(batch?.waitingSceneIds || batch?.waiting_scene_ids)
+    const completedIds = new Set(boardBatchSceneIdsV136J(batch?.completedSceneIds || batch?.completed_scene_ids))
+    const failedIds = new Set(boardBatchSceneIdsV136J(batch?.failedSceneIds || batch?.failed_scene_ids))
+    const badReviewIds = new Set(boardBatchSceneIdsV136J(batch?.badReviewSceneIds || batch?.bad_review_scene_ids))
+    const allBatchIds = Array.from(new Set([
+      activeSceneId,
+      ...waitingIds,
+      ...Array.from(completedIds),
+      ...Array.from(failedIds),
+      ...Array.from(badReviewIds),
+    ].filter(Boolean)))
+
+    const hasActiveBatch = Boolean(
+      badRegenRuntimeBatchActiveStatusesV136J.has(batchStatus) ||
+      activeSceneId ||
+      activeJobId ||
+      activeStatusEndpoint ||
+      waitingIds.length
+    )
+
+    if (!hasActiveBatch) {
+      if (allBatchIds.length) clearBadRegenRuntimeStatusesV136I(allBatchIds)
+      return false
+    }
+
+    if (!boardBatchFreshEnoughV136J(batch)) {
+      console.warn('[BOARD BAD REGEN F5 RUNTIME REHYDRATE V136J] stale batch ignored', {
+        batchId,
+        status: batchStatus,
+        updatedAt: batch?.updatedAt || batch?.updated_at || '',
+      })
+      return false
+    }
+
+    const scenesById = new Map(asSceneArray(boardData?.scenes).map((scene) => [asText(scene?.id || scene?.scene_id), scene]))
+    const entries = []
+
+    const addEntry = (sceneId, status, queuePosition = 0) => {
+      const safeSceneId = asText(sceneId)
+      if (!safeSceneId || completedIds.has(safeSceneId) || failedIds.has(safeSceneId)) return
+      const scene = scenesById.get(safeSceneId) || {}
+      const queueSource = String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase()
+      const fromBad = Boolean(
+        badReviewIds.has(safeSceneId) ||
+        boardSceneHasBadVideoReview(scene) ||
+        scene?.video_review_regenerate_from_bad ||
+        scene?.videoReviewRegenerateFromBad ||
+        queueSource.includes('bad_review') ||
+        queueSource.includes('regeneration')
+      )
+      entries.push({
+        sceneId: safeSceneId,
+        status,
+        queuePosition,
+        batchId,
+        jobId: safeSceneId === activeSceneId ? activeJobId : '',
+        statusEndpoint: safeSceneId === activeSceneId ? activeStatusEndpoint : '',
+        fromBad,
+        source: options.source || 'server_batch_f5_rehydrate_v136j',
+      })
+    }
+
+    if (activeSceneId) addEntry(activeSceneId, 'running', 0)
+    waitingIds.forEach((sceneId, index) => {
+      addEntry(sceneId, sceneId === activeSceneId ? 'running' : 'queued', index + 1)
+    })
+    if (!entries.length && activeSceneId && activeJobId) addEntry(activeSceneId, 'running', 0)
+
+    if (entries.length) {
+      patchBadRegenRuntimeStatusesV136I(entries)
+      console.log('[BOARD BAD REGEN F5 RUNTIME REHYDRATE V136J]', {
+        source: options.source || '',
+        batchId,
+        status: batchStatus,
+        activeSceneId,
+        activeJobId,
+        waitingIds,
+        entries: entries.map((entry) => ({ sceneId: entry.sceneId, status: entry.status, fromBad: entry.fromBad })),
+      })
+    }
+
+    const doneIds = [...Array.from(completedIds), ...Array.from(failedIds)]
+    const doneIdsToClearV136K = doneIds.filter((sceneId) => {
+      const safeSceneId = asText(sceneId)
+      const scene = scenesById.get(safeSceneId) || {}
+      const reviewStatus = boardSceneVideoReviewStatus(scene)
+      const runtime = badRegenRuntimeStatusRef.current?.[safeSceneId]
+      const keepUntilReviewUpdate = Boolean(
+        runtime?.fromBad &&
+        reviewStatus === 'bad' &&
+        !failedIds.has(safeSceneId)
+      )
+      if (keepUntilReviewUpdate) {
+        console.log('[BOARD BAD REGEN STICKY RUNTIME V136K] keep completed scene until review updates', {
+          batchId,
+          sceneId: safeSceneId,
+          reviewStatus,
+        })
+        return false
+      }
+      return true
+    })
+    if (doneIdsToClearV136K.length) clearBadRegenRuntimeStatusesV136I(doneIdsToClearV136K)
+    return Boolean(entries.length)
+  }
+
+  function boardSceneWithBadRegenRuntimeV136I(scene = {}) {
+    const sceneId = asText(scene?.id || scene?.scene_id)
+    const runtime = sceneId ? (badRegenRuntimeStatus?.[sceneId] || badRegenRuntimeStatusRef.current?.[sceneId]) : null
+    const runtimeStatus = String(runtime?.status || '').toLowerCase()
+    if (!runtime || !badRegenRuntimeActiveStatusesV136I.has(runtimeStatus)) return scene
+    const queuePosition = Number(runtime.queuePosition || 0) || Number(scene?.video_queue_position || scene?.videoQueuePosition || 0) || 0
+    return {
+      ...scene,
+      video_runtime_status_v136i: runtimeStatus,
+      videoRuntimeStatusV136I: runtimeStatus,
+      video_runtime_batch_id_v136i: runtime.batchId || '',
+      videoRuntimeBatchIdV136I: runtime.batchId || '',
+      video_runtime_from_bad_v136i: Boolean(runtime.fromBad),
+      videoRuntimeFromBadV136I: Boolean(runtime.fromBad),
+      video_runtime_updated_at_v136i: runtime.updatedAt || '',
+      videoRuntimeUpdatedAtV136I: runtime.updatedAt || '',
+      video_runtime_status_endpoint_v136i: runtime.statusEndpoint || '',
+      videoRuntimeStatusEndpointV136I: runtime.statusEndpoint || '',
+      video_runtime_job_id_v136i: runtime.jobId || '',
+      videoRuntimeJobIdV136I: runtime.jobId || '',
+      video_queue_position: queuePosition,
+      videoQueuePosition: queuePosition,
+      video_queue_source: runtime.fromBad
+        ? `runtime_bad_review_regeneration_${runtimeStatus}_v136i`
+        : (scene?.video_queue_source || scene?.videoQueueSource || `runtime_server_batch_${runtimeStatus}_v136i`),
+      videoQueueSource: runtime.fromBad
+        ? `runtime_bad_review_regeneration_${runtimeStatus}_v136i`
+        : (scene?.videoQueueSource || scene?.video_queue_source || `runtime_server_batch_${runtimeStatus}_v136i`),
+    }
+  }
+
+  const selectedSceneBase = useMemo(() => {
     const scenes = asSceneArray(board.scenes)
     return scenes.find((scene) => scene.id === board.selectedSceneId) || scenes[0] || null
   }, [board.scenes, board.selectedSceneId])
+
+  const selectedScene = useMemo(
+    () => boardSceneWithBadRegenRuntimeV136I(selectedSceneBase),
+    [selectedSceneBase, badRegenRuntimeStatus]
+  )
 
   const selectedSceneDurationLock = useMemo(() => boardSceneTimingLockInfo(selectedScene), [selectedScene])
 
@@ -4987,6 +5241,23 @@ function sceneVideoActionState(scene) {
           sessionStorage.removeItem(AVA_OPEN_BOARD_SCENE_KEY)
         }
         setBoard(nextBoard)
+        rehydrateBadRegenRuntimeFromServerBatchV136J(
+          nextBoard?.board_video_batch || nextBoard?.boardVideoBatch || {},
+          nextBoard,
+          { source: 'initial_snapshot_load_v136j' }
+        )
+        if (!workspaceMode && projectId) {
+          apiRequest(`/projects/${projectId}/board/video-batch/status`)
+            .then((batchStatusDataV136J) => {
+              if (!active) return
+              rehydrateBadRegenRuntimeFromServerBatchV136J(
+                batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || {},
+                boardRef.current || nextBoard,
+                { source: 'initial_status_endpoint_v136j' }
+              )
+            })
+            .catch((error) => console.warn('[BOARD BAD REGEN F5 RUNTIME REHYDRATE V136J] initial status failed', error))
+        }
         setStatus(openedFromTiming
           ? 'Открыта старая Доска. Подтверди перенос из Тайминга, чтобы заменить сцены и аудио.'
           : (nextBoard.scenes.length ? 'Storyboard загружен' : 'Сцен пока нет — импортируй JSON или вернись в Тайминг')) // AVA_TIMING_TO_BOARD_CONFIRM_STATUS_V14B
@@ -5013,8 +5284,21 @@ function sceneVideoActionState(scene) {
 
     const tick = async () => {
       try {
+        let batchStatusDataV136J = null
+        try {
+          batchStatusDataV136J = await apiRequest(`/projects/${projectId}/board/video-batch/status`)
+        } catch (statusErrorV136J) {
+          console.warn('[BOARD BAD REGEN F5 RUNTIME REHYDRATE V136J] status endpoint failed', statusErrorV136J)
+        }
+
         const serverBoardData = await loadStage(projectId, STAGE)
         if (cancelled || !serverBoardData || !Array.isArray(serverBoardData.scenes)) return
+        rehydrateBadRegenRuntimeFromServerBatchV136J(
+          batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || serverBoardData?.board_video_batch || serverBoardData?.boardVideoBatch || {},
+          serverBoardData,
+          { source: 'server_batch_refresh_status_v136j' }
+        )
+        reconcileBadRegenRuntimeWithBoardV136I(serverBoardData)
         const serverScore = boardVideoStateScoreV131N(serverBoardData)
         const localScore = boardVideoStateScoreV131N(boardRef.current || board)
         if (serverScore > localScore || boardNeedsServerBatchRefreshV131N(serverBoardData)) {
@@ -9045,7 +9329,7 @@ async function importTimingJson(event) {
     hasPreview: Boolean(selectedPreviewVideoUrl),
     loadError: selectedVideoLoadError,
   })
-  const boardScenes = asSceneArray(board.scenes)
+  const boardScenes = asSceneArray(board.scenes).map((scene) => boardSceneWithBadRegenRuntimeV136I(scene))
   const readiness = {
     total: boardScenes.length,
     prompts: boardScenes.filter((scene) => asText(scene.video_prompt)).length,
