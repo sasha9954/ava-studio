@@ -1,3 +1,5 @@
+/* AVA_BOARD_REVIEW_CLEAR_EVENT_TIMESTAMP_V136D: clear review writes explicit cleared_at token. */
+/* AVA_BOARD_SIMPLE_BAD_REVIEW_FLOW_V136A: direct manual bad/clear review flow; bad badge wins over ready until regeneration. */
 // AVA_BOARD_READY_VIDEO_WINS_BUSY_STATUS_V133E: current ready video refs must beat stale queued/running poll state.
 /* AVA_BOARD_REVIEW_CLEAR_ON_IMAGE_CHANGE_V133B: image replacement must clear stale bad/posmotri review state. */
 /* AVA_BOARD_MANUAL_SCENE_IMMEDIATE_COLORS_V133A: manual scenes get their final per-scene color immediately, before F5/rehydrate. */
@@ -511,12 +513,22 @@ function sceneStaticMediaCandidate(scene = {}, slot = 'video') {
   return boardStaticMediaUrl(value)
 }
 
-function stripBoardDurableRuntimePayload(value, key = '') {
-  if (Array.isArray(value)) return value.map((item) => stripBoardDurableRuntimePayload(item, key))
+// AVA_BOARD_DURABLE_RUNTIME_CYCLE_GUARD_V135J:
+// Durable/local save sanitizing must never crash the UI if a circular/deep runtime
+// object accidentally gets into board state. Keep media refs, drop unsafe runtime loops.
+function stripBoardDurableRuntimePayload(value, key = '', seen = new WeakSet()) {
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return []
+    seen.add(value)
+    return value.map((item) => stripBoardDurableRuntimePayload(item, key, seen))
+  }
   if (!value || typeof value !== 'object') {
     if (typeof value === 'string' && /^(data:|blob:)/i.test(value)) return ''
     return value
   }
+
+  if (seen.has(value)) return {}
+  seen.add(value)
 
   const stripped = {}
   for (const [field, fieldValue] of Object.entries(value)) {
@@ -534,7 +546,7 @@ function stripBoardDurableRuntimePayload(value, key = '') {
       stripped[field] = ''
       continue
     }
-    stripped[field] = stripBoardDurableRuntimePayload(fieldValue, field)
+    stripped[field] = stripBoardDurableRuntimePayload(fieldValue, field, seen)
   }
   return stripped
 }
@@ -2398,6 +2410,8 @@ function sceneStatus(scene) {
   if (status === 'preparing' || status === 'submitting') return { label: 'отправляется', className: 'isRunning' }
   if (status === 'running') return { label: 'видео делается', className: 'isRunning' }
   if (status === 'error') return { label: 'ошибка видео', className: 'isError' }
+  if (reviewStatusPriorityV132D2 === 'bad') return { label: 'плохое', className: 'isBad' }
+  if (reviewStatusPriorityV132D2 === 'needs_review') return { label: 'посмотри', className: 'isReview' }
   if (hasCurrentVideo) return { label: 'видео готово', className: 'isReady' }
   if (hasImage) return { label: hasStaleVideo ? 'кадр обновлён' : 'кадр готов', className: 'isImage' }
   if (hasPrompt) return { label: 'промт готов', className: 'isPrompt' }
@@ -2520,17 +2534,49 @@ function boardVideoReviewPatch(status = '', reason = 'manual') {
   const safeStatus = ['bad', 'needs_review'].includes(String(status || '').toLowerCase())
     ? String(status || '').toLowerCase()
     : ''
+  const nowV136D = new Date().toISOString()
+  if (!safeStatus) {
+    return {
+      video_review_status: '',
+      videoReviewStatus: '',
+      review_status: '',
+      reviewStatus: '',
+      video_review_reason: '',
+      videoReviewReason: '',
+      video_review_updated_at: '',
+      videoReviewUpdatedAt: '',
+      video_review_clear_reason: reason || 'manual_review_clear_v136d',
+      videoReviewClearReason: reason || 'manual_review_clear_v136d',
+      video_review_cleared_at: nowV136D,
+      videoReviewClearedAt: nowV136D,
+      video_review_clear_token_v136d: `review_clear_v136d_${nowV136D}_${Math.random().toString(36).slice(2, 8)}`,
+      videoReviewClearTokenV136D: `review_clear_v136d_${nowV136D}_${Math.random().toString(36).slice(2, 8)}`,
+      video_review_regenerate_from_bad: false,
+      videoReviewRegenerateFromBad: false,
+      video_review_regenerate_reason: '',
+      videoReviewRegenerateReason: '',
+      bad_video_review: false,
+      badVideoReview: false,
+      video_review_bad: false,
+      videoReviewBad: false,
+    }
+  }
   return {
     video_review_status: safeStatus,
     videoReviewStatus: safeStatus,
     review_status: safeStatus,
     reviewStatus: safeStatus,
-    video_review_updated_at: new Date().toISOString(),
-    videoReviewUpdatedAt: new Date().toISOString(),
+    video_review_updated_at: nowV136D,
+    videoReviewUpdatedAt: nowV136D,
     video_review_reason: reason,
     videoReviewReason: reason,
+    video_review_clear_reason: '',
+    videoReviewClearReason: '',
+    video_review_cleared_at: '',
+    videoReviewClearedAt: '',
   }
 }
+
 
 function boardVideoReviewRegenerateFlagPatch(wasBad = false, reason = '') {
   return {
@@ -8798,52 +8844,109 @@ async function importTimingJson(event) {
 
 
   
+  // AVA_BOARD_REVIEW_IMMEDIATE_SAVE_V136G:
+  // Review marks are tiny state changes, but the old path saved them through the
+  // generic delayed Board autosave. If the user clicks several marks and presses
+  // F5 immediately, the last click can be lost. Keep this path synchronous:
+  // update boardRef/current UI, write durable backup, and start saveBoard now.
   function setSceneVideoReviewStatus(sceneId, status = '', reason = 'manual') {
     const safeSceneId = asText(sceneId)
     if (!safeSceneId) return
-    const rawStatusV132Z = String(status || '').toLowerCase()
-    const safeStatusV132Z = ['bad', 'needs_review'].includes(rawStatusV132Z) ? rawStatusV132Z : ''
-    const reviewPatchV132Z = { ...boardVideoReviewPatch(safeStatusV132Z, reason) }
 
-    // AVA_BOARD_REVIEW_ACCEPT_PERSIST_V132Z:
-    // Clearing red bad or orange posmotri must be explicit, not just absent.
-    // We store accepted + clear token so backend V132J/V132B preserve cannot resurrect old review.
-    if (!safeStatusV132Z) {
-      const acceptedAtV132Z = new Date().toISOString()
-      const clearTokenV132Z = `review_accept_${acceptedAtV132Z}_${Math.random().toString(36).slice(2, 8)}`
-      Object.assign(reviewPatchV132Z, {
-        video_review_status: 'accepted',
-        videoReviewStatus: 'accepted',
-        review_status: 'accepted',
-        reviewStatus: 'accepted',
-        video_review_updated_at: acceptedAtV132Z,
-        videoReviewUpdatedAt: acceptedAtV132Z,
-        video_review_cleared_at: acceptedAtV132Z,
-        videoReviewClearedAt: acceptedAtV132Z,
-        video_review_accepted_at: acceptedAtV132Z,
-        videoReviewAcceptedAt: acceptedAtV132Z,
-        video_review_clear_token_v132y: clearTokenV132Z,
-        videoReviewClearTokenV132Y: clearTokenV132Z,
-        video_review_accept_token_v132z: clearTokenV132Z,
-        videoReviewAcceptTokenV132Z: clearTokenV132Z,
-        video_review_clear_reason: reason || 'manual_review_accept_v132z',
-        videoReviewClearReason: reason || 'manual_review_accept_v132z',
-        video_review_reason: reason || 'manual_review_accept_v132z',
-        videoReviewReason: reason || 'manual_review_accept_v132z',
-        video_review_regenerate_from_bad: false,
-        videoReviewRegenerateFromBad: false,
-        video_review_regenerate_reason: '',
-        videoReviewRegenerateReason: '',
-        bad_video_review: false,
-        badVideoReview: false,
-        video_review_bad: false,
-        videoReviewBad: false,
-      })
+    const safeStatus = ['bad', 'needs_review'].includes(String(status || '').toLowerCase())
+      ? String(status || '').toLowerCase()
+      : ''
+    const eventAtV136G = new Date().toISOString()
+    const finalReasonV136G = safeStatus
+      ? (safeStatus === 'bad' ? 'manual_bad_toggle_v136g' : 'manual_needs_review_v136g')
+      : 'manual_review_clear_v136g'
+
+    const patch = {
+      ...boardVideoReviewPatch(safeStatus, finalReasonV136G),
+      ...(safeStatus
+        ? {
+            video_review_updated_at: eventAtV136G,
+            videoReviewUpdatedAt: eventAtV136G,
+            video_review_clear_reason: '',
+            videoReviewClearReason: '',
+            video_review_cleared_at: '',
+            videoReviewClearedAt: '',
+            video_review_regenerate_from_bad: Boolean(safeStatus === 'bad'),
+            videoReviewRegenerateFromBad: Boolean(safeStatus === 'bad'),
+            bad_video_review: Boolean(safeStatus === 'bad'),
+            badVideoReview: Boolean(safeStatus === 'bad'),
+            video_review_bad: Boolean(safeStatus === 'bad'),
+            videoReviewBad: Boolean(safeStatus === 'bad'),
+          }
+        : {
+            video_review_status: '',
+            videoReviewStatus: '',
+            review_status: '',
+            reviewStatus: '',
+            video_review_reason: '',
+            videoReviewReason: '',
+            review_reason: '',
+            reviewReason: '',
+            video_review_updated_at: '',
+            videoReviewUpdatedAt: '',
+            video_review_clear_reason: finalReasonV136G,
+            videoReviewClearReason: finalReasonV136G,
+            video_review_cleared_at: eventAtV136G,
+            videoReviewClearedAt: eventAtV136G,
+            video_review_regenerate_from_bad: false,
+            videoReviewRegenerateFromBad: false,
+            video_review_regenerate_reason: '',
+            videoReviewRegenerateReason: '',
+            bad_video_review: false,
+            badVideoReview: false,
+            video_review_bad: false,
+            videoReviewBad: false,
+          }),
     }
 
-    updateSceneAndSave(safeSceneId, reviewPatchV132Z)
-    const label = safeStatusV132Z === 'bad' ? 'плохое' : safeStatusV132Z === 'needs_review' ? 'посмотри' : 'метка снята'
-    setStatus(`Review: ${safeSceneId} · ${label}`)
+    const currentBoardV136G = boardRef.current || board || {}
+    const currentScenesV136G = asSceneArray(currentBoardV136G.scenes)
+    let changedV136G = false
+    const nextScenesV136G = currentScenesV136G.map((scene) => {
+      if (asText(scene?.id || scene?.scene_id) !== safeSceneId) return scene
+      const nextScene = canonicalizeBoardSceneMediaRefs(
+        boardClearGeneratedRefsForActiveVideoPatchV54({ ...scene, ...patch }, patch)
+      )
+      const hasFieldChange = Object.keys(patch).some((key) => !Object.is(scene?.[key], nextScene?.[key]))
+      if (!hasFieldChange) return scene
+      changedV136G = true
+      return nextScene
+    })
+
+    const label = safeStatus === 'bad' ? 'плохое' : safeStatus === 'needs_review' ? 'посмотри' : 'метка снята'
+    if (!changedV136G) {
+      setStatus(`Review: ${safeSceneId} · ${label}`)
+      return
+    }
+
+    const nextBoardV136G = {
+      ...currentBoardV136G,
+      scenes: nextScenesV136G,
+      updatedAt: eventAtV136G,
+      reviewImmediateSaveV136G: true,
+      reviewImmediateSaveSceneIdV136G: safeSceneId,
+      reviewImmediateSaveEventAtV136G: eventAtV136G,
+    }
+
+    boardRef.current = nextBoardV136G
+    setBoard(nextBoardV136G)
+    writeBoardDurableBackup(
+      boardDurableKey({ projectId, workspaceMode }),
+      sanitizeBoardDurableBackup(nextBoardV136G)
+    )
+    setStatus(`Review: ${safeSceneId} · ${label} · сохраняем…`)
+
+    Promise.resolve(saveBoard(nextBoardV136G, true))
+      .then(() => setStatus(`Review: ${safeSceneId} · ${label} сохранено`))
+      .catch((err) => {
+        console.warn('[BOARD REVIEW IMMEDIATE SAVE V136G FAILED]', err)
+        setStatus(`Review: ${safeSceneId} · ${label} · ошибка сохранения: ${err?.message || err}`)
+      })
   }
 
   
@@ -8862,10 +8965,10 @@ async function importTimingJson(event) {
     const current = boardSceneVideoReviewStatus(scene)
     const next = current === 'bad' ? '' : current === 'needs_review' ? '' : 'bad'
     const reason = current === 'needs_review'
-      ? 'manual_needs_review_accept_v132z'
+      ? 'manual_needs_review_clear_v136d'
       : next
-        ? 'manual_bad_toggle'
-        : 'manual_bad_accept_v132z'
+        ? 'manual_bad_toggle_v136d'
+        : 'manual_review_clear_v136d'
     setSceneVideoReviewStatus(sceneId, next, reason)
   }
 
