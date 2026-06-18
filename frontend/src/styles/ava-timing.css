@@ -3501,3 +3501,62 @@
 .avaSemanticBlockConflictActionsV69 { display: flex; gap: 8px; flex-wrap: wrap; }
 .avaSemanticBlockConflictActionsV69 button { min-height: 38px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 0 13px; color: #f4f8ff; background: rgba(255,255,255,.07); font-weight: 900; cursor: pointer; }
 .avaSemanticBlockConflictActionsV69 button:first-child { color: #101827; background: linear-gradient(135deg, #ffe08a, #8ee9ff); }
+
+
+/* AVA_QUICK_LINKS_MOISES_SUNO_V137M */
+.avaTimingAsrModeHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.avaTimingQuickLinkButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 4px 10px 4px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .01em;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+
+.avaTimingQuickLinkButton:hover {
+  transform: translateY(-1px);
+}
+
+.avaTimingQuickLinkButton.isMoises {
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(6,8,14,.98), rgba(20,24,34,.98));
+  border-color: rgba(255,255,255,.18);
+  box-shadow: 0 12px 24px rgba(0,0,0,.18);
+}
+
+.avaTimingQuickLinkBadge {
+  width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,.08);
+  flex: 0 0 auto;
+}
+
+.avaTimingQuickLinkBadge svg {
+  width: 13px;
+  height: 13px;
+}
+
+.avaTimingQuickLinkButton.isMoises .avaTimingQuickLinkBadge svg path {
+  stroke: currentColor;
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

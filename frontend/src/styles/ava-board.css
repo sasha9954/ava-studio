@@ -6088,3 +6088,60 @@
   pointer-events: none;
 }
 
+
+
+/* AVA_QUICK_LINKS_MOISES_SUNO_V137M */
+.avaAssemblyQuickLinksRow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.avaAssemblyQuickLinkButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 4px 10px 4px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .01em;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+
+.avaAssemblyQuickLinkButton:hover {
+  transform: translateY(-1px);
+}
+
+.avaAssemblyQuickLinkButton.isSuno {
+  color: #cffff4;
+  background: linear-gradient(135deg, rgba(5,18,25,.98), rgba(8,34,40,.98));
+  border-color: rgba(93, 236, 211, .34);
+  box-shadow: 0 12px 24px rgba(10, 34, 37, .22);
+}
+
+.avaAssemblyQuickLinkBadge {
+  width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(93, 236, 211, .12);
+  flex: 0 0 auto;
+}
+
+.avaAssemblyQuickLinkBadge svg {
+  width: 13px;
+  height: 13px;
+}
+
+.avaAssemblyQuickLinkButton.isSuno .avaAssemblyQuickLinkBadge svg path {
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

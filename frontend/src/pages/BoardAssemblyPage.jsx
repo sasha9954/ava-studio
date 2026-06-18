@@ -4,7 +4,7 @@
 // AVA_ASSEMBLY_COMPACT_TRANSITIONS_V134B: compact right-panel transition control, safe after stats initialization.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { ArrowLeft, Clapperboard, Download, Music, RefreshCcw, SlidersHorizontal, UploadCloud, Volume2, Wand2 } from 'lucide-react'
+import { ArrowLeft, Clapperboard, Download, ExternalLink, Music, RefreshCcw, SlidersHorizontal, UploadCloud, Volume2, Wand2 } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, getAuthHeaders, normalizeAssetFileUrl, registerStaticMediaAsset, uploadAudioAsset } from '../services/apiClient.js'
 import '../styles/ava-board.css'
@@ -1830,6 +1830,26 @@ export default function BoardAssemblyPage() {
 
             {musicPanelOpen && (
               <div className="avaAssemblyPanelBody">
+                {/* AVA_QUICK_LINKS_MOISES_SUNO_V137M */}
+                <div className="avaAssemblyQuickLinksRow">
+                  <a
+                    className="avaAssemblyQuickLinkButton isSuno"
+                    href="https://suno.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Открыть Suno"
+                  >
+                    <span className="avaAssemblyQuickLinkBadge" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M5 6.5h5.8c1.5 0 2.7 1.2 2.7 2.7 0 1.5-1.2 2.7-2.7 2.7H7.3c-1.5 0-2.7 1.2-2.7 2.7 0 1.5 1.2 2.7 2.7 2.7H19" />
+                        <path d="M8 4.8v14.4" />
+                        <path d="M16 4.8v14.4" />
+                      </svg>
+                    </span>
+                    <span>Suno</span>
+                    <ExternalLink size={11} strokeWidth={2.2} />
+                  </a>
+                </div>
                 <div className={`avaAssemblyMusicStatus ${musicAsset ? 'isReady' : musicUploading ? 'isLoading' : ''}`}>
                   <span>{musicUploading ? 'Загрузка…' : musicAsset ? 'Музыка загружена' : 'Музыка не загружена'}</span>
                   <b>{musicAsset?.audio_name || musicFile?.name || 'MP3/WAV пока не выбран'}</b>

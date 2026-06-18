@@ -10,7 +10,7 @@
 /* AVA_TIMING_TO_BOARD_INLINE_CONFIRM_V35: remove runtime references to helper funcs by using inline handlers in JSX. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { Clock3, Film, Pause, Play, Save, StepBack, StepForward, Trash2, Undo2, UploadCloud } from 'lucide-react'
+import { Clock3, ExternalLink, Film, Pause, Play, Save, StepBack, StepForward, Trash2, Undo2, UploadCloud } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { buildApiUrl, cutAudioAssetRange, fetchProtectedBlobUrl, getAuthHeaders, normalizeAssetFileUrl, normalizeStaticMediaUrl, transcribeAudioAsset, translateAsrSegments, uploadAudioAsset } from '../services/apiClient.js'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
@@ -4774,7 +4774,27 @@ const useVocalStem = mode === 'vocal'
             <div className="avaTimingAsrModeCard isVocal">
               <div className="avaTimingAsrModeBadge">2</div>
               <div className="avaTimingAsrModeText">
-                <strong>Песня / vocal stem</strong>
+                {/* AVA_QUICK_LINKS_MOISES_SUNO_V137M */}
+                <div className="avaTimingAsrModeHeading">
+                  <strong>Песня / vocal stem</strong>
+                  <a
+                    className="avaTimingQuickLinkButton isMoises"
+                    href="https://moises.ai/ru/"
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Открыть Moises"
+                  >
+                    <span className="avaTimingQuickLinkBadge" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M2 8.2c2.2-2.4 4.3-2.4 6.5 0s4.3 2.4 6.5 0 4.3-2.4 6.5 0" />
+                        <path d="M2 12c2.2-2.4 4.3-2.4 6.5 0s4.3 2.4 6.5 0 4.3-2.4 6.5 0" />
+                        <path d="M2 15.8c2.2-2.4 4.3-2.4 6.5 0s4.3 2.4 6.5 0 4.3-2.4 6.5 0" />
+                      </svg>
+                    </span>
+                    <span>Moises</span>
+                    <ExternalLink size={11} strokeWidth={2.2} />
+                  </a>
+                </div>
                 <p>Если музыка мешает словам, загрузи чистый vocal stem той же длины. Кнопка ASR vocal stem точно всегда отправляет vocal как speech+VAD: role=ВОК, mode=speech, vad=true.</p>
                 {draft.vocalAudioName && (
                   <small className="avaTimingVocalStemInfo">
