@@ -34,6 +34,17 @@ class Settings(BaseSettings):
     COMFY_DISABLE_PBAR_COMPAT_TOP_LEVEL: bool = True
     COMFY_IMAGE_VIDEO_WORKFLOW: str = "app/workflows/image-video.json"
     VIDEO_PROVIDER_DEFAULT: str = "comfy_remote"
+    # AVA_TELEGRAM_BOARD_REVIEW_CONFIG_V137A: Telegram review bot settings.
+    # Env names use Settings.env_prefix=AVA_:
+    # AVA_TELEGRAM_ENABLED=true
+    # AVA_TELEGRAM_BOT_TOKEN=...
+    # AVA_TELEGRAM_CHAT_ID=1161223220
+    # AVA_TELEGRAM_FRONTEND_BASE_URL=http://100.80.135.114:8080
+    telegram_enabled: bool = Field(default=True)
+    telegram_bot_token: str = Field(default='')
+    telegram_chat_id: str = Field(default='')
+    telegram_frontend_base_url: str = Field(default='')
+
 
     @property
     def storage_path(self) -> Path:

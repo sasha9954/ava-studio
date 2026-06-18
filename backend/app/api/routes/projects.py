@@ -2678,6 +2678,225 @@ def _ava_project_apply_server_review_memory_v136e(source_data, current_data, fin
     return next_data, 0
 
 
+# AVA_PROJECT_TELEGRAM_REVIEW_NOTE_MEMORY_V137C
+# Preserve Telegram review comments against stale Board autosaves.
+def _ava_project_telegram_note_parse_dt_v137c(value):
+    if not value:
+        return None
+    try:
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        return datetime.fromisoformat(text)
+    except Exception:
+        return None
+
+
+def _ava_project_telegram_note_scene_id_v137c(scene, index=0):
+    if "_ava_project_review_memory_scene_id_v136e" in globals():
+        try:
+            return _ava_project_review_memory_scene_id_v136e(scene, index)
+        except Exception:
+            pass
+    if not isinstance(scene, dict):
+        return f"scene_{index + 1}"
+    return str(scene.get("scene_id") or scene.get("sceneId") or scene.get("id") or f"scene_{index + 1}")
+
+
+def _ava_project_telegram_note_scenes_v137c(data):
+    if "_ava_project_review_memory_scenes_v136e" in globals():
+        try:
+            return _ava_project_review_memory_scenes_v136e(data)
+        except Exception:
+            pass
+    if isinstance(data, dict) and isinstance(data.get("scenes"), list):
+        return data.get("scenes") or []
+    return []
+
+
+def _ava_project_telegram_note_clean_entry_v137c(scene_id, value):
+    if not isinstance(value, dict):
+        return None
+    scene_id = str(scene_id or value.get("scene_id") or value.get("sceneId") or "").strip()
+    if not scene_id:
+        return None
+    at = str(value.get("updated_at") or value.get("updatedAt") or value.get("at") or "").strip()
+    status_value = str(value.get("status") or "").strip().lower()
+    comment = str(value.get("comment") or "").strip()
+    entry = {
+        "scene_id": scene_id,
+        "sceneId": scene_id,
+        "review_id": str(value.get("review_id") or value.get("reviewId") or ""),
+        "reviewId": str(value.get("review_id") or value.get("reviewId") or ""),
+        "project_id": str(value.get("project_id") or value.get("projectId") or ""),
+        "projectId": str(value.get("project_id") or value.get("projectId") or ""),
+        "job_id": str(value.get("job_id") or value.get("jobId") or ""),
+        "jobId": str(value.get("job_id") or value.get("jobId") or ""),
+        "asset_id": str(value.get("asset_id") or value.get("assetId") or ""),
+        "assetId": str(value.get("asset_id") or value.get("assetId") or ""),
+        "status": status_value,
+        "reason": str(value.get("reason") or ""),
+        "comment": comment if status_value == "bad" else "",
+        "note_block": str(value.get("note_block") or value.get("noteBlock") or ""),
+        "noteBlock": str(value.get("note_block") or value.get("noteBlock") or ""),
+        "at": at,
+        "updated_at": at,
+        "updatedAt": at,
+        "dt": _ava_project_telegram_note_parse_dt_v137c(at),
+    }
+    return entry
+
+
+def _ava_project_telegram_note_root_v137c(data):
+    if not isinstance(data, dict):
+        return {}
+    raw = data.get("board_telegram_review_note_memory_v137c") or data.get("boardTelegramReviewNoteMemoryV137C") or {}
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for scene_id, value in raw.items():
+        entry = _ava_project_telegram_note_clean_entry_v137c(scene_id, value)
+        if entry:
+            out[str(entry.get("scene_id") or scene_id)] = entry
+    return out
+
+
+def _ava_project_telegram_note_better_v137c(left, right):
+    if not left:
+        return right
+    if not right:
+        return left
+    left_dt = left.get("dt") or _ava_project_telegram_note_parse_dt_v137c(left.get("at"))
+    right_dt = right.get("dt") or _ava_project_telegram_note_parse_dt_v137c(right.get("at"))
+    if left_dt is not None and right_dt is not None:
+        return right if right_dt >= left_dt else left
+    left_at = str(left.get("at") or "")
+    right_at = str(right.get("at") or "")
+    if right_at and not left_at:
+        return right
+    if left_at and not right_at:
+        return left
+    return right if right_at >= left_at else left
+
+
+def _ava_project_telegram_note_from_items_v137c(db, project_id):
+    out = {}
+    if not isinstance(db, dict):
+        return out
+    items = db.get("telegram_review_items") or {}
+    if not isinstance(items, dict):
+        return out
+    for _review_id, item in items.items():
+        if not isinstance(item, dict):
+            continue
+        item_project = str(item.get("project_id") or item.get("projectId") or "").strip()
+        if item_project != str(project_id):
+            continue
+        scene_id = str(item.get("scene_id") or item.get("sceneId") or "").strip()
+        if not scene_id:
+            continue
+        entry = _ava_project_telegram_note_clean_entry_v137c(scene_id, item)
+        if not entry:
+            continue
+        out[scene_id] = _ava_project_telegram_note_better_v137c(out.get(scene_id), entry)
+    return out
+
+
+def _ava_project_telegram_note_block_v137c(entry):
+    block = str(entry.get("note_block") or entry.get("noteBlock") or "").strip()
+    if block:
+        return block
+    scene_id = str(entry.get("scene_id") or entry.get("sceneId") or "").strip()
+    at = str(entry.get("at") or entry.get("updated_at") or entry.get("updatedAt") or now_iso()).strip() or now_iso()
+    asset_id = str(entry.get("asset_id") or entry.get("assetId") or "").strip()
+    job_id = str(entry.get("job_id") or entry.get("jobId") or "").strip()
+    comment = str(entry.get("comment") or "").strip()
+    return (
+        "--- Telegram review ---\n"
+        f"❌ Не OK · {at}\n"
+        f"Сцена: {scene_id}\n"
+        f"Видео: {asset_id or '-'}\n"
+        f"Job: {job_id or '-'}\n"
+        f"Комментарий: {comment}"
+    )
+
+
+def _ava_project_apply_telegram_review_note_memory_v137c(db, project_id, source_data, current_data, final_data):
+    if not isinstance(final_data, dict):
+        return final_data, 0
+    source_data = source_data if isinstance(source_data, dict) else {}
+    current_data = current_data if isinstance(current_data, dict) else {}
+
+    memory = {}
+    for data in (current_data, source_data, final_data):
+        for scene_id, entry in _ava_project_telegram_note_root_v137c(data).items():
+            memory[scene_id] = _ava_project_telegram_note_better_v137c(memory.get(scene_id), entry)
+    for scene_id, entry in _ava_project_telegram_note_from_items_v137c(db, project_id).items():
+        memory[scene_id] = _ava_project_telegram_note_better_v137c(memory.get(scene_id), entry)
+
+    if not memory:
+        return final_data, 0
+
+    next_data = copy.deepcopy(final_data)
+    scenes = _ava_project_telegram_note_scenes_v137c(next_data)
+    current_by_id = {
+        _ava_project_telegram_note_scene_id_v137c(scene, index): scene
+        for index, scene in enumerate(_ava_project_telegram_note_scenes_v137c(current_data))
+        if isinstance(scene, dict)
+    }
+    applied = []
+
+    for index, scene in enumerate(scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _ava_project_telegram_note_scene_id_v137c(scene, index)
+        entry = memory.get(scene_id)
+        if not entry:
+            continue
+        status_value = str(entry.get("status") or "").strip().lower()
+        comment = str(entry.get("comment") or "").strip()
+        scene["telegram_review_id"] = str(entry.get("review_id") or entry.get("reviewId") or "")
+        scene["telegramReviewId"] = scene["telegram_review_id"]
+        scene["telegram_review_comment"] = comment if status_value == "bad" else ""
+        scene["telegramReviewComment"] = scene["telegram_review_comment"]
+        scene["telegram_review_updated_at"] = str(entry.get("at") or entry.get("updated_at") or entry.get("updatedAt") or "")
+        scene["telegramReviewUpdatedAt"] = scene["telegram_review_updated_at"]
+
+        if status_value != "bad" or not comment:
+            continue
+
+        block = _ava_project_telegram_note_block_v137c(entry).strip()
+        if not block:
+            continue
+        incoming_note = str(scene.get("note") or "")
+        server_scene = current_by_id.get(scene_id) if isinstance(current_by_id, dict) else None
+        server_note = str(server_scene.get("note") or "") if isinstance(server_scene, dict) else ""
+        base_note = incoming_note
+        if not base_note and server_note:
+            base_note = server_note
+        if block not in base_note and comment not in base_note:
+            scene["note"] = (base_note.rstrip() + "\n\n" + block).strip()
+            applied.append({"scene_id": scene_id, "comment": comment[:120], "at": entry.get("at")})
+        elif base_note and base_note != incoming_note:
+            scene["note"] = base_note
+
+    compact_memory = {}
+    for scene_id, entry in memory.items():
+        compact = dict(entry)
+        compact.pop("dt", None)
+        compact_memory[scene_id] = compact
+    next_data["board_telegram_review_note_memory_v137c"] = compact_memory
+    next_data["boardTelegramReviewNoteMemoryV137C"] = compact_memory
+    next_data["scenes"] = scenes
+
+    if applied:
+        print("[PROJECT BOARD TELEGRAM REVIEW NOTE MEMORY V137C]", {"applied": applied}, flush=True)
+        return next_data, len(applied)
+    return next_data, 0
+
+
 @router.post('/{project_id}/snapshots/{stage}')
 def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depends(ensure_project_access)):
     if project.get('status') == 'deleted':
@@ -2834,6 +3053,24 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     'appliedReviewMemory': server_review_memory_v136e,
                     **media_refs_summary(incoming_data),
                 })
+
+        if stage == 'board' and not is_destructive_clear:
+            incoming_data, telegram_review_notes_v137c = _ava_project_apply_telegram_review_note_memory_v137c(
+                db,
+                project_id,
+                payload.data or {},
+                current.get('data') if isinstance(current, dict) else {},
+                incoming_data,
+            )
+            if telegram_review_notes_v137c:
+                preserved_media_refs += telegram_review_notes_v137c
+                print('[PROJECT BOARD TELEGRAM REVIEW NOTE MEMORY SUMMARY V137C]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'appliedTelegramReviewNotes': telegram_review_notes_v137c,
+                    **media_refs_summary(incoming_data),
+                })
+
 
         print('[PROJECT SAVE MEDIA REFS SUMMARY]', {
             'scope': 'project',

@@ -630,7 +630,10 @@
 }
 
 .avaBoardNoteField textarea {
-  min-height: 86px;
+  /* AVA_BOARD_NOTE_FIELD_LARGE_V137D: make scene notes readable for Telegram review comments */
+  min-height: 210px;
+  max-height: 460px;
+  font-size: 14px;
 }
 
 @media (max-width: 920px) {

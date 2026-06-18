@@ -1,3 +1,5 @@
+# AVA_TELEGRAM_BOARD_REVIEW_HOOKS_V137A: Board server batch sends Telegram review messages and accepts callback-driven review.
+# AVA_TELEGRAM_REGEN_BAD_CONTINUATION_V137E: pass batch source/bad scene ids into Telegram so regen is a continuation.
 # AVA_BOARD_BIND_RESULT_TO_CURRENT_IMAGE_V132I: bind returned server-batch video to current scene image after image replacement.
 # AVA_BOARD_BAD_REVIEW_FORCE_POSMOTRI_V132G: regenerated bad videos become ready + needs_review/посмотри.
 # AVA_BOARD_BAD_REVIEW_RESULT_NEEDS_REVIEW_V132E: regenerated bad video becomes ready + needs_review instead of remaining bad.
@@ -33,6 +35,7 @@ from app.core.security import make_id, now_iso
 from app.core.config import get_settings
 from app.core.storage import store
 from app.core.snapshot_media import media_refs_summary, preserve_media_refs
+from app.api.routes.telegram import telegram_board_batch_started, telegram_board_scene_ready, telegram_board_batch_finished
 
 
 router = APIRouter(tags=["ltx-board"])
@@ -2722,6 +2725,17 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                     },
                 })
                 print("[BOARD SERVER BATCH READY SCENE]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id, "job_id": job_id, "waiting": len(waiting_ids)}, flush=True)
+                try:
+                    telegram_board_scene_ready(
+                        project_id,
+                        scene_id,
+                        scene=ready_patch_v132a,
+                        job_id=job_id,
+                        batch_id=batch_id,
+                        user=user,
+                    )
+                except Exception as exc:
+                    print("[TELEGRAM BOARD SCENE READY HOOK ERROR V137A]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id, "error": str(exc)}, flush=True)
             else:
                 failed.append(scene_id)
                 _board_batch_update_scene(project_id, scene_id, _board_batch_error_patch(result_data.get("status") or result_status, result_data.get("error") or result_data.get("detail") or result_status), {
@@ -2756,6 +2770,19 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
         board_data["updatedAt"] = _board_batch_now()
         _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-finished-v131a")
         print("[BOARD SERVER BATCH FINISHED]", {"project_id": project_id, "batch_id": batch_id, "status": final_status, "completed": completed, "failed": failed}, flush=True)
+        try:
+            telegram_board_batch_finished(
+                project_id,
+                batch_id=batch_id,
+                status=final_status,
+                completed=completed,
+                failed=failed,
+                user=user,
+                source=str(batch.get("source") or ""),
+                bad_review_scene_ids=list(batch.get("badReviewSceneIds") or batch.get("bad_review_scene_ids") or []),
+            )
+        except Exception as exc:
+            print("[TELEGRAM BOARD BATCH FINISH HOOK ERROR V137A]", {"project_id": project_id, "batch_id": batch_id, "error": str(exc)}, flush=True)
     except Exception as exc:
         batch["status"] = "error"
         batch["error"] = str(exc)
@@ -2883,6 +2910,20 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     thread = threading.Thread(target=_board_video_batch_runner, args=(project_id, batch_id, dict(user)), daemon=True)
     BOARD_VIDEO_BATCH_THREADS[batch_id] = thread
     thread.start()
+
+    try:
+        telegram_board_batch_started(
+            project_id,
+            waiting_ids,
+            skipped_ready=0,
+            invalid=len(invalid),
+            batch_id=batch_id,
+            user=user,
+            source=str(payload.source or ""),
+            bad_review_scene_ids=bad_review_waiting_ids_v132b,
+        )
+    except Exception as exc:
+        print("[TELEGRAM BOARD BATCH START HOOK ERROR V137A]", {"project_id": project_id, "batch_id": batch_id, "error": str(exc)}, flush=True)
 
     return {"ok": True, "status": "queued", "batchId": batch_id, "batch_id": batch_id, "queued": waiting_ids, "invalid": invalid, "board": board_data}
 
