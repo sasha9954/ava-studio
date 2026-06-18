@@ -8,6 +8,7 @@
 # AVA_TELEGRAM_REVIEW_STATS_CURRENT_BATCH_V137L: review summary uses only the current batch/session; old scene reviews are not counted.
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import re
@@ -811,6 +812,229 @@ def _maybe_send_final_review_summary_v137g2(project_id: str) -> dict[str, Any]:
     """
     stats = _review_stats(project_id)
     return {"ok": True, "sent": False, "reason": "manual_summary_only_v137h", "stats": stats}
+
+
+# AVA_ASSEMBLY_TELEGRAM_COMPLETE_NOTICE_V140B:
+# Backend-only, text-only Telegram notification for final Assembly montage render.
+# No MP4 file, no links, no buttons. Duplicate-safe per unique assembly result.
+def _telegram_assembly_project_title_v140b(project_id: str) -> str:
+    clean_project_id = str(project_id or "").strip()
+    if not clean_project_id:
+        return ""
+    try:
+        project = (store.get_db().get("projects") or {}).get(clean_project_id) or {}
+        if not isinstance(project, dict):
+            return ""
+        return str(
+            project.get("title")
+            or project.get("name")
+            or project.get("project_title")
+            or project.get("projectTitle")
+            or ""
+        ).strip()
+    except Exception:
+        return ""
+
+
+def _telegram_assembly_format_duration_v140b(duration_sec: Any) -> str:
+    try:
+        seconds = int(round(float(duration_sec or 0)))
+    except Exception:
+        seconds = 0
+    if seconds <= 0:
+        return ""
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def _telegram_assembly_notification_key_v140b(
+    project_id: str = "",
+    assembly_job_id: str = "",
+    output_asset_id: str = "",
+    output_api_path: str = "",
+    output_name: str = "",
+    output_path: str = "",
+) -> str:
+    clean_project_id = str(project_id or "").strip() or "no_project"
+    clean_job_id = str(assembly_job_id or "").strip()
+    clean_asset_id = str(output_asset_id or "").strip()
+    output_ref = str(output_api_path or output_name or output_path or "").strip()
+    if clean_job_id and clean_asset_id:
+        return f"assembly:{clean_project_id}:{clean_job_id}:{clean_asset_id}"
+    if clean_job_id and output_ref:
+        digest = hashlib.sha1(output_ref.encode("utf-8", errors="ignore")).hexdigest()[:16]
+        return f"assembly:{clean_project_id}:{clean_job_id}:{digest}"
+    if clean_asset_id:
+        return f"assembly:{clean_project_id}:{clean_asset_id}"
+    if output_ref:
+        digest = hashlib.sha1(output_ref.encode("utf-8", errors="ignore")).hexdigest()[:16]
+        return f"assembly:{clean_project_id}:{digest}"
+    digest = hashlib.sha1(f"{clean_project_id}:{assembly_job_id}:{now_iso()}".encode("utf-8", errors="ignore")).hexdigest()[:16]
+    return f"assembly:{clean_project_id}:{digest}"
+
+
+def telegram_assembly_render_completed(
+    project_id: str = "",
+    assembly_job_id: str = "",
+    output_asset_id: str = "",
+    output_api_path: str = "",
+    output_name: str = "",
+    output_path: str = "",
+    duration_sec: Any = None,
+    scene_count: Any = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Send exactly one text notification when Assembly final MP4 is ready."""
+    if not _telegram_enabled():
+        return {"ok": False, "status": "telegram_disabled"}
+
+    clean_project_id = str(project_id or "").strip()
+    clean_job_id = str(assembly_job_id or "").strip()
+    clean_asset_id = str(output_asset_id or "").strip()
+    clean_api_path = str(output_api_path or "").strip()
+    clean_output_name = str(output_name or "").strip()
+    clean_output_path = str(output_path or "").strip()
+    notification_key = _telegram_assembly_notification_key_v140b(
+        project_id=clean_project_id,
+        assembly_job_id=clean_job_id,
+        output_asset_id=clean_asset_id,
+        output_api_path=clean_api_path,
+        output_name=clean_output_name,
+        output_path=clean_output_path,
+    )
+
+    now = now_iso()
+
+    def reserve_once(db: dict[str, Any]) -> dict[str, Any]:
+        records = db.setdefault("telegram_assembly_notifications_v140b", {})
+        if not isinstance(records, dict):
+            records = {}
+            db["telegram_assembly_notifications_v140b"] = records
+        existing = records.get(notification_key)
+        if isinstance(existing, dict) and (existing.get("reserved") or existing.get("sent") or existing.get("ok")):
+            return {
+                "ok": True,
+                "already_notified": True,
+                "sent": False,
+                "notification_key": notification_key,
+                "record": existing,
+            }
+        record = {
+            "notification_key": notification_key,
+            "notificationKey": notification_key,
+            "project_id": clean_project_id,
+            "projectId": clean_project_id,
+            "assembly_job_id": clean_job_id,
+            "assemblyJobId": clean_job_id,
+            "output_asset_id": clean_asset_id,
+            "outputAssetId": clean_asset_id,
+            "output_api_path": clean_api_path,
+            "outputApiPath": clean_api_path,
+            "output_name": clean_output_name,
+            "outputName": clean_output_name,
+            "reserved": True,
+            "sent": False,
+            "created_at": now,
+            "createdAt": now,
+            "updated_at": now,
+            "updatedAt": now,
+        }
+        records[notification_key] = record
+        return {"ok": True, "already_notified": False, "notification_key": notification_key, "record": record}
+
+    reserved = store.update(reserve_once)
+    if reserved.get("already_notified"):
+        print("[ASSEMBLY TELEGRAM NOTICE SKIP V140B]", {
+            "project_id": clean_project_id,
+            "job_id": clean_job_id,
+            "notification_key": notification_key,
+            "reason": "duplicate",
+        }, flush=True)
+        return {
+            "ok": True,
+            "sent": False,
+            "duplicate": True,
+            "telegram_notified": True,
+            "telegram_notification_key": notification_key,
+            "telegramNotificationKey": notification_key,
+        }
+
+    project_title = _telegram_assembly_project_title_v140b(clean_project_id)
+    duration_text = _telegram_assembly_format_duration_v140b(duration_sec)
+    try:
+        scene_count_int = int(scene_count or 0)
+    except Exception:
+        scene_count_int = 0
+
+    lines = [
+        "🎬 <b>Монтаж готов!</b>",
+        "",
+        "✅ Итоговое видео успешно собрано.",
+    ]
+    detail_lines: list[str] = []
+    if project_title:
+        detail_lines.append(f"Проект: <b>{_html(project_title)}</b>")
+    if duration_text:
+        detail_lines.append(f"Длительность: <b>{_html(duration_text)}</b>")
+    if scene_count_int > 0:
+        detail_lines.append(f"Сцен: <b>{scene_count_int}</b>")
+    if detail_lines:
+        lines.append("")
+        lines.extend(detail_lines)
+    lines.extend(["", "Можно открывать Ava Studio → Assembly и проверять результат."])
+    text = "\n".join(lines)
+
+    result = _send_message(text, reply_markup=None)
+    sent_at = now_iso()
+    sent_ok = bool(result.get("ok"))
+
+    def finalize_notice(db: dict[str, Any]) -> dict[str, Any]:
+        records = db.setdefault("telegram_assembly_notifications_v140b", {})
+        if not isinstance(records, dict):
+            records = {}
+            db["telegram_assembly_notifications_v140b"] = records
+        record = records.get(notification_key)
+        if not isinstance(record, dict):
+            record = {"notification_key": notification_key, "notificationKey": notification_key}
+        record.update({
+            "reserved": True,
+            "sent": sent_ok,
+            "ok": sent_ok,
+            "sent_at": sent_at if sent_ok else "",
+            "sentAt": sent_at if sent_ok else "",
+            "updated_at": sent_at,
+            "updatedAt": sent_at,
+            "telegram_result": result,
+            "telegramResult": result,
+            "message": text,
+        })
+        records[notification_key] = record
+        return record
+
+    record = store.update(finalize_notice)
+    print("[ASSEMBLY TELEGRAM NOTICE V140B]", {
+        "project_id": clean_project_id,
+        "job_id": clean_job_id,
+        "notification_key": notification_key,
+        "sent": sent_ok,
+        "status": result.get("status"),
+    }, flush=True)
+    return {
+        "ok": sent_ok,
+        "sent": sent_ok,
+        "telegram_notified": sent_ok,
+        "telegramNotified": sent_ok,
+        "telegram_notified_at": sent_at if sent_ok else "",
+        "telegramNotifiedAt": sent_at if sent_ok else "",
+        "telegram_notification_key": notification_key,
+        "telegramNotificationKey": notification_key,
+        "result": result,
+        "record": record,
+    }
 
 def telegram_board_batch_started(project_id: str, queued_scene_ids: list[str] | None = None, skipped_ready: int = 0, invalid: int = 0, batch_id: str = "", user: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
     if not _telegram_enabled():

@@ -35,7 +35,7 @@ from app.core.security import make_id, now_iso
 from app.core.config import get_settings
 from app.core.storage import store
 from app.core.snapshot_media import media_refs_summary, preserve_media_refs
-from app.api.routes.telegram import telegram_board_batch_started, telegram_board_scene_ready, telegram_board_batch_finished
+from app.api.routes.telegram import telegram_board_batch_started, telegram_board_scene_ready, telegram_board_batch_finished, telegram_assembly_render_completed
 
 
 router = APIRouter(tags=["ltx-board"])
@@ -4419,7 +4419,22 @@ def _run_board_assembly_job(job_id: str) -> None:
             str(scene_concat_path),
         ])
 
+        # AVA_ASSEMBLY_SKIP_LEGACY_SILENT_XFADE_V140A:
+        # There are two transition engines in this file. The older V134D engine renders
+        # nice visual xfade but writes a silent audio stream. When music+scene mode is
+        # enabled, the later mixer uses scene_concat_path audio as [scenea]; if V134D
+        # already replaced scene_concat_path, scenes become silent and only music remains.
+        # Prefer the newer V134F/V134G path because V134H preserves timing-mode scene audio.
+        transition_request_v134f = _assembly_transition_request_v134f(payload, original_audio_path, job_id)
+        transition_result_v134f = dict(transition_request_v134f)
         transition_config_v134d = _assembly_transition_config_v134d(payload, audio_mode, original_audio_path)
+        if transition_request_v134f.get("requested"):
+            transition_config_v134d = {
+                **transition_config_v134d,
+                "allowed": False,
+                "reason": "skipped_for_audio_safe_v134f_v140a",
+                "skippedForV134F": True,
+            }
         transition_result_v134d = dict(transition_config_v134d)
         if transition_config_v134d.get("allowed"):
             transition_tmp_v134d = scene_concat_path.with_name(scene_concat_path.stem + "_xfade_v134d.mp4")
@@ -4450,8 +4465,6 @@ def _run_board_assembly_job(job_id: str) -> None:
 
         scene_concat_duration = _ffprobe_duration(scene_concat_path) or 0.0
 
-        transition_request_v134f = _assembly_transition_request_v134f(payload, original_audio_path, job_id)
-        transition_result_v134f = dict(transition_request_v134f)
         if transition_request_v134f.get("allowed"):
             try:
                 if transition_request_v134f.get("preserveTiming"):
@@ -4611,6 +4624,39 @@ def _run_board_assembly_job(job_id: str) -> None:
             "updatedAt": datetime.utcnow().isoformat() + "Z",
         })
         _ava_credit_charge_assembly_job_if_ready(job)
+        try:
+            assembly_scene_count_v140b = 0
+            if isinstance(raw_items, list):
+                assembly_scene_count_v140b = sum(1 for item in raw_items if isinstance(item, dict))
+            if assembly_scene_count_v140b <= 0:
+                assembly_scene_count_v140b = len([item for item in prepared_items if isinstance(item, dict) and not str(item.get("sceneId") or "").startswith("gap_before_")])
+            assembly_notice_result_v140b = telegram_assembly_render_completed(
+                project_id=str(job.get("project_id") or job.get("projectId") or payload.get("project_id") or payload.get("projectId") or ""),
+                assembly_job_id=job_id,
+                output_asset_id=str(job.get("output_asset_id") or job.get("outputAssetId") or ""),
+                output_api_path=str(urls.get("apiPath") or urls.get("api_path") or ""),
+                output_name=str(out_path.name or ""),
+                output_path=str(out_path),
+                duration_sec=final_duration,
+                scene_count=assembly_scene_count_v140b,
+            )
+            job.update({
+                "telegram_notified": bool(assembly_notice_result_v140b.get("telegram_notified") or assembly_notice_result_v140b.get("telegramNotified") or assembly_notice_result_v140b.get("sent")),
+                "telegramNotified": bool(assembly_notice_result_v140b.get("telegram_notified") or assembly_notice_result_v140b.get("telegramNotified") or assembly_notice_result_v140b.get("sent")),
+                "telegram_notified_at": assembly_notice_result_v140b.get("telegram_notified_at") or assembly_notice_result_v140b.get("telegramNotifiedAt") or "",
+                "telegramNotifiedAt": assembly_notice_result_v140b.get("telegram_notified_at") or assembly_notice_result_v140b.get("telegramNotifiedAt") or "",
+                "telegram_notification_key": assembly_notice_result_v140b.get("telegram_notification_key") or assembly_notice_result_v140b.get("telegramNotificationKey") or "",
+                "telegramNotificationKey": assembly_notice_result_v140b.get("telegram_notification_key") or assembly_notice_result_v140b.get("telegramNotificationKey") or "",
+                "telegramNotificationResultV140B": assembly_notice_result_v140b,
+            })
+        except Exception as exc:
+            print("[ASSEMBLY TELEGRAM NOTICE ERROR V140B]", {"job_id": job_id, "error": str(exc)}, flush=True)
+            job.update({
+                "telegram_notified": False,
+                "telegramNotified": False,
+                "telegram_notification_error": str(exc),
+                "telegramNotificationError": str(exc),
+            })
     except HTTPException as exc:
         job["status"] = "error"
         job["error"] = exc.detail
