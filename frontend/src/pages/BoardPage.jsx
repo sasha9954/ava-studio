@@ -1,3 +1,5 @@
+/* AVA_BOARD_BATCH_READY_UI_WINS_V148A: server video refs beat stale polling/runtime busy state. */
+/* AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A: server batch auto-cuts audio slices for ia2v/lip-sync scenes. */
 /* AVA_BOARD_REVIEW_CLEAR_EVENT_TIMESTAMP_V136D: clear review writes explicit cleared_at token. */
 /* AVA_BOARD_SIMPLE_BAD_REVIEW_FLOW_V136A: direct manual bad/clear review flow; bad badge wins over ready until regeneration. */
 // AVA_BOARD_READY_VIDEO_WINS_BUSY_STATUS_V133E: current ready video refs must beat stale queued/running poll state.
@@ -44,6 +46,7 @@
 /* AVA_BOARD_SELECTED_SCENE_ACCENT_V60C: selected scene color accents Board workspace. */
 /* AVA_BOARD_TIMING_DURATION_LOCK_V38: Timing-imported Board scenes have locked duration independent of route. */
 /* AVA_BOARD_STILLS_CLEAR_VIDEO_IMMEDIATE_V129R: clear stale videos immediately on still changes and hide stale previews. */
+/* AVA_BOARD_BATCH_PHOTO_LOADING_STATUS_V144B: stable photo loading/photo ready labels for packet/zip still imports; first uploaded scene stays ready while the rest loads. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import JSZip from 'jszip'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -82,6 +85,8 @@ const AVA_GLOBAL_JOBS_KEY = 'ava:active-jobs:v1'
 const AVA_COMPLETED_JOBS_KEY = 'ava:completed-jobs:v1'
 const AVA_BOARD_SEEN_COMPLETED_JOBS_KEY = 'ava:board:seen-completed-jobs:v1'
 const AVA_OPEN_BOARD_SCENE_KEY = 'ava:open-board-scene:v1'
+const AVA_BOARD_STALE_BATCH_UNBLOCK_VERSION = 'v150a' // AVA_BOARD_STALE_BATCH_UNBLOCK_V150A
+const AVA_TIMING_TO_BOARD_CONSUMED_PREFIX_V146 = 'ava:timing-to-board-consumed:v146:'
 
 function readAvaGlobalJobs() {
   try {
@@ -100,8 +105,54 @@ function writeAvaGlobalJobs(jobs) {
   }
 }
 
+
+function timingToBoardEntryKeyV146(entry = {}) {
+  const source = String(entry?.source || '')
+  if (source !== 'manual_timing_to_board_confirmed_v16') return ''
+  const from = String(entry?.from || '')
+  const to = String(entry?.to || '')
+  if (from !== 'manual_timing' || to !== 'board') return ''
+  return [
+    source,
+    from,
+    to,
+    String(entry?.projectId || ''),
+    String(entry?.createdAt || ''),
+  ].join('|')
+}
+
+function isTimingToBoardEntryConsumedV146(entry = {}) {
+  if (typeof window === 'undefined') return false
+  const key = timingToBoardEntryKeyV146(entry)
+  if (!key) return false
+  try {
+    const storageKey = `${AVA_TIMING_TO_BOARD_CONSUMED_PREFIX_V146}${key}`
+    return Boolean(
+      window.sessionStorage.getItem(storageKey) ||
+      window.localStorage.getItem(storageKey)
+    )
+  } catch (error) {
+    return false
+  }
+}
+
+function markTimingToBoardEntryConsumedV146(entry = {}) {
+  if (typeof window === 'undefined') return
+  const key = timingToBoardEntryKeyV146(entry)
+  if (!key) return
+  try {
+    const storageKey = `${AVA_TIMING_TO_BOARD_CONSUMED_PREFIX_V146}${key}`
+    const value = JSON.stringify({ at: Date.now(), source: 'AVA_TIMING_TO_BOARD_CONSUME_ONCE_V146' })
+    window.sessionStorage.setItem(storageKey, value)
+    window.localStorage.setItem(storageKey, value)
+  } catch (error) {
+    // ignore storage errors
+  }
+}
+
 const ROUTE_OPTIONS = [
   { value: 'ia2v', label: 'ia2v lip-sync', hint: 'Фото + audio slice сцены' },
+  { value: 'ia2v_instrumental', label: 'ia2v instrumental', hint: 'Фото + audio slice сцены, инструмент/объект вместо лица' },
   { value: 'i2v', label: 'i2v', hint: 'Фото → видео без аудио' },
   { value: 'i2v_sound', label: 'i2v sound', hint: 'Фото → видео со звуком из prompt' },
   { value: 'i2v_text', label: 'i2v text', hint: 'Фото → видео + голос/звук из prompt' },
@@ -115,13 +166,46 @@ const BOARD_ROUTE_WORKFLOW_MAP = {
   i2v_sound: 'image-video-golos-zvuk.json',
   ia2v: 'image-lipsink-video-music.json',
   ia2v_lipsync: 'image-lipsink-video-music.json',
+  ia2v_instrumental: 'image-lipsink-video-music.json',
   lip_sync: 'image-lipsink-video-music.json',
   first_last: 'last-first cadr-NO sound.json',
   first_last_sound: 'last-first cadr-sound.json',
 }
 
+
+function normalizeBoardRouteValueV154A(value = '') {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return ''
+  if (raw === 'ia2v_instrumental' || raw === 'ia2v-instrumental' || raw === 'ia2v instrumental' || raw === 'instrumental' || raw === 'instrument') return 'ia2v_instrumental'
+  if (raw === 'ia2v_lipsync' || raw === 'ia2v-lipsync' || raw === 'ia2v lip-sync' || raw === 'ia2v lipsync' || raw === 'lip_sync' || raw === 'lipsync' || raw === 'lip-sync') return 'ia2v'
+  if (raw === 'first-last') return 'first_last'
+  if (raw === 'first-last-sound' || raw === 'first_last sound') return 'first_last_sound'
+  if (raw === 'i2v sound' || raw === 'i2v-sound') return 'i2v_sound'
+  if (raw === 'i2v text' || raw === 'i2v-text') return 'i2v_text'
+  return raw
+}
+
+function isBoardAudioDrivenRouteV154A(value = '') {
+  return ['ia2v', 'ia2v_lipsync', 'lip_sync', 'lipsync', 'ia2v_instrumental'].includes(normalizeBoardRouteValueV154A(value))
+}
+
+function boardRouteFromTimingOrSavedV154A(rawScene = {}, savedScene = {}) {
+  const rawRoute = normalizeBoardRouteValueV154A(
+    rawScene?.route || rawScene?.planned_route || rawScene?.plannedRoute || rawScene?.video_route || rawScene?.videoRoute || ''
+  )
+  const savedRoute = normalizeBoardRouteValueV154A(
+    savedScene?.route || savedScene?.planned_route || savedScene?.plannedRoute || savedScene?.video_route || savedScene?.videoRoute || ''
+  )
+
+  // Timing -> Board must carry explicit scene route choices from Timing.
+  // But ordinary F5/open should not let empty/auto Timing route erase an edited Board route.
+  if (rawRoute && rawRoute !== 'auto') return rawRoute
+  if (savedRoute && savedRoute !== 'auto') return savedRoute
+  return rawRoute || savedRoute || 'i2v'
+}
+
 function boardWorkflowKeyForRoute(route, fallbackWorkflowKey = '') {
-  const routeKey = String(route || 'i2v')
+  const routeKey = normalizeBoardRouteValueV154A(route) || 'i2v'
   // Route is the source of truth. Do not allow a stale scene.workflow_key
   // from another route to override sound/no-sound workflows.
   return BOARD_ROUTE_WORKFLOW_MAP[routeKey] || fallbackWorkflowKey || BOARD_ROUTE_WORKFLOW_MAP.i2v
@@ -380,14 +464,14 @@ function canonicalizeBoardSceneMediaRefs(scene = {}) {
     assetKeys: ['first_image_asset_id', 'firstImageAssetId', 'first_frame_asset_id', 'firstFrameAssetId', 'start_image_asset_id', 'startImageAssetId'],
     apiKeys: ['first_image_api_path', 'firstImageApiPath', 'first_frame_api_path', 'firstFrameApiPath', 'start_image_api_path', 'startImageApiPath'],
     urlKeys: ['first_frame_url', 'firstFrameUrl', 'first_image_url', 'firstImageUrl', 'start_image_url', 'startImageUrl'],
-    refKeys: ['first_image_api_path', 'firstImageApiPath', 'first_frame_api_path', 'firstFrameApiPath', 'first_frame_url', 'firstFrameUrl', 'start_image_api_path', 'startImageApiPath'],
+    refKeys: ['first_image_api_path', 'firstImageApiPath', 'first_image_url', 'firstImageUrl', 'first_frame_api_path', 'firstFrameApiPath', 'first_frame_url', 'firstFrameUrl', 'start_image_api_path', 'startImageApiPath', 'start_image_url', 'startImageUrl'],
   })
 
   next = canonicalizeSceneAssetFields(next, {
     assetKeys: ['last_image_asset_id', 'lastImageAssetId', 'last_frame_asset_id', 'lastFrameAssetId', 'end_image_asset_id', 'endImageAssetId'],
     apiKeys: ['last_image_api_path', 'lastImageApiPath', 'last_frame_api_path', 'lastFrameApiPath', 'end_image_api_path', 'endImageApiPath'],
     urlKeys: ['last_frame_url', 'lastFrameUrl', 'last_image_url', 'lastImageUrl', 'end_image_url', 'endImageUrl'],
-    refKeys: ['last_image_api_path', 'lastImageApiPath', 'last_frame_api_path', 'lastFrameApiPath', 'last_frame_url', 'lastFrameUrl', 'end_image_api_path', 'endImageApiPath'],
+    refKeys: ['last_image_api_path', 'lastImageApiPath', 'last_image_url', 'lastImageUrl', 'last_frame_api_path', 'lastFrameApiPath', 'last_frame_url', 'lastFrameUrl', 'end_image_api_path', 'endImageApiPath', 'end_image_url', 'endImageUrl'],
   })
 
   // AVA_BOARD_MANUAL_LIPSYNC_F5_AUDIO_V129C:
@@ -940,10 +1024,28 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
         next.video_source_image_mutation_at = imageAtV131O
         next.videoSourceImageMutationAt = imageAtV131O
       }
-      if (!['running', 'queued', 'starting', 'preparing', 'submitting'].includes(String(next.video_status || next.videoStatus || '').toLowerCase())) {
-        next.video_status = 'ready'
-        next.videoStatus = 'ready'
-      }
+      // AVA_BOARD_BATCH_READY_UI_WINS_V148A:
+      // A backend server-batch result/video ref is authoritative. Old browser pollers or
+      // runtime batch overlays may still carry queued/running job fields for the same scene;
+      // if those fields win, the UI keeps showing “видео делается” even though the asset is saved.
+      next.video_status = 'ready'
+      next.videoStatus = 'ready'
+      next.video_job_id = ''
+      next.videoJobId = ''
+      next.video_status_endpoint = ''
+      next.videoStatusEndpoint = ''
+      next.video_queue_position = 0
+      next.videoQueuePosition = 0
+      next.video_error = ''
+      next.videoError = ''
+      next.video_queue_source = ''
+      next.videoQueueSource = ''
+      next.video_runtime_status_v136i = ''
+      next.videoRuntimeStatusV136I = ''
+      next.video_runtime_job_id_v136i = ''
+      next.videoRuntimeJobIdV136I = ''
+      next.video_runtime_status_endpoint_v136i = ''
+      next.videoRuntimeStatusEndpointV136I = ''
       next.video_ready_at = next.video_ready_at || next.videoReadyAt || nowV131O
       next.videoReadyAt = next.videoReadyAt || next.video_ready_at || nowV131O
     }
@@ -973,40 +1075,167 @@ function boardNeedsServerBatchRefreshV131N(boardData = {}) {
 }
 
 
+// AVA_BOARD_F5_IMAGE_REHYDRATE_V145A:
+// F5/load previously rehydrated server video state only. If local durable backup
+// was newer but had empty image refs, the first autosave could overwrite the
+// project Board snapshot with scenes that no longer contained uploaded stills.
+const BOARD_IMAGE_STATE_KEYS_V145A = [
+  'image_asset_id', 'imageAssetId', 'image_api_path', 'imageApiPath', 'image_url', 'imageUrl',
+  'image_name', 'imageName', 'image_status', 'imageStatus', 'mediaUrl', 'media_url',
+  'first_frame_asset_id', 'firstFrameAssetId', 'first_frame_api_path', 'firstFrameApiPath', 'first_frame_url', 'firstFrameUrl', 'first_frame_name', 'firstFrameName',
+  'first_image_asset_id', 'firstImageAssetId', 'first_image_api_path', 'firstImageApiPath', 'first_image_url', 'firstImageUrl', 'first_image_name', 'firstImageName',
+  'start_image_asset_id', 'startImageAssetId', 'start_image_api_path', 'startImageApiPath', 'start_image_url', 'startImageUrl', 'start_image_name', 'startImageName',
+  'last_frame_asset_id', 'lastFrameAssetId', 'last_frame_api_path', 'lastFrameApiPath', 'last_frame_url', 'lastFrameUrl', 'last_frame_name', 'lastFrameName',
+  'last_image_asset_id', 'lastImageAssetId', 'last_image_api_path', 'lastImageApiPath', 'last_image_url', 'lastImageUrl', 'last_image_name', 'lastImageName',
+  'end_image_asset_id', 'endImageAssetId', 'end_image_api_path', 'endImageApiPath', 'end_image_url', 'endImageUrl', 'end_image_name', 'endImageName',
+  'image_mutation_at', 'imageMutationAt', 'image_mutation_epoch', 'imageMutationEpoch',
+  'start_image_mutation_epoch', 'startImageMutationEpoch', 'first_image_mutation_epoch', 'firstImageMutationEpoch',
+  'last_image_mutation_epoch', 'lastImageMutationEpoch', 'end_image_mutation_epoch', 'endImageMutationEpoch',
+  'source_image_changed_at', 'sourceImageChangedAt', 'video_source_image_debug', 'videoSourceImageDebug',
+]
+
+const BOARD_IMAGE_REF_KEYS_V145A = BOARD_IMAGE_STATE_KEYS_V145A.filter((key) => (
+  key.toLowerCase().includes('asset') ||
+  key.toLowerCase().includes('api') ||
+  key.toLowerCase().endsWith('url') ||
+  key === 'mediaUrl' ||
+  key === 'media_url'
+))
+
+function boardSceneImageMutationEpochV145A(scene = {}) {
+  let best = 0
+  for (const key of [
+    'image_mutation_epoch', 'imageMutationEpoch',
+    'start_image_mutation_epoch', 'startImageMutationEpoch',
+    'first_image_mutation_epoch', 'firstImageMutationEpoch',
+    'last_image_mutation_epoch', 'lastImageMutationEpoch',
+    'end_image_mutation_epoch', 'endImageMutationEpoch',
+  ]) {
+    const value = Number(scene?.[key] || 0)
+    if (Number.isFinite(value) && value > best) best = value
+  }
+  return best
+}
+
+function boardSceneHasUploadingImageV145A(scene = {}) {
+  return Boolean(scene?.image_uploading_v129q || scene?.imageUploadingV129Q)
+}
+
+function boardSceneImageStateScoreV145A(scene = {}) {
+  if (!scene || typeof scene !== 'object') return 0
+  let score = 0
+  for (const key of BOARD_IMAGE_REF_KEYS_V145A) {
+    const value = asText(scene?.[key])
+    if (!value || value.startsWith('blob:') || value.startsWith('data:')) continue
+    const lowered = key.toLowerCase()
+    score += (lowered.includes('asset') || lowered.includes('api')) ? 4 : 2
+  }
+  if (asText(scene?.image_status || scene?.imageStatus)) score += 1
+  if (boardSceneImageMutationEpochV145A(scene)) score += 1
+  return score
+}
+
+function boardImageStateScoreV145A(boardData = {}) {
+  return asSceneArray(boardData?.scenes).reduce((total, scene) => total + boardSceneImageStateScoreV145A(scene), 0)
+}
+
+function boardMergeServerImageStateV145A(baseBoard = {}, serverBoard = {}) {
+  const baseScenes = asSceneArray(baseBoard?.scenes)
+  const serverScenes = asSceneArray(serverBoard?.scenes)
+  if (!baseScenes.length || !serverScenes.length) return baseBoard || {}
+
+  const serverById = new Map(serverScenes.map((scene) => [asText(scene?.scene_id || scene?.id), scene]).filter(([id]) => id))
+  let changed = false
+  const scenes = baseScenes.map((scene) => {
+    const sceneId = asText(scene?.scene_id || scene?.id)
+    const serverScene = serverById.get(sceneId)
+    if (!serverScene || boardSceneHasUploadingImageV145A(scene)) return scene
+
+    const localScore = boardSceneImageStateScoreV145A(scene)
+    const serverScore = boardSceneImageStateScoreV145A(serverScene)
+    if (!serverScore || serverScore <= localScore) return scene
+
+    const localEpoch = boardSceneImageMutationEpochV145A(scene)
+    const serverEpoch = boardSceneImageMutationEpochV145A(serverScene)
+    if (localEpoch && serverEpoch && localEpoch > serverEpoch) return scene
+
+    const next = { ...scene }
+    for (const key of BOARD_IMAGE_STATE_KEYS_V145A) {
+      const value = serverScene?.[key]
+      if (value === undefined || value === null || value === '') continue
+      next[key] = value
+    }
+    changed = true
+    return canonicalizeBoardSceneMediaRefs(next)
+  })
+
+  if (!changed) return baseBoard || {}
+  return {
+    ...(baseBoard || {}),
+    scenes,
+    updatedAt: baseBoard?.updatedAt || serverBoard?.updatedAt || new Date().toISOString(),
+  }
+}
+
+
 function chooseBoardDataForLoad(serverBoardData = {}, localBoardData = null) {
   if (!localBoardData || !Array.isArray(localBoardData.scenes)) return serverBoardData || {};
 
   const serverScenes = asArray(serverBoardData?.scenes);
   const localScenes = asArray(localBoardData?.scenes);
   if (!serverScenes.length && localScenes.length) return localBoardData;
+
   if (localScenes.length > serverScenes.length) {
-    const merged = boardMergeServerVideoStateV131N(localBoardData, serverBoardData)
-    return boardVideoStateScoreV131N(merged) > boardVideoStateScoreV131N(localBoardData) ? merged : localBoardData;
+    const merged = boardMergeServerImageStateV145A(
+      boardMergeServerVideoStateV131N(localBoardData, serverBoardData),
+      serverBoardData
+    )
+    return (
+      boardVideoStateScoreV131N(merged) > boardVideoStateScoreV131N(localBoardData) ||
+      boardImageStateScoreV145A(merged) > boardImageStateScoreV145A(localBoardData)
+    ) ? merged : localBoardData;
   }
+
   if (boardHasManualScenes(localBoardData) && !boardHasManualScenes(serverBoardData)) {
-    const merged = boardMergeServerVideoStateV131N(localBoardData, serverBoardData)
-    return boardVideoStateScoreV131N(merged) > boardVideoStateScoreV131N(localBoardData) ? merged : localBoardData;
+    const merged = boardMergeServerImageStateV145A(
+      boardMergeServerVideoStateV131N(localBoardData, serverBoardData),
+      serverBoardData
+    )
+    return (
+      boardVideoStateScoreV131N(merged) > boardVideoStateScoreV131N(localBoardData) ||
+      boardImageStateScoreV145A(merged) > boardImageStateScoreV145A(localBoardData)
+    ) ? merged : localBoardData;
   }
 
   const serverVideoScore = boardVideoStateScoreV131N(serverBoardData)
   const localVideoScore = boardVideoStateScoreV131N(localBoardData)
-  if (serverVideoScore > localVideoScore) {
-    return boardMergeServerVideoStateV131N(localBoardData, serverBoardData)
+  const serverImageScore = boardImageStateScoreV145A(serverBoardData)
+  const localImageScore = boardImageStateScoreV145A(localBoardData)
+
+  if (serverVideoScore > localVideoScore || serverImageScore > localImageScore) {
+    return boardMergeServerImageStateV145A(
+      boardMergeServerVideoStateV131N(localBoardData, serverBoardData),
+      serverBoardData
+    )
   }
 
   const serverUpdated = Date.parse(serverBoardData?.updatedAt || serverBoardData?.durableSavedAt || '') || 0;
   const localUpdated = Date.parse(localBoardData?.updatedAt || localBoardData?.durableSavedAt || '') || 0;
   if (localUpdated > serverUpdated) {
-    // AVA_BOARD_RELOAD_VIDEO_REHYDRATE_V132T: local prompt edits may be newer, but server video results/review state must still rehydrate after F5/re-enter.
-    const mergedV132T = boardMergeServerVideoStateV131N(localBoardData, serverBoardData)
+    // AVA_BOARD_RELOAD_IMAGE_REHYDRATE_V145A: local prompt edits may be newer,
+    // but server video/image result refs must still rehydrate after F5/re-enter.
+    const mergedV145A = boardMergeServerImageStateV145A(
+      boardMergeServerVideoStateV131N(localBoardData, serverBoardData),
+      serverBoardData
+    )
     const serverScoreV132T = boardVideoStateScoreV131N(serverBoardData)
-    if (serverScoreV132T > 0 && mergedV132T && Array.isArray(mergedV132T.scenes)) return mergedV132T
+    const serverImageScoreV145A = boardImageStateScoreV145A(serverBoardData)
+    if ((serverScoreV132T > 0 || serverImageScoreV145A > 0) && mergedV145A && Array.isArray(mergedV145A.scenes)) return mergedV145A
     return localBoardData
   }
 
   return serverBoardData || {};
 }
-
 
 
 const emptyBoard = {
@@ -1435,6 +1664,7 @@ function storyboardRouteLabel(route) {
   const value = String(route || 'i2v')
   const map = {
     ia2v: 'ia2v lip-sync',
+    ia2v_instrumental: 'ia2v instrumental',
     i2v: 'i2v',
     i2v_sound: 'i2v sound',
     i2v_text: 'i2v text',
@@ -1767,7 +1997,7 @@ function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
   const sceneText = collectSceneText(rawScene, phrases)
   const translated = asText(rawScene?.translated_text_ru) || collectByField(rawScene, phrases, ['translation_ru', 'text_ru', 'ruText'])
   const meaning = asText(rawScene?.meaning_hint_ru || rawScene?.meaningText) || collectByField(rawScene, phrases, ['meaning_hint_ru', 'meaningText', 'meaning_ru'])
-  const route = asText(savedScene?.route || rawScene?.route) || 'i2v'
+  const route = boardRouteFromTimingOrSavedV154A(rawScene, savedScene)
   const sceneHueValue = storyboardSceneColor({ ...(rawScene || {}), ...(savedScene || {}) }, index)
 
   const timingNote = asText(rawScene?.note || rawScene?.scene_note || rawScene?.memo || rawScene?.comment)
@@ -2534,6 +2764,12 @@ function sceneStatus(scene) {
   // Main card badge stays about video readiness. Review state is shown by the separate review badge.
   const status = boardSceneVideoUiStatusV130F(scene)
   const hasPrompt = Boolean(asText(scene?.video_prompt))
+  const rawImageStatusV144B = String(scene?.image_status || scene?.imageStatus || scene?.first_frame_status || scene?.firstFrameStatus || '').toLowerCase()
+  const imageAssetReadyV144B = rawImageStatusV144B.includes('asset_ready') || rawImageStatusV144B.includes('server_frame_ready') || rawImageStatusV144B === 'ready'
+  const imageUploadingV144B = !imageAssetReadyV144B && Boolean(
+    scene?.image_uploading_v129q || scene?.imageUploadingV129Q ||
+    rawImageStatusV144B.includes('upload') || rawImageStatusV144B.includes('local_pending') || rawImageStatusV144B.includes('local_preview')
+  )
   const hasImage = Boolean(
     sceneMediaFieldValue(scene, 'image', 'apiPath') || sceneMediaFieldValue(scene, 'first', 'apiPath') || sceneMediaFieldValue(scene, 'last', 'apiPath') ||
     sceneMediaFieldValue(scene, 'image', 'url') || sceneMediaFieldValue(scene, 'first', 'url') || sceneMediaFieldValue(scene, 'last', 'url') ||
@@ -2543,6 +2779,7 @@ function sceneStatus(scene) {
   const hasCurrentVideo = boardSceneHasCurrentVideoResultV129P(scene)
   const hasStaleVideo = boardSceneRawVideoRefsV129P(scene) && !boardVideoMatchesCurrentImageV129P(scene)
 
+  if (imageUploadingV144B) return { label: 'фото грузится', className: 'isRunning' }
   if (status === 'starting') return { label: 'отправляется', className: 'isRunning' }
   if (status === 'queued') return { label: 'в очереди', className: 'isRunning' }
   if (status === 'preparing' || status === 'submitting') return { label: 'отправляется', className: 'isRunning' }
@@ -3101,7 +3338,17 @@ export default function BoardPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const boardWorkflowEntry = useMemo(() => readWorkflowEntry('board', location.state), [location.state])
+  const boardWorkflowEntry = useMemo(() => {
+    const entry = readWorkflowEntry('board', location.state)
+    // AVA_TIMING_TO_BOARD_CONSUME_ONCE_V146:
+    // Browser history can keep location.state after F5. If we already consumed
+    // this Timing -> Board handoff, ignore it and open Board as a normal Board.
+    if (isTimingToBoardEntryConsumedV146(entry)) {
+      clearWorkflowEntry('board')
+      return null
+    }
+    return entry
+  }, [location.state])
   const openedFromTiming = boardWorkflowEntry?.from === 'manual_timing'
   const workspaceMode = !projectId
   const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
@@ -3113,19 +3360,27 @@ export default function BoardPage() {
   const [timingToBoardImporting, setTimingToBoardImporting] = useState(false)
 
   useEffect(() => {
-    // AVA_TIMING_TO_BOARD_NO_RELOAD_MODAL_V16:
-    // The destructive question is shown in Timing before navigation. Board must not
-    // show it again on F5, because that could erase freshly edited Board work.
+    // AVA_TIMING_TO_BOARD_CONSUME_ONCE_V146:
+    // Timing -> Board is allowed to replace Board exactly once per confirmed click.
+    // F5/direct reload must not repeat the destructive import from Manual Timing.
     if (!openedFromTiming) return
     const entrySource = String(boardWorkflowEntry?.source || '')
     if (entrySource === 'manual_timing_to_board_confirmed_v16') {
+      if (isTimingToBoardEntryConsumedV146(boardWorkflowEntry)) {
+        clearWorkflowEntry('board')
+        setShowTimingToBoardConfirm(false)
+        setStatus('Доска открыта без повторного переноса из Тайминга.')
+        return
+      }
+      markTimingToBoardEntryConsumedV146(boardWorkflowEntry)
+      clearWorkflowEntry('board')
       confirmTimingToBoardImportV14B()
       return
     }
     clearWorkflowEntry('board')
     setShowTimingToBoardConfirm(false)
     setStatus('Открыта Доска. Повторное окно переноса из Тайминга отключено после перезагрузки.')
-  }, [openedFromTiming, boardWorkflowEntry?.source])
+  }, [openedFromTiming, boardWorkflowEntry?.source, boardWorkflowEntry?.createdAt])
 
 function isBoardVideoDoneStatus(status) {
     return ['completed', 'done', 'ready', 'success'].includes(String(status || '').toLowerCase())
@@ -3161,9 +3416,9 @@ function isBoardVideoDoneStatus(status) {
   }
 
   function sceneVideoInputProblems(scene) {
-    const route = String(scene?.route || 'i2v')
+    const route = normalizeBoardRouteValueV154A(scene?.route || 'i2v')
     const isFirstLast = isFirstLastRoute(route)
-    const isLipSync = ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(route)
+    const isLipSync = isBoardAudioDrivenRouteV154A(route)
 
     const startImage = isFirstLast
       ? (sceneMediaFieldValue(scene, 'first', 'apiPath') || sceneMediaFieldValue(scene, 'first', 'url') || sceneMediaFieldValue(scene, 'image', 'apiPath') || sceneMediaFieldValue(scene, 'image', 'url') || scene?.start_image_data_url || scene?.startImageDataUrl || scene?.image_data_url || scene?.imageDataUrl || '')
@@ -3178,7 +3433,7 @@ function isBoardVideoDoneStatus(status) {
     const problems = []
     if (!startImage) problems.push('нет первого/основного кадра')
     if (isFirstLast && !endImage) problems.push('нет последнего кадра')
-    if (isLipSync && !audioSlice) problems.push('нет audio slice для lip-sync')
+    if (isLipSync && !audioSlice) problems.push('нет audio slice для ia2v')
     return problems
   }
 
@@ -3226,10 +3481,14 @@ function sceneVideoActionState(scene) {
   const hasInputProblems = problems.length > 0
   const submittingStatuses = ['starting', 'preparing', 'submitting']
   const activeStatuses = ['running', 'processing', 'queued_no_prompt_id']
-  const isSubmitting = submittingStatuses.includes(rawVideoStatus) || submittingStatuses.includes(videoStatus)
-  const isRunning = activeStatuses.includes(rawVideoStatus) || activeStatuses.includes(videoStatus) || (rawVideoStatus === 'queued' && hasServerJob)
+  // AVA_BOARD_STALE_BATCH_UNBLOCK_V150A: stale snapshot statuses without a live job
+  // must not keep the button disabled after backend reload or after an interrupted batch.
+  const isSubmittingRawV150A = submittingStatuses.includes(rawVideoStatus) || submittingStatuses.includes(videoStatus)
+  const isRunningRawV150A = activeStatuses.includes(rawVideoStatus) || activeStatuses.includes(videoStatus) || rawVideoStatus === 'queued'
+  const isSubmitting = isSubmittingRawV150A && (hasServerJob || boardVideoActiveStampFreshV150A(scene))
+  const isRunning = isRunningRawV150A && hasServerJob
   const isActiveServerJob = isSubmitting || isRunning
-  const isLocalQueued = rawVideoStatus === 'queued' && !hasServerJob && !hasInputProblems
+  const isLocalQueued = rawVideoStatus === 'queued' && !hasServerJob && !hasInputProblems && boardVideoActiveStampFreshV150A(scene)
   const isBlocked = rawVideoStatus === 'blocked_missing_comfy_base_url' || videoStatus === 'blocked_missing_comfy_base_url'
   const isError = rawVideoStatus === 'error' || rawVideoStatus === 'failed' || videoStatus === 'error' || videoStatus === 'failed'
   const actionBusyLabelV132S = isSubmitting ? 'Отправляется' : 'Видео делается'
@@ -3254,9 +3513,36 @@ function sceneVideoActionState(scene) {
   }
 }
 
+  // AVA_BOARD_STALE_BATCH_UNBLOCK_V150A:
+  // After backend reload the persisted Board snapshot may still contain queued/running
+  // statuses from a server batch whose in-memory runner died. Those stale fields must
+  // not block "Сгенерить все" forever. A scene is busy only when it has a real backend
+  // job/status endpoint, or a very fresh submit/prep status from the current browser click.
+  function boardVideoActiveStampFreshV150A(scene = {}) {
+    const stamp = Date.parse(
+      scene?.video_updated_at || scene?.videoUpdatedAt ||
+      scene?.video_started_at || scene?.videoStartedAt ||
+      scene?.updatedAt || scene?.updated_at || ''
+    )
+    if (!Number.isFinite(stamp) || stamp <= 0) return false
+    return (Date.now() - stamp) < (4 * 60 * 1000)
+  }
+
+  function boardSceneHasBackendVideoJobV150A(scene = {}) {
+    return Boolean(asText(
+      scene?.video_job_id || scene?.videoJobId ||
+      scene?.video_status_endpoint || scene?.videoStatusEndpoint ||
+      scene?.server_batch_job_id || scene?.serverBatchJobId || ''
+    ))
+  }
+
   function isBoardVideoActiveWorkerStatus(scene) {
-    const status = String(scene?.video_status || '').toLowerCase()
-    return ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status) || (status === 'queued' && Boolean(scene?.video_job_id || scene?.video_status_endpoint))
+    const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+    const hasBackendJob = boardSceneHasBackendVideoJobV150A(scene)
+    if (status === 'queued') return hasBackendJob
+    if (['running', 'processing', 'queued_no_prompt_id'].includes(status)) return hasBackendJob
+    if (['starting', 'preparing', 'submitting'].includes(status)) return hasBackendJob || boardVideoActiveStampFreshV150A(scene)
+    return false
   }
 
   function activeBoardVideoScene(currentBoard) {
@@ -3711,8 +3997,28 @@ function sceneVideoActionState(scene) {
   }
 
 
+
+
+  // AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A:
+  // "Сгенерировать все" is backend-owned. IA2V/lip-sync scenes should not be
+  // rejected just because the per-scene audio slice is not cut yet. If Board has
+  // the original Timing audio asset and the scene has start/end, backend will cut
+  // the MP3 slice right before queueing the scene.
+  function boardCanServerAutoSliceAudioForSceneV147A(scene = {}) {
+    if (!isIa2vRoute(scene?.route)) return false
+    if (manualLipSyncAudioSourceV129A(scene)) return true
+    const sourcePayload = boardAudioSourcePayloadForBackend()
+    const hasSourceAudio = Boolean(sourcePayload.audio_url || sourcePayload.audio_asset_id || sourcePayload.audio_asset_api_path)
+    const start = toNumber(scene?.start_sec ?? scene?.start ?? scene?.scene_start_sec ?? scene?.sceneStartSec, 0)
+    const end = toNumber(scene?.end_sec ?? scene?.end ?? scene?.scene_end_sec ?? scene?.sceneEndSec, start)
+    return hasSourceAudio && end > start
+  }
+
   function boardSceneAutoVideoProblems(scene) {
-    const problems = [...sceneVideoInputProblems(scene)]
+    let problems = [...sceneVideoInputProblems(scene)]
+    if (boardCanServerAutoSliceAudioForSceneV147A(scene)) {
+      problems = problems.filter((problem) => !/audio\s*slice|audio[_\s-]*slice|лип-?sync/i.test(String(problem || '')))
+    }
     const promptText = asText(scene?.video_prompt || scene?.videoPrompt || '')
     if (!promptText) problems.push('нет video prompt')
     return [...new Set(problems.filter(Boolean))]
@@ -4110,6 +4416,12 @@ function sceneVideoActionState(scene) {
       : ''
 
     if (!addedIds.length) {
+      console.warn('[BOARD SERVER BATCH NO SCENES V150A]', {
+        skippedReadyIds,
+        skippedBusyIds,
+        invalidItems,
+        staleHint: 'If busy > 0 but backend status is idle/orphaned, stale queued/running state was blocking the start.'
+      })
       setStatus(`Серверная очередь: новых сцен нет. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, без данных: ${invalidItems.length}`)
       pushBoardToast({
         type: invalidItems.length ? 'warning' : 'info',
@@ -4151,17 +4463,71 @@ function sceneVideoActionState(scene) {
       }
     }))
 
+    const serverBatchAudioSourceV147A = boardAudioSourcePayloadForBackend()
+
     apiRequest(`/projects/${projectId}/board/video-batch/start`, {
       method: 'POST',
       body: JSON.stringify({
         mode: 'overwrite',
         overwrite: true,
-        source: 'board_page_server_batch_v131e',
+        source: 'board_page_server_batch_v131e_autoslice_v147a',
         sceneIds: addedIds,
         scene_ids: addedIds,
+        audio: currentBoard?.audio || board?.audio || null,
+        board_audio: currentBoard?.audio || board?.audio || null,
+        ...serverBatchAudioSourceV147A,
         scenes,
       }),
     }).then((result) => {
+      // AVA_BOARD_BATCH_START_RESULT_GUARD_V152A:
+      // /board/video-batch/start returns HTTP 200 even when backend could not queue
+      // anything (for example autoslice failed because master audio asset is 404).
+      // Do not convert that response into fake running/queued runtime badges.
+      const batchStartOkV152A = result?.ok === true && Boolean(result?.batchId || result?.batch_id)
+      if (!batchStartOkV152A) {
+        clearBadRegenRuntimeStatusesV136I(addedIds)
+        if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = false
+
+        const nextBoardV152A = result?.board || result?.snapshot?.data || null
+        if (nextBoardV152A && Array.isArray(nextBoardV152A.scenes)) {
+          boardRef.current = nextBoardV152A
+          setBoard(nextBoardV152A)
+          reconcileBadRegenRuntimeWithBoardV136I(nextBoardV152A, { sceneIds: addedIds })
+        }
+
+        const autoFailedV152A = Array.isArray(result?.autoAudioSliceFailed)
+          ? result.autoAudioSliceFailed
+          : (Array.isArray(result?.auto_audio_slice_failed) ? result.auto_audio_slice_failed : [])
+        const invalidV152A = Array.isArray(result?.invalid) ? result.invalid : []
+        const failedAudioTextV152A = autoFailedV152A.length
+          ? autoFailedV152A.slice(0, 3).map((item) => `${item?.sceneId || item?.scene_id || 'scene'}: ${item?.error || 'audio slice failed'}`).join('; ')
+          : ''
+        const invalidTextV152A = invalidV152A.length
+          ? invalidV152A.slice(0, 3).map((item) => `${item?.sceneId || item?.scene_id || 'scene'}: ${(item?.problems || []).join('/')}`).join('; ')
+          : ''
+        const reasonV152A = failedAudioTextV152A
+          ? `audio slice не создан: ${failedAudioTextV152A}`
+          : (invalidTextV152A ? `не хватает данных: ${invalidTextV152A}` : (result?.status || 'backend ничего не поставил в очередь'))
+
+        setAutoVideoQueueState({
+          active: false,
+          serverBatchActive: false,
+          total: 0,
+          queued: 0,
+          skippedReady: skippedReadyIds.length,
+          invalid: invalidV152A.length || invalidItems.length || autoFailedV152A.length,
+        })
+        setStatus(`Серверная очередь не запущена: ${reasonV152A}`)
+        pushBoardToast({
+          type: 'warning',
+          title: 'Серверная очередь не запущена',
+          message: reasonV152A,
+          dedupeKey: `board:server_batch:not_started_v152a:${Date.now()}`,
+        })
+        console.warn('[BOARD SERVER BATCH NOT STARTED V152A]', { result, addedIds, autoFailedV152A, invalidV152A })
+        return
+      }
+
       // AVA_BOARD_BAD_REGEN_RUNTIME_STATUS_V136I:
       // Backend accepted the batch. Keep accepted queue order runtime-only; do not patch
       // Board scenes with queued/running fields and do not save this state to snapshot.
@@ -4224,7 +4590,7 @@ function sceneVideoActionState(scene) {
       clearBadRegenRuntimeStatusesV136I(addedIds)
       // server_batch_start_failed_release_v131m
       if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = false
-      setAutoVideoQueueState((current) => ({ ...(current || {}), active: false }))
+      setAutoVideoQueueState((current) => ({ ...(current || {}), active: false, serverBatchActive: false, queued: 0 }))
       setStatus(`Серверная очередь не запущена: ${error?.message || error}`)
       pushBoardToast({
         type: 'error',
@@ -4484,7 +4850,10 @@ function sceneVideoActionState(scene) {
     const endpoint = statusEndpoint || (jobId ? `/clip/video/status/${jobId}` : '')
     if (!sceneId || !endpoint) return
     const currentScene = asSceneArray(boardRef.current?.scenes).find((scene) => asText(scene?.id || scene?.scene_id) === asText(sceneId))
-    if (currentScene && String(currentScene.video_status || '').toLowerCase() === 'ready') return
+    if (currentScene && (
+      String(currentScene.video_status || currentScene.videoStatus || '').toLowerCase() === 'ready' ||
+      (typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(currentScene))
+    )) return
     if (jobId && seenCompletedJobIdsRef.current.has(jobId)) {
       console.log('[BOARD JOB SEEN]', { jobId, skipPoll: true })
       return
@@ -4739,6 +5108,7 @@ function sceneVideoActionState(scene) {
   const stillFilesImportRef = useRef(null)
   const stillZipImportRef = useRef(null)
   const boardRef = useRef(board)
+  const skipNextBoardAutosaveRefV145A = useRef(false)
   const localVideoQueueRef = useRef([])
   const localVideoQueueStartLockRef = useRef('')
   const localVideoQueueStartLockAtRef = useRef(0)
@@ -4969,6 +5339,14 @@ function sceneVideoActionState(scene) {
         queueSource.includes('bad_review') ||
         queueSource.includes('regeneration')
       )
+      // AVA_BOARD_BATCH_READY_UI_WINS_V148A:
+      // If the scene already has a video matching the current source image, do not apply
+      // a stale server-batch runtime overlay (“running/queued”). Exception: bad-review
+      // regeneration intentionally keeps the old video visible while a new one renders.
+      const hasCurrentVideoForRuntimeV148A = Boolean(
+        typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)
+      )
+      if (hasCurrentVideoForRuntimeV148A && !fromBad) return
       entries.push({
         sceneId: safeSceneId,
         status,
@@ -5369,6 +5747,20 @@ function sceneVideoActionState(scene) {
             serverScore: boardVideoStateScoreV131N(serverBoardData),
           })
         }
+
+        if (!workspaceMode && serverBoardData && Array.isArray(serverBoardData.scenes) && boardImageStateScoreV145A(serverBoardData) > 0) {
+          const beforeScoreV145A = boardImageStateScoreV145A(nextBoard)
+          nextBoard = boardMergeServerImageStateV145A(nextBoard, serverBoardData)
+          const afterScoreV145A = boardImageStateScoreV145A(nextBoard)
+          if (afterScoreV145A >= beforeScoreV145A) {
+            writeBoardDurableBackup(durableKey, nextBoard)
+          }
+          console.log('[BOARD LOAD SERVER IMAGE REHYDRATE V145A]', {
+            beforeScore: beforeScoreV145A,
+            afterScore: afterScoreV145A,
+            serverScore: boardImageStateScoreV145A(serverBoardData),
+          })
+        }
         nextBoard = normalizeLoadedBoardVideoStatuses(nextBoard)
         if (hydratedCompleted.usedKeys.length) {
           const used = new Set(hydratedCompleted.usedKeys)
@@ -5380,6 +5772,7 @@ function sceneVideoActionState(scene) {
           nextBoard = { ...nextBoard, selectedSceneId: pendingOpenSceneId }
           sessionStorage.removeItem(AVA_OPEN_BOARD_SCENE_KEY)
         }
+        skipNextBoardAutosaveRefV145A.current = true
         setBoard(nextBoard)
         rehydrateBadRegenRuntimeFromServerBatchV136J(
           nextBoard?.board_video_batch || nextBoard?.boardVideoBatch || {},
@@ -5758,6 +6151,13 @@ function sceneVideoActionState(scene) {
       updatedAt: board?.updatedAt || new Date().toISOString(),
     })
 
+
+    if (skipNextBoardAutosaveRefV145A.current) {
+      skipNextBoardAutosaveRefV145A.current = false
+      console.log('[BOARD F5 INITIAL AUTOSAVE SKIPPED V145A]', { projectId: projectId || '', workspaceMode })
+      return undefined
+    }
+
     const timer = window.setTimeout(() => saveBoard(board, true), 900)
     return () => window.clearTimeout(timer)
   }, [loading, board, projectId, workspaceMode])
@@ -6068,9 +6468,10 @@ function sceneVideoActionState(scene) {
         setSaving(true)
         setStatus('Сохраняем Storyboard…')
       }
+      const boardGuardModeV145A = (useReplaceForActiveVideoJobsV56 || useReplaceForMediaMutationV129N || useReplaceForMediaResetV129T || useReplaceForMediaResetV129S) ? 'replace' : 'safe_merge'
       const saveResult = workspaceMode
         ? await saveWorkspaceStage(STAGE, payload)
-        : await saveStage(projectId, STAGE, payload, (useReplaceForActiveVideoJobsV56 || useReplaceForMediaMutationV129N) ? 'replace' : 'safe_merge')
+        : await saveStage(projectId, STAGE, payload, boardGuardModeV145A)
       const verifyScene = boardSaveVerifyScene(payload)
       console.log('[BOARD SAVE VERIFY]', {
         projectId: projectId || '',
@@ -6245,8 +6646,29 @@ function sceneVideoActionState(scene) {
       ...current,
       scenes: current.scenes.map((scene) => {
         if (scene.id !== sceneId && scene.scene_id !== sceneId) return scene
-        const currentJobId = scene.video_job_id || ''
+        const currentJobId = scene.video_job_id || scene.videoJobId || ''
         if (jobId && currentJobId && currentJobId !== jobId) {
+          return scene
+        }
+        // AVA_BOARD_BATCH_READY_UI_WINS_V148A:
+        // Browser polling can lag behind the backend batch runner. If the server snapshot
+        // already merged a real current video into this scene, do not let a later
+        // running/queued poll response clear those refs and put the card back to busy.
+        const patchStatusV148A = String(patch?.video_status || patch?.videoStatus || '').toLowerCase()
+        const patchBusyV148A = ['starting', 'queued', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(patchStatusV148A)
+        const patchHasVideoV148A = Boolean(
+          patch?.video_asset_id || patch?.videoAssetId ||
+          patch?.video_api_path || patch?.videoApiPath ||
+          patch?.video_url || patch?.videoUrl ||
+          patch?.result_video_asset_id || patch?.resultVideoAssetId ||
+          patch?.result_video_api_path || patch?.resultVideoApiPath ||
+          patch?.result_video_url || patch?.resultVideoUrl
+        )
+        const sceneHasCurrentVideoV148A = Boolean(
+          typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)
+        )
+        if (patchBusyV148A && sceneHasCurrentVideoV148A && !patchHasVideoV148A) {
+          console.log('[BOARD BATCH READY UI WINS V148A] ignore stale busy poll patch', { sceneId, jobId, patchStatus: patchStatusV148A })
           return scene
         }
         return canonicalizeBoardSceneMediaRefs(boardClearGeneratedRefsForActiveVideoPatchV54({ ...scene, ...patch }, patch))
@@ -6421,6 +6843,7 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
       } else {
         await saveStage(projectId, STAGE, nextBoard, 'replace')
       }
+      markTimingToBoardEntryConsumedV146(boardWorkflowEntry)
       clearWorkflowEntry('board')
       setShowTimingToBoardConfirm(false)
       setStatus(`Доска заменена свежим Таймингом: ${asSceneArray(nextBoard.scenes).length} сцен`)
@@ -7685,6 +8108,38 @@ function updateSelectedSceneDuration(nextValue) {
         const assetApiPath = uploaded.asset_api_path || uploaded.assetApiPath || (assetId ? `/assets/${assetId}/file` : '')
         if (!assetId || !assetApiPath) throw new Error(`image_asset_upload_missing_asset_id:${file.name}`)
 
+        // AVA_BOARD_BATCH_PHOTO_LOADING_STATUS_V144B:
+        // As soon as one packet/ZIP image asset is uploaded, commit it to that scene immediately.
+        // Do not wait for the whole packet, otherwise the first scene can briefly fall back
+        // from local preview to prompt/draft until the last file finishes.
+        const readyPatchV144B = buildBoardStillImportPatch({ fileName: file.name, assetId, assetApiPath })
+        let nextBoardForReadySaveV144B = null
+        setBoard((current) => {
+          let changed = false
+          const nextScenes = asSceneArray(current.scenes).map((scene) => {
+            const itemSceneId = asText(scene.id || scene.scene_id)
+            if (itemSceneId !== sceneId) return scene
+            changed = true
+            return canonicalizeBoardSceneMediaRefs({
+              ...scene,
+              ...readyPatchV144B,
+            })
+          })
+          if (!changed) return current
+          nextBoardForReadySaveV144B = {
+            ...current,
+            scenes: nextScenes,
+            updatedAt: new Date().toISOString(),
+            mediaMutationReplaceSave: true,
+            saveMode: 'packet_image_asset_ready_v144b',
+          }
+          writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), nextBoardForReadySaveV144B)
+          return nextBoardForReadySaveV144B
+        })
+        window.setTimeout(() => {
+          if (nextBoardForReadySaveV144B) saveBoard(nextBoardForReadySaveV144B, true)
+        }, 0)
+
         results.push({ sceneId, fileName: file.name, assetId, assetApiPath })
         console.log('[BOARD STILL IMPORT REPLACE]', { sourceLabel, sceneId, fileName: file.name, assetId, assetApiPath })
       }
@@ -8311,15 +8766,17 @@ function updateSelectedSceneDuration(nextValue) {
 
 
 function boardAudioSourcePayloadForBackend() {
+    const sourceBoard = boardRef.current || board || {}
+    const sourceAudio = sourceBoard.audio || board.audio || {}
     return {
-      audio_url: board.audio?.url || board.audio?.src || board.audioUrl || board.audio_url || '',
-      audio_asset_id: board.audio?.assetId || board.audio?.asset_id || board.audioAssetId || board.audio_asset_id || '',
-      audio_asset_api_path: board.audio?.assetApiPath || board.audio?.asset_api_path || board.audioApiPath || board.audio_api_path || '',
+      audio_url: sourceAudio?.url || sourceAudio?.src || sourceBoard.audioUrl || sourceBoard.audio_url || board.audioUrl || board.audio_url || '',
+      audio_asset_id: sourceAudio?.assetId || sourceAudio?.asset_id || sourceBoard.audioAssetId || sourceBoard.audio_asset_id || board.audioAssetId || board.audio_asset_id || '',
+      audio_asset_api_path: sourceAudio?.assetApiPath || sourceAudio?.asset_api_path || sourceBoard.audioApiPath || sourceBoard.audio_api_path || board.audioApiPath || board.audio_api_path || '',
     }
   }
 
   function isIa2vRoute(route) {
-    return ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(String(route || ''))
+    return isBoardAudioDrivenRouteV154A(route)
   }
 
 
@@ -8851,9 +9308,9 @@ async function markVideoPlanned(sceneOverride = null) {
     localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== requestSceneId)
     window.setTimeout(() => syncQueuedSceneBadges(), 0)
 
-    const route = String(sceneToStart.route || 'i2v')
+    const route = normalizeBoardRouteValueV154A(sceneToStart.route || 'i2v')
     const isFirstLast = isFirstLastRoute(route)
-    const isLipSync = ['ia2v', 'ia2v_lipsync', 'lip_sync'].includes(route)
+    const isLipSync = isBoardAudioDrivenRouteV154A(route)
 
     const durationLockForGeneration = boardSceneTimingLockInfo(sceneToStart)
     const targetDuration = Math.max(
@@ -8888,7 +9345,7 @@ async function markVideoPlanned(sceneOverride = null) {
 
     // AVA_LAST_FRAME_V4_BOARD_NO_POST_WITHOUT_MEDIA
     if (warnings.length) {
-      const labels = warnings.map((item) => item === 'missing_start_image' ? 'нет фото/start image' : item === 'missing_last_frame' ? 'нет последнего кадра' : item === 'missing_audio_slice' ? 'нет audio slice для lip-sync' : item)
+      const labels = warnings.map((item) => item === 'missing_start_image' ? 'нет фото/start image' : item === 'missing_last_frame' ? 'нет последнего кадра' : item === 'missing_audio_slice' ? 'нет audio slice для ia2v' : item)
       showSceneVideoInputError(sceneToStart, labels)
       window.setTimeout(processNextQueuedBoardVideo, 650)
       return
@@ -10077,7 +10534,7 @@ async function importTimingJson(event) {
                 <label className="avaBoardSelectField">
                   <span>Режим видео</span>
                   <select
-                    value={selectedScene.route || 'i2v'}
+                    value={normalizeBoardRouteValueV154A(selectedScene.route) || 'i2v'}
                     onChange={(event) => {
                       const nextRoute = event.target.value
                       updateScene(selectedScene.id, {
@@ -10090,7 +10547,7 @@ async function importTimingJson(event) {
                       <option key={route.value} value={route.value}>{route.label}</option>
                     ))}
                   </select>
-                  <small>{ROUTE_OPTIONS.find((route) => route.value === selectedScene.route)?.hint || 'Выбери режим генерации видео'}</small>
+                  <small>{ROUTE_OPTIONS.find((route) => route.value === normalizeBoardRouteValueV154A(selectedScene.route))?.hint || 'Выбери режим генерации видео'}</small>
                 </label>
 
                 <label className="avaBoardSelectField">
@@ -10420,8 +10877,14 @@ async function importTimingJson(event) {
                     title={selectedScene.audio_slice_name || selectedScene.audio_slice_url || "audio slice"}
                     onClick={(event) => {
                       stopBoardActionEvent(event)
+                      if (bulkStillsImporting) {
+                        setStatus('Дождись окончания загрузки фото, потом режь audio slice.')
+                        pushBoardToast({ type: 'warning', title: 'Audio slice', message: 'Фото ещё грузятся. Дождись “фото готово” на сценах.' })
+                        return
+                      }
                       markAudioSlicePlanned()
                     }}
+                    disabled={bulkStillsImporting || selectedScene.audio_slice_status === 'extracting'}
                   >
                     <Scissors size={16} />
                     <span>Изъять аудио</span>
@@ -10535,8 +10998,8 @@ async function importTimingJson(event) {
             <div className="avaBoardHintBox">
               {firstLastMode ? (
                 <><CheckCircle2 size={16} /> Для first-last нужны первый и последний кадр. Первый можно взять из предыдущей сцены.</>
-              ) : selectedScene.route === 'ia2v' ? (
-                <><AlertTriangle size={16} /> Для lip-sync используем ручной отрезок сцены; ASR не управляет таймингом.</>
+              ) : isIa2vRoute(selectedScene.route) ? (
+                <><AlertTriangle size={16} /> Для ia2v используем audio slice сцены; ASR не управляет таймингом.</>
               ) : (
                 <><CheckCircle2 size={16} /> Генерация будет подключена после foundation UI.</>
               )}

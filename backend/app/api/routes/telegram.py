@@ -1,3 +1,4 @@
+# AVA_TELEGRAM_LIGHT_REVIEW_NO_BLOCK_V149A: light Telegram review; no sequential blocking; bad is instant; batch sending is async.
 # AVA_TELEGRAM_REVIEW_CLEANUP_FINISH_NOTICE_V137K: start hook kwargs, delete comment dialog messages, finish notice with stats button.
 # AVA_TELEGRAM_BOARD_REVIEW_SESSION_V137A
 # AVA_TELEGRAM_REVIEW_ON_DEMAND_SUMMARY_V137H: quiet ordered review; summary only by command.
@@ -696,29 +697,14 @@ def _queued_review_count_v137g2(project_id: str) -> int:
 
 
 def _active_review_blocker_v137g2(project_id: str) -> dict[str, Any] | None:
-    """Return active review item. Do not send the next scene until this is closed."""
-    try:
-        db = store.get_db()
-        session = (db.get("telegram_review_sessions") or {}).get(project_id) or {}
-        items = db.get("telegram_review_items") or {}
-        scene_ids = [str(x) for x in (session.get("scene_ids") or session.get("sceneIds") or []) if str(x).strip()]
-        latest_by_scene = session.get("latest_review_ids_by_scene") or session.get("latestReviewIdsByScene") or {}
-        if not isinstance(latest_by_scene, dict):
-            latest_by_scene = {}
-        for scene_id in scene_ids:
-            review_id = str(latest_by_scene.get(scene_id) or _review_item_latest_for_scene(db, project_id, scene_id) or "").strip()
-            if not review_id:
-                continue
-            item = items.get(review_id) if isinstance(items, dict) else None
-            if not isinstance(item, dict):
-                continue
-            status = str(item.get("status") or "").strip()
-            if status in {"pending", "bad_waiting_comment"}:
-                return item
-    except Exception as exc:
-        print("[TELEGRAM SEQUENTIAL REVIEW BLOCKER ERROR V137G2]", {"project_id": project_id, "error": str(exc)}, flush=True)
-    return None
+    """V149A: do not hold later scene videos behind an unanswered Telegram review.
 
+    Old behavior sent only one scene video at a time and queued every later scene
+    until OK / comment was received. That made Telegram delays block the review
+    stream and made messages arrive late/out of order. Board remains the source
+    of truth; Telegram is now a lightweight notification/review helper.
+    """
+    return None
 
 def _queue_scene_ready_v137g2(project_id: str, scene_id: str, scene: dict[str, Any], job_id: str = "", batch_id: str = "") -> dict[str, Any]:
     """Queue a ready scene until the current Telegram review is answered."""
@@ -1268,6 +1254,11 @@ def _handle_ok(review_id: str, callback_id: str, chat_id: str, message_id: int |
 
 
 def _handle_bad(review_id: str, callback_id: str, chat_id: str, message_id: int | str) -> dict[str, Any]:
+    """V149A: mark "не OK" immediately, without force-reply comment flow.
+
+    This keeps Telegram light: no pending-comment state, no waiting blocker, and
+    no extra requirement before later scene videos can arrive.
+    """
     item = _load_review_item(review_id)
     if not item:
         _answer_callback(callback_id, "Review item не найден", True)
@@ -1278,61 +1269,44 @@ def _handle_bad(review_id: str, callback_id: str, chat_id: str, message_id: int 
     if latest and latest != review_id:
         _answer_callback(callback_id, "Это старое видео. Уже есть более новый результат.", True)
         return {"ok": False, "error": "stale_review"}
+
     current_status = str(item.get("status") or "").strip()
-    if current_status == "bad_waiting_comment":
-        def ensure_pending(db: dict[str, Any]) -> dict[str, Any]:
-            db.setdefault("telegram_pending_comments", {})[str(chat_id)] = review_id
-            return {"ok": True}
-        store.update(ensure_pending)
-        _answer_callback(callback_id, f"{scene_id}: уже жду комментарий")
-        return {"ok": True, "status": "already_waiting_comment"}
     if current_status == "bad":
-        _answer_callback(callback_id, f"{scene_id}: комментарий уже сохранён")
+        _answer_callback(callback_id, f"{scene_id}: не OK уже отмечено")
         return {"ok": True, "status": "already_bad"}
     if current_status == "ok":
         _answer_callback(callback_id, f"{scene_id}: уже отмечена OK", True)
         return {"ok": False, "status": "already_ok"}
+
+    # Answer callback before store/message work, otherwise Telegram may reject it
+    # as too old when local storage or network is slow.
+    _answer_callback(callback_id, f"{scene_id}: не OK")
     at = now_iso()
 
     def op(db: dict[str, Any]) -> dict[str, Any]:
         saved = db.setdefault("telegram_review_items", {}).get(review_id) or item
-        saved["status"] = "bad_waiting_comment"
+        saved["status"] = "bad"
+        saved["comment"] = ""
         saved["updated_at"] = at
         saved["updatedAt"] = at
         db["telegram_review_items"][review_id] = saved
+        # Do not leave a pending-comment pointer behind for this chat.
         pending = db.setdefault("telegram_pending_comments", {})
-        pending[str(chat_id)] = review_id
+        pending.pop(str(chat_id), None)
         return saved
 
     saved_item = store.update(op)
-    _save_project_board_review(project_id, scene_id, "bad", "telegram_review_bad_waiting_comment_v137a", saved_item)
-    _edit_reply_markup(chat_id, message_id, {"inline_keyboard": [[{"text": "🔁 не OK · жду комментарий", "callback_data": "ava:noop"}]]})
-    _answer_callback(callback_id, f"{scene_id}: жду комментарий")
-    prompt_result = _send_message(
-        f"🔁 <b>{_html(scene_id)}</b> отмечена как <b>не OK</b>\n\n"
-        "Напиши прямо сюда, что не устроило.\n"
-        "Например: лицо плывёт, камера не туда, нет движения, плохой lip-sync, плохо получилась рыба в тарелке.\n\n"
-        "Следующее текстовое сообщение сохраню в заметку этой сцены.",
-        reply_markup={
-            "force_reply": True,
-            "selective": True,
-            "input_field_placeholder": "Что не так с видео?"
-        },
-        chat_id=chat_id,
+    _save_project_board_review(project_id, scene_id, "bad", "telegram_review_bad_quick_v149a", saved_item, comment="")
+    _edit_reply_markup(chat_id, message_id, {"inline_keyboard": [[{"text": "🔁 не OK отмечено", "callback_data": "ava:noop"}]]})
+    _send_message(
+        f"🔁 <b>{_html(scene_id)}</b> отмечена как <b>не OK</b>.\n"
+        "Статус сохранён в Board. Комментарий можно добавить позже в заметке сцены."
     )
-    prompt_message_id = (((prompt_result.get("result") or {}) if isinstance(prompt_result, dict) else {}).get("message_id"))
-    if prompt_message_id:
-        def save_prompt_message(db: dict[str, Any]) -> dict[str, Any]:
-            saved = db.setdefault("telegram_review_items", {}).get(review_id) or saved_item
-            saved["comment_prompt_message_id_v137k"] = prompt_message_id
-            saved["commentPromptMessageIdV137K"] = prompt_message_id
-            saved["comment_prompt_chat_id_v137k"] = str(chat_id)
-            saved["commentPromptChatIdV137K"] = str(chat_id)
-            db["telegram_review_items"][review_id] = saved
-            return saved
-        store.update(save_prompt_message)
-    return {"ok": True}
-
+    # Queue blocker is disabled in V149A, but this keeps old queued items moving
+    # if they existed before the patch.
+    _flush_next_review_queue_v137g2(project_id)
+    _maybe_send_final_review_summary_v137g2(project_id)
+    return {"ok": True, "status": "bad_quick_v149a"}
 
 def _handle_comment(chat_id: str, text: str, message_id: int | str = "") -> dict[str, Any]:
     review_id = ""

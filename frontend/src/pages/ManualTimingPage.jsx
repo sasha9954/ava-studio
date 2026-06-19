@@ -2411,6 +2411,19 @@ function clearBlockSelection() {
   setStatus('выделение смыслового блока снято')
 }
 
+
+  function avaTimingNormalizeRouteV154A(value = '') {
+    const raw = String(value || '').trim().toLowerCase()
+    if (!raw) return 'auto'
+    if (raw === 'ia2v_instrumental' || raw === 'ia2v-instrumental' || raw === 'ia2v instrumental' || raw === 'instrumental' || raw === 'instrument') return 'ia2v_instrumental'
+    if (raw === 'ia2v_lipsync' || raw === 'ia2v-lipsync' || raw === 'ia2v lip-sync' || raw === 'ia2v lipsync' || raw === 'lip_sync' || raw === 'lipsync' || raw === 'lip-sync') return 'ia2v'
+    if (raw === 'first-last') return 'first_last'
+    if (raw === 'first-last-sound' || raw === 'first_last sound') return 'first_last_sound'
+    if (raw === 'i2v sound' || raw === 'i2v-sound') return 'i2v_sound'
+    if (raw === 'i2v text' || raw === 'i2v-text') return 'i2v_text'
+    return raw
+  }
+
   function openSceneEditor(sceneIndex) {
     const scene = scenes[Math.min(sceneIndex, scenes.length - 1)]
     if (!scene) return
@@ -2419,7 +2432,7 @@ function clearBlockSelection() {
     setSceneEditor({
       sceneIndex,
       note: scene.note || scene.memo || '',
-      route: scene.route || 'auto',
+      route: avaTimingNormalizeRouteV154A(scene.route || scene.planned_route || scene.plannedRoute || 'auto'),
     })
     setStatus(`редактирование ${scene.title}`)
   }
@@ -2429,7 +2442,7 @@ function clearBlockSelection() {
     const index = Math.min(sceneEditor.sceneIndex, scenes.length - 1)
     const nextScenes = scenes.map((scene, sceneIndex) => (
       sceneIndex === index
-        ? { ...scene, note: sceneEditor.note || '', route: sceneEditor.route || 'auto' }
+        ? { ...scene, note: sceneEditor.note || '', route: avaTimingNormalizeRouteV154A(sceneEditor.route || 'auto'), planned_route: avaTimingNormalizeRouteV154A(sceneEditor.route || 'auto') }
         : scene
     ))
     pushHistorySnapshot()
@@ -4676,10 +4689,13 @@ const useVocalStem = mode === 'vocal'
               route
               <select value={sceneEditor.route} onChange={(event) => setSceneEditor((prev) => ({ ...prev, route: event.target.value }))}>
                 <option value="auto">auto</option>
-                <option value="i2v">i2v</option>
                 <option value="ia2v">ia2v / lip-sync</option>
+                <option value="ia2v_instrumental">ia2v / instrumental</option>
+                <option value="i2v">i2v</option>
                 <option value="i2v_sound">i2v_sound</option>
+                <option value="i2v_text">i2v_text</option>
                 <option value="first_last">first_last</option>
+                <option value="first_last_sound">first_last_sound</option>
               </select>
             </label>
             <label>

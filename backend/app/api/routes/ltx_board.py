@@ -1,3 +1,7 @@
+# AVA_BOARD_STALE_BATCH_UNBLOCK_V150A: clean orphaned server-batch state after backend reload.
+# AVA_TELEGRAM_LIGHT_REVIEW_NO_BLOCK_V149A: send Telegram scene-ready from batch in background.
+# AVA_BOARD_BATCH_READY_ACTIVE_CLEAR_V148A: completed batch scene clears active scene/job fields before UI polling.
+# AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A: server batch auto-cuts audio slices for ia2v/lip-sync scenes.
 # AVA_TELEGRAM_BOARD_REVIEW_HOOKS_V137A: Board server batch sends Telegram review messages and accepts callback-driven review.
 # AVA_TELEGRAM_REGEN_BAD_CONTINUATION_V137E: pass batch source/bad scene ids into Telegram so regen is a continuation.
 # AVA_BOARD_BIND_RESULT_TO_CURRENT_IMAGE_V132I: bind returned server-batch video to current scene image after image replacement.
@@ -136,6 +140,7 @@ WORKFLOW_ROUTE_MAP: dict[str, str] = {
     "i2v_sound": "image-video-golos-zvuk.json",
     "ia2v": "image-lipsink-video-music.json",
     "ia2v_lipsync": "image-lipsink-video-music.json",
+    "ia2v_instrumental": "image-lipsink-video-music.json",
     "lip_sync": "image-lipsink-video-music.json",
     "first_last": "last-first cadr-NO sound.json",
     "first_last_sound": "last-first cadr-sound.json",
@@ -147,6 +152,7 @@ WORKFLOW_ROUTE_MAP: dict[str, str] = {
 VIDEO_ROUTE_CREDIT_COSTS: dict[str, int] = {
     "ia2v": 2,
     "ia2v_lipsync": 2,
+    "ia2v_instrumental": 2,
     "lip_sync": 2,
     "first_last": 2,
     "first_last_sound": 2,
@@ -301,6 +307,18 @@ class BoardVideoBatchStartIn(BaseModel):
     sceneIds: list[str] | None = None
     scenes: list[dict[str, Any]] | None = None
     overwrite: bool | None = False
+    # AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A: optional root Board audio for auto slicing.
+    audio: dict[str, Any] | None = None
+    board_audio: dict[str, Any] | None = None
+    boardAudio: dict[str, Any] | None = None
+    audio_url: str | None = None
+    audioUrl: str | None = None
+    audio_asset_id: str | None = None
+    audioAssetId: str | None = None
+    audio_asset_api_path: str | None = None
+    audioAssetApiPath: str | None = None
+    asset_id: str | None = None
+    assetId: str | None = None
 
 
 class BoardVideoBatchStopIn(BaseModel):
@@ -1012,7 +1030,7 @@ def _target_duration(payload: VideoStartIn | MmaudioStartIn) -> float:
 
 def _generation_duration(route: str, target_duration: float) -> float:
     route_key = (route or "i2v").strip()
-    if route_key in {"i2v", "i2v_text", "i2v_sound", "ia2v", "ia2v_lipsync", "lip_sync"}:
+    if route_key in {"i2v", "i2v_text", "i2v_sound", "ia2v", "ia2v_lipsync", "ia2v_instrumental", "lip_sync"}:
         return round(target_duration + 1.0, 3)
     return round(target_duration, 3)
 
@@ -1562,9 +1580,9 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     audio_data_url = payload.audio_data_url or payload.audioDataUrl
 
     # AVA_LAST_FRAME_V4_BLOCK_REQUIRED_MEDIA
-    requires_start_image = (not _is_image_generation_route(route)) and (route in {"i2v", "ia2v", "ia2v_lipsync", "lip_sync", "i2v_sound", "i2v_text", "first_last", "first_last_sound"} or route.startswith("first_last"))
+    requires_start_image = (not _is_image_generation_route(route)) and (route in {"i2v", "ia2v", "ia2v_lipsync", "ia2v_instrumental", "lip_sync", "i2v_sound", "i2v_text", "first_last", "first_last_sound"} or route.startswith("first_last"))
     requires_end_image = route.startswith("first_last")
-    requires_audio_slice = route in {"ia2v", "ia2v_lipsync", "lip_sync"}
+    requires_audio_slice = route in {"ia2v", "ia2v_lipsync", "ia2v_instrumental", "lip_sync"}
     missing_media = []
     if requires_start_image and not (start_url or image_url or start_data_url or image_data_url):
         missing_media.append("start_image")
@@ -2051,6 +2069,395 @@ def _board_batch_scene_audio_ref(scene: dict[str, Any]) -> str:
     ])
 
 
+# AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A:
+# Backend-owned "Сгенерировать все" cuts per-scene audio slices for ia2v/lip-sync
+# routes automatically. This mirrors /manual-clip/slice-audio but runs before
+# batch validation so the user does not have to press the slice button scene by scene.
+def _board_batch_is_audio_slice_route(route: str | None) -> bool:
+    return str(route or "").strip() in {"ia2v", "ia2v_lipsync", "lip_sync", "instrumental", "i2v_audio", "audio2video", "a2v"}
+
+
+def _board_batch_root_audio_source(board_data: dict[str, Any], payload: Any = None) -> tuple[str, str]:
+    candidates: list[dict[str, Any]] = []
+    if payload is not None:
+        for attr in ("audio", "board_audio", "boardAudio"):
+            value = getattr(payload, attr, None)
+            if isinstance(value, dict):
+                candidates.append(value)
+        payload_flat = {
+            "audio_url": getattr(payload, "audio_url", None),
+            "audioUrl": getattr(payload, "audioUrl", None),
+            "audio_asset_api_path": getattr(payload, "audio_asset_api_path", None),
+            "audioAssetApiPath": getattr(payload, "audioAssetApiPath", None),
+            "audio_asset_id": getattr(payload, "audio_asset_id", None),
+            "audioAssetId": getattr(payload, "audioAssetId", None),
+            "asset_id": getattr(payload, "asset_id", None),
+            "assetId": getattr(payload, "assetId", None),
+        }
+        if any(value for value in payload_flat.values()):
+            candidates.append(payload_flat)
+    audio = board_data.get("audio") if isinstance(board_data.get("audio"), dict) else {}
+    if audio:
+        candidates.append(audio)
+    candidates.append(board_data)
+
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        source_ref = str(
+            item.get("audio_asset_api_path") or item.get("audioAssetApiPath") or
+            item.get("assetApiPath") or item.get("asset_api_path") or
+            item.get("audio_api_path") or item.get("audioApiPath") or
+            item.get("audio_url") or item.get("audioUrl") or
+            item.get("url") or item.get("src") or ""
+        ).strip()
+        asset_id = str(
+            item.get("audio_asset_id") or item.get("audioAssetId") or
+            item.get("asset_id") or item.get("assetId") or ""
+        ).strip()
+        if source_ref or asset_id:
+            return source_ref, asset_id
+    return "", ""
+
+
+
+# AVA_BOARD_AUTOSLICE_AUDIO_FALLBACK_V151A:
+# Batch autoslice must not trust only the first audio ref from the client. A Board
+# can keep a stale /assets/<id>/file after reloads or after moving between
+# Timing -> Board. Try all reasonable sources and use the first one that really
+# exists on disk.
+def _board_batch_audio_ref_from_mapping_v151a(item: dict[str, Any] | None) -> tuple[str, str]:
+    if not isinstance(item, dict):
+        return "", ""
+    source_ref = str(
+        item.get("audio_asset_api_path") or item.get("audioAssetApiPath") or
+        item.get("assetApiPath") or item.get("asset_api_path") or
+        item.get("audio_api_path") or item.get("audioApiPath") or
+        item.get("manual_lipsync_audio_api_path") or item.get("manualLipSyncAudioApiPath") or
+        item.get("audio_url") or item.get("audioUrl") or
+        item.get("url") or item.get("src") or ""
+    ).strip()
+    asset_id = str(
+        item.get("audio_asset_id") or item.get("audioAssetId") or
+        item.get("manual_lipsync_audio_asset_id") or item.get("manualLipSyncAudioAssetId") or
+        item.get("asset_id") or item.get("assetId") or ""
+    ).strip()
+    parsed_asset_id = _asset_id_from_text(source_ref) or ""
+    if not asset_id and parsed_asset_id:
+        asset_id = parsed_asset_id
+    if asset_id and not source_ref:
+        source_ref = f"/assets/{asset_id}/file"
+    return source_ref, asset_id
+
+
+def _board_batch_audio_candidate_add_v151a(
+    candidates: list[dict[str, str]],
+    seen: set[tuple[str, str]],
+    source_ref: str | None,
+    asset_id: str | None,
+    source: str,
+) -> None:
+    ref = str(source_ref or "").strip()
+    aid = str(asset_id or "").strip()
+    parsed = _asset_id_from_text(ref) or ""
+    if not aid and parsed:
+        aid = parsed
+    if aid and not ref:
+        ref = f"/assets/{aid}/file"
+    if not ref and not aid:
+        return
+    key = (ref, aid)
+    if key in seen:
+        return
+    seen.add(key)
+    candidates.append({"ref": ref, "asset_id": aid, "source": source})
+
+
+def _board_batch_audio_candidate_scan_v151a(
+    candidates: list[dict[str, str]],
+    seen: set[tuple[str, str]],
+    item: dict[str, Any] | None,
+    source: str,
+) -> None:
+    ref, aid = _board_batch_audio_ref_from_mapping_v151a(item)
+    _board_batch_audio_candidate_add_v151a(candidates, seen, ref, aid, source)
+
+
+def _board_batch_root_audio_candidates_v151a(
+    project_id: str | None,
+    board_data: dict[str, Any],
+    payload: Any = None,
+) -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    # 1) What the frontend explicitly sent in the current batch request.
+    if payload is not None:
+        for attr in ("audio", "board_audio", "boardAudio"):
+            value = getattr(payload, attr, None)
+            if isinstance(value, dict):
+                _board_batch_audio_candidate_scan_v151a(candidates, seen, value, f"payload.{attr}")
+        payload_flat = {
+            "audio_url": getattr(payload, "audio_url", None),
+            "audioUrl": getattr(payload, "audioUrl", None),
+            "audio_asset_api_path": getattr(payload, "audio_asset_api_path", None),
+            "audioAssetApiPath": getattr(payload, "audioAssetApiPath", None),
+            "audio_asset_id": getattr(payload, "audio_asset_id", None),
+            "audioAssetId": getattr(payload, "audioAssetId", None),
+            "asset_id": getattr(payload, "asset_id", None),
+            "assetId": getattr(payload, "assetId", None),
+        }
+        _board_batch_audio_candidate_scan_v151a(candidates, seen, payload_flat, "payload.flat")
+
+    # 2) Current Board snapshot root audio.
+    audio = board_data.get("audio") if isinstance(board_data.get("audio"), dict) else {}
+    _board_batch_audio_candidate_scan_v151a(candidates, seen, audio, "board.audio")
+    _board_batch_audio_candidate_scan_v151a(candidates, seen, board_data, "board.root")
+
+    # 3) Manual Timing snapshot is the real authority for the master audio when
+    # Board was opened via Timing -> Board. This fixes stale Board audio refs.
+    pid = str(project_id or board_data.get("project_id") or board_data.get("projectId") or "").strip()
+    db: dict[str, Any] = {}
+    try:
+        db = store.get_db() or {}
+    except Exception:
+        db = {}
+
+    if pid:
+        project_snapshots = (db.get("snapshots") or {}).get(pid, {}) if isinstance(db, dict) else {}
+        for stage in ("manual_timing", "manualTiming", "timing"):
+            snap = project_snapshots.get(stage) if isinstance(project_snapshots, dict) else None
+            data = snap.get("data") if isinstance(snap, dict) else None
+            if not isinstance(data, dict):
+                continue
+            timing_audio = data.get("audio") if isinstance(data.get("audio"), dict) else {}
+            _board_batch_audio_candidate_scan_v151a(candidates, seen, timing_audio, f"snapshot.{stage}.audio")
+            _board_batch_audio_candidate_scan_v151a(candidates, seen, data, f"snapshot.{stage}.root")
+
+        # 4) Last-resort: the newest existing audio asset for this project.
+        # This is intentionally after explicit refs, so we do not randomly pick
+        # another file unless the stored Board/Timing refs are missing/stale.
+        try:
+            assets = list((db.get("assets") or {}).values())
+            audio_assets: list[dict[str, Any]] = []
+            for asset in assets:
+                if not isinstance(asset, dict):
+                    continue
+                if str(asset.get("project_id") or asset.get("projectId") or "") != pid:
+                    continue
+                kind = str(asset.get("kind") or "").lower().strip()
+                mime = str(asset.get("mime_type") or asset.get("mimeType") or "").lower().strip()
+                if kind != "audio" and not mime.startswith("audio/"):
+                    continue
+                path = _asset_file_path_from_record(asset)
+                try:
+                    if not path or not path.exists() or not path.is_file():
+                        continue
+                except Exception:
+                    continue
+                audio_assets.append(asset)
+            audio_assets.sort(key=lambda item: str(item.get("updated_at") or item.get("updatedAt") or item.get("created_at") or item.get("createdAt") or ""), reverse=True)
+            for asset in audio_assets[:8]:
+                aid = str(asset.get("id") or "").strip()
+                if aid:
+                    _board_batch_audio_candidate_add_v151a(candidates, seen, f"/assets/{aid}/file", aid, "assets.db.project_audio")
+        except Exception as exc:
+            print("[BOARD SERVER BATCH AUDIO DB FALLBACK ERROR V151A]", {"project_id": pid, "error": str(exc)}, flush=True)
+
+    return candidates
+
+
+def _board_batch_resolve_root_audio_source_v151a(
+    project_id: str | None,
+    board_data: dict[str, Any],
+    payload: Any = None,
+) -> tuple[Path | None, str, str, list[dict[str, str]]]:
+    candidates = _board_batch_root_audio_candidates_v151a(project_id, board_data, payload)
+    if not candidates:
+        return None, "", "", []
+
+    errors: list[dict[str, str]] = []
+    for candidate in candidates:
+        ref = candidate.get("ref") or ""
+        aid = candidate.get("asset_id") or ""
+        source = candidate.get("source") or ""
+        try:
+            path = _resolve_local_file(ref, asset_id=aid)
+            if path and path.exists() and path.is_file():
+                if errors:
+                    print("[BOARD SERVER BATCH AUDIO FALLBACK HIT V151A]", {
+                        "project_id": project_id,
+                        "using": {"source": source, "ref": ref, "asset_id": aid, "path": str(path)},
+                        "skipped": errors[:8],
+                    }, flush=True)
+                return path, ref, aid, errors
+            errors.append({"source": source, "ref": ref, "asset_id": aid, "error": "resolved_path_missing"})
+        except Exception as exc:
+            errors.append({"source": source, "ref": ref, "asset_id": aid, "error": str(exc)})
+
+    print("[BOARD SERVER BATCH AUDIO FALLBACK MISS V151A]", {
+        "project_id": project_id,
+        "candidateCount": len(candidates),
+        "errors": errors[:10],
+    }, flush=True)
+    detail = "No usable audio source for Board batch autoslice"
+    if errors:
+        detail += "; first_error=" + str(errors[0].get("error") or "unknown")
+    raise HTTPException(status_code=404, detail=detail)
+
+def _board_batch_scene_audio_range(scene: dict[str, Any]) -> tuple[float, float, float] | None:
+    def num(*keys: str, default: float = 0.0) -> float:
+        for key in keys:
+            try:
+                value = scene.get(key)
+                if value is not None and value != "":
+                    return float(value)
+            except Exception:
+                pass
+        return default
+
+    start = max(0.0, num("start_sec", "start", "scene_start_sec", "sceneStartSec", default=0.0))
+    end = num("end_sec", "end", "scene_end_sec", "sceneEndSec", default=0.0)
+    if end > start:
+        return start, end, max(0.05, end - start)
+
+    duration = num("target_duration_sec", "targetDurationSec", "duration_sec", "durationSec", "duration", default=0.0)
+    if duration > 0:
+        return start, start + duration, max(0.05, duration)
+    return None
+
+
+def _board_batch_cut_audio_slice_for_scene(scene: dict[str, Any], board_data: dict[str, Any], payload: Any = None, project_id: str | None = None) -> tuple[dict[str, Any], bool]:
+    route = str(scene.get("route") or "i2v").strip() or "i2v"
+    if not _board_batch_is_audio_slice_route(route):
+        return scene, False
+    if _board_batch_scene_audio_ref(scene):
+        return scene, False
+
+    # AVA_BOARD_AUTOSLICE_AUDIO_FALLBACK_V151A:
+    # The first audio ref can be stale. Resolve against payload, Board snapshot,
+    # Manual Timing snapshot and latest project audio assets before failing.
+    audio_source_path_v151a, audio_ref, source_asset_id, audio_source_errors_v151a = _board_batch_resolve_root_audio_source_v151a(project_id, board_data, payload)
+    if audio_source_path_v151a is None:
+        return scene, False
+
+    range_info = _board_batch_scene_audio_range(scene)
+    if not range_info:
+        patched = dict(scene)
+        patched.update({
+            "audio_slice_status": "error",
+            "audioSliceStatus": "error",
+            "audio_slice_error": "missing_scene_start_end_for_autoslice",
+            "audioSliceError": "missing_scene_start_end_for_autoslice",
+        })
+        return patched, False
+
+    start_f, end_f, duration_f = range_info
+    source_path = audio_source_path_v151a
+    static_root = _settings_static_path()
+    target_dir = static_root / "assets" / "manual_clip_audio"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    scene_id = _safe_name(_board_batch_scene_id(scene) or "scene")
+    out_name = f"{scene_id}_{start_f:.3f}_{end_f:.3f}_{uuid4().hex[:12]}.mp3".replace(".", "_", 2)
+    out_path = target_dir / out_name
+    _run_ffmpeg([
+        "-y",
+        "-ss", f"{start_f:.3f}",
+        "-t", f"{duration_f:.3f}",
+        "-i", str(source_path),
+        "-vn",
+        "-acodec", "libmp3lame",
+        "-ar", "44100",
+        "-ac", "2",
+        "-b:a", "192k",
+        str(out_path),
+    ])
+    urls = _public_static_url(f"assets/manual_clip_audio/{out_name}")
+    patched = dict(scene)
+    patched.update({
+        "audio_slice_status": "ready",
+        "audioSliceStatus": "ready",
+        "audio_slice_url": urls.get("url") or urls.get("apiPath") or "",
+        "audioSliceUrl": urls.get("url") or urls.get("apiPath") or "",
+        "audio_slice_api_path": urls.get("apiPath") or urls.get("url") or "",
+        "audioSliceApiPath": urls.get("apiPath") or urls.get("url") or "",
+        "audio_slice_name": out_name,
+        "audioSliceName": out_name,
+        "audio_slice_mime": "audio/mpeg",
+        "audioSliceMime": "audio/mpeg",
+        "audio_slice_start": start_f,
+        "audioSliceStart": start_f,
+        "audio_slice_end": end_f,
+        "audioSliceEnd": end_f,
+        "audio_slice_duration": duration_f,
+        "audioSliceDuration": duration_f,
+        "audio_slice_source": "server_batch_auto_slice_v147a",
+        "audioSliceSource": "server_batch_auto_slice_v147a",
+        "audio_slice_source_asset_api_path": audio_ref,
+        "audioSliceSourceAssetApiPath": audio_ref,
+        "audio_slice_source_asset_id": source_asset_id,
+        "audioSliceSourceAssetId": source_asset_id,
+        "audio_slice_error": "",
+        "audioSliceError": "",
+    })
+    return patched, True
+
+
+def _board_batch_prepare_auto_audio_slices(
+    scenes: list[dict[str, Any]],
+    board_data: dict[str, Any],
+    payload: Any,
+    mode: str,
+    project_id: str | None = None,
+) -> tuple[list[dict[str, Any]], list[str], list[dict[str, str]]]:
+    requested_ids = [str(item or "").strip() for item in ((getattr(payload, "scene_ids", None) or getattr(payload, "sceneIds", None) or []) or [])]
+    requested_set = set(requested_ids)
+    prepared: list[dict[str, Any]] = []
+    auto_sliced: list[str] = []
+    failed: list[dict[str, str]] = []
+
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            prepared.append(scene)
+            continue
+        scene_id = _board_batch_scene_id(scene)
+        if requested_set and scene_id not in requested_set:
+            prepared.append(scene)
+            continue
+        if mode in {"missing", "remaining"} and _board_batch_scene_has_video(scene) and not _board_batch_scene_has_bad_review(scene):
+            prepared.append(scene)
+            continue
+        if not _board_batch_is_audio_slice_route(scene.get("route")) or _board_batch_scene_audio_ref(scene):
+            prepared.append(scene)
+            continue
+        try:
+            patched, sliced = _board_batch_cut_audio_slice_for_scene(scene, board_data, payload, project_id=project_id)
+            prepared.append(patched)
+            if sliced:
+                auto_sliced.append(scene_id)
+        except Exception as exc:
+            err = str(exc) or "auto_audio_slice_failed"
+            patched = dict(scene)
+            patched.update({
+                "audio_slice_status": "error",
+                "audioSliceStatus": "error",
+                "audio_slice_error": err,
+                "audioSliceError": err,
+            })
+            prepared.append(patched)
+            failed.append({"sceneId": scene_id, "error": err})
+            print("[BOARD SERVER BATCH AUTOSLICE ERROR V147A]", {"scene_id": scene_id, "error": err}, flush=True)
+
+    if auto_sliced or failed:
+        print("[BOARD SERVER BATCH AUTOSLICE V147A]", {
+            "autoSliced": auto_sliced,
+            "failed": failed,
+            "audioSourcePresent": bool(_board_batch_root_audio_source(board_data, payload)[0] or _board_batch_root_audio_source(board_data, payload)[1]),
+            "audioFallbackCandidateCountV151A": len(_board_batch_root_audio_candidates_v151a(project_id, board_data, payload)),
+        }, flush=True)
+    return prepared, auto_sliced, failed
+
+
 def _board_batch_prompt(scene: dict[str, Any]) -> str:
     return str(
         scene.get("video_prompt") or scene.get("videoPrompt") or
@@ -2164,7 +2571,7 @@ def _board_batch_input_problems(scene: dict[str, Any]) -> list[str]:
         problems.append("нет первого/основного кадра")
     if route.startswith("first_last") and not _board_batch_scene_end_image_ref(scene):
         problems.append("нет последнего кадра")
-    if route in {"ia2v", "ia2v_lipsync", "lip_sync"} and not _board_batch_scene_audio_ref(scene):
+    if route in {"ia2v", "ia2v_lipsync", "ia2v_instrumental", "lip_sync"} and not _board_batch_scene_audio_ref(scene):
         problems.append("нет audio slice для lip-sync")
     return problems
 
@@ -2421,6 +2828,33 @@ def _board_batch_update_scene(project_id: str, scene_id: str, patch: dict[str, A
     scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
     next_scenes = []
     changed = False
+    # AVA_BOARD_BATCH_READY_ACTIVE_CLEAR_V148A:
+    # If a patch contains a real video result, it is authoritative and must clear any
+    # stale job/status fields from previous queue state before the snapshot is saved.
+    patch_video_ref_v148a = bool(
+        patch.get("video_asset_id") or patch.get("videoAssetId") or
+        patch.get("video_api_path") or patch.get("videoApiPath") or
+        patch.get("video_url") or patch.get("videoUrl") or
+        patch.get("result_video_asset_id") or patch.get("resultVideoAssetId") or
+        patch.get("result_video_api_path") or patch.get("resultVideoApiPath") or
+        patch.get("result_video_url") or patch.get("resultVideoUrl")
+    )
+    if patch_video_ref_v148a:
+        patch = {
+            **patch,
+            "video_status": "ready",
+            "videoStatus": "ready",
+            "video_job_id": "",
+            "videoJobId": "",
+            "video_status_endpoint": "",
+            "videoStatusEndpoint": "",
+            "video_queue_position": 0,
+            "videoQueuePosition": 0,
+            "video_error": "",
+            "videoError": "",
+            "video_queue_source": "",
+            "videoQueueSource": "",
+        }
     for scene in scenes:
         if _board_batch_scene_id(scene) == scene_id:
             next_scenes.append({**scene, **patch})
@@ -2704,8 +3138,12 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                     "batch_id": batch_id,
                     "batchId": batch_id,
                     "status": "running" if waiting_ids else "finished",
-                    "active_scene_id": "" if not waiting_ids else scene_id,
-                    "activeSceneId": "" if not waiting_ids else scene_id,
+                    # AVA_BOARD_BATCH_READY_ACTIVE_CLEAR_V148A:
+                    # The just-finished scene is not active anymore. Leaving it in activeSceneId
+                    # makes the frontend runtime overlay show “видео делается” over a ready video
+                    # until the next loop/status refresh catches up.
+                    "active_scene_id": "",
+                    "activeSceneId": "",
                     "active_job_id": "",
                     "activeJobId": "",
                     "active_status_endpoint": "",
@@ -2726,16 +3164,30 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                 })
                 print("[BOARD SERVER BATCH READY SCENE]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id, "job_id": job_id, "waiting": len(waiting_ids)}, flush=True)
                 try:
-                    telegram_board_scene_ready(
-                        project_id,
-                        scene_id,
-                        scene=ready_patch_v132a,
-                        job_id=job_id,
-                        batch_id=batch_id,
-                        user=user,
-                    )
+                    import threading
+                    def _telegram_scene_ready_worker_v149a(
+                        project_id_v149a=project_id,
+                        scene_id_v149a=scene_id,
+                        scene_v149a=dict(ready_patch_v132a),
+                        job_id_v149a=job_id,
+                        batch_id_v149a=batch_id,
+                        user_v149a=dict(user),
+                    ):
+                        try:
+                            telegram_board_scene_ready(
+                                project_id_v149a,
+                                scene_id_v149a,
+                                scene=scene_v149a,
+                                job_id=job_id_v149a,
+                                batch_id=batch_id_v149a,
+                                user=user_v149a,
+                            )
+                        except Exception as exc:
+                            print("[TELEGRAM BOARD SCENE READY ASYNC ERROR V149A]", {"project_id": project_id_v149a, "batch_id": batch_id_v149a, "scene_id": scene_id_v149a, "error": str(exc)}, flush=True)
+                    threading.Thread(target=_telegram_scene_ready_worker_v149a, daemon=True).start()
+                    print("[TELEGRAM BOARD SCENE READY ASYNC V149A]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id}, flush=True)
                 except Exception as exc:
-                    print("[TELEGRAM BOARD SCENE READY HOOK ERROR V137A]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id, "error": str(exc)}, flush=True)
+                    print("[TELEGRAM BOARD SCENE READY ASYNC START ERROR V149A]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id, "error": str(exc)}, flush=True)
             else:
                 failed.append(scene_id)
                 _board_batch_update_scene(project_id, scene_id, _board_batch_error_patch(result_data.get("status") or result_status, result_data.get("error") or result_data.get("detail") or result_status), {
@@ -2790,6 +3242,196 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
         print("[BOARD SERVER BATCH ERROR]", {"project_id": project_id, "batch_id": batch_id, "error": str(exc)}, flush=True)
 
 
+def _board_batch_cleanup_orphaned_after_reload_v150a(project_id: str, board_data: dict[str, Any], batch: dict[str, Any]) -> dict[str, Any] | None:
+    """Clear a persisted server-batch that has no live in-memory runner after reload.
+
+    Uvicorn --reload kills daemon batch threads. The snapshot can still say queued/running,
+    so the frontend keeps rendering "видео делается" / "в очереди" and refuses to POST a
+    new batch. If the batch is active in the snapshot but absent from BOARD_VIDEO_BATCHES,
+    mark it interrupted and clear transient scene job fields so the user can run again.
+    """
+    if not isinstance(batch, dict) or not batch:
+        return None
+    batch_id = str(batch.get("batchId") or batch.get("batch_id") or "").strip()
+    status = str(batch.get("status") or batch.get("batch_status") or "").strip().lower()
+    active_statuses = {"queued", "running", "starting", "preparing", "submitting", "processing", "cancel_requested"}
+    waiting_ids = batch.get("waitingSceneIds") or batch.get("waiting_scene_ids") or []
+    active_scene_id = str(batch.get("activeSceneId") or batch.get("active_scene_id") or "").strip()
+    active_job_id = str(batch.get("activeJobId") or batch.get("active_job_id") or "").strip()
+    active_endpoint = str(batch.get("activeStatusEndpoint") or batch.get("active_status_endpoint") or "").strip()
+    looks_active = bool(status in active_statuses or active_scene_id or active_job_id or active_endpoint or waiting_ids)
+    if not looks_active:
+        return None
+    if batch_id and batch_id in BOARD_VIDEO_BATCHES:
+        return None
+
+    now_value = _board_batch_now()
+    clean_batch = {
+        **batch,
+        "status": "interrupted_after_backend_reload_v150a",
+        "batch_status": "interrupted_after_backend_reload_v150a",
+        "orphanedAfterReload": True,
+        "orphaned_after_reload": True,
+        "activeSceneId": "",
+        "active_scene_id": "",
+        "activeJobId": "",
+        "active_job_id": "",
+        "activeStatusEndpoint": "",
+        "active_status_endpoint": "",
+        "waitingSceneIds": [],
+        "waiting_scene_ids": [],
+        "updatedAt": now_value,
+        "updated_at": now_value,
+    }
+
+    transient_statuses = {"queued", "running", "starting", "preparing", "submitting", "processing", "queued_no_prompt_id"}
+    scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
+    next_scenes: list[dict[str, Any]] = []
+    cleared = []
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            next_scenes.append(scene)
+            continue
+        scene_status = str(scene.get("video_status") or scene.get("videoStatus") or "").strip().lower()
+        if scene_status in transient_statuses and not _board_batch_scene_has_video(scene):
+            scene_id = _board_batch_scene_id(scene)
+            patched = dict(scene)
+            patched.update({
+                "video_status": "",
+                "videoStatus": "",
+                "video_job_id": "",
+                "videoJobId": "",
+                "video_status_endpoint": "",
+                "videoStatusEndpoint": "",
+                "video_queue_position": 0,
+                "videoQueuePosition": 0,
+                "video_error": "",
+                "videoError": "",
+                "video_queue_source": "",
+                "videoQueueSource": "",
+                "video_interrupted_reason": "backend_reload_orphaned_batch_v150a",
+                "videoInterruptedReason": "backend_reload_orphaned_batch_v150a",
+            })
+            next_scenes.append(patched)
+            if scene_id:
+                cleared.append(scene_id)
+        else:
+            next_scenes.append(scene)
+
+    board_data["scenes"] = next_scenes
+    board_data["board_video_batch"] = clean_batch
+    current_queue = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
+    board_data["video_queue"] = {
+        **current_queue,
+        "activeSceneId": "",
+        "activeJobId": "",
+        "activeStatusEndpoint": "",
+        "waitingSceneIds": [],
+        "waiting_scene_ids": [],
+        "source": "orphaned_backend_reload_cleanup_v150a",
+        "updatedAt": now_value,
+    }
+    board_data["updatedAt"] = now_value
+    _board_batch_save_snapshot(project_id, board_data, client_version="board-server-batch-orphan-cleanup-v150a")
+    print("[BOARD SERVER BATCH ORPHAN CLEANUP V150A]", {
+        "project_id": project_id,
+        "batch_id": batch_id,
+        "old_status": status,
+        "clearedSceneIds": cleared,
+    }, flush=True)
+    return clean_batch
+
+
+# AVA_BOARD_BATCH_NOT_STARTED_CLEAR_STATE_V152A:
+# If batch/start could not queue anything (most often autoslice audio 404), make
+# the persisted Board state explicitly idle/failed. This prevents old queued/running
+# batch metadata from fooling UI polling after a 200 {ok:false} response.
+def _board_batch_clear_not_started_state_v152a(
+    board_data: dict[str, Any],
+    failed: list[dict[str, str]] | None = None,
+    invalid: list[dict[str, Any]] | None = None,
+    reason: str = "not_started",
+) -> dict[str, Any]:
+    now_value = _board_batch_now()
+    failed = failed or []
+    invalid = invalid or []
+    failed_by_id = {str(item.get("sceneId") or item.get("scene_id") or "").strip(): item for item in failed if isinstance(item, dict)}
+    invalid_by_id = {str(item.get("sceneId") or item.get("scene_id") or "").strip(): item for item in invalid if isinstance(item, dict)}
+
+    scenes_next: list[dict[str, Any]] = []
+    for scene in board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []:
+        if not isinstance(scene, dict):
+            scenes_next.append(scene)
+            continue
+        scene_id = _board_batch_scene_id(scene)
+        patch = dict(scene)
+        if scene_id in failed_by_id or scene_id in invalid_by_id:
+            # Clear only transient video worker state. Keep images/prompts/review notes.
+            for key in (
+                "video_status", "videoStatus", "video_job_id", "videoJobId",
+                "video_status_endpoint", "videoStatusEndpoint", "server_batch_job_id",
+                "serverBatchJobId", "server_batch_status_endpoint", "serverBatchStatusEndpoint",
+                "video_queue_position", "videoQueuePosition", "video_batch_active_v132r",
+                "videoBatchActiveV132R",
+            ):
+                if key in patch:
+                    patch[key] = 0 if "position" in key.lower() else ""
+            if scene_id in failed_by_id:
+                err = str(failed_by_id[scene_id].get("error") or "audio_slice_failed")
+                patch["video_error"] = err
+                patch["videoError"] = err
+                patch["audio_slice_status"] = patch.get("audio_slice_status") or "error"
+                patch["audioSliceStatus"] = patch.get("audioSliceStatus") or "error"
+                patch["audio_slice_error"] = patch.get("audio_slice_error") or err
+                patch["audioSliceError"] = patch.get("audioSliceError") or err
+        scenes_next.append(patch)
+
+    if scenes_next:
+        board_data["scenes"] = scenes_next
+
+    clean_batch = {
+        "status": "failed" if failed else "idle",
+        "batch_status": "failed" if failed else "idle",
+        "source": "batch_start_not_queued_v152a",
+        "reason": reason,
+        "updatedAt": now_value,
+        "updated_at": now_value,
+        "waitingSceneIds": [],
+        "waiting_scene_ids": [],
+        "activeSceneId": "",
+        "active_scene_id": "",
+        "activeJobId": "",
+        "active_job_id": "",
+        "activeStatusEndpoint": "",
+        "active_status_endpoint": "",
+        "completedSceneIds": [],
+        "completed_scene_ids": [],
+        "failedSceneIds": list(failed_by_id.keys()),
+        "failed_scene_ids": list(failed_by_id.keys()),
+        "invalid": invalid,
+        "autoAudioSliceFailed": failed,
+        "auto_audio_slice_failed": failed,
+    }
+    board_data["board_video_batch"] = clean_batch
+    board_data["boardVideoBatch"] = clean_batch
+    board_data["video_batch"] = clean_batch
+    board_data["videoBatch"] = clean_batch
+    current_queue = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
+    board_data["video_queue"] = {
+        **current_queue,
+        "activeSceneId": "",
+        "activeJobId": "",
+        "activeStatusEndpoint": "",
+        "waitingSceneIds": [],
+        "waiting_scene_ids": [],
+        "source": "batch_start_not_queued_v152a",
+        "updatedAt": now_value,
+    }
+    board_data["updatedAt"] = now_value
+    board_data["updated_at"] = now_value
+    return board_data
+
+
 @router.post("/projects/{project_id}/board/video-batch/start")
 def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     project = ensure_project_access(project_id, user)
@@ -2801,6 +3443,13 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
     if not scenes:
         raise HTTPException(status_code=400, detail="Board snapshot has no scenes")
+
+    # AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A:
+    # Cut missing per-scene audio slices before input validation. This makes
+    # "Сгенерировать все" work for Timing-imported ia2v/lip-sync scenes without
+    # pressing the manual audio slice button scene by scene.
+    scenes, auto_sliced_scene_ids_v147a, auto_slice_failed_v147a = _board_batch_prepare_auto_audio_slices(scenes, board_data, payload, mode, project_id=project_id)
+    board_data["scenes"] = scenes
 
     requested_ids = [str(item or "").strip() for item in ((payload.scene_ids or payload.sceneIds or []) if (payload.scene_ids or payload.sceneIds) else [])]
     requested_set = set(requested_ids)
@@ -2821,7 +3470,32 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
         waiting_ids.append(scene_id)
 
     if not waiting_ids:
-        return {"ok": False, "status": "nothing_to_queue", "queued": [], "invalid": invalid}
+        reason_v152a = "autoslice_failed" if auto_slice_failed_v147a else "nothing_to_queue"
+        board_data = _board_batch_clear_not_started_state_v152a(
+            board_data,
+            failed=auto_slice_failed_v147a,
+            invalid=invalid,
+            reason=reason_v152a,
+        )
+        if auto_sliced_scene_ids_v147a or auto_slice_failed_v147a or invalid:
+            _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-not-started-v152a")
+        print("[BOARD SERVER BATCH NOT STARTED V152A]", {
+            "project_id": project_id,
+            "reason": reason_v152a,
+            "invalid": invalid,
+            "autoAudioSliceFailed": auto_slice_failed_v147a,
+        }, flush=True)
+        return {
+            "ok": False,
+            "status": reason_v152a,
+            "queued": [],
+            "invalid": invalid,
+            "autoAudioSliceSceneIds": auto_sliced_scene_ids_v147a,
+            "auto_audio_slice_scene_ids": auto_sliced_scene_ids_v147a,
+            "autoAudioSliceFailed": auto_slice_failed_v147a,
+            "auto_audio_slice_failed": auto_slice_failed_v147a,
+            "board": board_data,
+        }
 
     batch_id = f"boardbatch_{uuid4().hex[:14]}"
     now_value = _board_batch_now()
@@ -2882,6 +3556,10 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
         "failedSceneIds": [],
         "failed_scene_ids": [],
         "invalid": invalid,
+        "autoAudioSliceSceneIds": auto_sliced_scene_ids_v147a,
+        "auto_audio_slice_scene_ids": auto_sliced_scene_ids_v147a,
+        "autoAudioSliceFailed": auto_slice_failed_v147a,
+        "auto_audio_slice_failed": auto_slice_failed_v147a,
         "activeSceneId": "",
         "activeJobId": "",
         "activeStatusEndpoint": "",
@@ -2925,7 +3603,19 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     except Exception as exc:
         print("[TELEGRAM BOARD BATCH START HOOK ERROR V137A]", {"project_id": project_id, "batch_id": batch_id, "error": str(exc)}, flush=True)
 
-    return {"ok": True, "status": "queued", "batchId": batch_id, "batch_id": batch_id, "queued": waiting_ids, "invalid": invalid, "board": board_data}
+    return {
+        "ok": True,
+        "status": "queued",
+        "batchId": batch_id,
+        "batch_id": batch_id,
+        "queued": waiting_ids,
+        "invalid": invalid,
+        "autoAudioSliceSceneIds": auto_sliced_scene_ids_v147a,
+        "auto_audio_slice_scene_ids": auto_sliced_scene_ids_v147a,
+        "autoAudioSliceFailed": auto_slice_failed_v147a,
+        "auto_audio_slice_failed": auto_slice_failed_v147a,
+        "board": board_data,
+    }
 
 
 @router.get("/projects/{project_id}/board/video-batch/status")
@@ -2935,6 +3625,10 @@ def board_video_batch_status(project_id: str, user: dict = Depends(get_current_u
     batch = board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict) else {}
     batch_id = str(batch.get("batchId") or batch.get("batch_id") or "").strip()
     live = BOARD_VIDEO_BATCHES.get(batch_id) if batch_id else None
+    if live is None:
+        cleaned = _board_batch_cleanup_orphaned_after_reload_v150a(project_id, board_data, batch)
+        if cleaned is not None:
+            return {"ok": True, "batch": cleaned, "board_video_batch": cleaned, "orphanCleaned": True, "orphan_cleaned": True}
     return {"ok": True, "batch": live or batch or {}, "board_video_batch": live or batch or {}}
 
 
@@ -3731,7 +4425,7 @@ def _assembly_scene_audio_volume_for_item(item: dict[str, Any], audio_mode: str,
         return 0.0
 
     uses_original = mode in {"original_plus_scene", "original_plus_music_scene"}
-    is_lipsync = route in {"ia2v", "ia2v_lipsync", "lip_sync", "lipsync"}
+    is_lipsync = route in {"ia2v", "ia2v_lipsync", "ia2v_instrumental", "lip_sync", "lipsync"}
 
     # Lip-sync / ia2v audio is only a driver for mouth movement.
     # If master/original audio is present, mute generated scene audio to avoid echo/lead/lag.
