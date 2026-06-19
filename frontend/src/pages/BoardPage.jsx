@@ -9,6 +9,7 @@
 /* AVA_BOARD_RELOAD_VIDEO_REHYDRATE_V132T: after F5/re-enter always merge server video/result/review refs over stale local durable cache. */
 /* AVA_BOARD_STATUS_REHYDRATE_COMBINED_V132V: fixes V132U syntax issue, V132S isError crash, and combines V132S status flow with V132T reload video rehydrate. */
 /* AVA_BOARD_BATCH_STATUS_FLOW_V132S: precise Board server-batch states: submitting -> running/queued -> ready. */
+/* AVA_BOARD_BATCH_READY_WITHOUT_VIDEO_GUARD_V143B: completed batch scenes without real video refs stay busy, not falsely ready. */
 /* AVA_BOARD_BATCH_BUSY_REVIEW_V132R: server batch immediately marks scenes busy and keeps old preview overlay during bad-review regeneration. */
 /* AVA_BOARD_MEDIA_STATUS_INDICATORS_V132O: UI-only media indicators for image restore/upload and video regeneration review. */
 /* AVA_BOARD_IMAGE_UPLOAD_FORCE_COMMIT_V132N4: manual image uploads force asset refs into scene snapshot and clear stale video/review state. */
@@ -234,6 +235,104 @@ function boardCanonicalAssetApiPath(assetId = '') {
   return safeAssetId ? `/assets/${safeAssetId}/file` : ''
 }
 
+
+// AVA_BOARD_FALSE_VIDEO_READY_GUARD_V143A2:
+// Keep still-image refs out of video refs. Generic resultUrl/mediaUrl can point to
+// uploaded photos, so they must not make a scene look like "видео готово".
+function boardRefFingerprintV143A2(value = '') {
+  const raw = asText(value)
+  if (!raw) return ''
+  if (raw.startsWith('asset_')) return raw.toLowerCase()
+  const asset = normalizeAssetFileUrl(raw)
+  if (asset.assetId) return String(asset.assetId).toLowerCase()
+  return raw.trim().toLowerCase()
+}
+
+function boardSceneImageRefFingerprintsV143A2(scene = {}) {
+  const values = [
+    scene?.image_asset_id, scene?.imageAssetId,
+    scene?.image_api_path, scene?.imageApiPath,
+    scene?.image_url, scene?.imageUrl,
+    scene?.first_image_asset_id, scene?.firstImageAssetId,
+    scene?.first_frame_asset_id, scene?.firstFrameAssetId,
+    scene?.start_image_asset_id, scene?.startImageAssetId,
+    scene?.first_image_api_path, scene?.firstImageApiPath,
+    scene?.first_frame_api_path, scene?.firstFrameApiPath,
+    scene?.start_image_api_path, scene?.startImageApiPath,
+    scene?.first_image_url, scene?.firstImageUrl,
+    scene?.first_frame_url, scene?.firstFrameUrl,
+    scene?.start_image_url, scene?.startImageUrl,
+    scene?.last_image_asset_id, scene?.lastImageAssetId,
+    scene?.last_frame_asset_id, scene?.lastFrameAssetId,
+    scene?.end_image_asset_id, scene?.endImageAssetId,
+    scene?.last_image_api_path, scene?.lastImageApiPath,
+    scene?.last_frame_api_path, scene?.lastFrameApiPath,
+    scene?.end_image_api_path, scene?.endImageApiPath,
+    scene?.last_image_url, scene?.lastImageUrl,
+    scene?.last_frame_url, scene?.lastFrameUrl,
+    scene?.end_image_url, scene?.endImageUrl,
+    scene?.resultUrl, scene?.result_url,
+    scene?.mediaUrl, scene?.media_url,
+  ]
+  return new Set(values.map(boardRefFingerprintV143A2).filter(Boolean))
+}
+
+function boardSceneVideoRefFingerprintsV143A2(scene = {}) {
+  const values = [
+    scene?.video_asset_id, scene?.videoAssetId,
+    scene?.video_api_path, scene?.videoApiPath,
+    scene?.video_url, scene?.videoUrl,
+    scene?.result_video_asset_id, scene?.resultVideoAssetId,
+    scene?.result_video_api_path, scene?.resultVideoApiPath,
+    scene?.result_video_url, scene?.resultVideoUrl,
+    scene?.video_result?.video_asset_id, scene?.videoResult?.videoAssetId,
+    scene?.video_result?.video_api_path, scene?.videoResult?.videoApiPath,
+    scene?.video_result?.video_url, scene?.videoResult?.videoUrl,
+  ]
+  return values.map(boardRefFingerprintV143A2).filter(Boolean)
+}
+
+function boardSceneVideoLooksLikeImageEchoV143A2(scene = {}) {
+  const imageRefs = boardSceneImageRefFingerprintsV143A2(scene)
+  if (!imageRefs.size) return false
+  return boardSceneVideoRefFingerprintsV143A2(scene).some((value) => imageRefs.has(value))
+}
+
+function boardDropImageEchoVideoRefsV143A2(scene = {}) {
+  if (!scene || typeof scene !== 'object' || !boardSceneVideoLooksLikeImageEchoV143A2(scene)) return scene
+  const next = { ...scene }
+  ;[
+    'video_asset_id', 'videoAssetId',
+    'video_api_path', 'videoApiPath',
+    'video_url', 'videoUrl',
+    'video_static_url', 'videoStaticUrl',
+    'video_path', 'videoPath',
+    'result_video_asset_id', 'resultVideoAssetId',
+    'result_video_api_path', 'resultVideoApiPath',
+    'result_video_url', 'resultVideoUrl',
+    'video_name', 'videoName',
+    'original_video_url', 'originalVideoUrl',
+    'video_ready_at', 'videoReadyAt',
+    'video_source_image_mutation_epoch', 'videoSourceImageMutationEpoch',
+    'video_source_image_mutation_at', 'videoSourceImageMutationAt',
+  ].forEach((key) => { next[key] = '' })
+  next.video_result = null
+  next.videoResult = null
+  if (!isVideoBusyStatus(next.video_status || next.videoStatus)) {
+    next.video_status = ''
+    next.videoStatus = ''
+    next.video_error = ''
+    next.videoError = ''
+    next.video_job_id = ''
+    next.videoJobId = ''
+    next.video_status_endpoint = ''
+    next.videoStatusEndpoint = ''
+    next.video_queue_position = 0
+    next.videoQueuePosition = 0
+  }
+  return next
+}
+
 function canonicalizeSceneAssetFields(scene = {}, config = {}) {
   const next = { ...scene }
   const assetId = boardAssetIdFromRef(...(config.assetKeys || []).map((key) => next?.[key]), ...(config.refKeys || []).map((key) => next?.[key]))
@@ -253,7 +352,14 @@ function canonicalizeBoardSceneMediaRefs(scene = {}) {
     assetKeys: ['video_asset_id', 'videoAssetId'],
     apiKeys: ['video_api_path', 'videoApiPath'],
     urlKeys: ['video_url', 'videoUrl'],
-    refKeys: ['video_api_path', 'videoApiPath', 'video_url', 'videoUrl', 'resultUrl', 'result_url'],
+    refKeys: [
+      'video_asset_id', 'videoAssetId',
+      'video_api_path', 'videoApiPath',
+      'video_url', 'videoUrl',
+      'result_video_asset_id', 'resultVideoAssetId',
+      'result_video_api_path', 'resultVideoApiPath',
+      'result_video_url', 'resultVideoUrl',
+    ],
   })
 
   next = canonicalizeSceneAssetFields(next, {
@@ -316,7 +422,7 @@ function canonicalizeBoardSceneMediaRefs(scene = {}) {
     ],
   })
 
-  return next
+  return boardDropImageEchoVideoRefsV143A2(next)
 }
 
 function canonicalizeBoardMediaRefs(boardData = {}) {
@@ -387,10 +493,6 @@ function sceneMediaFieldValue(scene = {}, slot = 'image', kind = 'apiPath') {
       safeScene.videoUrl,
       safeScene.resultVideoUrl,
       safeScene.result_video_url,
-      safeScene.mediaUrl,
-      safeScene.media_url,
-      safeScene.resultUrl,
-      safeScene.result_url,
       safeScene.video_result?.video_url,
       safeScene.videoResult?.videoUrl
     )
@@ -1960,6 +2062,7 @@ function scenePreviewVideoUrl(scene) {
   // A video produced before the current image mutation must not be shown, even if
   // old job polling or a stale snapshot still contains video refs after F5.
   if (typeof boardVideoMatchesCurrentImageV129P === 'function' && !boardVideoMatchesCurrentImageV129P(scene)) return ''
+  if (boardSceneVideoLooksLikeImageEchoV143A2(scene)) return ''
 
   const mmaudioVideo = (
     scene.mmaudio_video_api_path ||
@@ -1992,6 +2095,7 @@ function scenePreviewAssetApiPath(scene) {
   // AVA_BOARD_STILLS_CLEAR_VIDEO_IMMEDIATE_V129R:
   // Do not fetch protected video preview for stale video refs after image replacement.
   if (typeof boardVideoMatchesCurrentImageV129P === 'function' && !boardVideoMatchesCurrentImageV129P(scene)) return ''
+  if (boardSceneVideoLooksLikeImageEchoV143A2(scene)) return ''
 
   const mmaudioAssetPath = (
     scene.mmaudio_video_api_path ||
@@ -2169,16 +2273,16 @@ function boardSceneImageSlotUiStateV132O(scene = {}, slot = 'image', previewUrl 
     return { busy: true, busyLabel: 'Берём кадр…', busyHint: 'Извлекаем последний кадр из предыдущего видео.', statusLabel: 'извлекаем', statusClassName: 'isBusy' }
   }
   if (uploading && preview) {
-    return { busy: true, busyLabel: 'Сохраняем кадр…', busyHint: 'Preview уже на экране, asset пишется в проект.', statusLabel: 'сохраняем', statusClassName: 'isBusy' }
+    return { busy: true, busyLabel: 'Загружаем фото…', busyHint: 'Preview уже на экране, asset пишется в проект.', statusLabel: 'загружаем', statusClassName: 'isBusy' }
   }
   if (uploading || savingFlag) {
-    return { busy: true, busyLabel: 'Загружаем фото…', busyHint: 'Готовим preview и asset для snapshot.', statusLabel: 'загрузка', statusClassName: 'isBusy' }
+    return { busy: true, busyLabel: 'Загружаем фото…', busyHint: 'Готовим preview и asset для snapshot.', statusLabel: 'загружаем', statusClassName: 'isBusy' }
   }
   if (restoring) {
     return { busy: true, busyLabel: 'Подгружаем…', busyHint: 'Восстанавливаем protected asset после F5.', statusLabel: 'подгружаем', statusClassName: 'isBusy' }
   }
   if (hasImageRef) {
-    return { busy: false, busyLabel: '', busyHint: '', statusLabel: 'кадр готов', statusClassName: 'isReady' }
+    return { busy: false, busyLabel: '', busyHint: '', statusLabel: 'фото готово', statusClassName: 'isReady' }
   }
   return { busy: false, busyLabel: '', busyHint: '', statusLabel: '', statusClassName: '' }
 }
@@ -2240,6 +2344,7 @@ function boardSceneVideoUiIndicatorV132O(scene = {}, { previewLoading = false, h
 }
 
 function boardSceneRawVideoRefsV129P(scene = {}) {
+  if (boardSceneVideoLooksLikeImageEchoV143A2(scene)) return false
   return Boolean(
     sceneMediaFieldValue(scene, 'video', 'apiPath') ||
     sceneMediaFieldValue(scene, 'video', 'url') ||
@@ -2255,13 +2360,18 @@ function boardSceneRawVideoRefsV129P(scene = {}) {
     scene?.mmaudioVideoUrl ||
     scene?.mmaudio_video_asset_id ||
     scene?.mmaudioVideoAssetId ||
+    scene?.result_video_api_path ||
+    scene?.resultVideoApiPath ||
     scene?.result_video_url ||
     scene?.resultVideoUrl ||
-    scene?.result_url ||
-    scene?.resultUrl ||
-    scene?.video_name ||
-    scene?.videoName ||
-    scenePreviewVideoUrl(scene)
+    scene?.result_video_asset_id ||
+    scene?.resultVideoAssetId ||
+    scene?.video_result?.video_api_path ||
+    scene?.videoResult?.videoApiPath ||
+    scene?.video_result?.video_url ||
+    scene?.videoResult?.videoUrl ||
+    scene?.video_result?.video_asset_id ||
+    scene?.videoResult?.videoAssetId
   )
 }
 
@@ -2441,7 +2551,7 @@ function sceneStatus(scene) {
   if (reviewStatusPriorityV132D2 === 'bad') return { label: 'плохое', className: 'isBad' }
   if (reviewStatusPriorityV132D2 === 'needs_review') return { label: 'посмотри', className: 'isReview' }
   if (hasCurrentVideo) return { label: 'видео готово', className: 'isReady' }
-  if (hasImage) return { label: hasStaleVideo ? 'кадр обновлён' : 'кадр готов', className: 'isImage' }
+  if (hasImage) return { label: 'фото готово', className: 'isImage' }
   if (hasPrompt) return { label: 'промт готов', className: 'isPrompt' }
   return { label: 'черновик', className: 'isDraft' }
 }
@@ -4839,8 +4949,17 @@ function sceneVideoActionState(scene) {
 
     const addEntry = (sceneId, status, queuePosition = 0) => {
       const safeSceneId = asText(sceneId)
-      if (!safeSceneId || completedIds.has(safeSceneId) || failedIds.has(safeSceneId)) return
+      if (!safeSceneId || failedIds.has(safeSceneId)) return
       const scene = scenesById.get(safeSceneId) || {}
+      // AVA_BOARD_BATCH_READY_WITHOUT_VIDEO_GUARD_V143B:
+      // Server batch may report a scene as completed before the fresh video ref is visible in
+      // the merged board snapshot. Keep that scene in runtime busy state instead of letting a
+      // stale persisted ready/status badge show "видео готово" without an actual video file.
+      const completedWithoutVideoV143B = Boolean(
+        completedIds.has(safeSceneId) &&
+        !(typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene))
+      )
+      if (completedIds.has(safeSceneId) && !completedWithoutVideoV143B) return
       const queueSource = String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase()
       const fromBad = Boolean(
         badReviewIds.has(safeSceneId) ||
@@ -4866,6 +4985,19 @@ function sceneVideoActionState(scene) {
     waitingIds.forEach((sceneId, index) => {
       addEntry(sceneId, sceneId === activeSceneId ? 'running' : 'queued', index + 1)
     })
+    // AVA_BOARD_BATCH_READY_WITHOUT_VIDEO_GUARD_V143B:
+    // A completed scene without a current video ref is not ready for the UI yet.
+    // This prevents "видео готово" from jumping onto the next queued scene after the
+    // previous scene completes; once the video ref is merged, the normal ready path wins.
+    Array.from(completedIds).forEach((sceneId) => {
+      const safeSceneId = asText(sceneId)
+      if (!safeSceneId || entries.some((entry) => entry.sceneId === safeSceneId)) return
+      const scene = scenesById.get(safeSceneId) || {}
+      const hasCurrentVideoV143B = Boolean(
+        typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)
+      )
+      if (!hasCurrentVideoV143B) addEntry(safeSceneId, 'running', 0)
+    })
     if (!entries.length && activeSceneId && activeJobId) addEntry(activeSceneId, 'running', 0)
 
     if (entries.length) {
@@ -4887,6 +5019,14 @@ function sceneVideoActionState(scene) {
       const scene = scenesById.get(safeSceneId) || {}
       const reviewStatus = boardSceneVideoReviewStatus(scene)
       const runtime = badRegenRuntimeStatusRef.current?.[safeSceneId]
+      // AVA_BOARD_BATCH_READY_WITHOUT_VIDEO_GUARD_V143B:
+      // Keep the runtime overlay for completed scenes until the actual video ref is present.
+      if (completedIds.has(safeSceneId)) {
+        const hasCurrentVideoV143B = Boolean(
+          typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)
+        )
+        if (!hasCurrentVideoV143B) return false
+      }
       const keepUntilReviewUpdate = Boolean(
         runtime?.fromBad &&
         reviewStatus === 'bad' &&
