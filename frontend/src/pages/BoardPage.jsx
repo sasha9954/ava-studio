@@ -2689,6 +2689,10 @@ function normalizeLoadedBoardVideoStatuses(boardData = {}) {
         videoJobId: '',
         video_status_endpoint: '',
         videoStatusEndpoint: '',
+        status_endpoint: '',
+        statusEndpoint: '',
+        job_id: '',
+        jobId: '',
         video_queue_position: 0,
         videoQueuePosition: 0,
         video_review_status: reviewStatusV132D2 === 'needs_review' ? 'needs_review' : (scene?.video_review_status || scene?.videoReviewStatus || ''),
@@ -2897,6 +2901,34 @@ function boardSceneCanReviewVideo(scene = {}) {
 
 function boardSceneHasBadVideoReview(scene = {}) {
   return boardSceneCanReviewVideo(scene) && boardSceneVideoReviewStatus(scene) === 'bad'
+}
+
+function boardBadReviewForceRegenerateAllowedV157A(scene = {}) {
+  // AVA_BOARD_BAD_REGEN_FORCE_START_V159A:
+  // A red "плохое" review is an explicit command to replace the old video.
+  // Stale job ids/status endpoints from the previous generation must not block Generate All.
+  try {
+    if (typeof boardSceneHasBadVideoReview === 'function' && boardSceneHasBadVideoReview(scene)) return true
+  } catch (error) {}
+  const rawReview = String(
+    scene?.video_review_status || scene?.videoReviewStatus ||
+    scene?.video_review_state || scene?.videoReviewState ||
+    scene?.review_status || scene?.reviewStatus ||
+    scene?.video_quality_status || scene?.videoQualityStatus ||
+    scene?.quality_status || scene?.qualityStatus ||
+    scene?.status || ''
+  ).toLowerCase()
+  return Boolean(
+    scene?.video_review_bad || scene?.videoReviewBad ||
+    scene?.bad_video || scene?.badVideo ||
+    rawReview === 'bad' || rawReview.includes('bad') || rawReview.includes('плох') || rawReview.includes('не ок')
+  )
+}
+
+function boardBadReviewForceRegenerateAllowedV156A(scene = {}) {
+  // AVA_BOARD_BAD_REGEN_FORCE_START_V159A: keep old V156 call sites alive,
+  // but never let old job/status fields block a red bad-review regeneration.
+  return boardBadReviewForceRegenerateAllowedV157A(scene)
 }
 
 function boardSceneNeedsVideoReview(scene = {}) {
@@ -3930,12 +3962,14 @@ function sceneVideoActionState(scene) {
     const selectedIsLocalQueued = (selectedStatus === 'queued' && !selectedHasServerJob) || localVideoQueueRef.current.includes(selectedScene.id)
     const selectedIsBusy = ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(selectedStatus) || (selectedStatus === 'queued' && selectedHasServerJob)
 
-    if (selectedIsBusy || selectedIsLocalQueued) {
+    const selectedForceBadRegenV156A = boardBadReviewForceRegenerateAllowedV156A(selectedScene)
+    if ((selectedIsBusy || selectedIsLocalQueued) && !selectedForceBadRegenV156A) {
       setStatus(selectedIsLocalQueued ? `Сцена ${selectedScene.id} уже в очереди` : `Сцена ${selectedScene.id} уже генерируется`)
       return
     }
 
     localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== selectedScene.id)
+    if (selectedForceBadRegenV156A) clearBadRegenRuntimeStatusesV136I([selectedScene.id])
 
     const inputProblems = sceneVideoInputProblems(selectedScene)
     if (inputProblems.length) {
@@ -4027,6 +4061,14 @@ function sceneVideoActionState(scene) {
 
   // AVA_BOARD_AUTO_GENERATE_CONFIRM_MODAL_V111:
   // Preflight plan before starting auto generation.
+
+  // AVA_BOARD_BAD_REGEN_QUEUE_FIX_V158A: local compatibility helper kept for old V156 call sites.
+  function boardBadReviewForceRegenerateAllowedV156A(scene = {}) {
+    // AVA_BOARD_BAD_REGEN_FORCE_START_V159A: keep old V156 call sites alive,
+    // but never let old job/status fields block a red bad-review regeneration.
+    return boardBadReviewForceRegenerateAllowedV157A(scene)
+  }
+
   function makeAllScenesVideoQueuePlan() {
     const currentBoard = boardRef.current || board
     const scenes = asSceneArray(currentBoard?.scenes)
@@ -4043,17 +4085,19 @@ function sceneVideoActionState(scene) {
       if (!sceneId) return
 
       const markedBadForReview = boardSceneHasBadVideoReview(scene)
-      if (boardSceneHasVideoResultForAuto(scene) && !markedBadForReview) {
+      const forceBadRegenerateV157A = boardBadReviewForceRegenerateAllowedV157A(scene)
+
+      if (boardSceneHasVideoResultForAuto(scene) && !markedBadForReview && !forceBadRegenerateV157A) {
         ready.push({ sceneId, route: scene?.route || '', label: scene?.title || scene?.label || '' })
         return
       }
 
-      if (isBoardVideoActiveWorkerStatus(scene)) {
-        busy.push({ sceneId, route: scene?.route || '', status: scene?.video_status || '' })
+      if (isBoardVideoActiveWorkerStatus(scene) && !markedBadForReview && !forceBadRegenerateV157A) {
+        busy.push({ sceneId, route: scene?.route || '', status: scene?.video_status || scene?.videoStatus || '' })
         return
       }
 
-      if (queuedIds.has(sceneId)) {
+      if (queuedIds.has(sceneId) && !forceBadRegenerateV157A) {
         alreadyQueued.push({ sceneId, route: scene?.route || '' })
         return
       }
@@ -4065,9 +4109,9 @@ function sceneVideoActionState(scene) {
       }
 
       if (markedBadForReview) {
-        regenerate.push({ sceneId, route: scene?.route || '', label: scene?.title || scene?.label || '' })
+        regenerate.push({ sceneId, route: scene?.route || '', label: scene?.title || scene?.label || '', force: forceBadRegenerateV157A })
       }
-      valid.push({ sceneId, route: scene?.route || '', regenerate: markedBadForReview })
+      valid.push({ sceneId, route: scene?.route || '', regenerate: markedBadForReview, forceBadRegenerate: forceBadRegenerateV157A })
     })
 
     return {
@@ -4389,15 +4433,17 @@ function sceneVideoActionState(scene) {
       if (!sceneId) return
 
       const markedBadForReviewV132A = boardSceneHasBadVideoReview(scene)
+      const forceBadRegenerateV157A = boardBadReviewForceRegenerateAllowedV157A(scene)
+      const forceBadRegenV156A = boardBadReviewForceRegenerateAllowedV156A(scene)
       // AVA_BOARD_BAD_REVIEW_SERVER_BATCH_QUEUE_V132A:
       // Ready videos normally skip server batch, but a red "плохое" review mark means
       // this scene is intentionally selected for regeneration.
-      if (boardSceneHasVideoResultForAuto(scene) && !markedBadForReviewV132A) {
+      if (boardSceneHasVideoResultForAuto(scene) && !markedBadForReviewV132A && !forceBadRegenerateV157A) {
         skippedReadyIds.push(sceneId)
         return
       }
 
-      if (isBoardVideoActiveWorkerStatus(scene)) {
+      if (isBoardVideoActiveWorkerStatus(scene) && !(forceBadRegenerateV157A || forceBadRegenV156A)) {
         skippedBusyIds.push(sceneId)
         return
       }
@@ -4416,6 +4462,13 @@ function sceneVideoActionState(scene) {
       : ''
 
     if (!addedIds.length) {
+      console.warn('[BOARD BAD REGEN QUEUE NO POST V158A]', {
+        skippedReadyIds,
+        skippedBusyIds,
+        invalidItems,
+        badSceneIds: scenes.filter((scene) => boardBadReviewForceRegenerateAllowedV157A(scene)).map((scene) => serverBatchSceneIdV131D(scene)),
+        plan: makeAllScenesVideoQueuePlan(),
+      })
       console.warn('[BOARD SERVER BATCH NO SCENES V150A]', {
         skippedReadyIds,
         skippedBusyIds,
@@ -4451,6 +4504,40 @@ function sceneVideoActionState(scene) {
     // scene data, while Board cards/preview get an immediate runtime-only overlay.
     const serverBatchStartedAtV136I = new Date().toISOString()
     const scenesByIdV136I = new Map(scenes.map((scene) => [serverBatchSceneIdV131D(scene), scene]))
+
+    // AVA_BOARD_BAD_REGEN_FORCE_START_V156A: For red bad scenes, clear stale persisted busy/job fields only in
+    // the payload sent to backend. The visible Board keeps the old preview through
+    // runtime overlay until the new result arrives.
+    const addedIdSetV156A = new Set(addedIds)
+    const batchPayloadScenesV156A = scenes.map((scene) => {
+      const sceneId = serverBatchSceneIdV131D(scene)
+      const forceBadRegen = addedIdSetV156A.has(sceneId) && (boardBadReviewForceRegenerateAllowedV156A(scene) || boardBadReviewForceRegenerateAllowedV157A(scene))
+      if (!forceBadRegen) return scene
+      return {
+        ...scene,
+        video_status: '',
+        videoStatus: '',
+        video_error: '',
+        videoError: '',
+        video_job_id: '',
+        videoJobId: '',
+        video_status_endpoint: '',
+        videoStatusEndpoint: '',
+        status_endpoint: '',
+        statusEndpoint: '',
+        job_id: '',
+        jobId: '',
+        video_queue_position: 0,
+        videoQueuePosition: 0,
+        video_queue_source: 'bad_review_regeneration_force_start_v156a',
+        videoQueueSource: 'bad_review_regeneration_force_start_v156a',
+        video_review_regenerate_from_bad: true,
+        videoReviewRegenerateFromBad: true,
+        video_review_regenerate_reason: 'force_start_bad_review_v156a',
+        videoReviewRegenerateReason: 'force_start_bad_review_v156a',
+      }
+    })
+
     patchBadRegenRuntimeStatusesV136I(addedIds.map((sceneId, index) => {
       const sourceScene = scenesByIdV136I.get(sceneId) || {}
       return {
@@ -4476,9 +4563,16 @@ function sceneVideoActionState(scene) {
         audio: currentBoard?.audio || board?.audio || null,
         board_audio: currentBoard?.audio || board?.audio || null,
         ...serverBatchAudioSourceV147A,
-        scenes,
+        scenes: batchPayloadScenesV156A,
       }),
     }).then((result) => {
+      if (!result || result.ok === false) {
+        const invalid = Array.isArray(result?.invalid) ? result.invalid : []
+        const invalidText = invalid.length
+          ? ` · ${invalid.slice(0, 3).map((item) => `${item.sceneId || item.scene_id}: ${(item.problems || []).join('/')}`).join('; ')}`
+          : ''
+        throw new Error(result?.detail || result?.status || `server_batch_start_rejected${invalidText}`)
+      }
       // AVA_BOARD_BATCH_START_RESULT_GUARD_V152A:
       // /board/video-batch/start returns HTTP 200 even when backend could not queue
       // anything (for example autoslice failed because master audio asset is 404).
@@ -6337,7 +6431,17 @@ function sceneVideoActionState(scene) {
     return asSceneArray(boardData?.scenes).some((scene) => {
       const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
       const hasJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint)
-      return hasJob && activeStatuses.has(status)
+      const resetReason = String(scene?.video_reset_reason || scene?.videoResetReason || '').toLowerCase()
+      const isExplicitRegeneration = Boolean(
+        scene?.video_regeneration_started_v155a ||
+        scene?.videoRegenerationStartedV155A ||
+        scene?.video_review_regenerate_from_bad ||
+        scene?.videoReviewRegenerateFromBad ||
+        resetReason.includes('regenerate') ||
+        resetReason.includes('regeneration') ||
+        resetReason.includes('restarting')
+      )
+      return activeStatuses.has(status) && (hasJob || isExplicitRegeneration || status === 'starting')
     })
   }
 
@@ -7417,6 +7521,14 @@ function updateSelectedSceneDuration(nextValue) {
       videoStatus: 'starting',
       video_error: '',
       videoError: '',
+
+      // AVA_BOARD_VIDEO_REGENERATE_RESET_REASON_V155A:
+      // Explicitly tell backend snapshot merge that this is an intentional
+      // regeneration start, so old bound video/review refs must not be restored.
+      video_reset_reason: reason,
+      videoResetReason: reason,
+      video_regeneration_started_v155a: true,
+      videoRegenerationStartedV155A: true,
 
       video_job_id: '',
       videoJobId: '',

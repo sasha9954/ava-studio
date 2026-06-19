@@ -951,6 +951,48 @@ def _ava_project_preserve_current_bound_video_refs_v132j_fix(current_data, incom
             or str(scene.get("video_status") or scene.get("videoStatus") or "").lower() in {"queued", "running", "processing", "starting", "submitting", "preparing"}
         )
 
+        # AVA_PROJECT_SKIP_BOUND_VIDEO_PRESERVE_ON_REGEN_V155A:
+        # When the frontend starts regeneration of a bad/ready video it first saves
+        # a scene with video_status=starting and intentionally cleared video refs.
+        # The old V132J bound-video guard restored the old video refs/review mark
+        # into that starting snapshot, which made the UI think regeneration was
+        # active/queued while no fresh job was bound. Do not preserve old video refs
+        # into explicit active/regeneration snapshots that carry no incoming video.
+        incoming_status_v155a = str(scene.get("video_status") or scene.get("videoStatus") or "").strip().lower()
+        incoming_queue_source_v155a = str(scene.get("video_queue_source") or scene.get("videoQueueSource") or "").strip().lower()
+        incoming_reset_reason_v155a = str(scene.get("video_reset_reason") or scene.get("videoResetReason") or "").strip().lower()
+        incoming_job_id_v155a = str(scene.get("video_job_id") or scene.get("videoJobId") or "").strip()
+        incoming_status_endpoint_v155a = str(scene.get("video_status_endpoint") or scene.get("videoStatusEndpoint") or "").strip()
+        incoming_is_regen_start_v155a = bool(
+            incoming_status_v155a in {"queued", "running", "processing", "starting", "submitting", "preparing", "queued_no_prompt_id"}
+            or "regeneration" in incoming_queue_source_v155a
+            or "regenerate" in incoming_queue_source_v155a
+            or "regeneration" in incoming_reset_reason_v155a
+            or "regenerate" in incoming_reset_reason_v155a
+            or scene.get("video_regeneration_started_v155a")
+            or scene.get("videoRegenerationStartedV155A")
+        )
+        if incoming_video_ids and current_video_ids.isdisjoint(incoming_video_ids):
+            # Incoming has a different fresh result video. Never replace it with
+            # the previous video just because the source image identity matches.
+            print('[PROJECT BOARD BOUND VIDEO PRESERVE SKIP NEW RESULT V155A]', {
+                'scene_id': scene_id,
+                'currentVideoRefs': sorted(current_video_ids),
+                'incomingVideoRefs': sorted(incoming_video_ids),
+                'status': incoming_status_v155a,
+            })
+            continue
+        if incoming_is_regen_start_v155a and not incoming_video_ids:
+            print('[PROJECT BOARD BOUND VIDEO PRESERVE SKIP REGEN START V155A]', {
+                'scene_id': scene_id,
+                'currentVideoRefs': sorted(current_video_ids),
+                'status': incoming_status_v155a,
+                'queueSource': incoming_queue_source_v155a,
+                'resetReason': incoming_reset_reason_v155a,
+                'hasJob': bool(incoming_job_id_v155a or incoming_status_endpoint_v155a),
+            })
+            continue
+
         # If incoming already has the same current video and is not stale/running, leave it alone.
         if incoming_same_video and not stale_bad_or_running:
             continue
