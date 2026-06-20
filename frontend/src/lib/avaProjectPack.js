@@ -624,6 +624,215 @@ function sceneRoute(scene = {}, modeId = 'manual_general_v1', index = 0, total =
   return firstText(scene.route, scene.planned_route, scene.plannedRoute, scene.mode, scene.generation_route, scene.renderMode) || 'i2v'
 }
 
+
+// AVA_PROJECT_FORMAT_CONTRACT_V177A:
+// Format is locked from project_context/project and must be visible to Codex, Board and generation.
+function buildSceneRouteContractV177A(route = 'i2v') {
+  const selected = firstText(route, 'i2v') || 'i2v'
+  const lower = String(selected || '').toLowerCase()
+  const audioDriven = lower === 'ia2v' || lower.includes('lip') || lower.includes('sound')
+  const instrumentDriven = lower.includes('instrument') || lower.includes('guitar') || lower.includes('drum')
+  const modelFamily = lower.includes('first_last') ? 'first_last' : (audioDriven ? 'ia2v' : 'i2v')
+  return {
+    selected,
+    board_route: selected,
+    model: selected,
+    model_family: modelFamily,
+    needs_audio_slice: Boolean(audioDriven),
+    needs_face_visible: Boolean(audioDriven && !instrumentDriven),
+    needs_instrument_visible: Boolean(instrumentDriven),
+    still_requirements: instrumentDriven
+      ? ['visible instrument', 'visible hands', 'performance pose', 'safe motion potential']
+      : audioDriven
+        ? ['clear face', 'visible mouth', 'stable identity', 'safe lip-sync framing']
+        : ['clear readable action', 'safe motion potential', 'stable subject/layout'],
+    codex_rule: instrumentDriven
+      ? 'For instrument lip-sync scenes, storyboard stills must show instrument, hands and performance pose.'
+      : audioDriven
+        ? 'For lip-sync scenes, storyboard stills must show clear face and visible mouth.'
+        : 'For i2v scenes, storyboard stills should be readable b-roll/action with safe motion.',
+  }
+}
+
+function sceneTextLooksLabelOnlyV177A(scene = {}) {
+  const text = firstText(scene.original_text, scene.scene_word_text, scene.lyrics_text, scene.text, scene.translated_text_ru)
+  const label = firstText(scene.speakerLabel, scene.speaker_label, scene.roleLabel, scene.role_label, scene.blockTitle, scene.block_title)
+  const normalized = String(text || '').trim().toLowerCase()
+  if (!normalized) return true
+  if (label && normalized === String(label).trim().toLowerCase()) return true
+  return ['диктор', 'дед', 'ведущий', 'narrator', 'host', 'speaker', 'voice'].includes(normalized)
+}
+
+function buildSceneTextContractV177A(scene = {}) {
+  const speaker = firstText(scene.speakerLabel, scene.speaker_label, scene.roleLabel, scene.role_label, scene.blockTitle, scene.block_title)
+  const original = firstText(scene.original_text, scene.originalText, scene.scene_word_text, scene.lyrics_text, scene.text)
+  const translation = firstText(scene.translated_text_ru, scene.translation_ru, scene.translation, scene.ruText, original)
+  const meaning = firstText(scene.meaning_hint_ru, scene.meaningText, scene.meaning_ru, scene.meaning)
+  const labelOnly = sceneTextLooksLabelOnlyV177A({ ...scene, original_text: original, translated_text_ru: translation })
+  return {
+    asr_original: original,
+    asr_ru: firstText(scene.asr_ru, translation, original),
+    translation_ru: translation,
+    meaning_ru: meaning,
+    lyrics_or_dialogue: firstText(scene.lyrics_text, original),
+    speaker_label: speaker,
+    status: labelOnly ? 'label_only' : 'text_ready',
+    needs_asr_or_manual_text: Boolean(labelOnly),
+  }
+}
+
+function buildSceneSourceContractV177A(scene = {}, start = 0, end = 0) {
+  const existing = asObject(scene.scene_source || scene.sceneSource)
+  const kind = firstText(existing.kind, scene.source_kind, scene.composer_source_kind, scene.is_silence ? 'silence' : '', scene.composer_block_type === 'phrase' ? 'inserted_audio' : '', 'main_audio')
+  return {
+    ...existing,
+    kind,
+    is_main_audio: kind === 'main_audio',
+    is_inserted_audio: kind === 'inserted_audio',
+    is_silence: kind === 'silence',
+    composer_block_id: firstText(existing.composer_block_id, scene.composer_block_id, scene.blockId, scene.block_id),
+    composer_block_type: firstText(existing.composer_block_type, scene.composer_block_type),
+    source_audio_id: firstText(existing.source_audio_id, scene.composer_source_audio_id, scene.source_audio_id, 'main'),
+    source_audio_name: firstText(existing.source_audio_name, scene.composer_source_audio_name, scene.source_audio_name),
+    saved_clip_id: firstText(existing.saved_clip_id, scene.saved_clip_id, scene.composer_saved_clip_id),
+    saved_clip_label: firstText(existing.saved_clip_label, scene.saved_clip_label, scene.composer_saved_clip_label),
+    final_audio_start_sec: Number(existing.final_audio_start_sec ?? scene.final_audio_start_sec ?? start),
+    final_audio_end_sec: Number(existing.final_audio_end_sec ?? scene.final_audio_end_sec ?? end),
+  }
+}
+
+function buildSceneRequirementsContractV177A(scene = {}, routeContract = {}) {
+  return {
+    needs_photo_prompt: true,
+    needs_video_prompt: true,
+    needs_lipsync: Boolean(routeContract.needs_face_visible || String(routeContract.selected || '').toLowerCase().includes('lip')),
+    needs_instrument_lipsync: Boolean(routeContract.needs_instrument_visible),
+    needs_audio_slice: Boolean(routeContract.needs_audio_slice),
+    needs_translation: false,
+    needs_meaning: false,
+    needs_character_card: Boolean(routeContract.needs_face_visible),
+    needs_instrument_card: Boolean(routeContract.needs_instrument_visible),
+    ...(asObject(scene.scene_requirements || scene.sceneRequirements)),
+  }
+}
+
+function buildBoardCardContractV177A(scene = {}, route = 'i2v', color = '') {
+  const speaker = firstText(scene.speakerLabel, scene.speaker_label, scene.roleLabel, scene.role_label, scene.blockTitle, scene.block_title)
+  const textPreview = firstText(scene.translated_text_ru, scene.original_text, scene.scene_word_text, scene.lyrics_text, speaker)
+  return {
+    title: firstText(scene.blockTitle, scene.block_title, scene.title, speaker),
+    speaker_label: speaker,
+    route_label: route,
+    text_preview: textPreview,
+    translation_preview: firstText(scene.translated_text_ru, textPreview),
+    color,
+  }
+}
+
+function buildSceneTextStatsV177A(normalizedScenes = []) {
+  const total = normalizedScenes.length
+  const labelOnly = normalizedScenes.filter((scene) => scene.scene_text?.status === 'label_only' || sceneTextLooksLabelOnlyV177A(scene)).length
+  const real = Math.max(0, total - labelOnly)
+  return { total, labelOnly, real }
+}
+
+function buildPipelineStateContractV177A({ audio = null, normalizedScenes = [], sceneTextStats = {} } = {}) {
+  const audioReady = Boolean(audio)
+  const sceneSplitReady = normalizedScenes.length > 0
+  const textReady = Boolean(sceneTextStats.real > 0 && sceneTextStats.labelOnly === 0)
+  const blocked = Boolean(audioReady && sceneSplitReady && !textReady)
+  return {
+    current_stage: sceneSplitReady ? 'scene_split_ready' : 'input_validation',
+    audio_ready: audioReady,
+    asr_ready: textReady,
+    real_scene_text_ready: textReady,
+    translation_ready: textReady,
+    scene_split_ready: sceneSplitReady,
+    route_map_ready: sceneSplitReady,
+    board_import_ready: sceneSplitReady,
+    codex_storyboard_ready: Boolean(sceneSplitReady && textReady),
+    blocked,
+    blocker_reason: blocked ? 'Scenes exist, but text is only labels/placeholders. Run ASR or fill real scene text before Codex storyboard.' : '',
+    next_required_action: blocked ? 'run_asr_or_fill_scene_text' : (sceneSplitReady ? 'codex_storyboard' : 'create_scene_split'),
+    allowed_actions: blocked ? ['review_scenes', 'review_routes', 'board_import', 'run_asr_or_fill_scene_text'] : ['review_scenes', 'review_routes', 'board_import', 'codex_storyboard'],
+    forbidden_actions: blocked ? ['codex_storyboard', 'photo_prompts', 'video_generation'] : [],
+  }
+}
+
+function buildAsrStateContractV177A({ audio = null, sceneTextStats = {} } = {}) {
+  const ready = Boolean(sceneTextStats.total > 0 && sceneTextStats.labelOnly === 0)
+  return {
+    required: Boolean(audio),
+    ready,
+    asr_type_required: 'auto: vocal_asr for songs, speech_asr for stories/podcast',
+    main_asr_done: ready,
+    vocal_asr_done: false,
+    word_level_ready: ready,
+    phrase_level_ready: ready,
+    segments_count: ready ? sceneTextStats.total : 0,
+    words_count: 0,
+    scene_text_ready_count: sceneTextStats.real || 0,
+    quality: ready ? 'scene_text_ready' : 'missing',
+    source: ready ? 'scene_text' : 'none',
+    blocker_if_missing: 'Audio exists but ASR is missing. For songs run vocal ASR; for narrator/story run speech ASR before automatic scene split.',
+  }
+}
+
+function buildTranslationStateContractV177A(sceneTextStats = {}) {
+  const ready = Boolean(sceneTextStats.total > 0 && sceneTextStats.labelOnly === 0)
+  return {
+    required: true,
+    ready,
+    translated_scene_count: ready ? sceneTextStats.total : 0,
+    meaning_scene_count: ready ? sceneTextStats.total : 0,
+    real_text_scene_count: sceneTextStats.real || 0,
+    label_only_scene_count: sceneTextStats.labelOnly || 0,
+    total_scene_count: sceneTextStats.total || 0,
+    quality: ready ? 'scene_text_ready' : 'placeholder_labels_only',
+    needs_translation_pass: false,
+    needs_meaning_pass: false,
+    blocker_if_placeholder_only: 'Scene text is only speaker/block labels. Run ASR or fill real scene text before Codex storyboard.',
+  }
+}
+
+function buildCodexTasksContractV177A(pipelineState = {}, format = '16:9') {
+  const blocked = !pipelineState.codex_storyboard_ready
+  const formatRule = `Use project_context.format and scene.format as locked output format (${format}). For 9:16 write vertical prompts, for 16:9 write horizontal prompts, for 1:1 write square prompts. Do not change aspect ratio.`
+  return [
+    {
+      task_id: 'codex_storyboard_v1',
+      status: blocked ? 'blocked' : 'ready',
+      blocked_reason: blocked ? pipelineState.blocker_reason : '',
+      instruction: 'Create storyboard cards for each scene without changing scene_id, timing, route/model, audio, existing media, or format.',
+      format_rule: formatRule,
+      must_obey: [
+        'Use route/model_route for each scene.',
+        'Use project_context.format and scene.format as locked output format.',
+        'For 9:16 scenes, create vertical composition prompts.',
+        'For ia2v/lip-sync scenes, still must show a clear face and visible mouth.',
+        'For instrument_lipsync scenes, still must show instrument, hands and performance pose.',
+        'For i2v scenes, create safe readable b-roll/action stills.',
+        'Do not write final image-aware video prompts before stills are generated/imported.',
+      ],
+      expected_outputs: ['storyboard_locked.json', 'entity_cards.json', 'validation_report.json'],
+    },
+    {
+      task_id: 'codex_photo_prompts_v1',
+      status: blocked ? 'blocked_until_storyboard_ready' : 'blocked_until_storyboard_reviewed',
+      instruction: 'Create photo prompts from approved storyboard only. Preserve timing, scene ids, routes, roles and format.',
+      format_rule: formatRule,
+      expected_outputs: ['prompts_pack.json', 'board_import_ready.json', 'validation_report.json'],
+    },
+    {
+      task_id: 'codex_image_aware_video_prompts_v1',
+      status: 'blocked_until_stills_approved',
+      instruction: 'Rewrite video prompts based only on actual approved stills. Do not invent invisible objects or change route/timing/story/format.',
+      format_rule: formatRule,
+      expected_outputs: ['board_patch_image_aware_prompts.json', 'validation_report.json'],
+    },
+  ]
+}
+
 function getProjectFormat(project = {}, manualTiming = {}, board = {}) {
   return firstText(
     project.format,
@@ -870,12 +1079,13 @@ function productionByIdFromSources(manualTiming = {}, board = {}) {
   return map
 }
 
-function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming = {}, board = {}, audioDurationSec = 0 } = {}) {
+function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming = {}, board = {}, audioDurationSec = 0, projectFormat = '' } = {}) {
   const source = sourceSceneArray(manualTiming, board)
   const productionById = productionByIdFromSources(manualTiming, board)
   const storyBlocks = storyBlocksFromSources(manualTiming, board, source)
   const blockColorMap = buildColorMaps(storyBlocks, source)
   const total = source.length
+  const sceneFormatV177A = getProjectFormat({ format: projectFormat }, manualTiming, board) || '16:9'
 
   if (!source.length && audioDurationSec > 0) {
     source.push({ id: 'seg_01', scene_id: 'seg_01', start: 0, end: audioDurationSec, duration: audioDurationSec, route: 'i2v' })
@@ -890,6 +1100,7 @@ function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming
     const end = round3(rawEnd > start ? rawEnd : (rawDuration > 0 ? start + rawDuration : Math.min(Number(audioDurationSec || 0), start + 1)))
     const duration = round3(Math.max(0, end - start))
     const route = sceneRoute({ ...production, ...scene }, projectModeId, index, total)
+    const routeContractV177A = buildSceneRouteContractV177A(route)
     const blockId = firstText(scene.blockId, scene.block_id, production.blockId, production.block_id) || `block_${String(index + 1).padStart(2, '0')}`
     const blockTitle = firstText(scene.blockTitle, scene.block_title, production.blockTitle, production.block_title, scene.recipe_step, production.recipe_step) || blockId
     const color = blockColorMap.has(blockId)
@@ -910,8 +1121,18 @@ function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming
       duration_sec: duration,
       target_t0: start,
       target_t1: end,
+      format: sceneFormatV177A,
+      aspect_ratio: sceneFormatV177A,
+      output_format: sceneFormatV177A,
       route,
       planned_route: firstText(scene.planned_route, scene.plannedRoute, production.planned_route, route),
+      model_route: routeContractV177A,
+      route_contract: routeContractV177A,
+      route_requirements: routeContractV177A,
+      scene_text: buildSceneTextContractV177A({ ...production, ...scene }),
+      scene_source: buildSceneSourceContractV177A({ ...production, ...scene }, start, end),
+      scene_requirements: buildSceneRequirementsContractV177A({ ...production, ...scene }, routeContractV177A),
+      board_card: buildBoardCardContractV177A({ ...production, ...scene }, route, color),
       scene_word_text: firstText(scene.scene_word_text, scene.text, scene.lyrics_text, production.scene_word_text, production.text),
       lyrics_text: firstText(scene.lyrics_text, scene.scene_word_text, production.lyrics_text, production.scene_word_text),
       original_text: firstText(scene.original_text, scene.originalText, production.original_text, production.originalText),
@@ -1020,6 +1241,9 @@ function rootScenesFromNormalized(normalizedScenes = [], modeId = 'manual_genera
       duration_sec: scene.duration_sec,
       target_t0: scene.target_t0,
       target_t1: scene.target_t1,
+      format: scene.format,
+      aspect_ratio: scene.aspect_ratio || scene.format,
+      output_format: scene.output_format || scene.format,
       route: scene.route,
       planned_route: scene.planned_route,
       scene_word_text: scene.scene_word_text,
@@ -1055,6 +1279,9 @@ function timingScenesFromNormalized(normalizedScenes = []) {
     start: scene.start,
     end: scene.end,
     duration: scene.duration,
+    format: scene.format,
+    aspect_ratio: scene.aspect_ratio || scene.format,
+    output_format: scene.output_format || scene.format,
     route: scene.route,
     text: scene.scene_word_text || scene.lyrics_text || scene.original_text || '',
     original_text: scene.original_text || scene.scene_word_text || '',
@@ -1133,6 +1360,9 @@ function productionScenesFromNormalized(normalizedScenes = [], modeId = 'manual_
       duration_sec: scene.duration_sec,
       target_t0: scene.target_t0,
       target_t1: scene.target_t1,
+      format: scene.format,
+      aspect_ratio: scene.aspect_ratio || scene.format,
+      output_format: scene.output_format || scene.format,
       route: scene.route,
       planned_route: scene.planned_route,
       blockId: scene.blockId,
@@ -1357,12 +1587,17 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
   }
   if (projectMode.id === 'video_first_documentary_v1') assets.source_video.required = true
 
-  const normalizedScenes = normalizeScenesOnce({ projectModeId: projectMode.id, manualTiming, board, audioDurationSec: audioDuration })
+  const normalizedScenes = normalizeScenesOnce({ projectModeId: projectMode.id, manualTiming, board, audioDurationSec: audioDuration, projectFormat: format })
   const storyBlocks = storyBlocksFromSources(manualTiming, board, normalizedScenes)
   const rootScenes = rootScenesFromNormalized(normalizedScenes, projectMode.id)
   const timingScenes = timingScenesFromNormalized(normalizedScenes)
   const productionScenes = productionScenesFromNormalized(normalizedScenes, projectMode.id)
   const sceneBlockMap = buildSceneBlockMap(storyBlocks, normalizedScenes)
+  const sceneTextStatsV177A = buildSceneTextStatsV177A(normalizedScenes)
+  const pipelineStateV177A = buildPipelineStateContractV177A({ audio: assets.audio, normalizedScenes, sceneTextStats: sceneTextStatsV177A })
+  const asrStateV177A = buildAsrStateContractV177A({ audio: assets.audio, sceneTextStats: sceneTextStatsV177A })
+  const translationStateV177A = buildTranslationStateContractV177A(sceneTextStatsV177A)
+  const codexTasksV177A = buildCodexTasksContractV177A(pipelineStateV177A, format)
   const readiness = buildReadiness({ modeId: projectMode.id, audio: assets.audio, normalizedScenes, productionScenes, assets })
   const currentPatchGoalV18 = readiness.image_aware_video_prompts_ready ? 'video_generation' : 'image_aware_video_prompt_pass'
   const projectStateSummaryV18 = buildProjectStateSummaryV18({ audio: assets.audio, normalizedScenes, productionScenes, readiness })
@@ -1408,6 +1643,10 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
 
   const pack = {
     schema: 'ava_project_pack_v1',
+    schema_version: 2,
+    schema_aliases: ['ava_project_pack_v2'],
+    pipeline_contract_schema: 'ava_project_pipeline_state_v2',
+    board_import_contract_schema: 'ava_board_import_contract_v2',
     pack_profile: includeLegacyRaw ? 'debug' : 'compact',
     debug_included: Boolean(includeLegacyRaw),
     status: readiness.stage,
@@ -1425,6 +1664,39 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
       description: project.description || '',
       status: project.status || '',
     },
+    project_context: {
+      project_id: project.id || project.project_id || '',
+      project_name: project.name || '',
+      project_type: projectTypeV76,
+      mode_id: projectMode.id,
+      mode_label_ru: projectMode.label_ru || projectMode.label || '',
+      format,
+      aspect_ratio: format,
+      output_format: format,
+      user_goal: firstText(project.user_goal, project.goal, board.user_goal, board.goal),
+      story_idea: firstText(project.story_idea, board.story_idea),
+      visual_style: firstText(project.visual_style, board.visual_style),
+      language: firstText(project.language, manualTiming.language, board.language, 'auto'),
+    },
+    format_contract: {
+      locked: true,
+      source_of_truth: 'project_context.format',
+      format,
+      aspect_ratio: format,
+      output_format: format,
+      codex_rule: 'Use project_context.format and scene.format as locked output format. For 9:16 write vertical prompts, for 16:9 write horizontal prompts, for 1:1 write square prompts. Do not change aspect ratio.',
+    },
+    pipeline_state: pipelineStateV177A,
+    asr_state: asrStateV177A,
+    translation_state: translationStateV177A,
+    board_import_contract: {
+      schema: 'ava_board_import_contract_v2',
+      board_can_read: true,
+      required_scene_fields: ['scene_id', 'start_sec', 'end_sec', 'duration_sec', 'route', 'model_route', 'format', 'aspect_ratio', 'scene_text', 'translated_text_ru', 'meaning_hint_ru', 'blockId', 'blockTitle', 'speakerLabel'],
+      locked_fields: ['scene_id', 'start_sec', 'end_sec', 'duration_sec', 'route unless user edits it', 'format/aspect_ratio/output_format from project unless user edits scene format', 'audio asset refs', 'existing media refs'],
+      prompt_format_rule: 'Photo/video prompts must match project_context.format. 9:16 = vertical composition, 16:9 = horizontal composition, 1:1 = square composition.',
+    },
+    codex_tasks: codexTasksV177A,
     workflow_stages: IMAGE_AWARE_WORKFLOW_STAGES,
     universal_workflow_stages: AVA_UNIVERSAL_TASK_PIPELINE_V75,
     production_workflow: {

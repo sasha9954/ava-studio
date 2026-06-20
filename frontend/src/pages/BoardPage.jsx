@@ -1989,7 +1989,171 @@ function normalizeAudioSliceStatus(rawScene = {}, savedScene = {}) {
 }
 
 
+
+// AVA_PROJECT_FORMAT_CONTRACT_V177A:
+// Project format is the source of truth for Timing -> Board import and Board export.
+// This keeps 9:16 projects vertical across all scenes, prompts, and video generation size.
+function boardProjectFormatV177A(...sources) {
+  for (const source of sources) {
+    if (!source || typeof source !== 'object') continue
+    const value = firstTextValue(
+      source.project_context?.format,
+      source.project_context?.aspect_ratio,
+      source.project_context?.output_format,
+      source.project?.format,
+      source.project?.aspect_ratio,
+      source.project?.output_format,
+      source.format,
+      source.aspect_ratio,
+      source.aspectRatio,
+      source.output_format,
+      source.outputFormat
+    )
+    if (value) return value
+  }
+  return ''
+}
+
+function boardApplyFormatToSceneV177A(scene = {}, format = '') {
+  const nextFormat = firstTextValue(format, scene.format, scene.aspect_ratio, scene.aspectRatio, scene.output_format, scene.outputFormat) || '16:9'
+  return {
+    ...scene,
+    format: nextFormat,
+    aspect_ratio: nextFormat,
+    output_format: nextFormat,
+    format_contract: {
+      ...(scene.format_contract || {}),
+      locked: true,
+      format: nextFormat,
+      aspect_ratio: nextFormat,
+      output_format: nextFormat,
+      prompt_rule: nextFormat === '9:16'
+        ? 'Use vertical 9:16 composition in photo and video prompts.'
+        : nextFormat === '1:1'
+          ? 'Use square 1:1 composition in photo and video prompts.'
+          : 'Use horizontal 16:9 composition in photo and video prompts.',
+    },
+  }
+}
+
+function boardApplyFormatContractV177A(board = {}) {
+  const scenes = asSceneArray(board.scenes)
+  const rootFormat = boardProjectFormatV177A(board, scenes[0]) || '16:9'
+  return {
+    ...board,
+    format: rootFormat,
+    aspect_ratio: rootFormat,
+    output_format: rootFormat,
+    project_context: {
+      ...(board.project_context || {}),
+      format: rootFormat,
+      aspect_ratio: rootFormat,
+      output_format: rootFormat,
+    },
+    format_contract: {
+      ...(board.format_contract || {}),
+      locked: true,
+      source_of_truth: 'project_context.format',
+      format: rootFormat,
+      aspect_ratio: rootFormat,
+      output_format: rootFormat,
+      codex_rule: 'Use project_context.format and scene.format as locked output format. For 9:16 write vertical prompts, for 16:9 write horizontal prompts, for 1:1 write square prompts. Do not change aspect ratio.',
+    },
+    board_import_contract: {
+      ...(board.board_import_contract || {}),
+      schema: board.board_import_contract?.schema || 'ava_board_import_contract_v2',
+      board_can_read: true,
+      prompt_format_rule: 'Photo/video prompts must match project_context.format. 9:16 = vertical composition, 16:9 = horizontal composition, 1:1 = square composition.',
+    },
+    scenes: scenes.map((scene) => boardApplyFormatToSceneV177A(scene, rootFormat)),
+  }
+}
+
 function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
+
+// AVA_PROJECT_FORMAT_CONTEXT_BRIDGE_V177B:
+// Board transition loads the raw manual_timing snapshot, which may not contain
+// project_context even though the project itself was created as 9:16/16:9.
+// Use the active project record as a safe source of truth before Timing -> Board import.
+function boardCleanFormatValueV177B(value = '') {
+  const clean = String(value || '').trim()
+  return /^(9:16|16:9|1:1|4:5)$/i.test(clean) ? clean : ''
+}
+
+function boardProjectFormatFromContextV177C(projectId = '', activeProject = null, projects = []) {
+  const cleanProjectId = String(projectId || '').trim()
+  const matchingProject = Array.isArray(projects)
+    ? projects.find((project) => String(project?.id || '') === cleanProjectId)
+    : null
+  return boardCleanFormatValueV177B(boardProjectFormatV177A(activeProject, matchingProject))
+}
+
+function boardInjectProjectFormatIntoTimingV177C(timingData = {}, projectFormat = '') {
+  const lockedFormat = boardCleanFormatValueV177B(projectFormat) || boardCleanFormatValueV177B(boardProjectFormatV177A(timingData))
+  if (!lockedFormat || !timingData || typeof timingData !== 'object') return timingData
+
+  const applySceneFormat = (scene = {}) => boardApplyFormatToSceneV177A(scene, lockedFormat)
+  const next = {
+    ...timingData,
+    format: lockedFormat,
+    aspect_ratio: lockedFormat,
+    output_format: lockedFormat,
+    project: {
+      ...(timingData.project || {}),
+      format: lockedFormat,
+      aspect_ratio: lockedFormat,
+      output_format: lockedFormat,
+    },
+    project_context: {
+      ...(timingData.project_context || {}),
+      format: lockedFormat,
+      aspect_ratio: lockedFormat,
+      output_format: lockedFormat,
+    },
+    format_contract: {
+      ...(timingData.format_contract || {}),
+      locked: true,
+      source_of_truth: 'active_project.format/project_context.format',
+      format: lockedFormat,
+      aspect_ratio: lockedFormat,
+      output_format: lockedFormat,
+      codex_rule: 'Use project_context.format and scene.format as locked output format. For 9:16 write vertical prompts, for 16:9 write horizontal prompts, for 1:1 write square prompts. Do not change aspect ratio.',
+    },
+  }
+
+  if (Array.isArray(next.scenes)) next.scenes = next.scenes.map(applySceneFormat)
+  if (Array.isArray(next.production?.scenes)) {
+    next.production = {
+      ...next.production,
+      scenes: next.production.scenes.map(applySceneFormat),
+    }
+  }
+  if (Array.isArray(next.timing?.scenes)) {
+    next.timing = {
+      ...next.timing,
+      format: lockedFormat,
+      aspect_ratio: lockedFormat,
+      output_format: lockedFormat,
+      scenes: next.timing.scenes.map(applySceneFormat),
+    }
+  }
+
+  for (const key of ['manualTiming', 'manual_timing']) {
+    if (next[key] && typeof next[key] === 'object') {
+      next[key] = {
+        ...next[key],
+        format: lockedFormat,
+        aspect_ratio: lockedFormat,
+        output_format: lockedFormat,
+        scenes: Array.isArray(next[key].scenes) ? next[key].scenes.map(applySceneFormat) : next[key].scenes,
+      }
+    }
+  }
+
+  return next
+}
+
+
   const start = toNumber(rawScene?.start_sec ?? rawScene?.start, 0)
   const end = toNumber(rawScene?.end_sec ?? rawScene?.end, start)
   const id = asText(rawScene?.scene_id || rawScene?.id || savedScene?.scene_id || savedScene?.id || `seg_${String(index + 1).padStart(2, '0')}`)
@@ -2021,9 +2185,13 @@ function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
     savedScene?.format ||
     savedScene?.aspect_ratio ||
     savedScene?.aspectRatio ||
+    savedScene?.output_format ||
+    savedScene?.outputFormat ||
     rawScene?.format ||
     rawScene?.aspect_ratio ||
-    rawScene?.aspectRatio
+    rawScene?.aspectRatio ||
+    rawScene?.output_format ||
+    rawScene?.outputFormat
   ) || '16:9'
 
   return {
@@ -2165,6 +2333,7 @@ function buildBoardFromTiming(timingData = {}, boardData = {}) {
   const timing = timingData?.manualTiming || timingData?.manual_timing || timingData || {}
   const existing = boardData?.board || boardData || {}
   const phrases = buildPhraseList(timing)
+  const projectFormatV177A = boardProjectFormatV177A(timingData, timing, existing)
   const savedScenes = new Map(asSceneArray(existing.scenes)
     .map((scene) => [asText(scene.scene_id || scene.id), scene]))
   const sourceScenes = asSceneArray(timing.scenes)
@@ -2190,7 +2359,11 @@ function buildBoardFromTiming(timingData = {}, boardData = {}) {
         .map((scene, offset) => mergePreserveMediaRefs(scene, normalizeBoardScene(scene, scenes.length + offset, phrases, scene)))
     : []
 
-  const finalScenes = scenes.length ? [...scenes, ...extraBoardScenes] : fallbackScenes
+  const rawFinalScenes = scenes.length ? [...scenes, ...extraBoardScenes] : fallbackScenes
+  const finalScenes = (sourceScenes.length && projectFormatV177A)
+    ? rawFinalScenes.map((scene) => boardApplyFormatToSceneV177A(scene, projectFormatV177A))
+    : rawFinalScenes
+  const rootFormatV177A = boardProjectFormatV177A({ format: projectFormatV177A }, existing, finalScenes[0]) || '16:9'
   const timingAudio = boardAudioFromTiming(timing)
   const audio = boardAudioHasAsset(existing.audio) ? existing.audio : (timingAudio || existing.audio || {
     name: timing.audioName || timing.audio_name || '',
@@ -2207,6 +2380,24 @@ function buildBoardFromTiming(timingData = {}, boardData = {}) {
     ...emptyBoard,
     ...existing,
     boardVersion: BOARD_VERSION,
+    format: rootFormatV177A,
+    aspect_ratio: rootFormatV177A,
+    output_format: rootFormatV177A,
+    project_context: {
+      ...(existing.project_context || {}),
+      format: rootFormatV177A,
+      aspect_ratio: rootFormatV177A,
+      output_format: rootFormatV177A,
+    },
+    format_contract: {
+      ...(existing.format_contract || {}),
+      locked: true,
+      source_of_truth: 'project_context.format',
+      format: rootFormatV177A,
+      aspect_ratio: rootFormatV177A,
+      output_format: rootFormatV177A,
+      codex_rule: 'Use project_context.format and scene.format as locked output format. For 9:16 write vertical prompts, for 16:9 write horizontal prompts, for 1:1 write square prompts. Do not change aspect ratio.',
+    },
     importedFrom: sourceScenes.length ? 'manual_timing' : existing.importedFrom || '',
     audio,
     roles: asArray(timing.roles || existing.roles),
@@ -3367,6 +3558,130 @@ function sceneAccentRgbV61(scene = {}) {
   return '139, 92, 246'
 }
 
+
+// AVA_PROJECT_FORMAT_RUNTIME_SCOPE_V177C:
+// Keep project format helpers in BoardPage module scope. Vite can build even when
+// a helper is inserted in a nested scope, but the BoardPage component then fails
+// at runtime. These helpers are intentionally self-contained and only touch
+// format/aspect_ratio/output_format metadata.
+function boardCleanFormatValueV177C(value = '') {
+  const clean = String(value || '').trim()
+  return /^(9:16|16:9|1:1|4:5)$/i.test(clean) ? clean : ''
+}
+
+function boardPromptRuleForFormatV177C(format = '') {
+  const locked = boardCleanFormatValueV177C(format) || '16:9'
+  if (locked === '9:16') return 'Use vertical 9:16 composition in photo and video prompts.'
+  if (locked === '1:1') return 'Use square 1:1 composition in photo and video prompts.'
+  if (locked === '4:5') return 'Use vertical 4:5 composition in photo and video prompts.'
+  return 'Use horizontal 16:9 composition in photo and video prompts.'
+}
+
+function boardReadFormatFromObjectV177C(value = null) {
+  if (!value || typeof value !== 'object') return ''
+  return (
+    boardCleanFormatValueV177C(value.format) ||
+    boardCleanFormatValueV177C(value.aspect_ratio) ||
+    boardCleanFormatValueV177C(value.aspectRatio) ||
+    boardCleanFormatValueV177C(value.output_format) ||
+    boardCleanFormatValueV177C(value.outputFormat) ||
+    boardReadFormatFromObjectV177C(value.project_context) ||
+    boardReadFormatFromObjectV177C(value.project)
+  )
+}
+
+function boardProjectFormatFromContextV177C(projectId = '', activeProject = null, projects = []) {
+  const cleanProjectId = String(projectId || '').trim()
+  const matchingProject = Array.isArray(projects)
+    ? projects.find((project) => String(project?.id || '') === cleanProjectId)
+    : null
+  return boardReadFormatFromObjectV177C(activeProject) || boardReadFormatFromObjectV177C(matchingProject) || ''
+}
+
+function boardApplyFormatToSceneV177C(scene = {}, format = '') {
+  const locked = boardCleanFormatValueV177C(format) || boardReadFormatFromObjectV177C(scene)
+  if (!locked || !scene || typeof scene !== 'object') return scene
+  return {
+    ...scene,
+    format: locked,
+    aspect_ratio: locked,
+    output_format: locked,
+    format_contract: {
+      ...(scene.format_contract || {}),
+      locked: true,
+      format: locked,
+      aspect_ratio: locked,
+      output_format: locked,
+      prompt_rule: boardPromptRuleForFormatV177C(locked),
+    },
+  }
+}
+
+function boardInjectProjectFormatIntoTimingV177C(timingData = {}, projectFormat = '') {
+  const locked = boardCleanFormatValueV177C(projectFormat) || boardReadFormatFromObjectV177C(timingData)
+  if (!locked || !timingData || typeof timingData !== 'object') return timingData
+
+  const applySceneFormat = (scene = {}) => boardApplyFormatToSceneV177C(scene, locked)
+  const next = {
+    ...timingData,
+    format: locked,
+    aspect_ratio: locked,
+    output_format: locked,
+    project: {
+      ...(timingData.project || {}),
+      format: locked,
+      aspect_ratio: locked,
+      output_format: locked,
+    },
+    project_context: {
+      ...(timingData.project_context || {}),
+      format: locked,
+      aspect_ratio: locked,
+      output_format: locked,
+    },
+    format_contract: {
+      ...(timingData.format_contract || {}),
+      locked: true,
+      source_of_truth: 'active_project.format/project_context.format',
+      format: locked,
+      aspect_ratio: locked,
+      output_format: locked,
+      codex_rule: 'Use project_context.format and scene.format as locked output format. For 9:16 write vertical prompts, for 16:9 write horizontal prompts, for 1:1 write square prompts. Do not change aspect ratio.',
+    },
+  }
+
+  if (Array.isArray(next.scenes)) next.scenes = next.scenes.map(applySceneFormat)
+  if (Array.isArray(next.production?.scenes)) {
+    next.production = {
+      ...next.production,
+      scenes: next.production.scenes.map(applySceneFormat),
+    }
+  }
+  if (Array.isArray(next.timing?.scenes)) {
+    next.timing = {
+      ...next.timing,
+      format: locked,
+      aspect_ratio: locked,
+      output_format: locked,
+      scenes: next.timing.scenes.map(applySceneFormat),
+    }
+  }
+
+  for (const key of ['manualTiming', 'manual_timing']) {
+    if (next[key] && typeof next[key] === 'object') {
+      next[key] = {
+        ...next[key],
+        format: locked,
+        aspect_ratio: locked,
+        output_format: locked,
+        scenes: Array.isArray(next[key].scenes) ? next[key].scenes.map(applySceneFormat) : next[key].scenes,
+      }
+    }
+  }
+
+  return next
+}
+
 export default function BoardPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -3384,7 +3699,8 @@ export default function BoardPage() {
   }, [location.state])
   const openedFromTiming = boardWorkflowEntry?.from === 'manual_timing'
   const workspaceMode = !projectId
-  const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
+  const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage, activeProject, projects } = useProjects()
+  const activeProjectFormatV177B = useMemo(() => boardProjectFormatFromContextV177C(projectId, activeProject, projects), [projectId, activeProject, projects])
   const [board, setBoard] = useState(emptyBoard)
   const [manualSceneDurationSec, setManualSceneDurationSec] = useState(6)
 
@@ -6940,7 +7256,8 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
     setStatus('Переносим свежий Тайминг в Доску…')
     try {
       const timingData = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
-      const nextBoard = buildCleanBoardFromTimingV14B(timingData)
+      const timingDataWithProjectFormatV177B = boardInjectProjectFormatIntoTimingV177C(timingData, activeProjectFormatV177B)
+      const nextBoard = buildCleanBoardFromTimingV14B(timingDataWithProjectFormatV177B)
       if (!asSceneArray(nextBoard.scenes).length) {
         setStatus('В Тайминге нет сцен для переноса в Доску')
         return
@@ -9826,7 +10143,8 @@ async function importTimingJson(event) {
     if (!file) return
     try {
       const json = JSON.parse(await file.text())
-      let nextBoard = buildBoardFromTiming(json, board)
+      const jsonWithProjectFormatV177B = boardInjectProjectFormatIntoTimingV177C(json, boardProjectFormatV177A(json, { format: activeProjectFormatV177B }))
+      let nextBoard = buildBoardFromTiming(jsonWithProjectFormatV177B, board)
       nextBoard = applyCookingPromptMemoryToBoard(nextBoard, { sourceBoard: json, force: Boolean(json?.cooking_prompt_memory_v1) })
       setBoard(nextBoard)
       setStatus(`Импортировано сцен: ${nextBoard.scenes.length}`)
@@ -9972,7 +10290,7 @@ async function importTimingJson(event) {
 
   function exportBoardJson(event) {
     stopBoardActionEvent(event)
-    const payload = { ...sanitizeBoardDurableBackup(applyCookingPromptMemoryToBoard(board)), exportedAt: new Date().toISOString() }
+    const payload = boardApplyFormatContractV177A({ ...sanitizeBoardDurableBackup(applyCookingPromptMemoryToBoard(board)), exportedAt: new Date().toISOString() })
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
