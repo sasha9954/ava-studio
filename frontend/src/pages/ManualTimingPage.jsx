@@ -1,3 +1,5 @@
+/* AVA_TIMING_TO_BOARD_TRANSITION_LOADING_V162A: modal progress and clean Timing -> Board handoff. */
+// AVA_MANUAL_TIMING_UPLOAD_DELETE_GUARD_V160A: visible upload overlay and stable delete persistence after Podcast handoff.
 // AVA_MANUAL_TIMING_CODEX_MIRROR_V78: preserve Codex still/review/final prompt fields on JSON import.
 /* AVA_PROJECT_PACK_NORMALIZED_SCENES_V15: import Unified Project Pack split with root/timing/production priority. */
 /* AVA_PROJECT_PACK_SCENE_IMPORT_EXPORT_V14: import Unified Project Pack scenes with root/timing/production priority. */
@@ -29,6 +31,41 @@ const AVA_PODCAST_TO_TIMING_KEY_STAGE95 = 'ava:podcast-to-timing:v1'
 const AVA_DOWNSTREAM_RESET_KEY_STAGE95 = 'ava:downstream-reset:v1'
 const AVA_ACTIVE_JOBS_KEY_STAGE95 = 'ava:active-jobs:v1'
 const AVA_COMPLETED_JOBS_KEY_STAGE95 = 'ava:completed-jobs:v1'
+
+const AVA_MANUAL_TIMING_WORKFLOW_KEY_V160A = 'ava:workflow-entry:manual_timing'
+
+function avaManualTimingClearPodcastHandoffStateV160A({ clearWorkflow = false } = {}) {
+  if (typeof window === 'undefined') return
+  const fixedKeys = [
+    'ava_manual_timing_podcast_return',
+    AVA_PODCAST_TO_TIMING_KEY_STAGE95,
+    'ava:podcast-to-timing',
+    'ava:podcast-to-timing:v0',
+    'ava:podcast-to-timing:v1',
+  ]
+  const stores = [window.sessionStorage, window.localStorage].filter(Boolean)
+  for (const store of stores) {
+    try {
+      fixedKeys.forEach((key) => store.removeItem(key))
+      const removeKeys = []
+      for (let index = 0; index < store.length; index += 1) {
+        const key = store.key(index)
+        if (
+          key &&
+          (
+            key.startsWith('ava_podcast_timing_handoff:') ||
+            key.startsWith('ava:podcast-to-timing:') ||
+            key.includes('podcast-to-timing')
+          )
+        ) {
+          removeKeys.push(key)
+        }
+      }
+      removeKeys.forEach((key) => store.removeItem(key))
+      if (clearWorkflow) store.removeItem(AVA_MANUAL_TIMING_WORKFLOW_KEY_V160A)
+    } catch {}
+  }
+}
 
 const MANUAL_TIMING_VIDEO_FIELD_KEYS = new Set([
   'videoUrl',
@@ -1310,8 +1347,10 @@ export default function ManualTimingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const manualTimingBusyOpRefV160A = useRef('')
   const [uploadingVocal, setUploadingVocal] = useState(false)
   const [deletingSceneAudio, setDeletingSceneAudio] = useState(false)
+  const [deletingSceneAudioIdV168A, setDeletingSceneAudioIdV168A] = useState("")
   const [asrRunning, setAsrRunning] = useState(false)
   const [asrRunningMode, setAsrRunningMode] = useState('')
   const [translationRunning, setTranslationRunning] = useState(false)
@@ -1323,6 +1362,7 @@ export default function ManualTimingPage() {
   const [pendingAudioFile, setPendingAudioFile] = useState(null)
   const [showReplaceAudioConfirm, setShowReplaceAudioConfirm] = useState(false)
   const [showTimingToBoardConfirmV16, setShowTimingToBoardConfirmV16] = useState(false)
+  const [timingToBoardActionV162A, setTimingToBoardActionV162A] = useState('')
   const [showDev, setShowDev] = useState(false)
   const [blockSelection, setBlockSelection] = useState([])
   const [blockDraft, setBlockDraft] = useState({ title: '' })
@@ -1580,6 +1620,7 @@ export default function ManualTimingPage() {
             localStorage.removeItem("ava_manual_timing_podcast_return")
             sessionStorage.removeItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
             localStorage.removeItem(AVA_PODCAST_TO_TIMING_KEY_STAGE95)
+            avaManualTimingClearPodcastHandoffStateV160A({ clearWorkflow: false })
           }
         } catch {
           incomingPodcastProject = null
@@ -1709,6 +1750,7 @@ export default function ManualTimingPage() {
 
   async function saveDraft(nextDraft = draft, reason = 'manual_save') {
     const quiet = reason === 'autosave'
+    if (quiet && manualTimingBusyOpRefV160A.current) return
     if (!quiet) {
       setSaving(true)
       setStatus('сохранение…')
@@ -1730,10 +1772,10 @@ export default function ManualTimingPage() {
   }
 
   useEffect(() => {
-    if (loading) return undefined
+    if (loading || uploading || deletingSceneAudio || manualTimingBusyOpRefV160A.current) return undefined
     const timer = window.setTimeout(() => saveDraft(draft, 'autosave'), 900)
     return () => window.clearTimeout(timer)
-  }, [draft.audioName, draft.audioAssetId, draft.audioApiPath, draft.audioSizeBytes, draft.audioDurationSec, draft.scenes, draft.storyBlocks, draft.roles, draft.speechSegments, draft.silentSegments, draft.historySnapshots, draft.selectedSceneIndex, draft.stepSec, draft.notes])
+  }, [loading, uploading, deletingSceneAudio, draft.audioName, draft.audioAssetId, draft.audioApiPath, draft.audioSizeBytes, draft.audioDurationSec, draft.scenes, draft.storyBlocks, draft.roles, draft.speechSegments, draft.silentSegments, draft.historySnapshots, draft.selectedSceneIndex, draft.stepSec, draft.notes])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -2144,7 +2186,10 @@ export default function ManualTimingPage() {
       setDraft((prev) => normalizeDraft({ ...prev, ...repairedAudio }))
     }
 
+    manualTimingBusyOpRefV160A.current = 'delete_selected_audio_range'
+    avaManualTimingClearPodcastHandoffStateV160A({ clearWorkflow: true })
     setDeletingSceneAudio(true)
+    setDeletingSceneAudioIdV168A(String(scene.id || scene.title || scene.index || ""))
     setStatus(`удаляю из аудио: ${formatTime(start, true)} → ${formatTime(end, true)}`)
 
     try {
@@ -2179,8 +2224,9 @@ export default function ManualTimingPage() {
         ? renumberScenes(shiftedScenes)
         : makeSingleScene(result.new_duration_sec || nextDuration)
 
-      pushHistorySnapshot()
+      const nextHistory = pushHistorySnapshot()
       const selectedIndex = Math.min(index, nextScenes.length - 1)
+      const editRevisionV160A = Date.now()
       const nextDraft = normalizeDraft({
         ...draft,
         audioName: result.audio_name || result.audioName || draft.audioName,
@@ -2196,17 +2242,23 @@ export default function ManualTimingPage() {
         audioPhrases: shiftTimingListAfterDeletedRange(draft.audioPhrases || [], start, end, cutLen),
         missingSpeechHints: shiftTimingListAfterDeletedRange(draft.missingSpeechHints || [], start, end, cutLen),
         silentSegments: shiftTimingListAfterDeletedRange(draft.silentSegments || [], start, end, cutLen),
+        historySnapshots: nextHistory,
+        audioEditRevisionV160A: editRevisionV160A,
+        selectedSceneDeleteRevisionV160A: editRevisionV160A,
+        saveReason: 'delete_selected_audio_range_v160a',
       })
 
       stopAudio(nextScenes[selectedIndex]?.start || 0)
+      setAudioSrc('')
       setDraft(nextDraft)
-      await saveDraft(nextDraft, 'delete_selected_audio_range')
+      await saveDraft(nextDraft, 'delete_selected_audio_range_v160a')
       setBlockSelection([])
       setStatus(`отрезок удалён из аудио: -${formatTime(cutLen, true)} · новая длительность ${formatTime(nextDraft.audioDurationSec, true)}`)
     } catch (err) {
       console.error('[ManualTiming] delete selected scene from audio failed', err)
       setStatus(`ошибка удаления аудио: ${err.message}`)
     } finally {
+      manualTimingBusyOpRefV160A.current = ''
       setDeletingSceneAudio(false)
     }
   }
@@ -2482,6 +2534,8 @@ function clearBlockSelection() {
   }
 
   async function uploadPickedAudio(file) {
+    manualTimingBusyOpRefV160A.current = 'audio_upload'
+    avaManualTimingClearPodcastHandoffStateV160A({ clearWorkflow: true })
     setUploading(true)
     stopAudio(0)
     setStatus('загрузка аудио… если это видео, сервер извлечёт MP3')
@@ -2528,6 +2582,7 @@ function clearBlockSelection() {
     } catch (err) {
       setStatus(`ошибка загрузки аудио: ${err.message}`)
     } finally {
+      manualTimingBusyOpRefV160A.current = ''
       setUploading(false)
     }
   }
@@ -4117,13 +4172,20 @@ const useVocalStem = mode === 'vocal'
       setStatus('Нельзя перейти в Доску: в Тайминге нет сцен. Сначала импортируй/создай разбивку.')
       return
     }
+    setTimingToBoardActionV162A('')
     setShowTimingToBoardConfirmV16(true)
     setStatus(`Подтверди перенос в Доску: ${scenes.length} сцен будут отправлены в проектную Доску.`)
   }
 
   function cancelTimingToBoardConfirmV37() {
-    setShowTimingToBoardConfirmV16(false)
-    setStatus('Переход в Доску отменён. Тайминг оставлен без изменений.')
+    if (timingToBoardActionV162A) return
+    setTimingToBoardActionV162A('cancel')
+    setStatus('Оставляем старую Доску…')
+    window.setTimeout(() => {
+      setShowTimingToBoardConfirmV16(false)
+      setTimingToBoardActionV162A('')
+      setStatus('Переход в Доску отменён. Тайминг оставлен без изменений.')
+    }, 220)
   }
 
   async function confirmTimingToBoardNavigateV37() {
@@ -4135,6 +4197,8 @@ const useVocalStem = mode === 'vocal'
       setStatus('Переход в Доску заблокирован: сцены не загружены. Импортируй JSON или дождись восстановления Тайминга.')
       return
     }
+    if (timingToBoardActionV162A) return
+    setTimingToBoardActionV162A('confirm')
 
     const sceneSnapshot = scenes.map((scene, index) => ({
       ...scene,
@@ -4174,11 +4238,12 @@ const useVocalStem = mode === 'vocal'
       updatedAt: Date.now(),
     }
 
-    setShowTimingToBoardConfirmV16(false)
     setStatus(`Сохраняем Тайминг перед переходом в Доску: ${sceneSnapshot.length} сцен…`)
     await saveDraft(nextDraft, 'timing_to_board_confirm_v37')
 
     const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+    setShowTimingToBoardConfirmV16(false)
+    setTimingToBoardActionV162A('')
     navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
       from: 'manual_timing',
       to: 'board',
@@ -4218,7 +4283,8 @@ const useVocalStem = mode === 'vocal'
               >
                 ↩
               </button>
-            </div>\n            <h3>Перенести Тайминг в Доску?</h3>
+            </div>
+            <h3>Перенести Тайминг в Доску?</h3>
             <p>
               Сейчас в Доске могут быть старые сцены, видео и аудио. Если продолжить, Доска будет очищена
               и заменена свежими сценами, цветами, блоками и главным аудио из Тайминга.
@@ -4226,34 +4292,30 @@ const useVocalStem = mode === 'vocal'
             <div className="avaBoardTimingConfirmWarning">
               Старые видео/кадры Доски будут отвязаны от сцен. Загруженные asset-файлы на диске не удаляются.
             </div>
+            {timingToBoardActionV162A ? (
+              <div className="avaBoardTimingConfirmProgressV162A" role="status" aria-live="polite">
+                <div><span /></div>
+                <small>{timingToBoardActionV162A === 'cancel' ? 'Оставляем старую Доску…' : 'Сохраняем Тайминг и готовим Доску…'}</small>
+              </div>
+            ) : null}
             <div className="avaBoardTimingConfirmActions">
-              <button type="button" className="avaBoardTimingConfirmSecondary" onClick={() => {
-                  try {
-                    if (typeof setShowTimingToBoardConfirmV16 === 'function') setShowTimingToBoardConfirmV16(false)
-                  } catch {}
-                  try {
-                    if (typeof setStatus === 'function') setStatus('Переход в Доску отменён. Тайминг оставлен без изменений.')
-                  } catch {}
-                }}>
-                Оставить старую Доску
+              <button
+                type="button"
+                className="avaBoardTimingConfirmSecondary"
+                onClick={cancelTimingToBoardConfirmV37}
+                disabled={Boolean(timingToBoardActionV162A)}
+              >
+                {timingToBoardActionV162A === 'cancel' ? <span className="avaBoardTimingButtonSpinV162A" aria-hidden="true" /> : null}
+                {timingToBoardActionV162A === 'cancel' ? 'Оставляем…' : 'Оставить старую Доску'}
               </button>
-              <button type="button" className="avaBoardTimingConfirmPrimary" onClick={async () => {
-                  // AVA_TIMING_TO_BOARD_FORCE_SAVE_BEFORE_NAV_V36: make first transfer use the fresh Timing snapshot.
-                  await saveDraft(draft, 'timing_to_board_confirm_v36')
-                  const toPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
-                  try {
-                    if (typeof setShowTimingToBoardConfirmV16 === 'function') setShowTimingToBoardConfirmV16(false)
-                  } catch {}
-                  navigateWithWorkflowEntry(navigate, toPath, makeWorkflowEntry({
-                    from: 'manual_timing',
-                    to: 'board',
-                    fromPath: projectId ? `/app/projects/${projectId}/timing` : '/app/workspace/timing',
-                    toPath,
-                    projectId,
-                    source: 'manual_timing_to_board_confirmed_v16',
-                  }))
-                }}>
-                Да, заменить Доску
+              <button
+                type="button"
+                className="avaBoardTimingConfirmPrimary"
+                onClick={confirmTimingToBoardNavigateV37}
+                disabled={Boolean(timingToBoardActionV162A)}
+              >
+                {timingToBoardActionV162A === 'confirm' ? <span className="avaBoardTimingButtonSpinV162A" aria-hidden="true" /> : null}
+                {timingToBoardActionV162A === 'confirm' ? 'Переносим…' : 'Да, заменить Доску'}
               </button>
             </div>
           </div>
@@ -4278,8 +4340,8 @@ const useVocalStem = mode === 'vocal'
           <span>ASR → song structure → Clip Pass</span>
         </div>
         <div className="avaTimingHeaderActions">
-          <button className="avaSoftButton avaTimingActionButton avaTimingActionAudio" type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || loading}>
-            <UploadCloud size={16} /> {uploading ? 'Загрузка…' : 'Аудио'}
+          <button className={`avaSoftButton avaTimingActionButton avaTimingActionAudio ${uploading ? 'isUploadingV160A' : ''}`} type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || loading}>
+            <UploadCloud size={16} /> {uploading ? 'Загрузка аудио…' : 'Аудио'}
           </button>
           <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт</button>
           <button
@@ -4466,6 +4528,13 @@ const useVocalStem = mode === 'vocal'
           <div className="avaTimingWaveLong">
             {Array.from({ length: 180 }).map((_, index) => <i key={index} style={{ '--h': `${14 + ((index * 19) % 74)}%` }} />)}
           </div>
+          {uploading && (
+            <div className="avaTimingAudioUploadOverlayV160A" aria-live="polite">
+              <span className="avaTimingAudioUploadSpinnerV160A" />
+              <strong>Аудио загружается</strong>
+              <em>сервер принимает файл · если это видео, извлекаем MP3</em>
+            </div>
+          )}
           <div className="avaTimingPlayhead" style={{ left: `${cursorPct}%` }} />
   
           {(draft.speechSegments || []).length > 0 && (
@@ -4533,13 +4602,14 @@ const useVocalStem = mode === 'vocal'
                 ''
               ).trim()
               const visibleRoleLabels = podcastRoleLabel ? [podcastRoleLabel] : roleLabels
+              const isDeletingSceneAudioV168A = deletingSceneAudio && String(deletingSceneAudioIdV168A || "") === String(scene.id || scene.title || scene.index || "")
   return (
                 <button
                   key={`${scene.id}-${scene.start}-${scene.end}`}
                   type="button"
                   data-scene-id={scene.id || scene.title || scene.index}
                   style={{ left: `${sceneLeft}%`, width: `${sceneWidth}%`, '--scene-hue': sceneBlockHue(scene, scene.index), '--scene-block-color': avaSemanticBlockCssColorV69(scene, scene.index) }}
-                  className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${isSceneInBlockSelection(scene) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''}`}
+                  className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${isSceneInBlockSelection(scene) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''} ${isDeletingSceneAudioV168A ? 'isDeletingAudioV168A' : ''}`}
                   onClick={(event) => handleSceneClick(event, scene.index)}
                   onDoubleClick={(event) => {
                     event?.stopPropagation?.()
@@ -4550,6 +4620,7 @@ const useVocalStem = mode === 'vocal'
                   <b>{scene.title}</b>
                   {visibleRoleLabels.length > 0 && <em className="avaTimingSceneRoleBadge">{visibleRoleLabels.slice(0, 2).join(' / ')}</em>}
                   <small>{scene.route && scene.route !== 'auto' ? `${scene.route} · ` : ''}{formatTime(scene.start)} → {formatTime(scene.end)}</small>
+                  {isDeletingSceneAudioV168A ? <span className="avaTimingDeleteProgressV168A" aria-label="Удаляем аудио-сцену"><i /><b>🗑</b></span> : null}
                 </button>
               )
             })}
@@ -4680,7 +4751,19 @@ const useVocalStem = mode === 'vocal'
         )}
 
         {sceneEditor && (
-          <div className="avaTimingSceneEditor">
+          <div
+            className="avaTimingSceneEditor isSceneTintedV161A"
+            style={{
+              '--scene-hue': sceneBlockHue(
+                scenes[sceneEditor.sceneIndex] || selectedScene || {},
+                scenes[sceneEditor.sceneIndex]?.index ?? selectedScene?.index ?? sceneEditor.sceneIndex ?? 0
+              ),
+              '--scene-block-color': avaSemanticBlockCssColorV69(
+                scenes[sceneEditor.sceneIndex] || selectedScene || {},
+                scenes[sceneEditor.sceneIndex]?.index ?? selectedScene?.index ?? sceneEditor.sceneIndex ?? 0
+              ),
+            }}
+          >
             <div>
               <strong>Памятка сцены · {scenes[sceneEditor.sceneIndex]?.title}</strong>
               <span>Двойной клик по сцене открывает это окно</span>

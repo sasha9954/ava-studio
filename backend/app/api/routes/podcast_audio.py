@@ -257,7 +257,7 @@ def render_podcast_audio_to_asset(payload: PodcastAudioRenderIn):
                 print("[PODCAST AUDIO RENDER SEGMENT]", {"index": index, "blockId": block_id, "sourceId": source_id, "sourceUrl": source_url, "resolved": bool(source_path), "sourceStartSec": source_start_sec, "durationSec": duration_sec})
                 if not source_path:
                     return _podcast_audio_error(400, "PODCAST_AUDIO_SOURCE_NOT_FOUND", blockId=block_id, sourceUrl=source_url)
-                cmd = ["ffmpeg", "-y", "-ss", f"{source_start_sec:.6f}", "-t", f"{duration_sec:.6f}", "-i", source_path, "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(out_segment)]
+                cmd = ["ffmpeg", "-y", "-i", source_path, "-ss", f"{source_start_sec:.6f}", "-t", f"{duration_sec:.6f}", "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(out_segment)]
 
             try:
                 r = subprocess.run(cmd, capture_output=True, text=True)
@@ -329,7 +329,7 @@ def extract_podcast_phrase_to_asset(payload: PodcastAudioExtractPhraseIn):
 
     with tempfile.TemporaryDirectory(prefix="ava_podcast_phrase_extract_") as tmpdir:
         temp_output = Path(tmpdir) / "podcast_saved_phrase.mp3"
-        cmd = ["ffmpeg", "-y", "-ss", f"{source_start_sec:.6f}", "-t", f"{duration_sec:.6f}", "-i", source_path, "-vn", "-ac", "2", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "192k", str(temp_output)]
+        cmd = ["ffmpeg", "-y", "-i", source_path, "-ss", f"{source_start_sec:.6f}", "-t", f"{duration_sec:.6f}", "-vn", "-ac", "2", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "192k", str(temp_output)]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True)
         except FileNotFoundError:

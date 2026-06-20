@@ -1,3 +1,4 @@
+/* AVA_BOARD_TIMING_IMPORT_LOADING_V162A: no empty-board flicker during Timing -> Board import. */
 /* AVA_BOARD_BATCH_READY_UI_WINS_V148A: server video refs beat stale polling/runtime busy state. */
 /* AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A: server batch auto-cuts audio slices for ia2v/lip-sync scenes. */
 /* AVA_BOARD_REVIEW_CLEAR_EVENT_TIMESTAMP_V136D: clear review writes explicit cleared_at token. */
@@ -5775,6 +5776,7 @@ function sceneVideoActionState(scene) {
 
   useEffect(() => {
     let active = true
+    let keepLoadingForTimingImportV162A = false
     async function load() {
       setLoading(true)
       setStatus('Загружаем Storyboard и данные Manual Timing…')
@@ -5801,8 +5803,9 @@ function sceneVideoActionState(scene) {
         // When Timing already confirmed replacement, the separate import effect below is the source of truth.
         // Do not load/paint/save the old Board here, otherwise first transfer can end as an empty Board.
         if (openedFromTiming && String(boardWorkflowEntry?.source || '') === 'manual_timing_to_board_confirmed_v16') {
+          keepLoadingForTimingImportV162A = true
           setStatus('Переносим свежий Тайминг в Доску…')
-          setLoading(false)
+          setLoading(true)
           return
         }
 
@@ -5892,7 +5895,7 @@ function sceneVideoActionState(scene) {
         if (!active) return
         setStatus(`Ошибка загрузки Storyboard: ${err.message}`)
       } finally {
-        if (active) setLoading(false)
+        if (active && !keepLoadingForTimingImportV162A) setLoading(false)
       }
     }
     load()
@@ -6933,6 +6936,7 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
   async function confirmTimingToBoardImportV14B() {
     if (timingToBoardImporting) return
     setTimingToBoardImporting(true)
+    setLoading(true) // AVA_BOARD_TIMING_IMPORT_LOADING_V162A
     setStatus('Переносим свежий Тайминг в Доску…')
     try {
       const timingData = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
@@ -6955,6 +6959,7 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
       setStatus(`Не удалось перенести Тайминг в Доску: ${err?.message || err}`)
     } finally {
       setTimingToBoardImporting(false)
+      setLoading(false)
     }
   }
 
@@ -10055,8 +10060,8 @@ async function importTimingJson(event) {
           <div className="avaLoadingCard avaStudioLoadingCard">
             <div className="avaLoadingOrb"><Film size={28} /></div>
             <p className="avaEyebrow"><Sparkles size={14} /> Ava Studio pipeline</p>
-            <h2>Загрузка Storyboard...</h2>
-            <p>Проверяем сцены, промты, видео, звук, блоки и готовим доску к работе.</p>
+            <h2>{openedFromTiming && String(boardWorkflowEntry?.source || '') === 'manual_timing_to_board_confirmed_v16' ? 'Переносим Тайминг в Доску…' : 'Загрузка Storyboard…'}</h2>
+            <p>{status || (openedFromTiming ? 'Сохраняем сцены, цвета, блоки и главное аудио из Тайминга.' : 'Проверяем сцены, промты, видео, звук, блоки и готовим доску к работе.')}</p>
             <div className="avaStudioWaveLoader" aria-hidden="true">
               <div className="avaStudioWaveTrack">
                 <span className="avaStudioMovingNote">♪</span>
@@ -10071,7 +10076,7 @@ async function importTimingJson(event) {
                 <i style={{ '--bar': 8 }} />
               </div>
               <div className="avaStudioLoadingLine"><span /></div>
-              <small>Синхронизируем тайминг, сцены и медиа</small>
+              <small>{openedFromTiming && String(boardWorkflowEntry?.source || '') === 'manual_timing_to_board_confirmed_v16' ? 'Страница откроется уже с готовыми сценами' : 'Синхронизируем тайминг, сцены и медиа'}</small>
             </div>
           </div>
         </section>
@@ -10462,11 +10467,18 @@ async function importTimingJson(event) {
             <div className="avaBoardTimingConfirmWarning">
               Старые видео/кадры Доски будут отвязаны от сцен. Загруженные asset-файлы на диске не удаляются.
             </div>
+            {timingToBoardImporting ? (
+              <div className="avaBoardTimingConfirmProgressV162A" role="status" aria-live="polite">
+                <div><span /></div>
+                <small>Заменяем Доску свежими сценами из Тайминга…</small>
+              </div>
+            ) : null}
             <div className="avaBoardTimingConfirmActions">
               <button type="button" className="avaBoardTimingConfirmSecondary" onClick={cancelTimingToBoardImportV14B} disabled={timingToBoardImporting}>
                 Оставить старую Доску
               </button>
               <button type="button" className="avaBoardTimingConfirmPrimary" onClick={confirmTimingToBoardImportV14B} disabled={timingToBoardImporting}>
+                {timingToBoardImporting ? <span className="avaBoardTimingButtonSpinV162A" aria-hidden="true" /> : null}
                 {timingToBoardImporting ? 'Переносим…' : 'Да, заменить Доску'}
               </button>
             </div>

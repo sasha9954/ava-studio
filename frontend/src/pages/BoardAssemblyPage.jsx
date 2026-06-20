@@ -460,8 +460,8 @@ export default function BoardAssemblyPage() {
   const [watermarkOpacity, setWatermarkOpacity] = useState(35)
   const [watermarkSize, setWatermarkSize] = useState(28)
   const [watermarkMotion, setWatermarkMotion] = useState('corners')
-  const [musicPanelOpen, setMusicPanelOpen] = useState(true)
-  const [watermarkPanelOpen, setWatermarkPanelOpen] = useState(true)
+  const [musicPanelOpen, setMusicPanelOpen] = useState(false)
+  const [watermarkPanelOpen, setWatermarkPanelOpen] = useState(false)
   const [assemblyJob, setAssemblyJob] = useState(null)
   const [assemblyRunning, setAssemblyRunning] = useState(false)
   const [finalVideoUrl, setFinalVideoUrl] = useState('')
@@ -505,8 +505,8 @@ export default function BoardAssemblyPage() {
     setWatermarkOpacity(35)
     setWatermarkSize(28)
     setWatermarkMotion('corners')
-    setMusicPanelOpen(savedSettings.musicPanelOpen ?? true)
-    setWatermarkPanelOpen(savedSettings.watermarkPanelOpen ?? true)
+    setMusicPanelOpen(savedSettings.musicPanelOpen ?? false)
+    setWatermarkPanelOpen(savedSettings.watermarkPanelOpen ?? false)
 
     setFinalVideoUrl(normalizePlayableVideoUrl(savedSettings.finalVideoUrl || ''))
     setFinalDirty(Boolean(savedSettings.finalDirty))
@@ -1710,15 +1710,15 @@ export default function BoardAssemblyPage() {
         </div>
 
         <aside className="avaAssemblySettings">
-          <div className="avaBoardSectionHead">
+          <div className="avaBoardSectionHead avaAssemblyAudioModeHeaderV170A">
             <div>
               <p className="avaEyebrow"><SlidersHorizontal size={14} /> audio mix</p>
-              <h3>Режим аудио</h3>
+              <h3>Режимы аудио в видео</h3>
             </div>
           </div>
 
-          <label className="avaAssemblySelectLabel">
-            <span>Режим аудио</span>
+          <label className="avaAssemblySelectLabel avaAssemblySelectLabelV170A">
+            <span>Режимы аудио в видео</span>
             <select value={audioMode} onChange={(event) => setAudioMode(event.target.value)}>
               {AUDIO_MODES.map((mode) => (
                 <option key={mode.value} value={mode.value}>{mode.title}</option>
@@ -1741,7 +1741,7 @@ export default function BoardAssemblyPage() {
             Пропускать сцены без видео
           </label>
 
-          <div className={`avaAssemblyTransitionMini ${smoothTransitionsEnabledV134B ? 'isOn' : ''} ${smoothTransitionsEnabledV134B && !smoothTransitionsAllowedV134B ? 'isBlocked' : ''}`}>
+          <div className={`avaAssemblyTransitionMini isVideoBlendV170A ${smoothTransitionsEnabledV134B ? 'isOn' : ''} ${smoothTransitionsEnabledV134B && !smoothTransitionsAllowedV134B ? 'isBlocked' : ''}`}>
             <div className="avaAssemblyTransitionMiniHead">
               <label>
                 <input
@@ -1780,7 +1780,7 @@ export default function BoardAssemblyPage() {
             </div>
           </div>
 
-          <div className={`avaAssemblyTransitionMini avaAssemblyTransitionMiniTimingV134G ${smoothTransitionsTimingEnabledV134G ? 'isOn' : ''}`}>
+          <div className={`avaAssemblyTransitionMini avaAssemblyTransitionMiniTimingV134G isTimingV170A ${smoothTransitionsTimingEnabledV134G ? 'isOn' : ''}`}>
             <div className="avaAssemblyTransitionMiniHead">
               <label>
                 <input
@@ -1819,7 +1819,7 @@ export default function BoardAssemblyPage() {
             </div>
           </div>
 
-          <div className={`avaAssemblyMusicBox ${musicPanelOpen ? 'isOpen' : 'isCollapsed'}`}>
+          <div className={`avaAssemblyMusicBox isMusicV170A ${musicPanelOpen ? 'isOpen' : 'isCollapsed'}`}>
             <button type="button" className="avaAssemblyPanelToggle" onClick={() => setMusicPanelOpen((value) => !value)}>
               <span>
                 <strong>Фоновая музыка</strong>
@@ -1875,7 +1875,7 @@ export default function BoardAssemblyPage() {
               </div>
             )}
           </div>
-          <div className={`avaAssemblyWatermarkBox ${watermarkEnabled ? 'isEnabled' : ''} ${watermarkPanelOpen ? 'isOpen' : 'isCollapsed'}`}>
+          <div className={`avaAssemblyWatermarkBox isWatermarkV170A ${watermarkEnabled ? 'isEnabled' : ''} ${watermarkPanelOpen ? 'isOpen' : 'isCollapsed'}`}>
             <div className="avaAssemblyWatermarkHeader">
               <button type="button" className="avaAssemblyPanelToggle isWatermark" onClick={() => setWatermarkPanelOpen((value) => !value)}>
                 <span>

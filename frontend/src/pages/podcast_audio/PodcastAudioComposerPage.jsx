@@ -1513,6 +1513,30 @@ function normalizeBrowserAudioUrl(url = "") {
   }
 }
 
+
+function normalizePodcastInsertedPlaybackUrlV164A(url = "") {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("blob:") || raw.startsWith("data:")) return raw;
+  return normalizePodcastAudioSourceUrl(raw) || raw;
+}
+
+const podcastPreloadCacheV164A = new Set();
+function preloadPodcastAudioUrlV164A(url = "") {
+  const normalized = normalizePodcastInsertedPlaybackUrlV164A(url);
+  if (!normalized || normalized.startsWith("blob:") || normalized.startsWith("data:")) return normalized;
+  if (podcastPreloadCacheV164A.has(normalized)) return normalized;
+  podcastPreloadCacheV164A.add(normalized);
+  try {
+    const element = new Audio(normalized);
+    element.preload = "auto";
+    element.load();
+  } catch (error) {
+    console.warn("[PODCAST PRELOAD AUDIO FAILED V164A]", { url: normalized, error });
+  }
+  return normalized;
+}
+
 function sanitizeAudioDownloadName(filename = "podcast-audio") {
   const base = String(filename || "podcast-audio")
     .replace(/\.[^.]+$/, "")
@@ -1806,7 +1830,7 @@ function getInsertedAudioUrl(block = {}) {
   const keys = ["audio_url", "fragment_url", "asset_url", "assetUrl", "src", "source_url", "server_url", "public_url", "publicUrl", "url"];
   for (const key of keys) {
     const value = String(block?.[key] || "").trim();
-    if (value) return value;
+    if (value) return normalizePodcastInsertedPlaybackUrlV164A(value);
   }
   return "";
 }
@@ -2190,6 +2214,9 @@ function getBlockSourceStart(block = {}, fallback = 0) {
 
 function buildInsertedPhraseBlockFromSavedClip(clip = {}, clipAudioUrl = "", clipDuration = 0, fallbackColorIndex = 1) {
   const label = String(clip.label || clip.source_label || "Фраза").trim() || "Фраза";
+  const safeClipAudioUrl = normalizePodcastInsertedPlaybackUrlV164A(clipAudioUrl || avaStage100PickAudioUrl(clip));
+  const audioUrl = normalizePodcastInsertedPlaybackUrlV164A(clip.audio_url || clip.audioUrl || safeClipAudioUrl);
+  const assetUrl = normalizePodcastInsertedPlaybackUrlV164A(clip.asset_url || clip.assetUrl || clip.server_url || clip.publicUrl || safeClipAudioUrl);
   return {
     id: createId("block"),
     type: "phrase",
@@ -2197,20 +2224,22 @@ function buildInsertedPhraseBlockFromSavedClip(clip = {}, clipAudioUrl = "", cli
     source_kind: "inserted_audio",
     block_type: "inserted_audio",
     source_audio_id: clip.id || clip.source_audio_id || "inserted_audio",
-    source_url: clipAudioUrl,
-    audio_url: clip.audio_url || clipAudioUrl,
-    fragment_url: clip.fragment_url || clipAudioUrl,
-    asset_url: clip.asset_url || clip.assetUrl || clipAudioUrl,
-    assetUrl: clip.assetUrl || clip.asset_url || clipAudioUrl,
-    server_url: clip.server_url || clip.asset_url || clip.assetUrl || clipAudioUrl,
-    publicUrl: clip.publicUrl || clip.public_url || clip.asset_url || clipAudioUrl,
-    public_url: clip.public_url || clip.publicUrl || clip.asset_url || clipAudioUrl,
-    url: clip.url || clipAudioUrl,
-    src: clip.src || clipAudioUrl,
+    source_url: audioUrl || assetUrl || safeClipAudioUrl,
+    audio_url: audioUrl || assetUrl || safeClipAudioUrl,
+    audioUrl: audioUrl || assetUrl || safeClipAudioUrl,
+    fragment_url: audioUrl || assetUrl || safeClipAudioUrl,
+    asset_url: assetUrl || audioUrl || safeClipAudioUrl,
+    assetUrl: assetUrl || audioUrl || safeClipAudioUrl,
+    server_url: assetUrl || audioUrl || safeClipAudioUrl,
+    publicUrl: assetUrl || audioUrl || safeClipAudioUrl,
+    public_url: assetUrl || audioUrl || safeClipAudioUrl,
+    url: audioUrl || assetUrl || safeClipAudioUrl,
+    src: audioUrl || assetUrl || safeClipAudioUrl,
     source_name: clip.source_name || clip.filename || label,
     source_start_sec: 0,
     source_end_sec: roundSeconds(clipDuration),
     duration_sec: roundSeconds(clipDuration),
+    durationSec: roundSeconds(clipDuration),
     color_index: Number.isInteger(clip.color_index) ? clip.color_index : fallbackColorIndex,
     color: typeof clip.color === "string" && clip.color.trim() ? clip.color.trim() : undefined,
     block_label: label,
@@ -2704,6 +2733,7 @@ function deleteBlockAndMark(blocks = [], blockId = "", deletionMarkers = []) {
 function BlockTimeline({
   blocks = [],
   selectedBlockId = "",
+  deletingBlockId = "",
   currentTimeSec = 0,
   totalDurationSec = 0,
   deletionMarkers = [],
@@ -2734,13 +2764,14 @@ function BlockTimeline({
           const widthPercent = safeDuration > 0 ? `${(duration / safeDuration) * 100}%` : "0%";
           const leftPercent = safeDuration > 0 ? `${(startSec / safeDuration) * 100}%` : "0%";
           const isSelected = block.id === selectedBlockId;
+          const isDeletingBlockV168A = String(block.id || "") === String(deletingBlockId || "");
           const color = getBlockRenderColor(block);
           const badgeText = getBlockInitialText(block);
           const labelText = getBlockLabelText(block);
           return (
             <div
               key={block.id}
-              className={`podcastAudioBlock${isSelected ? " selected" : ""}${block.type === "silence" ? " silence" : ""}${(block.source_audio_id || "main") === "main" && block.type !== "silence" && !hasPhraseIdentity(block) && !getStoredBlockLabel(block) ? " narrator" : ""}${hasPhraseIdentity(block) ? " phrase" : ""}${badgeText ? " labeled" : ""}`}
+              className={`podcastAudioBlock${isSelected ? " selected" : ""}${isDeletingBlockV168A ? " isDeletingV168A" : ""}${block.type === "silence" ? " silence" : ""}${(block.source_audio_id || "main") === "main" && block.type !== "silence" && !hasPhraseIdentity(block) && !getStoredBlockLabel(block) ? " narrator" : ""}${hasPhraseIdentity(block) ? " phrase" : ""}${badgeText ? " labeled" : ""}`}
               style={{ left: leftPercent, width: widthPercent, "--block-color": color }}
               onClick={(event) => {
                 event.stopPropagation();
@@ -2753,6 +2784,7 @@ function BlockTimeline({
               title={`${labelText ? `${labelText} · ` : ""}${formatTimer(startSec)} → ${formatTimer(startSec + duration)} · двойной клик = меню`}
             >
               {badgeText ? <span className="podcastBlockBadge" title={labelText}>{badgeText}</span> : null}
+              {isDeletingBlockV168A ? <span className="podcastDeleteProgressV168A" aria-label="Удаляем аудио-блок"><i /><b>🗑</b></span> : null}
             </div>
           );
         })}
@@ -2827,6 +2859,7 @@ export default function PodcastAudioComposerPage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [blocks, setBlocks] = useState([]);
   const [selectedBlockId, setSelectedBlockId] = useState("");
+  const [deletingBlockIdV168A, setDeletingBlockIdV168A] = useState("");
   const [deletionMarkers, setDeletionMarkers] = useState([]);
   const [microStepSec, setMicroStepSec] = useState(DEFAULT_MICRO_STEP_SEC);
   const [history, setHistory] = useState([]);
@@ -2843,6 +2876,8 @@ export default function PodcastAudioComposerPage() {
   const [repairBusyKey, setRepairBusyKey] = useState("");
   const [hasHydrated, setHasHydrated] = useState(false);
   const [finalAudioBusy, setFinalAudioBusy] = useState("");
+  const [actorAudioPreppingId, setActorAudioPreppingId] = useState("");
+  const [podcastUploadBusy, setPodcastUploadBusy] = useState(null);
   const [showTimingHandoffConfirm, setShowTimingHandoffConfirm] = useState(false);
   const timingHandoffConfirmedRef = useRef(false);
 
@@ -2850,6 +2885,13 @@ export default function PodcastAudioComposerPage() {
     const file = event.target.files?.[0] || null;
     if (!file) return;
     const isVideoUpload = isPodcastVideoFile(file);
+    setPodcastUploadBusy({
+      kind: "main",
+      filename: file.name || "audio",
+      label: isVideoUpload ? "Видео загружается и извлекается в MP3" : "Основное аудио загружается",
+      detail: isVideoUpload ? "MOV/MP4/MKV/AVI конвертируются на сервере, это может занять дольше." : "Отправляю файл на сервер и читаю длительность.",
+      startedAt: Date.now(),
+    });
     setMessage(isVideoUpload ? "Загружаю видео и извлекаю MP3 для подкаста..." : "Загружаю основное аудио подкаста...");
     const localPlaybackUrl = isVideoUpload ? "" : URL.createObjectURL(file);
     try {
@@ -2871,16 +2913,17 @@ export default function PodcastAudioComposerPage() {
       const assetApiPath = String(uploaded.asset_api_path || uploaded.assetApiPath || uploaded.audioApiPath || "").trim();
       const assetId = String(uploaded.asset_id || uploaded.assetId || uploaded.id || "").trim();
       if (!serverUrl && !assetApiPath) throw new Error("backend не вернул URL аудио");
+      const durableAudioUrl = normalizePodcastAudioSourceUrl(assetApiPath || serverUrl);
       const nextAudio = normalizeManualTimingAudio({
         ...uploaded,
-        url: localPlaybackUrl || serverUrl || assetApiPath,
+        url: localPlaybackUrl || durableAudioUrl || serverUrl || assetApiPath,
         playbackUrl: localPlaybackUrl || "",
         playback_url: localPlaybackUrl || "",
         localUrl: localPlaybackUrl || "",
         local_url: localPlaybackUrl || "",
-        server_url: serverUrl || assetApiPath,
-        assetUrl: serverUrl || assetApiPath,
-        asset_url: serverUrl || assetApiPath,
+        server_url: durableAudioUrl || serverUrl || assetApiPath,
+        assetUrl: durableAudioUrl || serverUrl || assetApiPath,
+        asset_url: durableAudioUrl || serverUrl || assetApiPath,
         assetApiPath,
         asset_api_path: assetApiPath,
         assetId,
@@ -2912,7 +2955,7 @@ export default function PodcastAudioComposerPage() {
       try {
         localStorage.setItem(`ava_podcast_standalone_audio:${sourceNodeId}`, JSON.stringify({
           ...nextAudio,
-          url: serverUrl || assetApiPath,
+          url: durableAudioUrl || serverUrl || assetApiPath,
           playbackUrl: "",
           playback_url: "",
           localUrl: "",
@@ -2926,6 +2969,7 @@ export default function PodcastAudioComposerPage() {
       if (localPlaybackUrl) try { URL.revokeObjectURL(localPlaybackUrl); } catch {}
       setMessage(`Не удалось загрузить аудио: ${error?.message || "ошибка"}.`);
     } finally {
+      setPodcastUploadBusy(null);
       event.target.value = "";
     }
   };
@@ -3904,7 +3948,7 @@ export default function PodcastAudioComposerPage() {
     const snapshot = getSelectedBlockSnapshot();
     if (!snapshot || !clip) return;
     const repairedClip = copyAudioUrlFieldsFromSource(clip, findAudioSourceForInsertedBlock(clip, actorAudios, savedClips) || {});
-    const clipAudioUrl = getItemSourceUrl(repairedClip, audio, actorAudios, savedClips);
+    const clipAudioUrl = preloadPodcastAudioUrlV164A(normalizePodcastInsertedPlaybackUrlV164A(getItemSourceUrl(repairedClip, audio, actorAudios, savedClips)));
     if (!clipAudioUrl) {
       console.warn("[PAC INSERTED_AUDIO_MISSING_URL]", clip);
       setMessage("У вставки нет audio_url, блок не может проигрываться");
@@ -3941,7 +3985,7 @@ export default function PodcastAudioComposerPage() {
     const snapshot = getSelectedBlockSnapshot();
     if (!snapshot || !clip) return;
     const repairedClip = copyAudioUrlFieldsFromSource(clip, findAudioSourceForInsertedBlock(clip, actorAudios, savedClips) || {});
-    const clipAudioUrl = getItemSourceUrl(repairedClip, audio, actorAudios, savedClips);
+    const clipAudioUrl = preloadPodcastAudioUrlV164A(normalizePodcastInsertedPlaybackUrlV164A(getItemSourceUrl(repairedClip, audio, actorAudios, savedClips)));
     if (!clipAudioUrl) {
       console.warn("[PAC INSERTED_AUDIO_MISSING_URL]", clip);
       setMessage("У вставки нет audio_url, блок не может проигрываться");
@@ -4112,36 +4156,29 @@ export default function PodcastAudioComposerPage() {
   const playFragmentAudioBlock = async (blockIndex, startOffsetSec = 0, mode = "selected_block") => {
     const safeBlocks = blocksRef.current;
     const block = safeBlocks[blockIndex];
-    if (!block) return;
+    const element = audioRef.current;
+    if (!block || !element) return;
     const blockStartSec = getBlockVirtualStart(safeBlocks, blockIndex);
     const item = normalizeComposerPlaybackBlock(block, blockIndex, blockStartSec);
     logComposerQueueBlock(item);
     const duration = roundSeconds(item.durationSec || getBlockDuration(block));
     const startOffset = clampSeconds(startOffsetSec, 0, duration);
+    const playbackUrl = normalizePodcastInsertedPlaybackUrlV164A(item.audioUrl || getInsertedAudioUrl(block));
 
-    if (!item.audioUrl) {
-      console.warn("[PAC INSERTED_AUDIO_MISSING_URL]", block);
+    if (!playbackUrl) {
+      console.warn("[PAC INSERTED_AUDIO_MISSING_URL V164A]", block);
       setMessage("У вставки нет audio_url, блок не может проигрываться");
-      if (mode === "sequence") {
-        playNextSequenceBlock(blockIndex, blockIndex + 1);
-      } else {
+      if (mode === "sequence") playNextSequenceBlock(blockIndex, blockIndex + 1);
+      else {
         activeMainPlaybackRef.current = null;
         setIsPlaying(false);
       }
       return;
     }
 
-    if (audioRef.current) {
-      try {
-        audioRef.current.pause();
-      } catch {}
-    }
     stopMainPlaybackGuard();
     stopSilencePlayback();
     stopFragmentPlayback();
-
-    const fragmentElement = new Audio(item.audioUrl);
-    fragmentAudioRef.current = fragmentElement;
     activeMainPlaybackRef.current = {
       mode,
       type: "inserted_audio",
@@ -4155,61 +4192,32 @@ export default function PodcastAudioComposerPage() {
     currentBlockIndexRef.current = blockIndex;
     setSelectedBlockId(block.id);
     setCurrentTimeSec(roundSeconds(blockStartSec + startOffset));
-    setIsPlaying(true);
+    setMessage("Готовлю вставленный аудио-фрагмент...");
 
-    let startedAt = performance.now();
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      if (fragmentAudioRef.current !== fragmentElement) return;
-      stopFragmentPlayback();
-      setCurrentTimeSec(roundSeconds(blockStartSec + duration));
-      if (mode === "sequence") {
-        playNextSequenceBlock(blockIndex, blockIndex + 1);
-      } else {
+    const ready = await prepareAudioElement(playbackUrl, startOffset);
+    if (!ready) {
+      console.warn("[PAC INSERTED_AUDIO_PREPARE_FAILED V164A]", { block, playbackUrl });
+      setMessage("Не удалось открыть вставленный аудио-фрагмент.");
+      if (mode === "sequence") playNextSequenceBlock(blockIndex, blockIndex + 1);
+      else {
         activeMainPlaybackRef.current = null;
         setIsPlaying(false);
       }
-    };
-
-    const tick = () => {
-      const session = activeMainPlaybackRef.current;
-      if (!session || session.blockId !== item.blockId || session.mode !== mode || fragmentAudioRef.current !== fragmentElement) {
-        fragmentPlaybackRafRef.current = null;
-        return;
-      }
-      const elementTime = Number.isFinite(fragmentElement.currentTime) ? fragmentElement.currentTime : 0;
-      const elapsed = Math.max(startOffset + (performance.now() - startedAt) / 1000, elementTime);
-      setCurrentTimeSec(roundSeconds(blockStartSec + Math.min(duration, elapsed)));
-      if (elapsed >= duration - 0.015) {
-        finish();
-        return;
-      }
-      fragmentPlaybackRafRef.current = requestAnimationFrame(tick);
-    };
-
-    fragmentElement.addEventListener("ended", finish, { once: true });
-    fragmentElement.addEventListener("error", () => {
-      console.warn("[PAC INSERTED_AUDIO_MISSING_URL]", block);
-      setMessage("У вставки нет audio_url, блок не может проигрываться");
-      if (mode === "sequence") playNextSequenceBlock(blockIndex, blockIndex + 1);
-      else stopMainPlayback();
-    }, { once: true });
+      return;
+    }
 
     try {
-      await waitForAudioReady(fragmentElement);
-      try {
-        fragmentElement.currentTime = startOffset;
-      } catch {}
-      startedAt = performance.now();
-      await fragmentElement.play();
-      fragmentPlaybackRafRef.current = requestAnimationFrame(tick);
-    } catch {
-      stopFragmentPlayback();
-      setMessage("Не удалось открыть вставленный аудио-фрагмент.");
+      await element.play();
+      setIsPlaying(true);
+      startMainPlaybackGuard();
+      setMessage("Вставленный фрагмент проигрывается как часть монтажа.");
+    } catch (error) {
+      console.warn("[PAC INSERTED_AUDIO_PLAY_FAILED V164A]", { block, playbackUrl, error });
+      stopMainPlaybackGuard();
+      activeMainPlaybackRef.current = null;
+      setIsPlaying(false);
+      setMessage("Браузер не запустил вставленный аудио-фрагмент. Нажми Play ещё раз.");
       if (mode === "sequence") playNextSequenceBlock(blockIndex, blockIndex + 1);
-      else stopMainPlayback();
     }
   };
 
@@ -4668,8 +4676,26 @@ export default function PodcastAudioComposerPage() {
     event.target.value = "";
     if (!files.length) return;
 
+    setPodcastUploadBusy({
+      kind: "actor",
+      filename: files[0]?.name || "actor_audio",
+      label: files.length > 1 ? `Загружаю аудио актёров: 1/${files.length}` : "Загружаю аудио актёра",
+      detail: "Видео форматы будут извлечены в MP3 на сервере.",
+      total: files.length,
+      index: 1,
+      startedAt: Date.now(),
+    });
     setMessage("Загружаю дополнительное аудио/видео актёра...");
     for (const [fileIndex, file] of files.entries()) {
+      setPodcastUploadBusy((busy) => ({
+        ...(busy || {}),
+        kind: "actor",
+        filename: file.name || `actor_${fileIndex + 1}`,
+        label: files.length > 1 ? `Загружаю аудио актёров: ${fileIndex + 1}/${files.length}` : "Загружаю аудио актёра",
+        detail: isPodcastVideoFile(file) ? "Извлекаю звук из видео в MP3." : "Отправляю аудио на сервер.",
+        total: files.length,
+        index: fileIndex + 1,
+      }));
       const id = createId("actor_audio");
       const isVideoUpload = isPodcastVideoFile(file);
       const localUrl = isVideoUpload ? "" : URL.createObjectURL(file);
@@ -4696,7 +4722,8 @@ export default function PodcastAudioComposerPage() {
         const serverUrl = String(uploaded.asset_url || uploaded.assetUrl || uploaded.publicUrl || uploaded.url || uploaded.path || "").trim();
         const assetApiPath = String(uploaded.asset_api_path || uploaded.assetApiPath || uploaded.audioApiPath || "").trim();
         const assetId = String(uploaded.asset_id || uploaded.assetId || uploaded.id || "").trim();
-        const playbackUrl = localUrl || serverUrl || assetApiPath;
+        const durableActorUrl = normalizePodcastAudioSourceUrl(assetApiPath || serverUrl);
+        const playbackUrl = localUrl || durableActorUrl || serverUrl || assetApiPath;
         const sourceName = uploaded.audio_name || uploaded.filename || uploaded.name || file.name || `actor_${fileIndex + 1}.mp3`;
         const uploadedDuration = roundSeconds(uploaded.audio_duration_sec || uploaded.duration_sec || uploaded.durationSec || 0);
 
@@ -4719,10 +4746,10 @@ export default function PodcastAudioComposerPage() {
           playback_url: localUrl || "",
           localUrl: localUrl || "",
           local_url: localUrl || "",
-          asset_url: serverUrl || assetApiPath,
-          assetUrl: serverUrl || assetApiPath,
-          server_url: serverUrl || assetApiPath,
-          publicUrl: serverUrl || assetApiPath,
+          asset_url: durableActorUrl || serverUrl || assetApiPath,
+          assetUrl: durableActorUrl || serverUrl || assetApiPath,
+          server_url: durableActorUrl || serverUrl || assetApiPath,
+          publicUrl: durableActorUrl || serverUrl || assetApiPath,
           assetApiPath,
           asset_api_path: assetApiPath,
           assetId,
@@ -4750,6 +4777,7 @@ export default function PodcastAudioComposerPage() {
         }
 
         setActorAudios((items) => [...items, baseActor]);
+        preloadPodcastAudioUrlV164A(playbackUrl);
 
         if (!uploadedDuration) {
           const probeUrl = await resolvePodcastPlaybackUrl(baseActor);
@@ -4784,6 +4812,7 @@ export default function PodcastAudioComposerPage() {
       }
     }
 
+    setPodcastUploadBusy(null);
     setMessage("Добавлено аудио/видео актёра. Видео автоматически извлекается в MP3 на сервере.");
   };
 
@@ -4886,7 +4915,11 @@ export default function PodcastAudioComposerPage() {
     const virtualEnd = roundSeconds(virtualStart + duration);
     const currentInsideSelected = actor.currentTimeSec > virtualStart + 0.025 && actor.currentTimeSec < virtualEnd - 0.025;
     const resumeOffset = currentInsideSelected ? clampSeconds(actor.currentTimeSec - virtualStart, 0, duration) : 0;
-    const ready = await prepareAudioElement(actor.url, roundSeconds(roundSeconds(block.source_start_sec) + resumeOffset));
+    const actorPlaybackUrl = normalizePodcastInsertedPlaybackUrlV164A(getAvaAudioPlaybackUrl(actor) || actor.url || getAvaAudioServerUrl(actor));
+    setActorAudioPreppingId(actorId);
+    setMessage("Готовлю аудио актёра для прослушки...");
+    const ready = await prepareAudioElement(actorPlaybackUrl, roundSeconds(roundSeconds(block.source_start_sec) + resumeOffset));
+    setActorAudioPreppingId("");
     if (!ready) return;
     activeActorPlaybackRef.current = {
       actorId,
@@ -4902,6 +4935,7 @@ export default function PodcastAudioComposerPage() {
     } catch (error) {
       console.warn("[PODCAST ACTOR AUDIO PLAY FAILED]", { actorId, error });
       setMessage("Браузер не запустил аудио актёра. Нажми Play ещё раз или проверь, что файл не пустой.");
+      setActorAudioPreppingId("");
       stopActorPlayback({ pause: false });
     }
   };
@@ -5078,7 +5112,7 @@ export default function PodcastAudioComposerPage() {
       sourceNodeId,
     });
     const clipId = String(clip?.id || createId("saved_clip"));
-    const sourceUrl = asset.url;
+    const sourceUrl = preloadPodcastAudioUrlV164A(normalizePodcastInsertedPlaybackUrlV164A(asset.url));
     console.log("[PODCAST SAVED PHRASE ASSET_CREATED]", {
       savedClipId: clipId,
       label: label || clip?.label || clipId,
@@ -5324,14 +5358,21 @@ export default function PodcastAudioComposerPage() {
     setMessage(`${arrow} Конец выбранного блока сдвинут на ${formatTimer(Math.abs(result.appliedDelta))}. Выбранный блок: ${formatTimer(result.selectedDurationAfter)}, правый остаток: ${formatTimer(result.rightDurationAfter)}.`);
   };
 
-  const deleteSelectedBlock = () => {
+  const deleteSelectedBlock = async () => {
     stopMainPlayback();
     if (!selectedBlockId) {
       setMessage("Сначала выбери блок.");
       return;
     }
-    const result = deleteBlockAndMark(blocks, selectedBlockId, deletionMarkers);
-    if (!result) return;
+    const blockIdToDeleteV168A = selectedBlockId;
+    setDeletingBlockIdV168A(blockIdToDeleteV168A);
+    setMessage("Удаляю аудио-блок...");
+    await new Promise((resolve) => window.setTimeout(resolve, 360));
+    const result = deleteBlockAndMark(blocks, blockIdToDeleteV168A, deletionMarkers);
+    if (!result) {
+      setDeletingBlockIdV168A("");
+      return;
+    }
     pushHistory("delete_block");
     setBlocks(result.blocks);
     setDeletionMarkers(result.deletionMarkers);
@@ -5340,6 +5381,7 @@ export default function PodcastAudioComposerPage() {
     setBlockMenu(null);
     setSaveClipDialog(null);
     seekOnTimeline(result.nextTimeSec, result.blocks);
+    setDeletingBlockIdV168A("");
     setMessage(`Блок удалён (${formatTimer(result.removedDuration)}). На дорожке остался маячок удаления. Вернуть можно кнопкой “Назад”.`);
   };
 
@@ -5615,10 +5657,11 @@ export default function PodcastAudioComposerPage() {
       throw new Error(detail);
     }
     const rawAssetUrl = String(data?.asset_url || data?.assetUrl || data?.publicUrl || data?.url || data?.path || "").trim();
-    const normalizedAsset = normalizeAssetFileUrl(rawAssetUrl || data?.asset_api_path || data?.assetApiPath || "");
-    const assetUrl = normalizedAsset.url || normalizePodcastAudioSourceUrl(rawAssetUrl);
+    const rawAssetApiPath = String(data?.asset_api_path || data?.assetApiPath || "").trim();
+    const normalizedAsset = normalizeAssetFileUrl(rawAssetApiPath || rawAssetUrl || "");
+    const assetUrl = normalizedAsset.url || normalizePodcastAudioSourceUrl(rawAssetApiPath || rawAssetUrl);
     const assetId = String(data?.asset_id || data?.assetId || normalizedAsset.assetId || "").trim();
-    const assetApiPath = String(data?.asset_api_path || data?.assetApiPath || normalizedAsset.apiPath || "").trim();
+    const assetApiPath = String(rawAssetApiPath || normalizedAsset.apiPath || "").trim();
     return {
       ...(data || {}),
       assetId,
@@ -6724,7 +6767,6 @@ const applyComposedAudioToTiming = async () => {
           <h1>Подкаст / аудио</h1>
         </div>
         <div className="podcastComposerHeaderActions">
-          <button type="button" onClick={clearAll} disabled={!audio.url}>Очистить всё</button>
           <button
               type="button"
               onClick={() => {
@@ -6734,7 +6776,7 @@ const applyComposedAudioToTiming = async () => {
               disabled={!!finalAudioBusy || !audio.url || !blocks.length}
               data-stage="PODCAST_STAGE116_TOP_BUTTON_CONFIRM"
             >
-              {finalAudioBusy === "timing" ? "Собираю..." : "Перейти в Timing"}
+              {finalAudioBusy === "timing" ? "Собираю переход..." : "Перейти в Timing"}
             </button>
         </div>
       </header>
@@ -6754,10 +6796,10 @@ const applyComposedAudioToTiming = async () => {
             <p>Здесь отдельно собираем подкаст: добавляем роли, вставки, тишину, сохраняем финальное аудио - и уже потом переходим в Manual Timing для разрезки и правок.</p>
           </div>
           <div className="podcastStandaloneStartActions">
-            <button className="podcastPrimaryAction" type="button" onClick={() => mainAudioInputRef.current?.click()}>
-              🎧 Загрузить аудио / видео
+            <button className="podcastPrimaryAction" type="button" onClick={() => mainAudioInputRef.current?.click()} disabled={!!podcastUploadBusy}>
+              {podcastUploadBusy?.kind === "main" ? "⏳ Загружаю..." : "🎧 Загрузить аудио / видео"}
             </button>
-            <button type="button" onClick={() => {
+            <button type="button" disabled={!!podcastUploadBusy} onClick={() => {
             if (typeof setShowTimingHandoffConfirm === 'function') {
               setShowTimingHandoffConfirm(true)
               setMessage('Подтверди переход в Timing: старый Timing / Board / Монтаж будут очищены.')
@@ -6768,6 +6810,17 @@ const applyComposedAudioToTiming = async () => {
               Перейти в Timing
             </button>
           </div>
+          {podcastUploadBusy?.kind === "main" ? (
+            <div className="podcastUploadProgressCard" role="status" aria-live="polite">
+              <div className="podcastUploadSpinner" />
+              <div className="podcastUploadProgressText">
+                <strong>{podcastUploadBusy.label || "Аудио загружается"}</strong>
+                <span>{podcastUploadBusy.filename || "audio"}</span>
+                <small>{podcastUploadBusy.detail || "Ждём ответ сервера..."}</small>
+              </div>
+              <div className="podcastUploadProgressBar"><i /></div>
+            </div>
+          ) : null}
           {message ? <div className="podcastComposerMessage">{message}</div> : null}
         </section>
       ) : (
@@ -6785,6 +6838,7 @@ const applyComposedAudioToTiming = async () => {
 
           <BlockTimeline
             blocks={blocks}
+            deletingBlockId={deletingBlockIdV168A}
             currentTimeSec={currentTimeSec}
             deletionMarkers={deletionMarkers}
             onSeek={seekOnTimeline}
@@ -7040,28 +7094,40 @@ const applyComposedAudioToTiming = async () => {
 
 
           {showTimingHandoffConfirm ? (
-            <div className="podcastTimingConfirmOverlay" role="presentation" onClick={() => setShowTimingHandoffConfirm(false)}>
-              <div className="podcastTimingConfirmCard" role="dialog" aria-modal="true" aria-label="Подтверждение перехода в Timing" onClick={(event) => event.stopPropagation()}>
+            <div className="podcastTimingConfirmOverlay" role="presentation" onClick={() => { if (finalAudioBusy !== "timing") setShowTimingHandoffConfirm(false); }}>
+              <div className={`podcastTimingConfirmCard ${finalAudioBusy === "timing" ? "isBusy" : ""}`} role="dialog" aria-modal="true" aria-label="Подтверждение перехода в Timing" onClick={(event) => event.stopPropagation()}>
                 <div className="podcastTimingConfirmIcon">↪</div>
                 <div className="podcastTimingConfirmBody">
                   <span className="podcastTimingConfirmKicker">AVA STUDIO PIPELINE</span>
                   <h3>Перейти в Timing?</h3>
-                  <p>Новое собранное аудио из Podcast заменит текущий Timing.</p>
+                  <p>Новое собранное аудио из Podcast будет передано в Manual Timing.</p>
                   <p>Старые данные Board и Видео монтаж для этой рабочей области будут очищены, чтобы не смешать их со старым аудио.</p>
-                  <small>Если старую работу нужно сохранить — сначала сохрани проект или экспортируй JSON.</small>
+                  <small>После нажатия продолжения останемся на этом экране и покажем процесс сборки, пока Timing не откроется.</small>
+
+                  {finalAudioBusy === "timing" ? (
+                    <div className="podcastTimingHandoffProgress" aria-live="polite">
+                      <span className="podcastTimingHandoffSpinner" aria-hidden="true" />
+                      <div>
+                        <strong>Собираю Podcast → Timing</strong>
+                        <small>{message || "Готовлю финальное аудио, манифест и сцены..."}</small>
+                      </div>
+                      <div className="podcastTimingHandoffBar"><i /></div>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="podcastTimingConfirmActions">
                   <button type="button" onClick={() => {
+                    if (finalAudioBusy === "timing") return;
                     setShowTimingHandoffConfirm(false);
                     setMessage("Переход в Timing отменён. Старые этапы не очищены.");
-                  }}>Отмена</button>
-                  <button className="isDanger" type="button" onClick={() => {
-                    // PODCAST_STAGE116_MODAL_CONFIRM_APPLY
+                  }} disabled={finalAudioBusy === "timing"}>Отмена</button>
+                  <button className="isDanger" type="button" disabled={finalAudioBusy === "timing"} onClick={() => {
+                    // PODCAST_STAGE165_MODAL_CONFIRM_APPLY_KEEP_PROGRESS
+                    if (finalAudioBusy === "timing") return;
                     timingHandoffConfirmedRef.current = true;
-                    setShowTimingHandoffConfirm(false);
                     setMessage("Собираю Podcast и передаю новое аудио в Timing...");
                     void applyComposedAudioToTiming();
-                  }}>Перейти и очистить</button>
+                  }}>{finalAudioBusy === "timing" ? "Собираю..." : "Продолжить"}</button>
                 </div>
               </div>
             </div>
@@ -7081,8 +7147,22 @@ const applyComposedAudioToTiming = async () => {
                 hidden
                 onChange={addActorAudioFiles}
               />
-              <button type="button" onClick={() => actorAudioInputRef.current?.click()}>＋ аудио</button>
+              <button type="button" onClick={() => actorAudioInputRef.current?.click()} disabled={!!podcastUploadBusy}>
+                {podcastUploadBusy?.kind === "actor" ? "⏳ загружаю..." : "＋ аудио"}
+              </button>
             </div>
+
+            {podcastUploadBusy?.kind === "actor" ? (
+              <div className="podcastUploadProgressCard podcastActorUploadProgress" role="status" aria-live="polite">
+                <div className="podcastUploadSpinner" />
+                <div className="podcastUploadProgressText">
+                  <strong>{podcastUploadBusy.label || "Аудио актёра загружается"}</strong>
+                  <span>{podcastUploadBusy.filename || "actor_audio"}</span>
+                  <small>{podcastUploadBusy.detail || "Ждём конвертацию на сервере..."}</small>
+                </div>
+                <div className="podcastUploadProgressBar"><i /></div>
+              </div>
+            ) : null}
 
             {actorAudios.length ? (
               <div className="podcastActorAudioList">
@@ -7120,7 +7200,7 @@ const applyComposedAudioToTiming = async () => {
                       />
 
                       <div className="podcastActorAudioControls">
-                        <button type="button" onClick={() => toggleActorPlayback(actor.id)}>{actor.isPlaying ? "■ Stop" : "▶ Play блок"}</button>
+                        <button type="button" onClick={() => toggleActorPlayback(actor.id)} disabled={Boolean(actorAudioPreppingId && actorAudioPreppingId !== actor.id)}>{actorAudioPreppingId === actor.id ? "⏳ Готовлю..." : (actor.isPlaying ? "■ Stop" : "▶ Play блок")}</button>
                         <span className="podcastComposerTimer">{formatTimer(actor.currentTimeSec || 0)}</span>
                         <button type="button" onClick={() => splitActorAudioBlock(actor.id)}>резать</button>
                         <div className="podcastCutControls compact" aria-label="Доводчик аудио актёра">

@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import './StandaloneGeneratorPage.css'
 import { pickLatestGeneratorJob } from '../../services/generatorJobs'
 import { makeWorkflowEntry, rememberWorkflowEntry } from '../../utils/workflowNavigation.js'
@@ -370,9 +371,9 @@ function clearGeneratorDraft() {
 const EXTRA_TAIL_SEC = 1
 
 const ASPECTS = [
-  { value: '9:16', label: '9:16', width: 720, height: 1280 },
-  { value: '16:9', label: '16:9', width: 1280, height: 720 },
-  { value: '1:1', label: '1:1', width: 1024, height: 1024 },
+  { value: '9:16', label: '9:16', shape: 'vertical', width: 720, height: 1280 },
+  { value: '16:9', label: '16:9', shape: 'horizontal', width: 1280, height: 720 },
+  { value: '1:1', label: '1:1', shape: 'square', width: 1024, height: 1024 },
 ]
 
 function generatorRenderSize(routeInfo, aspectInfo) {
@@ -393,6 +394,7 @@ const ROUTES = [
   { value: 'txt2img', label: 'Фото по описанию', shortLabel: 'фото', kind: 'image', needsStart: false, needsEnd: false, needsAudio: false, maxDuration: null, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Генерация картинки по описанию через text to image.json. Для 16:9 отправляем 2304×1296.' },
   { value: 'i2v', label: 'Фото → видео', shortLabel: 'фото→видео', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Обычное видео: итог до 8 секунд. Генерация идёт с +1 сек запаса.' },
   { value: 'ia2v', label: 'Липсинк', shortLabel: 'липсинк', kind: 'video', needsStart: true, needsEnd: false, needsAudio: true, maxDuration: 10, maxAudioDuration: 15, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Lip-sync: итог до 10 сек, аудио до 15 сек. Видео идёт с +1 сек запаса.' },
+  { value: 'ia2v_instrumental', label: 'Липсинк инструмента', shortLabel: 'инструмент', kind: 'video', needsStart: true, needsEnd: false, needsAudio: true, maxDuration: 10, maxAudioDuration: 15, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Инструментальный lip-sync: фото + audio драйвит игру/движение инструмента. Итог до 10 сек, аудио до 15 сек.' },
   { value: 'i2v_sound', label: 'Видео со звуком', shortLabel: 'звук', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Звук/речь описываем в prompt. Аудио-файл не нужен.' },
   { value: 'i2v_text', label: 'Видео с речью', shortLabel: 'речь', kind: 'video', needsStart: true, needsEnd: false, needsAudio: false, maxDuration: 8, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Короткая речь/звук задаётся в prompt. Аудио-файл не нужен.' },
   { value: 'first_last', label: 'Первый-последний кадр', shortLabel: 'first-last', kind: 'video', needsStart: true, needsEnd: true, needsAudio: false, maxDuration: 8, endpoint: '/clip/video/start', statusBase: '/clip/video/status/', help: 'Нужны Start и End. Генерация идёт с +1 сек запаса.' },
@@ -405,6 +407,7 @@ const GENERATOR_FALLBACK_CREDITS = {
   txt2img: 1,
   i2v: 1,
   ia2v: 1,
+  ia2v_instrumental: 2,
   i2v_sound: 1,
   i2v_text: 1,
   first_last: 1,
@@ -431,6 +434,7 @@ function routeTariffAliases(routeValue) {
     txt2img: ['txt2img', 'text_to_image', 'image_from_text', 'image_text', 'text-image', 'image'],
     i2v: ['i2v', 'image_to_video', 'image-video', 'ltx_i2v'],
     ia2v: ['ia2v', 'lip_sync', 'lipsync', 'lip-sync', 'i2v_audio', 'audio_to_video'],
+    ia2v_instrumental: ['ia2v_instrumental', 'ia2v-instrumental', 'instrumental', 'instrument', 'instrument_lipsync', 'instrument-lipsync'],
     i2v_sound: ['i2v_sound', 'image-video-golos-zvuk', 'sound', 'video_sound'],
     i2v_text: ['i2v_text', 'video_text', 'speech', 'voice'],
     first_last: ['first_last', 'first-last', 'fl', 'first_last_frame'],
@@ -2075,6 +2079,45 @@ export default function StandaloneGeneratorPage() {
   }, [routeProjectId])
 
   const routeInfo = useMemo(() => ROUTES.find((item) => item.value === route) || ROUTES[0], [route])
+
+  // V167A: lip-sync and instrumental lip-sync duration follows uploaded audio,
+  // so the manual duration slider is hidden and the state stays synced.
+  useEffect(() => {
+    if (!routeInfo?.needsAudio) return
+    const maxDurationV167A = Number(routeInfo?.maxDuration || 10) || 10
+    const audioSecV167A = Number(audioDurationSec || 0)
+    if (!Number.isFinite(audioSecV167A) || audioSecV167A <= 0) return
+    const nextDurationV167A = Math.max(1, Math.min(maxDurationV167A, Math.round(audioSecV167A * 10) / 10))
+    if (Math.abs(Number(durationSec || 0) - nextDurationV167A) > 0.05) {
+      setDurationSec(nextDurationV167A)
+    }
+  }, [routeInfo?.needsAudio, routeInfo?.maxDuration, audioDurationSec, durationSec])
+
+  // V167A: <audio> cannot send Authorization headers. For protected /api/assets audio,
+  // fetch the file as a blob with authHeaders() and play the blob URL.
+  useEffect(() => {
+    if (!routeInfo?.needsAudio) return
+    const ref = audioPersistedDataUrl || audioPreviewUrl
+    if (!ref || !isGeneratorAssetFileRef(ref)) return
+    if (String(audioPreviewUrl || '').startsWith('blob:')) return
+
+    let cancelledV167A = false
+    fetchGeneratorAssetBlobUrl(ref)
+      .then((blobUrlV167A) => {
+        if (cancelledV167A || !blobUrlV167A) return
+        setAudioPreviewUrl((current) => {
+          if (String(current || '').startsWith('blob:')) return current
+          return blobUrlV167A
+        })
+      })
+      .catch((errorV167A) => {
+        console.warn('[GENERATOR AUDIO PREVIEW RESTORE FAILED V167A]', errorV167A)
+      })
+
+    return () => {
+      cancelledV167A = true
+    }
+  }, [routeInfo?.needsAudio, audioPersistedDataUrl])
   const generatedVideoItems = useMemo(() => (
     (Array.isArray(generatedVideos) ? generatedVideos : [])
       .filter((item) => item?.url && item.kind !== 'image')
@@ -3084,7 +3127,7 @@ export default function StandaloneGeneratorPage() {
       return
     }
     const sec = await getAudioDurationSec(file)
-    if (route === 'ia2v' && sec > 15.05) {
+    if ((route === 'ia2v' || route === 'ia2v_instrumental') && sec > 15.05) {
       setAudioFile(null)
       setAudioName('')
       setAudioDurationSec(sec)
@@ -3097,13 +3140,21 @@ export default function StandaloneGeneratorPage() {
     setAudioFile(file)
     setAudioName(file?.name || '')
     setAudioDurationSec(sec)
+    const localAudioPreviewUrlV167A = URL.createObjectURL(file)
+    setAudioPreviewUrl(localAudioPreviewUrlV167A)
     setStatusText('загружаю аудио в assets...')
     try {
       const uploaded = await uploadGeneratorMediaAsset(file, { projectId: routeProjectId, kind: 'audio', stage: 'generator_audio' })
       const apiPath = uploaded?.apiPath || uploaded?.api_path || uploaded?.url || ''
       if (apiPath) {
         setAudioPersistedDataUrl(apiPath)
-        setAudioPreviewUrl(normalizeUrl(apiPath))
+        try {
+          const protectedPreviewUrlV167A = await fetchGeneratorAssetBlobUrl(apiPath)
+          if (protectedPreviewUrlV167A) setAudioPreviewUrl(protectedPreviewUrlV167A)
+        } catch (previewErrorV167A) {
+          console.warn('[GENERATOR AUDIO PREVIEW BLOB FAILED V167A]', previewErrorV167A)
+          setAudioPreviewUrl(localAudioPreviewUrlV167A)
+        }
         await writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), audioPersistedDataUrl: apiPath, audioName: file?.name || '', audioDurationSec: sec, audioAssetId: uploaded.assetId || uploaded.asset_id || '' })
         saveGeneratorSnapshot('media_upload', {
           mediaUploaded: true,
@@ -3999,8 +4050,17 @@ export default function StandaloneGeneratorPage() {
                 <label className="avaGeneratorLabel">Формат</label>
                 <div className="avaGeneratorAspectTabs">
                   {ASPECTS.map((item) => (
-                    <button key={item.value} type="button" className={`avaGeneratorAspectBtn ${aspect === item.value ? 'isActive' : ''}`} onClick={() => setAspect(item.value)} disabled={generatorActionLocked || generatorCanceling}>
-                      {item.label}
+                    <button
+                      key={item.value}
+                      type="button"
+                      className={`avaGeneratorAspectBtn ${aspect === item.value ? 'isActive' : ''}`}
+                      onClick={() => setAspect(item.value)}
+                      disabled={generatorActionLocked || generatorCanceling}
+                      title={item.value === '16:9' ? 'Горизонтальный формат' : (item.value === '9:16' ? 'Вертикальный формат' : 'Квадратный формат')}
+                    >
+                      <span className={`avaGeneratorAspectPreview is-${item.shape || 'horizontal'}`}>
+                        <b>{item.label}</b>
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -4008,14 +4068,20 @@ export default function StandaloneGeneratorPage() {
             </div>
 
             {routeInfo.kind === 'video' ? (
-              <div className="avaGeneratorDurationBlock">
+              <div className={`avaGeneratorDurationBlock ${routeInfo.needsAudio ? 'isAudioLockedV167A' : ''}`}>
                 <div className="avaGeneratorDurationHeader">
                   <span>Итоговая длительность</span>
                   <strong>{targetDurationSec.toFixed(1)} сек</strong>
                 </div>
-                <input className="avaGeneratorRange" type="range" min="1" max={durationMax} step="0.5" value={durationSec} onChange={(event) => setDurationSec(Number(event.target.value))} disabled={generatorActionLocked || generatorCanceling} />
-                <div className="avaGeneratorTrimHint"><strong>Контракт:</strong> генерация {generationDurationSec.toFixed(1)} сек → обрезка до {targetDurationSec.toFixed(1)} сек</div>
-                <div className="avaGeneratorHint">{routeInfo.help}</div>
+                {routeInfo.needsAudio ? (
+                  <div className="avaGeneratorAudioLockedDurationV167A">
+                    <span>Длительность берётся из аудио</span>
+                    <strong>{audioDurationSec > 0 ? `${audioDurationSec.toFixed(2)} сек` : 'загрузи audio'}</strong>
+                  </div>
+                ) : (
+                  <input className="avaGeneratorRange" type="range" min="1" max={durationMax} step="0.5" value={durationSec} onChange={(event) => setDurationSec(Number(event.target.value))} disabled={generatorActionLocked || generatorCanceling} />
+                )}
+                <div className="avaGeneratorCompactHint">{routeInfo.needsAudio ? 'Липсинк: фото + audio, без ручного слайдера.' : (routeInfo.needsEnd ? 'Нужны Start и End кадры.' : (routeInfo.kind === 'image' ? 'Генерация фото по prompt.' : 'Нужно стартовое фото.'))}</div>
               </div>
             ) : null}
           </div>
@@ -4052,48 +4118,65 @@ export default function StandaloneGeneratorPage() {
             )}
           </div>
 
-          {montageConfirmOpen ? (
-        <div className="avaGeneratorConfirmOverlay" role="presentation" onMouseDown={cancelVideoMontageHandoff}>
-          <section
-            className="avaGeneratorConfirmModal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Подтверждение перехода в монтажник"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="avaGeneratorConfirmIcon">🎬</div>
-            <p className="avaGeneratorConfirmEyebrow">VIDEO MONTAGE</p>
-            <h2>Передать видео в монтажник?</h2>
-            <p className="avaGeneratorConfirmText">
-              Будет передано <strong>{Math.min(10, generatedVideoItems.length)}</strong> видео из нижней ленты.
-              Текущий монтажник и Board snapshot будут очищены и заменены этими видео.
-            </p>
+          {montageConfirmOpen && typeof document !== 'undefined' ? createPortal((
+                  <div
+                    className={`avaGeneratorConfirmOverlay isPortalV169A ${montageConfirmBusy ? 'isBusyV169A' : ''}`}
+                    role="presentation"
+                    onMouseDown={() => {
+                      if (!montageConfirmBusy) cancelVideoMontageHandoff()
+                    }}
+                  >
+                    <section
+                      className="avaGeneratorConfirmModal"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="Подтверждение перехода в монтажник"
+                      onMouseDown={(event) => event.stopPropagation()}
+                    >
+                      <div className="avaGeneratorConfirmIcon">🎬</div>
+                      <p className="avaGeneratorConfirmEyebrow">VIDEO MONTAGE</p>
+                      <h2>Передать видео в монтажник?</h2>
+                      <p className="avaGeneratorConfirmText">
+                        Будет передано <strong>{Math.min(10, generatedVideoItems.length)}</strong> видео из нижней ленты.
+                        Текущий монтажник и Board snapshot будут очищены и заменены этими видео.
+                      </p>
 
-            {montageConfirmError ? (
-              <div className="avaGeneratorConfirmError">{montageConfirmError}</div>
-            ) : null}
+                      {montageConfirmBusy ? (
+                        <div className="avaGeneratorMontageProgressV169A" aria-live="polite">
+                          <span className="avaGeneratorMontageSpinnerV169A" aria-hidden="true" />
+                          <div>
+                            <strong>Готовлю переход в монтажник</strong>
+                            <small>Сохраняю видео из ленты, очищаю старый монтаж и открываю Assembly...</small>
+                          </div>
+                          <div className="avaGeneratorMontageProgressBarV169A"><i /></div>
+                        </div>
+                      ) : null}
 
-            <div className="avaGeneratorConfirmActions">
-              <button
-                type="button"
-                className="avaGeneratorConfirmCancel"
-                onClick={cancelVideoMontageHandoff}
-                disabled={montageConfirmBusy}
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                className="avaGeneratorConfirmOk"
-                onClick={confirmVideoMontageHandoff}
-                disabled={montageConfirmBusy || !generatedVideos.length}
-              >
-                {montageConfirmBusy ? 'Готовлю…' : 'Да, перейти'}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+                      {montageConfirmError ? (
+                        <div className="avaGeneratorConfirmError">{montageConfirmError}</div>
+                      ) : null}
+
+                      <div className="avaGeneratorConfirmActions">
+                        <button
+                          type="button"
+                          className="avaGeneratorConfirmCancel"
+                          onClick={cancelVideoMontageHandoff}
+                          disabled={montageConfirmBusy}
+                        >
+                          Отмена
+                        </button>
+                        <button
+                          type="button"
+                          className="avaGeneratorConfirmOk"
+                          onClick={confirmVideoMontageHandoff}
+                          disabled={montageConfirmBusy || !generatedVideos.length}
+                        >
+                          {montageConfirmBusy ? 'Готовлю…' : 'Да, перейти'}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                ), document.body) : null}
 
       {routeInfo.kind !== 'image' && generatedVideoItems.length ? (
             <div className="avaGeneratorToMontageBox">
@@ -4157,7 +4240,7 @@ export default function StandaloneGeneratorPage() {
 
             {routeInfo.needsAudio ? (
               <label className="avaGeneratorDrop isRequired">
-                <input type="file" accept="audio/*" onChange={(event) => handleAudioFile(event.target.files?.[0])} />
+                <input type="file" accept="audio/*,video/mp4,video/quicktime,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov" onChange={(event) => handleAudioFile(event.target.files?.[0])} />
                 <span>Аудио для lip-sync</span>
                 <strong title={audioName || ''}>{audioName || 'загрузить аудио'}</strong>
                 {audioDurationSec > 0 ? <em>{formatSec(audioDurationSec)}</em> : null}
@@ -4270,7 +4353,7 @@ export default function StandaloneGeneratorPage() {
                     <div className="avaGeneratorSpinner" />
                     <strong>Идёт генерация</strong>
                     <span>{statusText || 'running'}</span>
-                    {job?.jobId ? <em>job: {job.jobId}</em> : null}
+
                   </div>
                 ) : displayedResultUrl && displayedResultIsImage && displayedResultPreviewUrl ? (
                   <div className="avaGeneratorImageResultWrap">

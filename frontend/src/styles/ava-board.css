@@ -6145,3 +6145,211 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+
+/* AVA_TIMING_TO_BOARD_TRANSITION_LOADING_V162A */
+.avaBoardTimingConfirmProgressV162A {
+  position: relative;
+  z-index: 2;
+  margin: 16px 0 2px;
+  padding: 12px 14px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 12% 50%, rgba(34, 211, 238, 0.20), transparent 32%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.72), rgba(30, 41, 59, 0.58));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 12px 34px rgba(34, 211, 238, 0.08);
+  overflow: hidden;
+}
+
+.avaBoardTimingConfirmProgressV162A > div {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.avaBoardTimingConfirmProgressV162A > div > span {
+  position: absolute;
+  inset: -1px auto -1px -42%;
+  width: 48%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0), rgba(52, 211, 153, 0.95), rgba(168, 85, 247, 0.95), rgba(34, 211, 238, 0));
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.42);
+  animation: avaTimingBoardProgressV162A 1.1s ease-in-out infinite;
+}
+
+.avaBoardTimingConfirmProgressV162A small {
+  display: block;
+  margin-top: 9px;
+  color: rgba(226, 232, 240, 0.86);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.avaBoardTimingButtonSpinV162A {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  margin-right: 8px;
+  border-radius: 999px;
+  border: 2px solid rgba(255,255,255,.28);
+  border-top-color: rgba(255,255,255,.96);
+  vertical-align: -2px;
+  animation: avaTimingBoardSpinV162A .78s linear infinite;
+}
+
+@keyframes avaTimingBoardProgressV162A {
+  0% { transform: translateX(0); opacity: .55; }
+  35% { opacity: 1; }
+  100% { transform: translateX(310%); opacity: .7; }
+}
+
+@keyframes avaTimingBoardSpinV162A {
+  to { transform: rotate(360deg); }
+}
+
+
+/* V170A Assembly right-panel polish */
+.avaAssemblySettings {
+  gap: 12px;
+}
+
+.avaAssemblyAudioModeHeaderV170A {
+  margin: -2px -2px 0;
+  padding: 13px 14px;
+  border: 1px solid rgba(125, 211, 252, .20);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(56, 189, 248, .13), transparent 42%),
+    linear-gradient(135deg, rgba(14, 165, 233, .10), rgba(59, 130, 246, .05)),
+    rgba(255,255,255,.025);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.055);
+}
+
+.avaAssemblyAudioModeHeaderV170A h3 {
+  color: #eaffff;
+  letter-spacing: .01em;
+}
+
+.avaAssemblySelectLabelV170A {
+  margin-top: 2px;
+  padding: 12px;
+  border: 1px solid rgba(56, 189, 248, .18);
+  border-radius: 17px;
+  background:
+    linear-gradient(135deg, rgba(56, 189, 248, .08), rgba(99, 102, 241, .045)),
+    rgba(255,255,255,.025);
+}
+
+.avaAssemblySelectLabelV170A > span {
+  color: rgba(191, 238, 255, .92);
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.avaAssemblyModeHint {
+  border-color: rgba(56, 189, 248, .20) !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(45, 212, 191, .10), transparent 42%),
+    linear-gradient(135deg, rgba(56, 189, 248, .075), rgba(255,255,255,.025)) !important;
+}
+
+.avaAssemblyTransitionMini.isVideoBlendV170A {
+  border-color: rgba(168, 85, 247, .22);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(168, 85, 247, .12), transparent 44%),
+    linear-gradient(135deg, rgba(168, 85, 247, .08), rgba(59, 130, 246, .035));
+}
+
+.avaAssemblyTransitionMini.isTimingV170A {
+  border-color: rgba(245, 158, 11, .24);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(245, 158, 11, .12), transparent 44%),
+    linear-gradient(135deg, rgba(245, 158, 11, .075), rgba(20, 184, 166, .035));
+}
+
+.avaAssemblyTransitionMini.isVideoBlendV170A.isOn,
+.avaAssemblyTransitionMini.isTimingV170A.isOn {
+  filter: brightness(1.04);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.045), 0 10px 26px rgba(0,0,0,.12);
+}
+
+.avaAssemblyMusicBox.isMusicV170A {
+  border-color: rgba(34, 197, 94, .22);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(34, 197, 94, .105), transparent 42%),
+    linear-gradient(135deg, rgba(34, 197, 94, .075), rgba(14, 165, 233, .035));
+}
+
+.avaAssemblyWatermarkBox.isWatermarkV170A {
+  border-color: rgba(251, 146, 60, .22);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(251, 146, 60, .12), transparent 42%),
+    linear-gradient(135deg, rgba(251, 146, 60, .075), rgba(168, 85, 247, .035));
+}
+
+.avaAssemblyWatermarkBox.isWatermarkV170A.isEnabled {
+  border-color: rgba(251, 191, 36, .28);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(251, 191, 36, .14), transparent 42%),
+    linear-gradient(135deg, rgba(251, 146, 60, .08), rgba(34, 197, 94, .035));
+}
+
+.avaAssemblyPanelToggle {
+  width: 100%;
+  border-radius: 16px;
+}
+
+.avaAssemblyPanelToggle strong,
+.avaAssemblyTransitionMiniHead strong {
+  letter-spacing: .01em;
+}
+
+.avaAssemblyMusicBox.isCollapsed,
+.avaAssemblyWatermarkBox.isCollapsed {
+  padding-block: 12px;
+}
+
+.avaAssemblyMusicBox.isCollapsed .avaAssemblyPanelToggle,
+.avaAssemblyWatermarkBox.isCollapsed .avaAssemblyPanelToggle {
+  margin: 0;
+}
+
+
+/* V171A Assembly scene strip cleanup: remove the useless empty scrollbar strip */
+.avaAssemblyPage .avaAssemblySceneRail {
+  align-self: start !important;
+  display: block !important;
+}
+
+.avaAssemblyPage .avaAssemblySceneList {
+  flex: 0 0 auto !important;
+  min-height: 0 !important;
+  padding: 2px 4px 4px !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.avaAssemblyPage .avaAssemblySceneList::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+.avaAssemblyPage .avaAssemblySceneList::-webkit-scrollbar-thumb,
+.avaAssemblyPage .avaAssemblySceneList::-webkit-scrollbar-track {
+  display: none !important;
+}
+
+.avaAssemblyPage .avaAssemblySceneRail .avaBoardSectionHead {
+  margin-bottom: 10px;
+}
+
+.avaAssemblyPage .avaAssemblySceneItem {
+  margin-bottom: 0 !important;
+}
+
