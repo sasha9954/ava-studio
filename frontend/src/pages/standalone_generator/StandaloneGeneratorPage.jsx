@@ -3778,7 +3778,21 @@ export default function StandaloneGeneratorPage() {
 
       const startDataUrl = includeStart ? (freshStartDataUrl || startPersistedDataUrl || startPreview || '') : ''
       const endDataUrl = includeEnd ? (freshEndDataUrl || endPersistedDataUrl || endPreview || '') : ''
-      const audioDataUrl = includeAudio ? (freshAudioDataUrl || audioPersistedDataUrl || audioPreviewUrl || '') : ''
+      // AVA_GENERATOR_AUDIO_F5_ASSET_SEND_V186A:
+      // Fresh uploaded audio is a data: URL. Restored-after-F5 audio is an asset/api ref.
+      // Backend /clip/video/start expects persisted audio refs in audio_slice_url/audioSliceUrl,
+      // not in audio_data_url. This keeps F5-restored audio visible AND sendable.
+      const restoredAudioRef = includeAudio ? String(audioPersistedDataUrl || audioPreviewUrl || '') : ''
+      const audioCandidate = includeAudio ? (freshAudioDataUrl || restoredAudioRef || '') : ''
+      const audioRef = String(audioCandidate || '')
+      const audioIsDataUrl = audioRef.startsWith('data:')
+      const audioIsBlobUrl = audioRef.startsWith('blob:')
+      const audioUrlForBackend = audioRef && !audioIsDataUrl && !audioIsBlobUrl ? audioRef : ''
+      const audioDataUrlForBackend = audioIsDataUrl ? audioRef : ''
+      const audioSliceUrlForBackend = audioUrlForBackend
+      const audioApiPathForBackend = generatorCanonicalApiPath(audioUrlForBackend || audioPersistedDataUrl || '', audioPreviewUrl)
+      const audioAssetIdForBackend = generatorAssetIdFromRef(audioUrlForBackend, audioPersistedDataUrl, audioPreviewUrl)
+      const audioPreviewForSnapshot = normalizeUrl(audioUrlForBackend || audioDataUrlForBackend || audioPersistedDataUrl || audioPreviewUrl || '')
 
       // AVA_LAST_FRAME_V4_GENERATOR_NO_POST_WITHOUT_START
       if (includeStart && !startDataUrl) {
@@ -3789,6 +3803,10 @@ export default function StandaloneGeneratorPage() {
       }
       if (includeEnd && !endDataUrl) {
         throw new Error('Последний кадр пустой: first-last не отправлен.')
+      }
+      if (includeAudio && !audioDataUrlForBackend && !audioSliceUrlForBackend) {
+        if (audioIsBlobUrl) throw new Error('Аудио было временным blob после F5 и не может быть отправлено. Загрузите аудио заново.')
+        throw new Error('Аудио пустое: lip-sync / инструментальный режим не отправлен.')
       }
 
       const startRef = String(startDataUrl || '')
@@ -3806,9 +3824,9 @@ export default function StandaloneGeneratorPage() {
         endImageUrl: normalizeUrl(endImageUrlForBackend || endImageDataUrlForBackend || endPersistedDataUrl || endPreview || ''),
         endImageApiPath: generatorCanonicalApiPath(endImageUrlForBackend || endPersistedDataUrl || '', endPreview),
         endImageAssetId: generatorAssetIdFromRef(endImageUrlForBackend, endPersistedDataUrl, endPreview),
-        audioUrl: normalizeUrl(audioDataUrl || audioPersistedDataUrl || audioPreviewUrl || ''),
-        audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
-        audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
+        audioUrl: audioPreviewForSnapshot,
+        audioApiPath: audioApiPathForBackend,
+        audioAssetId: audioAssetIdForBackend,
         audioName,
         audioDurationSec,
       }
@@ -3839,8 +3857,20 @@ export default function StandaloneGeneratorPage() {
         endImageUrl: endImageUrlForBackend,
         end_image_data_url: endImageDataUrlForBackend,
         endImageDataUrl: endImageDataUrlForBackend,
-        audio_data_url: audioDataUrl,
-        audioDataUrl: audioDataUrl,
+        audio_slice_url: audioSliceUrlForBackend,
+        audioSliceUrl: audioSliceUrlForBackend,
+        audio_url: audioSliceUrlForBackend,
+        audioUrl: audioSliceUrlForBackend,
+        audio_api_path: audioApiPathForBackend,
+        audioApiPath: audioApiPathForBackend,
+        audio_asset_id: audioAssetIdForBackend,
+        audioAssetId: audioAssetIdForBackend,
+        audio_data_url: audioDataUrlForBackend,
+        audioDataUrl: audioDataUrlForBackend,
+        audio_name: audioName,
+        audioName,
+        audio_duration_sec: audioDurationSec,
+        audioDurationSec,
         video_prompt: prompt,
         videoPrompt: prompt,
         positive_prompt: prompt,
