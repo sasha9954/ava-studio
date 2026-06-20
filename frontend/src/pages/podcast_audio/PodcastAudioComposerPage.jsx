@@ -6778,6 +6778,10 @@ const applyComposedAudioToTiming = async () => {
             >
               {finalAudioBusy === "timing" ? "Собираю переход..." : "Перейти в Timing"}
             </button>
+          <div className="podcastHeaderJsonActionsV173C" aria-label="JSON-план подсказок">
+            <button type="button" title="Скопировать образец JSON" onClick={copyGuideJsonSample}>⧉ JSON</button>
+            <button type="button" title="Вставить JSON-план" onClick={openGuideJsonDialog}>{"{}"} JSON</button>
+          </div>
         </div>
       </header>
 
@@ -6847,41 +6851,39 @@ const applyComposedAudioToTiming = async () => {
             selectedBlockId={selectedBlockId}
             totalDurationSec={totalDurationSec || durationSec || audio.duration_sec}
           />
-
-          <div className="podcastComposerHint">Жёлтая линия = прицел разреза. “Тишина” вставляет отдельный блок 0.5 сек по прицелу и сдвигает основное аудио вправо. Доводчик ← / → меняет конец выбранного блока; для тишины лимит до 30 сек. Двойной клик по блоку открывает меню: удалить, сохранить, цвет блока, аудио-фразы. JSON-кнопки нужны только для монтажной карты внутри композера: актёрские блоки — места для будущих вставок, не найденные голоса. Тишину JSON не размечает — паузы ставятся вручную.</div>
-
-          <div className="podcastComposerControls">
-            <button className="podcastComposerPlayButton" type="button" onClick={togglePlayback} disabled={isSequencePlaying}>{isPlaying && activeMainMode !== "sequence" ? "■ стоп" : "▶ блок"}</button>
-            <button className="podcastComposerPlayButton" type="button" onClick={() => isSequencePlaying ? stopMainPlayback() : playFullMontageFrom(0)}>{isSequencePlaying ? "■ стоп montage" : "▶ весь монтаж"}</button>
-            <span className="podcastComposerTimer">{formatTimer(currentTimeSec)}</span>
-            <div className="podcastJsonMiniActions" aria-label="JSON-план подсказок">
-              <button type="button" title="Скопировать образец JSON" onClick={copyGuideJsonSample}>⧉ JSON</button>
-              <button type="button" title="Вставить JSON-план" onClick={openGuideJsonDialog}>{"{}"} JSON</button>
+                              <div className="podcastComposerControls podcastComposerControlsV173F">
+            <div className="podcastComposerControlGroupV173F isPlayback" aria-label="Плеер и микродоводчик">
+              <button className="podcastComposerPlayButton podcastComposerMainBtnV173F" type="button" title="Проиграть выбранный блок" onClick={togglePlayback} disabled={isSequencePlaying}>{isPlaying && activeMainMode !== "sequence" ? "■ блок" : "▶ блок"}</button>
+              <button className="podcastComposerPlayButton podcastComposerMainBtnV173F" type="button" title="Проиграть весь монтаж" onClick={() => isSequencePlaying ? stopMainPlayback() : playFullMontageFrom(0)}>{isSequencePlaying ? "■ всё" : "▶ всё"}</button>
+              <span className="podcastComposerTimer podcastComposerTimerV173F">{formatTimer(currentTimeSec)}</span>
+              <div className="podcastCutControls podcastCutControlsV173F" aria-label="Микродоводчик правой границы">
+                <button type="button" title="Сдвинуть границу влево" onClick={() => adjustSelectedRightEdge(-1)} disabled={!selectedBoundaryAvailable}>←</button>
+                <label>
+                  <span>шаг</span>
+                  <input min="0.01" max="30" step="0.01" type="number" value={microStepSec} onChange={(event) => setMicroStepSec(clampSeconds(event.target.value, 0.01, 30))} />
+                </label>
+                <button type="button" title="Сдвинуть границу вправо" onClick={() => adjustSelectedRightEdge(1)} disabled={!selectedBoundaryAvailable}>→</button>
+              </div>
             </div>
-            <button className="podcastComposerCutButton" type="button" onClick={splitCurrentBlock}>резать</button>
-            <button className="podcastComposerDeleteButton" type="button" onClick={deleteSelectedBlock} disabled={!selectedBlockId}>🗑 удалить</button>
-            <button className="podcastComposerSaveAudioButton" type="button" onClick={downloadComposedAudio} disabled={!!finalAudioBusy || !blocks.length}>💾 сохранить аудио</button>
-            <button className="podcastComposerSilenceButton" type="button" onClick={insertSilenceAtCursor}>тишина</button>
-            <div className="podcastCutControls" aria-label="Микро-доводчик правой границы">
-              <button type="button" onClick={() => adjustSelectedRightEdge(-1)} disabled={!selectedBoundaryAvailable}>←</button>
-              <label>
-                <span>шаг</span>
-                <input min="0.01" max="30" step="0.01" type="number" value={microStepSec} onChange={(event) => setMicroStepSec(clampSeconds(event.target.value, 0.01, 30))} />
-              </label>
-              <button type="button" onClick={() => adjustSelectedRightEdge(1)} disabled={!selectedBoundaryAvailable}>→</button>
+
+            <div className="podcastComposerControlGroupV173F isEdit" aria-label="Монтажные действия">
+              <button className="podcastComposerCutButton podcastComposerMainBtnV173F" type="button" onClick={splitCurrentBlock}>✂ разрез</button>
+              <button className="podcastComposerSilenceButton podcastComposerMainBtnV173F" type="button" onClick={insertSilenceAtCursor}>тишина</button>
+              <button type="button" className="podcastComposerMergeButtonV173F podcastComposerMainBtnV173F" onClick={mergeSelectedWithNext} disabled={!selectedBlockId}>⇉ склеить</button>
+              <button className="podcastComposerDeleteButton podcastComposerMainBtnV173F" type="button" onClick={deleteSelectedBlock} disabled={!selectedBlockId}>🗑 удалить</button>
+              <button type="button" className="podcastComposerUndoButtonV173F podcastComposerMainBtnV173F" onClick={undoLastAction} disabled={!history.length}>↶ вернуть</button>
             </div>
-            <button type="button" onClick={mergeSelectedWithNext} disabled={!selectedBlockId}>Склеить со следующим</button>
-            <button type="button" onClick={undoLastAction} disabled={!history.length}>↶ Назад</button>
+
+            <div className="podcastComposerControlGroupV173F isSave" aria-label="Сохранение результата">
+              <button className="podcastComposerSaveAudioButton podcastComposerSaveAudioButtonV173F" type="button" onClick={downloadComposedAudio} disabled={!!finalAudioBusy || !blocks.length}>{finalAudioBusy === "download" ? "…" : "💾 MP3"}</button>
+            </div>
           </div>
 
 
 
-          <div className="podcastComposerFinalActions" aria-label="Финальный файл">
-            <button className="podcastFinalDownloadButton" type="button" onClick={downloadComposedAudio} disabled={!!finalAudioBusy || !blocks.length}>
-              {finalAudioBusy === "download" ? "Собираю..." : "⬇ скачать аудио"}
-            </button>
+                    <div className="podcastComposerFinalActions podcastComposerFinalActionsV173F" aria-label="Переход в тайминг">
             <button
-              className="podcastFinalTimingButton"
+              className="podcastFinalTimingButton podcastFinalTimingButtonV173F"
               type="button"
               onClick={() => {
                 setShowTimingHandoffConfirm(true)
@@ -7186,7 +7188,9 @@ const applyComposedAudioToTiming = async () => {
                           цвет
                           <input type="color" value={actor.color || "#d99a18"} onChange={(event) => syncActorAudioMeta(actor.id, { color: event.target.value })} />
                         </label>
-                        <button className="podcastActorDeleteButton" type="button" onClick={() => deleteActorAudio(actor.id)}>Удалить аудио</button>
+                        <div className="podcastActorMetaActionsV173B">
+                          <button className="podcastActorDeleteButton" type="button" onClick={() => deleteActorAudio(actor.id)}>Удалить аудио</button>
+                        </div>
                       </div>
 
                       <BlockTimeline
@@ -7199,20 +7203,26 @@ const applyComposedAudioToTiming = async () => {
                         totalDurationSec={actorDuration}
                       />
 
-                      <div className="podcastActorAudioControls">
-                        <button type="button" onClick={() => toggleActorPlayback(actor.id)} disabled={Boolean(actorAudioPreppingId && actorAudioPreppingId !== actor.id)}>{actorAudioPreppingId === actor.id ? "⏳ Готовлю..." : (actor.isPlaying ? "■ Stop" : "▶ Play блок")}</button>
-                        <span className="podcastComposerTimer">{formatTimer(actor.currentTimeSec || 0)}</span>
-                        <button type="button" onClick={() => splitActorAudioBlock(actor.id)}>резать</button>
-                        <div className="podcastCutControls compact" aria-label="Доводчик аудио актёра">
-                          <button type="button" onClick={() => adjustActorAudioBlockEnd(actor.id, -1)} disabled={!actor.selectedBlockId}>←</button>
-                          <label>
-                            <span>шаг</span>
-                            <input min="0.01" max="30" step="0.01" type="number" value={actor.microStepSec || DEFAULT_MICRO_STEP_SEC} onChange={(event) => applyActorAudioPatch(actor.id, { microStepSec: clampSeconds(event.target.value, 0.01, 30) })} />
-                          </label>
-                          <button type="button" onClick={() => adjustActorAudioBlockEnd(actor.id, 1)} disabled={!actor.selectedBlockId}>→</button>
+                                                                  <div className="podcastActorAudioControls podcastActorAudioControlsV173E">
+                        <div className="podcastActorControlGroupV173E isPlayback">
+                          <button type="button" title="Проиграть выбранный блок" aria-label="Проиграть выбранный блок" onClick={() => toggleActorPlayback(actor.id)}>{actor.isPlaying ? "■" : "▶"}</button>
+                          <span className="podcastComposerTimer podcastComposerTimerV173E">{formatTimer(actor.currentTimeSec || 0)}</span>
                         </div>
-                        <button className="podcastActorSavePhraseButton" type="button" onClick={() => saveActorSelectedClip(actor.id)} disabled={!actor.selectedBlockId}>Сохранить фразу</button>
-                        <span className="podcastActorSelectedInfo">выбрано: {actorSelectedDuration ? formatTimer(actorSelectedDuration) : "нет"}</span>
+                        <div className="podcastActorControlGroupV173E isEdit">
+                          <button type="button" title="Разрезать блок" aria-label="Разрезать блок" onClick={() => splitActorAudioBlock(actor.id)}>✂</button>
+                          <div className="podcastCutControls compact podcastCutControlsV173E" aria-label="Доводчик аудио актёра">
+                            <button type="button" onClick={() => adjustActorAudioBlockEnd(actor.id, -1)} disabled={!actor.selectedBlockId}>←</button>
+                            <label>
+                              <span>шаг</span>
+                              <input min="0.01" max="30" step="0.01" type="number" value={actor.microStepSec || DEFAULT_MICRO_STEP_SEC} onChange={(event) => applyActorAudioPatch(actor.id, { microStepSec: clampSeconds(event.target.value, 0.01, 30) })} />
+                            </label>
+                            <button type="button" onClick={() => adjustActorAudioBlockEnd(actor.id, 1)} disabled={!actor.selectedBlockId}>→</button>
+                          </div>
+                        </div>
+                        <div className="podcastActorControlGroupV173E isSave">
+                          <button className="podcastActorSavePhraseButton" type="button" title="Сохранить выбранную фразу" aria-label="Сохранить выбранную фразу" onClick={() => saveActorSelectedClip(actor.id)} disabled={!actor.selectedBlockId}>💾 фраза</button>
+                          <span className="podcastActorSelectedInfo">{actorSelectedDuration ? formatTimer(actorSelectedDuration) : "нет"}</span>
+                        </div>
                       </div>
                     </article>
                   );

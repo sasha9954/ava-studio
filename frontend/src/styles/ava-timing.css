@@ -3733,3 +3733,175 @@
 .avaTimingDeleteProgressV168A b{font-size:10px;line-height:1}
 @keyframes avaTimingDeleteSpinV168A{to{transform:rotate(360deg)}}
 @keyframes avaTimingDeletePulseV168A{0%,100%{box-shadow:inset 0 0 0 1px rgba(255,255,255,.34),0 0 16px hsla(var(--scene-hue),90%,58%,.22);filter:brightness(1)}50%{box-shadow:inset 0 0 0 2px rgba(253,224,71,.82),0 0 28px rgba(253,224,71,.32);filter:brightness(1.18)}}
+
+
+/* V172B Timing toolbar grouped tile experiment */
+.avaTimingToolRail {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: stretch;
+  margin: 12px 16px 16px;
+  padding: 12px;
+  border: 1px solid rgba(130, 196, 255, .14);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.02)),
+    rgba(8, 16, 36, .74);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 12px 30px rgba(0,0,0,.18);
+  overflow-x: hidden;
+}
+
+.avaTimingToolGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.06);
+  background: rgba(255,255,255,.02);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+}
+
+.avaTimingToolGroup.isPlayback {
+  background: linear-gradient(135deg, rgba(56,146,255,.14), rgba(42,224,211,.08));
+  border-color: rgba(101, 210, 255, .14);
+}
+
+.avaTimingToolGroup.isEdit {
+  background: linear-gradient(135deg, rgba(130,96,255,.12), rgba(255,128,168,.06));
+  border-color: rgba(188, 139, 255, .14);
+}
+
+.avaTimingToolGroup.isOutput {
+  background: linear-gradient(135deg, rgba(48,214,179,.12), rgba(67,143,255,.06));
+  border-color: rgba(83, 222, 197, .14);
+}
+
+.avaTimingToolRail button,
+.avaTimingStepControl {
+  min-height: 38px;
+  border-radius: 12px !important;
+}
+
+.avaTimingBigPlay {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  min-height: 46px !important;
+  justify-content: center;
+  padding: 0 !important;
+  color: #dfffff !important;
+  background: linear-gradient(135deg, rgba(24,201,213,.36), rgba(64,108,255,.24)) !important;
+  border-color: rgba(111,235,255,.28) !important;
+  box-shadow: 0 10px 24px rgba(0,0,0,.22);
+}
+
+.avaTimingBigPlay.isPlaying {
+  background: linear-gradient(135deg, rgba(255,96,130,.34), rgba(255,210,80,.18)) !important;
+}
+
+.avaTimingPlayAll {
+  flex: 0 0 auto;
+  min-width: 64px;
+  font-weight: 900;
+  color: #8ee9ff !important;
+  background: rgba(69,216,255,.10) !important;
+}
+
+.avaTimingPlayAll.isPlaying {
+  color: #ffdca0 !important;
+  border-color: rgba(255,210,80,.25) !important;
+}
+
+.avaTimingIconButton {
+  flex: 0 0 auto;
+  min-width: 38px;
+  padding: 0 10px !important;
+}
+
+.avaTimingRailTextButton {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px !important;
+  font-weight: 800;
+}
+
+.avaTimingStepControl {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  color: #dbe7ff;
+  background: rgba(255,255,255,.055);
+  font-weight: 900;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.avaTimingStepControl span {
+  opacity: .92;
+}
+
+.avaTimingStepControl input {
+  width: 54px;
+  border: 0;
+  border-radius: 10px;
+  color: #121727;
+  background: #ffdca0;
+  padding: 5px 8px;
+  font-weight: 900;
+  outline: none;
+  font-size: 12px;
+}
+
+.avaTimingToolRail button.isReset {
+  color: #ffb3bd;
+  background: rgba(255,84,112,.10);
+}
+
+.avaTimingToolRail button.isSaveAudio {
+  color: #bbfff2;
+  background: rgba(56, 215, 186, .12);
+}
+
+.avaTimingDevButton {
+  flex: 0 0 auto;
+  margin-left: auto;
+  align-self: center;
+}
+
+@media (max-width: 900px) {
+  .avaTimingToolRail {
+    gap: 8px;
+  }
+
+  .avaTimingToolGroup {
+    width: 100%;
+  }
+
+  .avaTimingDevButton {
+    margin-left: 0;
+  }
+}
+
+/* V172C Timing toolbar undo emphasis */
+.avaTimingToolGroup.isEdit .avaTimingRailTextButton.isUndoAccent {
+  color: #fff0b8 !important;
+  background: linear-gradient(135deg, rgba(255, 182, 66, .24), rgba(255, 112, 78, .14)) !important;
+  border-color: rgba(255, 194, 92, .32) !important;
+  box-shadow: 0 0 0 1px rgba(255, 198, 110, .08), 0 12px 26px rgba(255, 150, 70, .12);
+  font-weight: 900;
+}
+
+.avaTimingToolGroup.isEdit .avaTimingRailTextButton.isUndoAccent:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgba(255, 210, 130, .14), 0 14px 28px rgba(255, 160, 75, .18);
+}
+

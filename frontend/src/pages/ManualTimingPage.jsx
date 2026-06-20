@@ -4795,43 +4795,49 @@ const useVocalStem = mode === 'vocal'
         )}
 
         <div className="avaTimingToolRail">
-          <button className={`avaTimingBigPlay ${playingMode === 'scene' ? 'isPlaying' : ''}`} type="button" onClick={toggleScenePlay} title="Прослушать выбранную сцену" disabled={!hasAudio || !audioSrc}>
-            {playingMode === 'scene' ? <Pause size={24} /> : <Play size={26} />}
-          </button>
-          <button className={`avaTimingPlayAll ${playingMode === 'all' ? 'isPlaying' : ''}`} type="button" onClick={toggleAllPlay} disabled={!hasAudio || !audioSrc}>▶ всё</button>
+          <div className="avaTimingToolGroup isPlayback">
+            <button className={`avaTimingBigPlay ${playingMode === 'scene' ? 'isPlaying' : ''}`} type="button" onClick={toggleScenePlay} title="Прослушать выбранную сцену" disabled={!hasAudio || !audioSrc}>
+              {playingMode === 'scene' ? <Pause size={24} /> : <Play size={26} />}
+            </button>
+            <button className={`avaTimingPlayAll ${playingMode === 'all' ? 'isPlaying' : ''}`} type="button" onClick={toggleAllPlay} disabled={!hasAudio || !audioSrc}>▶ всё</button>
+            <button className="avaTimingIconButton" type="button" onClick={() => nudgeSelectedScene(-Math.abs(Number(draft.stepSec) || 0.5))} disabled={!hasAudio || scenes.length <= 1} title="Отнять шаг от текущей сцены и отдать соседней"><StepBack size={15} /></button>
+            <label className="avaTimingStepControl" title="Шаг микро-доводки границы выбранной сцены">
+              <span>шаг</span>
+              <input type="number" min="0.05" step="0.05" value={draft.stepSec ?? 0.5} onChange={(event) => updateDraft('stepSec', Number(event.target.value) || 0.5)} />
+            </label>
+            <button className="avaTimingIconButton" type="button" onClick={() => nudgeSelectedScene(Math.abs(Number(draft.stepSec) || 0.5))} disabled={!hasAudio || scenes.length <= 1} title="Добавить шаг к текущей сцене за счёт соседней"><StepForward size={15} /></button>
+          </div>
 
-          <button className="avaTimingIconButton" type="button" onClick={() => nudgeSelectedScene(-Math.abs(Number(draft.stepSec) || 0.5))} disabled={!hasAudio || scenes.length <= 1} title="Отнять шаг от текущей сцены и отдать соседней"><StepBack size={15} /></button>
-          <label className="avaTimingStepControl" title="Шаг микро-доводки границы выбранной сцены">
-            шаг
-            <input type="number" min="0.05" step="0.05" value={draft.stepSec ?? 0.5} onChange={(event) => updateDraft('stepSec', Number(event.target.value) || 0.5)} />
-          </label>
-          <button className="avaTimingIconButton" type="button" onClick={() => nudgeSelectedScene(Math.abs(Number(draft.stepSec) || 0.5))} disabled={!hasAudio || scenes.length <= 1} title="Добавить шаг к текущей сцене за счёт соседней"><StepForward size={15} /></button>
+          <div className="avaTimingToolGroup isEdit">
+            <button className="avaTimingRailTextButton" type="button" onClick={splitAtCursor} disabled={!hasAudio}>✂ Разрезать</button>
+            <button className="avaTimingRailTextButton" type="button" onClick={mergeSelectedWithNext} disabled={scenes.length <= 1}>🔗 Соединить</button>
+            <button className="avaTimingRailTextButton" type="button" onClick={markSemanticBlock} disabled={!hasAudio}>+ Смысловой блок</button>
+            <button className="avaTimingRailTextButton isReset" type="button" onClick={deleteSelectedSceneFromAudio} disabled={!hasAudio || deletingSceneAudio || !selectedScene} title="Удалить выбранную сцену из общего аудио и сдвинуть всё дальше влево"><Trash2 size={15} /> {deletingSceneAudio ? 'удаляю…' : 'удалить'}</button>
+            <button className="avaTimingRailTextButton isUndoAccent" type="button" onClick={undoLastChange} disabled={!history.length} title="Вернуть последнее действие"><Undo2 size={15} /> вернуть</button>
+          </div>
 
-          <button type="button" onClick={splitAtCursor} disabled={!hasAudio}>✂ Разрезать</button>
-          <button type="button" onClick={mergeSelectedWithNext} disabled={scenes.length <= 1}>🔗 Соединить</button>
-          <button type="button" onClick={markSemanticBlock} disabled={!hasAudio}>+ Смысловой блок</button>
-<button className="isReset" type="button" onClick={deleteSelectedSceneFromAudio} disabled={!hasAudio || deletingSceneAudio || !selectedScene} title="Удалить выбранную сцену из общего аудио и сдвинуть всё дальше влево"><Trash2 size={15} /> {deletingSceneAudio ? 'удаляю…' : 'удалить'}</button>
-            <button className="isSaveAudio" type="button" onClick={saveCurrentTimingAudio} disabled={!hasAudio}>💾 сохранить аудио</button>
-          <button type="button" onClick={undoLastChange} disabled={!history.length}><Undo2 size={15} /> вернуть</button>
+          <div className="avaTimingToolGroup isOutput">
+            <button className="avaTimingRailTextButton isSaveAudio" type="button" onClick={saveCurrentTimingAudio} disabled={!hasAudio}>💾 сохранить аудио</button>
+            <button
+              className="avaTimingDownloadSceneButton"
+              type="button"
+              style={{
+                '--scene-hue': sceneHue(selectedScene?.index ?? draft.selectedSceneIndex ?? 0),
+              }}
+              onClick={downloadSelectedSceneAudio}
+              disabled={!hasAudio || !selectedScene}
+              title={`Скачать аудио выбранной сцены: ${selectedScene?.title || selectedScene?.id || 'сцена'} · ${formatTime(selectedScene?.start || 0, true)} → ${formatTime(selectedScene?.end || 0, true)}`}
+            >
+              <span className="avaTimingDownloadSceneIcon">♫</span>
+              <span className="avaTimingDownloadSceneText">
+                <strong>Аудио сцены</strong>
+                <small>
+                  {selectedScene?.title || selectedScene?.id || `seg_${String((draft.selectedSceneIndex || 0) + 1).padStart(2, '0')}`} · WAV
+                </small>
+              </span>
+            </button>
+          </div>
 
-          <button
-            className="avaTimingDownloadSceneButton"
-            type="button"
-            style={{
-              '--scene-hue': sceneHue(selectedScene?.index ?? draft.selectedSceneIndex ?? 0),
-            }}
-            onClick={downloadSelectedSceneAudio}
-            disabled={!hasAudio || !selectedScene}
-            title={`Скачать аудио выбранной сцены: ${selectedScene?.title || selectedScene?.id || 'сцена'} · ${formatTime(selectedScene?.start || 0, true)} → ${formatTime(selectedScene?.end || 0, true)}`}
-          >
-            <span className="avaTimingDownloadSceneIcon">♫</span>
-            <span className="avaTimingDownloadSceneText">
-              <strong>Аудио сцены</strong>
-              <small>
-                {selectedScene?.title || selectedScene?.id || `seg_${String((draft.selectedSceneIndex || 0) + 1).padStart(2, '0')}`} · WAV
-              </small>
-            </span>
-          </button>
           <button className="avaTimingDevButton" type="button" onClick={() => setShowDev((value) => !value)}>{showDev ? 'Скрыть dev' : 'dev'}</button>
         </div>
 
