@@ -1345,6 +1345,8 @@ export default function ManualTimingPage() {
   const historyRef = useRef([])
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(true)
+  // AVA_TIMING_TASKPACK_DOWNLOAD_SPINNER_V178B_STATE
+  const [taskPackDownloadingV178B, setTaskPackDownloadingV178B] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const manualTimingBusyOpRefV160A = useRef('')
@@ -4033,6 +4035,9 @@ const useVocalStem = mode === 'vocal'
 
 
   async function downloadUnifiedTaskPackV7() {
+    // AVA_TIMING_TASKPACK_DOWNLOAD_SPINNER_V178B_FUNCTION
+    if (taskPackDownloadingV178B) return
+    setTaskPackDownloadingV178B(true)
     try {
       setStatus('Собираем задание…')
       try {
@@ -4065,6 +4070,8 @@ const useVocalStem = mode === 'vocal'
     } catch (error) {
       console.error('[ManualTiming] unified task pack download failed', error)
       setStatus(`Не удалось скачать задание: ${error?.message || 'unknown_error'}`)
+    } finally {
+      setTaskPackDownloadingV178B(false)
     }
   }
 
@@ -4344,14 +4351,23 @@ const useVocalStem = mode === 'vocal'
             <UploadCloud size={16} /> {uploading ? 'Загрузка аудио…' : 'Аудио'}
           </button>
           <button className="avaSoftButton avaTimingActionButton avaTimingActionJson" type="button" onClick={() => jsonInputRef.current?.click()} disabled={loading}>Импорт</button>
+          {/* AVA_TIMING_TASKPACK_DOWNLOAD_SPINNER_V178B_BUTTON */}
           <button
-            className="avaSoftButton avaTimingActionButton avaTimingActionTaskPackV7"
+            className={`avaSoftButton avaTimingActionButton avaTimingActionTaskPackV7 ${taskPackDownloadingV178B ? 'isDownloading' : ''}`}
             type="button"
             onClick={downloadUnifiedTaskPackV7}
-            disabled={loading}
+            disabled={loading || taskPackDownloadingV178B}
+            aria-busy={taskPackDownloadingV178B}
             title="Скачать единое задание проекта: режим, contract, timing, readiness и подсказка для Codex/ChatGPT"
           >
-            📦 Скачать задание
+            {taskPackDownloadingV178B ? (
+              <>
+                <span className="avaTimingTaskPackSpinnerV178B" aria-hidden="true" />
+                Готовлю…
+              </>
+            ) : (
+              <>📦 Скачать задание</>
+            )}
           </button>
 
           <button

@@ -3905,3 +3905,126 @@
   box-shadow: 0 0 0 1px rgba(255, 210, 130, .14), 0 14px 28px rgba(255, 160, 75, .18);
 }
 
+
+/* AVA_TIMING_TASKPACK_DOWNLOAD_SPINNER_V178B_START */
+.avaTimingHeaderActions .avaTimingActionTaskPackV7.isDownloading,
+.avaTimingHeaderActions .avaTimingActionTaskPackV7.isDownloading:disabled {
+  opacity: 1 !important;
+  cursor: wait !important;
+  color: #eaffff !important;
+  border-color: rgba(116, 244, 255, .54) !important;
+  background:
+    linear-gradient(135deg, rgba(36, 224, 196, .26), rgba(118, 102, 255, .22)),
+    rgba(255,255,255,.06) !important;
+  box-shadow:
+    0 0 0 1px rgba(116, 244, 255, .16),
+    0 0 24px rgba(69, 216, 255, .18),
+    0 14px 32px rgba(0,0,0,.22),
+    inset 0 1px 0 rgba(255,255,255,.10) !important;
+}
+
+.avaTimingTaskPackSpinnerV178B {
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  border: 2px solid rgba(232, 255, 255, .28);
+  border-top-color: rgba(232, 255, 255, .98);
+  border-right-color: rgba(142, 237, 255, .72);
+  animation: avaTimingTaskPackSpinV178B .78s linear infinite;
+  flex: 0 0 auto;
+  box-shadow: 0 0 12px rgba(89, 226, 255, .20);
+}
+
+@keyframes avaTimingTaskPackSpinV178B {
+  to { transform: rotate(360deg); }
+}
+/* AVA_TIMING_TASKPACK_DOWNLOAD_SPINNER_V178B_END */
+
+/* AVA_TIMING_TASKPACK_DOWNLOAD_SPINNER_V178C_START */
+/* Stronger visual feedback for the JSON task-pack download button.
+   Visual-only: no export/download logic changes. */
+.avaTimingHeaderActions .avaTimingActionTaskPackV7.isDownloading,
+.avaTimingHeaderActions .avaTimingActionTaskPackV7.isDownloading:disabled {
+  position: relative !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  min-width: 164px !important;
+  opacity: 1 !important;
+  cursor: wait !important;
+  color: #f3ffff !important;
+  border-color: rgba(116, 244, 255, .70) !important;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(47, 255, 218, .22), transparent 34%),
+    linear-gradient(135deg, rgba(24, 202, 188, .34), rgba(91, 99, 255, .30)),
+    rgba(8, 18, 38, .92) !important;
+  box-shadow:
+    0 0 0 1px rgba(116, 244, 255, .22),
+    0 0 26px rgba(69, 216, 255, .28),
+    0 14px 32px rgba(0, 0, 0, .28),
+    inset 0 1px 0 rgba(255, 255, 255, .12) !important;
+  text-shadow: 0 0 12px rgba(176, 255, 255, .38);
+}
+
+.avaTimingHeaderActions .avaTimingActionTaskPackV7.isDownloading::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -2px;
+  background:
+    linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, .05) 26%,
+      rgba(137, 255, 240, .34) 48%,
+      rgba(190, 153, 255, .22) 58%,
+      transparent 78%);
+  transform: translateX(-125%);
+  animation: avaTimingTaskPackSweepV178C 1.05s ease-in-out infinite;
+}
+
+.avaTimingHeaderActions .avaTimingActionTaskPackV7.isDownloading::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 5px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgba(37, 255, 146, .25),
+    rgba(37, 255, 146, .95),
+    rgba(101, 232, 255, .98),
+    rgba(183, 135, 255, .92),
+    rgba(37, 255, 146, .25));
+  background-size: 240% 100%;
+  animation: avaTimingTaskPackBarV178C .72s linear infinite;
+  box-shadow:
+    0 0 10px rgba(37, 255, 146, .50),
+    0 0 18px rgba(101, 232, 255, .28);
+}
+
+.avaTimingTaskPackSpinnerV178B {
+  width: 18px !important;
+  height: 18px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background:
+    conic-gradient(from 0deg,
+      rgba(255,255,255,.10),
+      rgba(123, 246, 255,.95),
+      rgba(64, 255, 154,.95),
+      rgba(255,255,255,.10));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 0);
+  animation: avaTimingTaskPackSpinV178B .62s linear infinite !important;
+  filter: drop-shadow(0 0 8px rgba(115, 239, 255, .45));
+}
+
+@keyframes avaTimingTaskPackSweepV178C {
+  0% { transform: translateX(-125%); }
+  62%, 100% { transform: translateX(125%); }
+}
+
+@keyframes avaTimingTaskPackBarV178C {
+  to { background-position: 240% 0; }
+}
+/* AVA_TIMING_TASKPACK_DOWNLOAD_SPINNER_V178C_END */
