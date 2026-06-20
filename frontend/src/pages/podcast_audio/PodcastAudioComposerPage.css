@@ -2042,3 +2042,43 @@ button.podcastSavePhraseDone {
     flex-wrap: wrap !important;
   }
 }
+
+/* PROJECT_PAGE_BACKGROUND_BLEND_V179C_START */
+/* Blend Podcast page background into the global project shell.
+   Visual-only: removes the dark rectangular page slab and lets project color show through. */
+.avaShell.isProjectMode .podcastComposerPage {
+  background: transparent !important;
+  position: relative;
+  isolation: isolate;
+}
+
+.avaShell.isProjectMode .podcastComposerPage::before {
+  content: "";
+  position: absolute;
+  inset: -36px -38px -64px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 16% 4%, color-mix(in srgb, var(--ava-project-accent, #2affc4) 18%, transparent), transparent 36%),
+    radial-gradient(circle at 92% 18%, color-mix(in srgb, var(--ava-project-accent-2, #45d8ff) 10%, transparent), transparent 34%),
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 7%, rgba(4, 10, 22, 0.44)),
+      rgba(5, 9, 20, 0.16) 44%,
+      color-mix(in srgb, var(--ava-project-accent-2, #45d8ff) 5%, rgba(5, 12, 24, 0.32))
+    );
+  opacity: 0.88;
+}
+
+.avaShell.isProjectMode .podcastComposerHeader,
+.avaShell.isProjectMode .podcastComposerCard {
+  position: relative;
+  z-index: 1;
+}
+
+.avaShell.isProjectMode .podcastComposerCard {
+  background:
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--ava-project-accent, #2affc4) 8%, transparent), transparent 34%),
+    linear-gradient(180deg, rgba(13, 21, 42, 0.78), rgba(4, 9, 22, 0.64)) !important;
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 18%, rgba(148, 163, 184, 0.14));
+}
+/* PROJECT_PAGE_BACKGROUND_BLEND_V179C_END */

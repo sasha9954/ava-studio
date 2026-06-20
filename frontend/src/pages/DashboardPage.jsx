@@ -1,4 +1,3 @@
-/* AVA_PROJECT_MODES_PACK_V1: main Скачать задание button builds ava_project_pack_v1.json. */
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -16,11 +15,9 @@ import {
   Scissors,
   Sparkles,
   WandSparkles,
-  Download,
 } from 'lucide-react'
 import { useProjects } from '../context/ProjectContext.jsx'
 import { apiRequest } from '../services/apiClient.js'
-import { buildAvaProjectPackV1, downloadJsonFile } from '../lib/avaProjectPack.js'
 
 const cards = [
   {
@@ -256,9 +253,8 @@ function ModulePreview({ type }) {
 }
 
 export default function DashboardPage() {
-  const { activeProject, loadStage } = useProjects()
+  const { activeProject } = useProjects()
   const [summary, setSummary] = useState(null)
-  const [taskPackStatus, setTaskPackStatus] = useState('')
   const [summaryStatus, setSummaryStatus] = useState('')
 
   useEffect(() => {
@@ -287,32 +283,6 @@ export default function DashboardPage() {
     return () => { active = false }
   }, [activeProject])
 
-
-  async function handleDownloadTaskPack() {
-    if (!activeProject) {
-      setTaskPackStatus('Сначала выбери или создай проект.')
-      return
-    }
-
-    setTaskPackStatus('Собираем задание…')
-    try {
-      const [manualTiming, board] = await Promise.all([
-        loadStage(activeProject.id, 'manual_timing').catch(() => ({})),
-        loadStage(activeProject.id, 'board').catch(() => ({})),
-      ])
-      const pack = buildAvaProjectPackV1({
-        project: activeProject,
-        manualTiming,
-        board,
-        summary,
-      })
-      downloadJsonFile(pack, 'ava_project_pack_v1.json')
-      setTaskPackStatus(`Скачано задание · режим: ${pack.project_mode?.label_ru || 'Обычный проект'}`)
-    } catch (error) {
-      setTaskPackStatus(`Не удалось скачать задание: ${error?.message || 'unknown_error'}`)
-    }
-  }
-
   const workspaceLabel = useMemo(() => {
     if (activeProject) return `Проектный режим: ${activeProject.name}`
     return 'Рабочая область: начать без проекта'
@@ -330,10 +300,9 @@ export default function DashboardPage() {
           <div className="avaDashHeroActions">
             <Link className="avaDashPrimaryButton" to="/app/projects/new"><FolderPlus size={18} /> Создать проект</Link>
             <Link className="avaDashSecondaryButton" to="/app/projects"><Folder size={18} /> Мои проекты</Link>
-            <button className="avaDashSecondaryButton" type="button" onClick={handleDownloadTaskPack} disabled={!activeProject}><Download size={18} /> 📦 Скачать задание</button>
           </div>
           <div className="avaDashHeroStatus">
-            <span><CheckCircle2 size={14} /> {taskPackStatus || 'Система готова к работе'}</span>
+            <span><CheckCircle2 size={14} /> Система готова к работе</span>
             <i />
             <span>Все сервисы активны</span>
           </div>

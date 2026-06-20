@@ -498,3 +498,314 @@
 }
 /* AVA_SIDEBAR_LOGO_TOPBAR_CLEANUP_END */
 
+
+/* PROJECT_SHELL_GLOW_V179A_START */
+/* Global project-color aura. Visual-only: uses CSS vars from projectTheme.js.
+   When no project is active, the shell keeps the default cyan/violet workspace tint. */
+
+.avaShell {
+  position: relative;
+  isolation: isolate;
+  --ava-shell-aura-accent: var(--ava-project-accent, #45d8ff);
+  --ava-shell-aura-accent-2: var(--ava-project-accent-2, #8f7cff);
+  --ava-shell-aura-glow: var(--ava-project-glow, rgba(69,216,255,.16));
+  background:
+    radial-gradient(circle at 0% 12%, color-mix(in srgb, var(--ava-shell-aura-accent) 8%, transparent), transparent 34%),
+    radial-gradient(circle at 96% 0%, color-mix(in srgb, var(--ava-shell-aura-accent-2) 7%, transparent), transparent 32%),
+    #050914;
+}
+
+.avaShell::before,
+.avaShell::after {
+  content: '';
+  position: fixed;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.avaShell::before {
+  inset: 0 auto 0 0;
+  width: min(440px, 42vw);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ava-shell-aura-accent) 10%, transparent), transparent 76%),
+    radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--ava-shell-aura-accent) 14%, transparent), transparent 46%);
+  opacity: .62;
+  filter: blur(2px);
+}
+
+.avaShell::after {
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.018), transparent 28%),
+    radial-gradient(circle at 50% -18%, color-mix(in srgb, var(--ava-shell-aura-accent-2) 6%, transparent), transparent 44%);
+  opacity: .78;
+}
+
+.avaShell.isWorkspaceMode {
+  --ava-shell-aura-accent: #45d8ff;
+  --ava-shell-aura-accent-2: #8f7cff;
+  --ava-shell-aura-glow: rgba(69,216,255,.14);
+}
+
+.avaShell.isProjectMode .avaSidebar {
+  background:
+    radial-gradient(circle at 50% 10%, color-mix(in srgb, var(--ava-project-accent) 18%, transparent), transparent 36%),
+    linear-gradient(180deg, rgba(6, 11, 25, .92), color-mix(in srgb, var(--ava-project-accent) 8%, rgba(4, 8, 20, .84)) 55%, rgba(4, 8, 20, .86));
+  border-right-color: color-mix(in srgb, var(--ava-project-accent) 36%, transparent);
+  box-shadow:
+    inset -1px 0 0 color-mix(in srgb, var(--ava-project-accent) 18%, transparent),
+    18px 0 56px color-mix(in srgb, var(--ava-project-accent) 7%, transparent);
+}
+
+.avaShell.isProjectMode .avaTopbar {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ava-project-accent) 16%, rgba(7, 11, 24, .62)), rgba(7, 11, 24, .48) 42%, color-mix(in srgb, var(--ava-project-accent-2) 8%, rgba(7, 11, 24, .42)));
+  border-bottom-color: color-mix(in srgb, var(--ava-project-accent) 38%, transparent);
+  box-shadow:
+    0 18px 54px color-mix(in srgb, var(--ava-project-accent) 8%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--ava-project-accent) 14%, transparent);
+}
+
+.avaShell.isProjectMode .avaTopbar::before {
+  content: '';
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--ava-project-accent), var(--ava-project-accent-2), transparent);
+  opacity: .58;
+  pointer-events: none;
+}
+
+.avaShell.isProjectMode .avaTopbar h1 {
+  text-shadow: 0 0 28px color-mix(in srgb, var(--ava-project-accent) 18%, transparent);
+}
+
+.avaShell.isProjectMode .avaTopbarLeft p {
+  color: color-mix(in srgb, var(--ava-project-accent) 78%, #d8e4ff);
+  font-weight: 750;
+}
+
+.avaShell.isProjectMode .avaBrandIcon,
+.avaShell.isProjectMode .avaSidebarToggle {
+  border-color: color-mix(in srgb, var(--ava-project-accent) 34%, rgba(255,255,255,.12));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ava-project-accent) 14%, transparent),
+    0 16px 42px color-mix(in srgb, var(--ava-project-accent) 22%, transparent);
+}
+
+.avaShell.isProjectMode .avaNavItem.isActive {
+  color: #f4fbff;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ava-project-accent) 16%, rgba(255,255,255,.065)), rgba(255,255,255,.045));
+  border-color: color-mix(in srgb, var(--ava-project-accent) 42%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ava-project-accent) 12%, transparent),
+    0 14px 34px color-mix(in srgb, var(--ava-project-accent) 14%, transparent);
+}
+
+.avaShell.isProjectMode .avaNavItem:hover {
+  border-color: color-mix(in srgb, var(--ava-project-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--ava-project-accent) 10%, rgba(255,255,255,.055));
+}
+
+.avaShell.isProjectMode .avaSidebarProject {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--ava-project-accent) 26%, transparent), transparent 42%),
+    linear-gradient(145deg, color-mix(in srgb, var(--ava-project-accent) 20%, rgba(10, 15, 31, .84)), color-mix(in srgb, var(--ava-project-accent-2) 8%, rgba(7, 12, 24, .86)));
+  border-color: color-mix(in srgb, var(--ava-project-accent) 46%, transparent);
+  box-shadow:
+    0 22px 62px color-mix(in srgb, var(--ava-project-accent) 20%, transparent),
+    inset 0 1px 0 rgba(255,255,255,.055);
+}
+
+.avaShell.isProjectMode .avaSidebarProject::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 10px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--ava-project-accent), var(--ava-project-accent-2));
+  opacity: .64;
+  box-shadow: 0 0 16px var(--ava-project-glow, rgba(69,216,255,.22));
+}
+
+.avaShell.isProjectMode .avaModePill,
+.avaShell.isProjectMode .avaSavePill,
+.avaShell.isProjectMode .avaCreditPill {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ava-project-accent) 10%, rgba(255,255,255,.055)), rgba(255,255,255,.04));
+  border-color: color-mix(in srgb, var(--ava-project-accent) 28%, rgba(255,255,255,.11));
+}
+
+.avaShell.isProjectMode .avaContent {
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--ava-project-accent) 8%, transparent), transparent 34%),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--ava-project-accent-2) 6%, transparent), transparent 30%);
+}
+
+.avaShell.isProjectMode .avaPrimaryButton,
+.avaShell.isProjectMode .avaDashPrimaryButton {
+  background: linear-gradient(135deg, var(--ava-project-accent), var(--ava-project-accent-2));
+  box-shadow: 0 18px 46px color-mix(in srgb, var(--ava-project-accent) 24%, transparent);
+}
+
+.avaShell.isSidebarClosed.isProjectMode .avaSidebarProject {
+  box-shadow: 0 0 34px color-mix(in srgb, var(--ava-project-accent) 22%, transparent);
+}
+/* PROJECT_SHELL_GLOW_V179A_END */
+
+/* PROJECT_SHELL_BACKGROUND_BLEND_V179B_START */
+/* Project mode background blend.
+   Visual-only: makes the always-visible shell/background/sidebar/topbar use
+   the active project color as one continuous soft gradient. */
+
+.avaShell {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(69, 216, 255, 0.07), transparent 34%),
+    radial-gradient(circle at 82% 6%, rgba(143, 124, 255, 0.06), transparent 34%),
+    linear-gradient(180deg, #060b18 0%, #050914 45%, #050812 100%);
+}
+
+.avaShell.isProjectMode {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  background:
+    radial-gradient(circle at 12% 4%, color-mix(in srgb, var(--ava-project-accent, #2affc4) 18%, transparent), transparent 34%),
+    radial-gradient(circle at 78% 2%, color-mix(in srgb, var(--ava-project-accent-2, #45d8ff) 13%, transparent), transparent 38%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 10%, #070b18) 0%,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 5%, #050914) 42%,
+      #050812 100%
+    );
+}
+
+.avaShell.isProjectMode::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 18%, transparent) 0%,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 9%, transparent) 13%,
+      rgba(5, 9, 19, 0.22) 31%,
+      rgba(5, 9, 19, 0.10) 100%
+    ),
+    radial-gradient(circle at 8% 55%, color-mix(in srgb, var(--ava-project-accent, #2affc4) 12%, transparent), transparent 32%),
+    radial-gradient(circle at 50% 12%, color-mix(in srgb, var(--ava-project-accent-2, #45d8ff) 9%, transparent), transparent 44%);
+  opacity: 0.9;
+}
+
+.avaShell.isProjectMode .avaSidebar {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 14%, rgba(5, 9, 18, 0.88)) 0%,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 8%, rgba(4, 8, 18, 0.86)) 48%,
+      rgba(4, 8, 18, 0.84) 100%
+    );
+  border-right-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 22%, rgba(255,255,255,0.08));
+  box-shadow:
+    inset -1px 0 0 color-mix(in srgb, var(--ava-project-accent, #2affc4) 13%, transparent),
+    18px 0 70px color-mix(in srgb, var(--ava-project-accent, #2affc4) 9%, transparent);
+}
+
+.avaShell.isProjectMode .avaMain {
+  position: relative;
+  min-height: 100vh;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 7%, rgba(6, 10, 22, 0.78)) 0%,
+      rgba(5, 9, 19, 0.54) 38%,
+      rgba(5, 8, 18, 0.42) 100%
+    );
+}
+
+.avaShell.isProjectMode .avaMain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 0% 8%, color-mix(in srgb, var(--ava-project-accent, #2affc4) 12%, transparent), transparent 34%),
+    linear-gradient(90deg, color-mix(in srgb, var(--ava-project-accent, #2affc4) 10%, transparent), transparent 28%);
+  opacity: 0.78;
+}
+
+.avaShell.isProjectMode .avaTopbar,
+.avaShell.isProjectMode .avaContent {
+  position: relative;
+  z-index: 1;
+}
+
+.avaShell.isProjectMode .avaTopbar {
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 17%, rgba(7, 11, 24, 0.72)) 0%,
+      color-mix(in srgb, var(--ava-project-accent-2, #45d8ff) 8%, rgba(7, 11, 24, 0.54)) 42%,
+      rgba(7, 11, 24, 0.48) 100%
+    );
+  border-bottom-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 28%, transparent);
+  box-shadow:
+    inset 0 -1px 0 color-mix(in srgb, var(--ava-project-accent, #2affc4) 10%, transparent),
+    0 14px 46px color-mix(in srgb, var(--ava-project-accent, #2affc4) 7%, transparent);
+}
+
+.avaShell.isProjectMode .avaContent {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ava-project-accent, #2affc4) 5%, transparent) 0%,
+      rgba(4, 8, 18, 0.06) 32%,
+      transparent 100%
+    );
+}
+
+.avaShell.isProjectMode .avaSidebarProject {
+  background:
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--ava-project-accent, #2affc4) 34%, transparent), transparent 58%),
+    linear-gradient(145deg, color-mix(in srgb, var(--ava-project-accent, #2affc4) 19%, rgba(8, 13, 27, 0.84)), rgba(8, 13, 27, 0.72));
+}
+
+.avaShell.isProjectMode .avaNavItem.isActive,
+.avaShell.isProjectMode .avaNavItem:hover {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ava-project-accent, #2affc4) 13%, rgba(255,255,255,0.06)), rgba(255,255,255,0.045));
+  border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 28%, rgba(255,255,255,0.06));
+}
+
+.avaShell.isProjectMode .avaGhostButton,
+.avaShell.isProjectMode .avaPrimaryButton {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ava-project-accent, #2affc4) 12%, transparent),
+    0 10px 30px color-mix(in srgb, var(--ava-project-accent, #2affc4) 8%, transparent);
+}
+
+@supports not (color: color-mix(in srgb, white, black)) {
+  .avaShell.isProjectMode {
+    background:
+      radial-gradient(circle at 12% 4%, var(--ava-project-glow, rgba(42,255,196,.14)), transparent 34%),
+      linear-gradient(180deg, #07101a 0%, #050914 52%, #050812 100%);
+  }
+
+  .avaShell.isProjectMode .avaSidebar,
+  .avaShell.isProjectMode .avaTopbar,
+  .avaShell.isProjectMode .avaMain {
+    background: rgba(5, 10, 22, 0.78);
+  }
+}
+/* PROJECT_SHELL_BACKGROUND_BLEND_V179B_END */
