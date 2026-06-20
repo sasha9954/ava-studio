@@ -6566,3 +6566,112 @@
   }
 }
 /* BOARD_PANEL_TINTS_V178A_END */
+
+/* ASSEMBLY_STATS_SINGLE_ROW_V184A_START */
+/* Visual-only: keep montage summary chips on one neat horizontal row. */
+.avaAssemblyStats {
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding: 0 2px 4px;
+  scrollbar-width: thin;
+}
+
+.avaAssemblyStats::-webkit-scrollbar {
+  height: 6px;
+}
+
+.avaAssemblyStats::-webkit-scrollbar-track {
+  background: rgba(255,255,255,.035);
+  border-radius: 999px;
+}
+
+.avaAssemblyStats::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, rgba(111,231,255,.45), rgba(168,85,247,.42));
+  border-radius: 999px;
+}
+
+.avaAssemblyStats span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.avaAssemblyStats .avaBoardStatusText {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+@media (max-width: 860px) {
+  .avaAssemblyStats {
+    gap: 7px;
+  }
+
+  .avaAssemblyStats span {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+}
+/* ASSEMBLY_STATS_SINGLE_ROW_V184A_END */
+
+/* ASSEMBLY_STATS_COMPACT_NO_SCROLL_V184B_START */
+/* Visual-only: compact montage summary chips into one row without a scrollbar. */
+.avaAssemblyStats {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 5px !important;
+  overflow: visible !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  scrollbar-width: none !important;
+}
+
+.avaAssemblyStats::-webkit-scrollbar {
+  display: none !important;
+}
+
+.avaAssemblyStats span {
+  flex: 0 1 auto !important;
+  white-space: nowrap !important;
+  min-height: 25px !important;
+  padding: 5px 8px !important;
+  border-radius: 999px !important;
+  font-size: 10px !important;
+  line-height: 1.1 !important;
+  letter-spacing: -0.01em !important;
+}
+
+.avaAssemblyStats strong {
+  font-size: 10px !important;
+  line-height: 1.1 !important;
+}
+
+.avaAssemblyStats .avaBoardStatusText {
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+@media (max-width: 1180px) {
+  .avaAssemblyStats {
+    gap: 4px !important;
+  }
+
+  .avaAssemblyStats span,
+  .avaAssemblyStats strong {
+    font-size: 9.4px !important;
+  }
+
+  .avaAssemblyStats span {
+    padding: 5px 6px !important;
+  }
+}
+/* ASSEMBLY_STATS_COMPACT_NO_SCROLL_V184B_END */

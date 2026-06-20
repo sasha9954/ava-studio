@@ -967,7 +967,7 @@ export default function BoardAssemblyPage() {
       setWatermarkSize(28)
       setWatermarkMotion('corners')
       await persistBoardImportToAssemblyV11(nextBoard, shouldImportBoard ? 'board_to_assembly_imported_v11' : 'board_fallback_imported_v11')
-      setStatus(nextBoard.scenes?.length ? `Доска перенесена в монтажник: сцен ${nextBoard.scenes.length}` : 'В Board нет сцен')
+      setStatus(nextBoard.scenes?.length ? `Доска: сцен ${nextBoard.scenes.length}` : 'Board пустой')
     } catch (error) {
       setStatus(`Не удалось загрузить монтаж/Board: ${error?.message || 'unknown_error'}`)
       setBoard({ scenes: [] })
@@ -1516,14 +1516,14 @@ export default function BoardAssemblyPage() {
       </section>
 
       <section className="avaAssemblyStats">
-        <span>Сцен: <strong>{stats.total}</strong></span>
-        <span>Видео готово: <strong>{stats.ready}/{stats.total}</strong></span>
-        <span>Со звуком: <strong>{stats.withSound}</strong></span>
-        <span>Длина: <strong>{formatTime(stats.duration)}</strong></span>
-        <span>Оригинал audio: <strong>{stats.hasOriginalAudio ? 'есть' : 'нет'}</strong></span>
+        <span>Сц: <strong>{stats.total}</strong></span>
+        <span>Видео: <strong>{stats.ready}/{stats.total}</strong></span>
+        <span>Звук: <strong>{stats.withSound}</strong></span>
+        <span>Дл: <strong>{formatTime(stats.duration)}</strong></span>
+        <span>Audio: <strong>{stats.hasOriginalAudio ? 'есть' : 'нет'}</strong></span>
         {status && <span className="avaBoardStatusText">{status}</span>}
-        <span className="avaBoardStatusText">Водный знак: {watermarkEnabled && String(watermarkText || '').trim() ? 'preview ON / export OFF' : 'выключен'}</span>
-        <span className="avaBoardStatusText">Настройки сохраняются автоматически</span>
+        <span className="avaBoardStatusText">Водн.: {watermarkEnabled && String(watermarkText || '').trim() ? 'prev ON / exp OFF' : 'off'}</span>
+        <span className="avaBoardStatusText">Автосохр.</span>
       </section>
 
       <section className="avaAssemblyWorkspace">

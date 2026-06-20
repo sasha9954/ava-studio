@@ -2082,3 +2082,39 @@ button.podcastSavePhraseDone {
   border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 18%, rgba(148, 163, 184, 0.14));
 }
 /* PROJECT_PAGE_BACKGROUND_BLEND_V179C_END */
+
+/* WORKSPACE_PAGE_BACKGROUND_BLEND_V185A_START */
+/* Workspace-mode background blend for Podcast.
+   Visual-only: removes the dark rectangular page slab when no project is open. */
+.avaShell.isWorkspaceMode .podcastComposerPage {
+  background: transparent !important;
+  position: relative;
+  isolation: isolate;
+}
+
+.avaShell.isWorkspaceMode .podcastComposerPage::before {
+  content: "";
+  position: absolute;
+  inset: -36px -38px -64px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 16% 4%, rgba(69, 216, 255, 0.15), transparent 36%),
+    radial-gradient(circle at 92% 18%, rgba(143, 124, 255, 0.10), transparent 34%),
+    linear-gradient(135deg, rgba(4, 14, 30, 0.42), rgba(5, 9, 20, 0.12) 44%, rgba(7, 12, 30, 0.28));
+  opacity: 0.86;
+}
+
+.avaShell.isWorkspaceMode .podcastComposerHeader,
+.avaShell.isWorkspaceMode .podcastComposerCard {
+  position: relative;
+  z-index: 1;
+}
+
+.avaShell.isWorkspaceMode .podcastComposerCard {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(69, 216, 255, 0.07), transparent 34%),
+    linear-gradient(180deg, rgba(13, 21, 42, 0.78), rgba(4, 9, 22, 0.64)) !important;
+  border-color: rgba(125, 211, 252, 0.16);
+}
+/* WORKSPACE_PAGE_BACKGROUND_BLEND_V185A_END */

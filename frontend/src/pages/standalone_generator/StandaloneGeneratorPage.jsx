@@ -1754,6 +1754,14 @@ export default function StandaloneGeneratorPage() {
   const [endPersistedDataUrl, setEndPersistedDataUrl] = useState(() => readGeneratorMediaDraft().endPersistedDataUrl || '')
   const [audioPersistedDataUrl, setAudioPersistedDataUrl] = useState(() => readGeneratorMediaDraft().audioPersistedDataUrl || '')
   const [isAudioPlaying, setIsAudioPlaying] = useState(false)
+  // GENERATOR_PHOTO_UPLOAD_UI_V183A: visible upload feedback for start/end image files.
+  const [startImageUploadBusy, setStartImageUploadBusy] = useState(false)
+  const [startImageUploadError, setStartImageUploadError] = useState('')
+  const [endImageUploadBusy, setEndImageUploadBusy] = useState(false)
+  const [endImageUploadError, setEndImageUploadError] = useState('')
+  // GENERATOR_AUDIO_UPLOAD_UI_V181B: visible upload/delete state for generator audio files.
+  const [audioUploadBusy, setAudioUploadBusy] = useState(false)
+  const [audioUploadError, setAudioUploadError] = useState('')
   const [zoomImage, setZoomImage] = useState(null)
   const [job, setJob] = useState(null)
   const [statusText, setStatusText] = useState('готов к тесту')
@@ -3023,99 +3031,119 @@ export default function StandaloneGeneratorPage() {
 
   const handleStartFile = useCallback(async (file) => {
     setStartFile(file || null)
+    setStartImageUploadError('')
     if (!file) {
       setStartPreview('')
       setStartPersistedDataUrl('')
+      setStartImageUploadBusy(false)
       saveGeneratorSnapshot('media_upload')
       return
     }
     setError('')
+    setStartImageUploadBusy(true)
     setStatusText('загружаю стартовое фото в assets...')
     try {
-      const uploaded = await uploadGeneratorMediaAsset(file, { projectId: routeProjectId, kind: 'image', stage: 'generator_images' })
-      const apiPath = uploaded?.apiPath || uploaded?.api_path || uploaded?.url || ''
-      if (apiPath) {
-        setStartPersistedDataUrl(apiPath)
-        setStartPreview(URL.createObjectURL(file))
-        await writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), startPersistedDataUrl: apiPath, startImageAssetId: uploaded.assetId || uploaded.asset_id || '' })
-        saveGeneratorSnapshot('media_upload', {
-          mediaUploaded: true,
-          media: {
-            startImageUrl: normalizeUrl(apiPath),
-            startImageApiPath: generatorCanonicalApiPath(apiPath),
-            startImageAssetId: uploaded.assetId || uploaded.asset_id || generatorAssetIdFromRef(apiPath),
-            endImageUrl: normalizeUrl(endPersistedDataUrl || endPreview || ''),
-            endImageApiPath: generatorCanonicalApiPath(endPersistedDataUrl, endPreview),
-            endImageAssetId: generatorAssetIdFromRef(endPersistedDataUrl, endPreview),
-            audioUrl: normalizeUrl(audioPersistedDataUrl || audioPreviewUrl || ''),
-            audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
-            audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
-            audioName,
-            audioDurationSec,
-          },
-        })
-        setStatusText('стартовое фото сохранено в проект')
-        return
+      try {
+        const uploaded = await uploadGeneratorMediaAsset(file, { projectId: routeProjectId, kind: 'image', stage: 'generator_images' })
+        const apiPath = uploaded?.apiPath || uploaded?.api_path || uploaded?.url || ''
+        if (apiPath) {
+          setStartPersistedDataUrl(apiPath)
+          setStartPreview(URL.createObjectURL(file))
+          await writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), startPersistedDataUrl: apiPath, startImageAssetId: uploaded.assetId || uploaded.asset_id || '' })
+          saveGeneratorSnapshot('media_upload', {
+            mediaUploaded: true,
+            media: {
+              startImageUrl: normalizeUrl(apiPath),
+              startImageApiPath: generatorCanonicalApiPath(apiPath),
+              startImageAssetId: uploaded.assetId || uploaded.asset_id || generatorAssetIdFromRef(apiPath),
+              endImageUrl: normalizeUrl(endPersistedDataUrl || endPreview || ''),
+              endImageApiPath: generatorCanonicalApiPath(endPersistedDataUrl, endPreview),
+              endImageAssetId: generatorAssetIdFromRef(endPersistedDataUrl, endPreview),
+              audioUrl: normalizeUrl(audioPersistedDataUrl || audioPreviewUrl || ''),
+              audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
+              audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
+              audioName,
+              audioDurationSec,
+            },
+          })
+          setStatusText('стартовое фото сохранено в проект')
+          return
+        }
+      } catch (error) {
+        console.warn('[GENERATOR START IMAGE ASSET UPLOAD FAILED]', error)
+        setStartImageUploadError('Asset не принял фото, сохранено локально')
+        setStatusText('asset upload не удался, сохраняю локально')
       }
-    } catch (error) {
-      console.warn('[GENERATOR START IMAGE ASSET UPLOAD FAILED]', error)
-      setStatusText('asset upload не удался, сохраняю локально')
+      const persisted = await readImageFileAsPersistedDataUrl(file)
+      setStartPersistedDataUrl(persisted)
+      setStartPreview(persisted || URL.createObjectURL(file))
+      if (persisted) writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), startPersistedDataUrl: persisted })
+      setStatusText('стартовое фото сохранено локально')
+    } finally {
+      setStartImageUploadBusy(false)
     }
-    const persisted = await readImageFileAsPersistedDataUrl(file)
-    setStartPersistedDataUrl(persisted)
-    setStartPreview(persisted || URL.createObjectURL(file))
-    if (persisted) writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), startPersistedDataUrl: persisted })
   }, [routeProjectId, saveGeneratorSnapshot, endPersistedDataUrl, endPreview, audioPersistedDataUrl, audioPreviewUrl, audioName, audioDurationSec])
 
   const handleEndFile = useCallback(async (file) => {
     setEndFile(file || null)
+    setEndImageUploadError('')
     if (!file) {
       setEndPreview('')
       setEndPersistedDataUrl('')
+      setEndImageUploadBusy(false)
       saveGeneratorSnapshot('media_upload')
       return
     }
     setError('')
+    setEndImageUploadBusy(true)
     setStatusText('загружаю второй кадр в assets...')
     try {
-      const uploaded = await uploadGeneratorMediaAsset(file, { projectId: routeProjectId, kind: 'image', stage: 'generator_images' })
-      const apiPath = uploaded?.apiPath || uploaded?.api_path || uploaded?.url || ''
-      if (apiPath) {
-        setEndPersistedDataUrl(apiPath)
-        setEndPreview(URL.createObjectURL(file))
-        await writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), endPersistedDataUrl: apiPath, endImageAssetId: uploaded.assetId || uploaded.asset_id || '' })
-        saveGeneratorSnapshot('media_upload', {
-          mediaUploaded: true,
-          media: {
-            startImageUrl: normalizeUrl(startPersistedDataUrl || startPreview || ''),
-            startImageApiPath: generatorCanonicalApiPath(startPersistedDataUrl, startPreview),
-            startImageAssetId: generatorAssetIdFromRef(startPersistedDataUrl, startPreview),
-            endImageUrl: normalizeUrl(apiPath),
-            endImageApiPath: generatorCanonicalApiPath(apiPath),
-            endImageAssetId: uploaded.assetId || uploaded.asset_id || generatorAssetIdFromRef(apiPath),
-            audioUrl: normalizeUrl(audioPersistedDataUrl || audioPreviewUrl || ''),
-            audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
-            audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
-            audioName,
-            audioDurationSec,
-          },
-        })
-        setStatusText('второй кадр сохранён в проект')
-        return
+      try {
+        const uploaded = await uploadGeneratorMediaAsset(file, { projectId: routeProjectId, kind: 'image', stage: 'generator_images' })
+        const apiPath = uploaded?.apiPath || uploaded?.api_path || uploaded?.url || ''
+        if (apiPath) {
+          setEndPersistedDataUrl(apiPath)
+          setEndPreview(URL.createObjectURL(file))
+          await writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), endPersistedDataUrl: apiPath, endImageAssetId: uploaded.assetId || uploaded.asset_id || '' })
+          saveGeneratorSnapshot('media_upload', {
+            mediaUploaded: true,
+            media: {
+              startImageUrl: normalizeUrl(startPersistedDataUrl || startPreview || ''),
+              startImageApiPath: generatorCanonicalApiPath(startPersistedDataUrl, startPreview),
+              startImageAssetId: generatorAssetIdFromRef(startPersistedDataUrl, startPreview),
+              endImageUrl: normalizeUrl(apiPath),
+              endImageApiPath: generatorCanonicalApiPath(apiPath),
+              endImageAssetId: uploaded.assetId || uploaded.asset_id || generatorAssetIdFromRef(apiPath),
+              audioUrl: normalizeUrl(audioPersistedDataUrl || audioPreviewUrl || ''),
+              audioApiPath: generatorCanonicalApiPath(audioPersistedDataUrl, audioPreviewUrl),
+              audioAssetId: generatorAssetIdFromRef(audioPersistedDataUrl, audioPreviewUrl),
+              audioName,
+              audioDurationSec,
+            },
+          })
+          setStatusText('второй кадр сохранён в проект')
+          return
+        }
+      } catch (error) {
+        console.warn('[GENERATOR END IMAGE ASSET UPLOAD FAILED]', error)
+        setEndImageUploadError('Asset не принял фото, сохранено локально')
+        setStatusText('asset upload не удался, сохраняю локально')
       }
-    } catch (error) {
-      console.warn('[GENERATOR END IMAGE ASSET UPLOAD FAILED]', error)
-      setStatusText('asset upload не удался, сохраняю локально')
+      const persisted = await readImageFileAsPersistedDataUrl(file)
+      setEndPersistedDataUrl(persisted)
+      setEndPreview(persisted || URL.createObjectURL(file))
+      if (persisted) writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), endPersistedDataUrl: persisted })
+      setStatusText('второй кадр сохранён локально')
+    } finally {
+      setEndImageUploadBusy(false)
     }
-    const persisted = await readImageFileAsPersistedDataUrl(file)
-    setEndPersistedDataUrl(persisted)
-    setEndPreview(persisted || URL.createObjectURL(file))
-    if (persisted) writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), endPersistedDataUrl: persisted })
   }, [routeProjectId, saveGeneratorSnapshot, startPersistedDataUrl, startPreview, audioPersistedDataUrl, audioPreviewUrl, audioName, audioDurationSec])
 
   const handleAudioFile = useCallback(async (file) => {
 
     setError('')
+    setAudioUploadError('')
+    setAudioUploadBusy(Boolean(file))
     if (audioPreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(audioPreviewUrl)
     if (!file) {
       setAudioFile(null)
@@ -3124,6 +3152,36 @@ export default function StandaloneGeneratorPage() {
       setAudioPreviewUrl('')
       setAudioPersistedDataUrl('')
       setIsAudioPlaying(false)
+      setAudioUploadBusy(false)
+      setAudioUploadError('')
+      try {
+        await writeGeneratorMediaToDb({
+          ...readGeneratorMediaDraft(),
+          audioPersistedDataUrl: '',
+          audioName: '',
+          audioDurationSec: 0,
+          audioAssetId: '',
+        })
+      } catch (exc) {
+        console.warn('[GENERATOR AUDIO CLEAR DRAFT FAILED]', exc)
+      }
+      saveGeneratorSnapshot('media_upload', {
+        mediaUploaded: true,
+        media: {
+          startImageUrl: normalizeUrl(startPersistedDataUrl || startPreview || ''),
+          startImageApiPath: generatorCanonicalApiPath(startPersistedDataUrl, startPreview),
+          startImageAssetId: generatorAssetIdFromRef(startPersistedDataUrl, startPreview),
+          endImageUrl: normalizeUrl(endPersistedDataUrl || endPreview || ''),
+          endImageApiPath: generatorCanonicalApiPath(endPersistedDataUrl, endPreview),
+          endImageAssetId: generatorAssetIdFromRef(endPersistedDataUrl, endPreview),
+          audioUrl: '',
+          audioApiPath: '',
+          audioAssetId: '',
+          audioName: '',
+          audioDurationSec: 0,
+        },
+      })
+      setStatusText('аудио удалено из генератора')
       return
     }
     const sec = await getAudioDurationSec(file)
@@ -3134,6 +3192,8 @@ export default function StandaloneGeneratorPage() {
       setAudioPreviewUrl('')
       setAudioPersistedDataUrl('')
       setIsAudioPlaying(false)
+      setAudioUploadBusy(false)
+      setAudioUploadError('Аудио слишком длинное для lip-sync')
       setError(`Для lip-sync аудио должно быть не длиннее 15 сек. Сейчас: ${sec.toFixed(2)} сек.`)
       return
     }
@@ -3172,18 +3232,26 @@ export default function StandaloneGeneratorPage() {
             audioDurationSec: sec,
           },
         })
+        setAudioUploadBusy(false)
+        setAudioUploadError('')
         setStatusText('аудио сохранено в проект')
         return
       }
     } catch (error) {
       console.warn('[GENERATOR AUDIO ASSET UPLOAD FAILED]', error)
+      setAudioUploadError('asset upload не удался, сохраняю локально')
       setStatusText('asset upload не удался, сохраняю локально')
     }
     const audioDataUrlForPersist = await readFileAsDataUrl(file)
     setAudioPersistedDataUrl(audioDataUrlForPersist)
     setAudioPreviewUrl(audioDataUrlForPersist || URL.createObjectURL(file))
     if (audioDataUrlForPersist) writeGeneratorMediaToDb({ ...readGeneratorMediaDraft(), audioPersistedDataUrl: audioDataUrlForPersist, audioName: file?.name || '', audioDurationSec: sec })
+    setAudioUploadBusy(false)
   }, [route, audioPreviewUrl, routeProjectId, saveGeneratorSnapshot, startPersistedDataUrl, startPreview, endPersistedDataUrl, endPreview])
+
+  const clearGeneratorAudio = useCallback(() => {
+    handleAudioFile(null)
+  }, [handleAudioFile])
 
   const toggleAudioPreview = useCallback(async () => {
     if (!audioRef.current || !audioPreviewUrl) return
@@ -4218,32 +4286,73 @@ export default function StandaloneGeneratorPage() {
           <div className="avaGeneratorStatus">Статус: <strong>{statusText}</strong></div>
         </div>
 
+        <div className="avaGeneratorRightRail">
         <div className={`avaGeneratorPanel avaGeneratorMediaPanel ${routeInfo.kind === 'image' ? 'isImageMode' : ''}`}>
           <h2>2. Медиа / Результат</h2>
 
           <div className="avaGeneratorUploadGrid" data-count={mediaColumnCount}>
             {routeInfo.needsStart ? (
-              <label className="avaGeneratorDrop isRequired">
-                <input type="file" accept="image/*" onChange={(event) => handleStartFile(event.target.files?.[0])} />
+              <label className={`avaGeneratorDrop avaGeneratorImageDrop isStartImage isRequired ${(startImageUploadBusy || startPreviewIsLoading) ? 'isUploading' : ''} ${(startFile?.name || startPersistedDataUrl || startPreview) ? 'hasFile' : ''}`}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={startImageUploadBusy}
+                  onChange={(event) => handleStartFile(event.target.files?.[0])}
+                />
                 <span>Стартовое изображение</span>
-                <strong title={startFile?.name || ''}>{startFile?.name || 'загрузить фото'}</strong>
+                <strong title={startFile?.name || ''}>
+                  {startImageUploadBusy ? (
+                    <><i className="avaGeneratorImageMiniSpinner" aria-hidden="true" /> Грузим фото...</>
+                  ) : (startFile?.name || startPersistedDataUrl || startPreview) ? 'Фото загружено' : 'Загрузить фото'}
+                </strong>
+                {(startFile?.name || startPersistedDataUrl || startPreview) && !startImageUploadBusy ? (
+                  <em>{startFile?.name || 'кадр сохранён в проекте'}</em>
+                ) : null}
+                {!startFile?.name && !startPersistedDataUrl && !startPreview && !startImageUploadBusy ? <em>PNG / JPG / WEBP</em> : null}
+                {startImageUploadError ? <small className="avaGeneratorPhotoUploadError">{startImageUploadError}</small> : null}
+                {startImageUploadBusy ? <i className="avaGeneratorUploadProgress" aria-hidden="true" /> : null}
               </label>
             ) : null}
 
             {routeInfo.needsEnd ? (
-              <label className="avaGeneratorDrop isRequired">
-                <input type="file" accept="image/*" onChange={(event) => handleEndFile(event.target.files?.[0])} />
+              <label className={`avaGeneratorDrop avaGeneratorImageDrop isEndImage isRequired ${endImageUploadBusy ? 'isUploading' : ''} ${(endFile?.name || endPersistedDataUrl || endPreview) ? 'hasFile' : ''}`}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={endImageUploadBusy}
+                  onChange={(event) => handleEndFile(event.target.files?.[0])}
+                />
                 <span>Последний кадр</span>
-                <strong title={endFile?.name || ''}>{endFile?.name || 'загрузить end frame'}</strong>
+                <strong title={endFile?.name || ''}>
+                  {endImageUploadBusy ? (
+                    <><i className="avaGeneratorImageMiniSpinner" aria-hidden="true" /> Грузим кадр...</>
+                  ) : (endFile?.name || endPersistedDataUrl || endPreview) ? 'End кадр загружен' : 'Загрузить end frame'}
+                </strong>
+                {(endFile?.name || endPersistedDataUrl || endPreview) && !endImageUploadBusy ? (
+                  <em>{endFile?.name || 'end кадр сохранён'}</em>
+                ) : null}
+                {!endFile?.name && !endPersistedDataUrl && !endPreview && !endImageUploadBusy ? <em>PNG / JPG / WEBP</em> : null}
+                {endImageUploadError ? <small className="avaGeneratorPhotoUploadError">{endImageUploadError}</small> : null}
+                {endImageUploadBusy ? <i className="avaGeneratorUploadProgress" aria-hidden="true" /> : null}
               </label>
-            ) : null}
-
-            {routeInfo.needsAudio ? (
-              <label className="avaGeneratorDrop isRequired">
-                <input type="file" accept="audio/*,video/mp4,video/quicktime,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov" onChange={(event) => handleAudioFile(event.target.files?.[0])} />
-                <span>Аудио для lip-sync</span>
-                <strong title={audioName || ''}>{audioName || 'загрузить аудио'}</strong>
-                {audioDurationSec > 0 ? <em>{formatSec(audioDurationSec)}</em> : null}
+            ) : null}            {routeInfo.needsAudio ? (
+              <label className={`avaGeneratorDrop avaGeneratorAudioDrop isRequired ${audioUploadBusy ? 'isUploading' : ''} ${audioName ? 'hasFile' : ''}`}>
+                <input
+                  type="file"
+                  accept="audio/*,video/quicktime,video/mp4"
+                  disabled={audioUploadBusy}
+                  onChange={(event) => handleAudioFile(event.target.files?.[0])}
+                />
+                <span>Аудио для lip-sync / инструмента</span>
+                <strong title={audioName || ''}>
+                  {audioUploadBusy ? (
+                    <><i className="avaGeneratorAudioMiniSpinner" aria-hidden="true" /> Грузим аудио...</>
+                  ) : audioName ? 'Аудио загружено' : 'Загрузить аудио'}
+                </strong>
+                {audioName && !audioUploadBusy ? <em>{audioName}{audioDurationSec > 0 ? ` · ${formatSec(audioDurationSec)}` : ''}</em> : null}
+                {!audioName && !audioUploadBusy ? <em>MP3 / WAV / M4A / MOV audio</em> : null}
+                {audioUploadError ? <small className="avaGeneratorAudioUploadError">{audioUploadError}</small> : null}
+                {audioUploadBusy ? <i className="avaGeneratorUploadProgress" aria-hidden="true" /> : null}
               </label>
             ) : null}
 </div>
@@ -4327,10 +4436,13 @@ export default function StandaloneGeneratorPage() {
                   <div className="avaGeneratorThumbPreview isAudioIcon"><span>♪</span></div>
                   <div className="avaGeneratorThumbMeta">
                     <div className="avaGeneratorAudioHeader">
-                      <strong>Audio</strong>
-                      <button type="button" className="avaGeneratorAudioBtn" onClick={toggleAudioPreview} title={isAudioPlaying ? 'Пауза' : 'Прослушать'}>
-                        {isAudioPlaying ? '❚❚' : '▶'}
-                      </button>
+                      <strong>Audio <em>READY</em></strong>
+                      <div className="avaGeneratorAudioActions">
+                        <button type="button" className="avaGeneratorAudioBtn" onClick={toggleAudioPreview} title={isAudioPlaying ? 'Пауза' : 'Прослушать'}>
+                          {isAudioPlaying ? '❚❚' : '▶'}
+                        </button>
+                        <button type="button" className="avaGeneratorAudioRemoveBtn" onClick={clearGeneratorAudio} title="Удалить аудио">×</button>
+                      </div>
                     </div>
                     <span title={audioName}>{audioName}</span>
                     {audioDurationSec > 0 ? <em>{formatSec(audioDurationSec)}</em> : null}
@@ -4444,44 +4556,37 @@ export default function StandaloneGeneratorPage() {
                   ) : null}
                 </div>
               ) : null}
+
+
             </div>
           </div>
         </div>
-      </section>
-{zoomImage ? (
-        <div className="avaGeneratorLightbox" onClick={closeZoom} role="presentation">
-          <div className="avaGeneratorLightboxContent">
-            <img src={zoomImage.src} alt={zoomImage.title || 'preview'} />
-            {zoomImage.title ? <div className="avaGeneratorLightboxCaption">{zoomImage.title}</div> : null}
-          </div>
-        </div>
-      ) : null}
-    
+      {/* AVA_GENERATOR_HISTORY_DOCKED_BELOW_V182D */}
       {generatorSnapshotLoading && !generatedVideos.length ? (
-        <section className="avaGeneratorHistoryPanel">
+        <section className="avaGeneratorHistoryPanel avaGeneratorHistoryPanelDocked">
           <div className="avaGeneratorHistoryHeader">
-            <div>
+      <div>
               <p>RECENT RESULTS</p>
               <h2>Загружаем ленту проекта…</h2>
-            </div>
+      </div>
           </div>
           <div className="avaGeneratorCanvasState isBusy" style={{ minHeight: 120 }}>
-            <div className="avaGeneratorSpinner" />
-            <strong>Синхронизируем gallery</strong>
-            <span>Берём результаты из backend project snapshot, не из localStorage.</span>
+      <div className="avaGeneratorSpinner" />
+      <strong>Синхронизируем gallery</strong>
+      <span>Берём результаты из backend project snapshot, не из localStorage.</span>
           </div>
         </section>
       ) : generatedVideos.length ? (
-<section className="avaGeneratorHistoryPanel">
+<section className="avaGeneratorHistoryPanel avaGeneratorHistoryPanelDocked">
           <div className="avaGeneratorHistoryHeader">
-            <div>
+      <div>
               <p>RECENT RESULTS</p>
               <h2>Последние результаты</h2>
-            </div>
+      </div>
 
           </div>
           {historyIsOverLimit ? (
-            <div className="avaGeneratorHistoryLimitNotice" role="alert">
+      <div className="avaGeneratorHistoryLimitNotice" role="alert">
               <div className="avaGeneratorHistoryLimitIcon">!</div>
               <div className="avaGeneratorHistoryLimitBody">
                 <strong>Лимит ленты превышен</strong>
@@ -4495,11 +4600,11 @@ export default function StandaloneGeneratorPage() {
                   <span>Всего <b>{visibleHistoryItems.length}/{historyLimit}</b></span>
                 </div>
               </div>
-            </div>
+      </div>
           ) : null}
 
           <div className="avaGeneratorHistoryScroller">
-            {visibleHistoryItems.map((item, index) => (
+      {visibleHistoryItems.map((item, index) => (
               <article
                 key={item.id}
                 className={`avaGeneratorHistoryCard ${normalizeUrl(displayedResultUrl || '') === normalizeUrl(item.url || '') ? 'isActive' : ''}`}
@@ -4574,10 +4679,23 @@ export default function StandaloneGeneratorPage() {
                   )}
                 </div>
               </article>
-            ))}
+      ))}
           </div>
         </section>
       ) : null}
+      {/* AVA_GENERATOR_HISTORY_RIGHT_RAIL_V182F: right column wrapper closes here */}
+        </div>
+      </section>
+
+{zoomImage ? (
+        <div className="avaGeneratorLightbox" onClick={closeZoom} role="presentation">
+          <div className="avaGeneratorLightboxContent">
+            <img src={zoomImage.src} alt={zoomImage.title || 'preview'} />
+            {zoomImage.title ? <div className="avaGeneratorLightboxCaption">{zoomImage.title}</div> : null}
+          </div>
+        </div>
+      ) : null}
+    
 
 </main>
   )

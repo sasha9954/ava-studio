@@ -2157,3 +2157,492 @@
   border-color: color-mix(in srgb, var(--ava-project-accent, #2affc4) 18%, rgba(156, 190, 255, 0.14));
 }
 /* PROJECT_PAGE_BACKGROUND_BLEND_V179C_END */
+
+/* GENERATOR_AUDIO_UPLOAD_UI_V181B_START */
+/* Visual-only Generator audio upload clarity: spinner, ready state, delete button. */
+.avaGeneratorAudioDrop {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(104, 210, 255, 0.12), transparent 34%),
+    linear-gradient(145deg, rgba(8, 22, 38, 0.90), rgba(8, 12, 28, 0.84));
+  border-color: rgba(104, 210, 255, 0.34);
+  min-height: 118px;
+}
+
+.avaGeneratorAudioDrop.hasFile {
+  border-style: solid;
+  border-color: rgba(86, 232, 184, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(77, 232, 184, 0.12), transparent 36%),
+    linear-gradient(145deg, rgba(7, 30, 28, 0.92), rgba(8, 12, 28, 0.84));
+}
+
+.avaGeneratorAudioDrop.isUploading {
+  pointer-events: none;
+  border-style: solid;
+  border-color: rgba(109, 223, 255, 0.58);
+  box-shadow:
+    0 0 0 1px rgba(109, 223, 255, 0.14),
+    0 0 28px rgba(70, 187, 255, 0.12),
+    inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.avaGeneratorAudioDrop strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #f5fbff;
+}
+
+.avaGeneratorAudioDrop em {
+  max-width: 100%;
+  color: rgba(182, 235, 255, 0.88);
+}
+
+.avaGeneratorAudioMiniSpinner,
+.avaGeneratorAudioCardSpinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  border: 2px solid rgba(180, 239, 255, 0.26);
+  border-top-color: rgba(180, 239, 255, 0.98);
+  display: inline-block;
+  animation: avaGeneratorAudioSpinV181B 0.78s linear infinite;
+  flex: 0 0 auto;
+}
+
+.avaGeneratorUploadProgress {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(104, 210, 255, 0.12);
+}
+
+.avaGeneratorUploadProgress::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 46%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(104, 210, 255, 0), rgba(104, 210, 255, 0.95), rgba(113, 255, 197, 0.82));
+  animation: avaGeneratorAudioBarV181B 1.05s ease-in-out infinite;
+}
+
+.avaGeneratorAudioUploadError {
+  color: rgba(255, 178, 178, 0.92);
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.avaGeneratorThumbCard.isAudioCard {
+  position: relative;
+  border-color: rgba(86, 232, 184, 0.22);
+  background:
+    radial-gradient(circle at top right, rgba(77, 232, 184, 0.10), transparent 35%),
+    rgba(255,255,255,0.03);
+}
+
+.avaGeneratorAudioHeader strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.avaGeneratorAudioHeader strong em {
+  font-style: normal;
+  font-size: 10px;
+  color: rgba(12, 32, 30, 0.95);
+  background: linear-gradient(135deg, rgba(100, 255, 201, 0.95), rgba(112, 214, 255, 0.92));
+  border-radius: 999px;
+  padding: 3px 6px;
+  letter-spacing: 0.06em;
+}
+
+.avaGeneratorAudioActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.avaGeneratorAudioRemoveBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 132, 164, 0.34);
+  background: rgba(80, 18, 34, 0.56);
+  color: rgba(255, 226, 234, 0.96);
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 900;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+.avaGeneratorAudioRemoveBtn:hover {
+  transform: scale(1.06);
+  filter: brightness(1.08);
+  box-shadow: 0 0 18px rgba(255, 96, 142, 0.16);
+}
+
+@keyframes avaGeneratorAudioSpinV181B {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes avaGeneratorAudioBarV181B {
+  0% { transform: translateX(-115%); opacity: 0.35; }
+  35% { opacity: 1; }
+  100% { transform: translateX(215%); opacity: 0.55; }
+}
+/* GENERATOR_AUDIO_UPLOAD_UI_V181B_END */
+
+/* GENERATOR_COMPACT_PLAYER_V182A_START */
+/* Visual-only: make Generator result/player fit laptop screens, especially 9:16 outputs. */
+
+.avaGeneratorResultCol {
+  min-width: 0;
+}
+
+.avaGeneratorCanvas,
+.avaGeneratorCanvasState {
+  min-height: clamp(300px, 52vh, 520px);
+  max-height: min(62vh, 620px);
+}
+
+.avaGeneratorCanvas {
+  display: grid;
+  place-items: center;
+}
+
+.avaGeneratorVideo,
+.avaGeneratorCanvas video {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: min(62vh, 620px);
+  object-fit: contain;
+}
+
+.avaGeneratorImageResultWrap,
+.avaGeneratorImageResultButton {
+  min-height: 0;
+  max-height: min(62vh, 620px);
+  display: grid;
+  place-items: center;
+}
+
+.avaGeneratorResultImage {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: min(62vh, 620px);
+  object-fit: contain;
+}
+
+.avaGeneratorImageResultButton {
+  cursor: zoom-in;
+}
+
+@media (max-height: 820px) {
+  .avaGeneratorCanvas,
+  .avaGeneratorCanvasState {
+    min-height: clamp(280px, 50vh, 470px);
+    max-height: min(58vh, 520px);
+  }
+
+  .avaGeneratorVideo,
+  .avaGeneratorCanvas video,
+  .avaGeneratorImageResultWrap,
+  .avaGeneratorImageResultButton,
+  .avaGeneratorResultImage {
+    max-height: min(58vh, 520px);
+  }
+}
+
+@media (max-height: 720px) {
+  .avaGeneratorCanvas,
+  .avaGeneratorCanvasState {
+    min-height: 260px;
+    max-height: 50vh;
+  }
+
+  .avaGeneratorVideo,
+  .avaGeneratorCanvas video,
+  .avaGeneratorImageResultWrap,
+  .avaGeneratorImageResultButton,
+  .avaGeneratorResultImage {
+    max-height: 50vh;
+  }
+}
+/* GENERATOR_COMPACT_PLAYER_V182A_END */
+
+/* AVA_GENERATOR_HISTORY_DOCKED_BELOW_V182D_START */
+/* Recent results as a separate docked strip below the whole generator media/result section.
+   CSS/layout only; no generation, queue, media, asset or backend logic changes. */
+
+.avaGeneratorHistoryPanel.avaGeneratorHistoryPanelDocked {
+  width: 100%;
+  margin: 16px 0 0;
+  padding: 14px 16px 13px;
+  border-radius: 22px;
+  border: 1px solid rgba(116, 150, 255, 0.16);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(78, 216, 255, 0.10), transparent 34%),
+    radial-gradient(circle at 96% 12%, rgba(148, 105, 255, 0.08), transparent 38%),
+    linear-gradient(145deg, rgba(9, 16, 34, 0.78), rgba(6, 11, 24, 0.66));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.035),
+    0 16px 44px rgba(0,0,0,0.16);
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryHeader p {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: rgba(166, 232, 255, 0.78);
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryHeader h2 {
+  font-size: 16px;
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryScroller {
+  display: flex;
+  gap: 11px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 8px;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryCard {
+  flex: 0 0 132px;
+  border-radius: 15px;
+  background: rgba(255,255,255,0.04);
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryThumb {
+  height: 72px;
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryMeta {
+  padding: 8px 9px 9px;
+  gap: 3px;
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryMeta strong {
+  font-size: 11px;
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryMeta span {
+  font-size: 10px;
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryUseFrame {
+  margin-top: 6px;
+  min-height: 26px;
+  padding: 6px 8px;
+  font-size: 10px;
+  border-radius: 10px;
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryDelete {
+  width: 21px;
+  height: 21px;
+  right: 6px;
+  top: 6px;
+  font-size: 14px;
+}
+
+.avaGeneratorHistoryPanelDocked .avaGeneratorHistoryPlay {
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+}
+
+@media (max-width: 1120px) {
+  .avaGeneratorHistoryPanelDocked .avaGeneratorHistoryCard {
+    flex-basis: 118px;
+  }
+  .avaGeneratorHistoryPanelDocked .avaGeneratorHistoryThumb {
+    height: 64px;
+  }
+}
+/* AVA_GENERATOR_HISTORY_DOCKED_BELOW_V182D_END */
+
+/* AVA_GENERATOR_HISTORY_RIGHT_RAIL_V182F_START */
+/* Keep Generator recent-results as a separate strip in the right rail:
+   right rail = media/result panel + recent results directly below it. */
+
+.avaGeneratorRightRail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-self: start;
+}
+
+.avaGeneratorRightRail > .avaGeneratorMediaPanel {
+  width: 100%;
+}
+
+.avaGeneratorRightRail > .avaGeneratorHistoryPanelDocked {
+  width: 100%;
+  margin: 0;
+  align-self: stretch;
+}
+
+.avaGeneratorRightRail .avaGeneratorHistoryPanelDocked {
+  padding: 14px 16px 13px;
+  border-radius: 22px;
+}
+
+.avaGeneratorRightRail .avaGeneratorHistoryPanelDocked .avaGeneratorHistoryScroller {
+  max-width: 100%;
+}
+
+@media (max-width: 1180px) {
+  .avaGeneratorRightRail {
+    gap: 14px;
+  }
+}
+
+@media (max-width: 980px) {
+  .avaGeneratorRightRail {
+    width: 100%;
+  }
+}
+/* AVA_GENERATOR_HISTORY_RIGHT_RAIL_V182F_END */
+
+/* GENERATOR_PHOTO_UPLOAD_UI_V183A_START */
+/* Visual upload feedback for Start/End image drop zones in Generator. */
+.avaGeneratorImageDrop {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(139, 111, 255, 0.15), transparent 36%),
+    radial-gradient(circle at bottom left, rgba(86, 184, 255, 0.08), transparent 38%),
+    rgba(255, 255, 255, 0.035);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.avaGeneratorImageDrop:hover {
+  border-style: solid;
+  border-color: rgba(151, 135, 255, 0.46);
+  box-shadow:
+    0 0 0 1px rgba(151, 135, 255, 0.12),
+    0 0 22px rgba(99, 111, 255, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.avaGeneratorImageDrop.hasFile {
+  border-style: solid;
+  border-color: rgba(121, 205, 255, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(90, 178, 255, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(22, 36, 70, 0.52), rgba(10, 16, 34, 0.55));
+}
+
+.avaGeneratorImageDrop.isUploading {
+  pointer-events: none;
+  border-style: solid;
+  border-color: rgba(177, 144, 255, 0.62);
+  box-shadow:
+    0 0 0 1px rgba(177, 144, 255, 0.16),
+    0 0 30px rgba(116, 101, 255, 0.16),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.avaGeneratorImageDrop strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #f5f7ff;
+}
+
+.avaGeneratorImageDrop em {
+  max-width: 100%;
+  color: rgba(197, 221, 255, 0.90);
+}
+
+.avaGeneratorImageMiniSpinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  border: 2px solid rgba(206, 210, 255, 0.28);
+  border-top-color: rgba(206, 210, 255, 0.98);
+  display: inline-block;
+  animation: avaGeneratorImageSpinV183A 0.78s linear infinite;
+  flex: 0 0 auto;
+}
+
+.avaGeneratorImageDrop .avaGeneratorUploadProgress {
+  background: rgba(143, 133, 255, 0.13);
+}
+
+.avaGeneratorImageDrop .avaGeneratorUploadProgress::before {
+  background: linear-gradient(90deg, rgba(124, 112, 255, 0), rgba(147, 134, 255, 0.96), rgba(92, 205, 255, 0.82));
+  animation: avaGeneratorImageBarV183A 1.02s ease-in-out infinite;
+}
+
+.avaGeneratorPhotoUploadError {
+  color: rgba(255, 185, 190, 0.94);
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+@keyframes avaGeneratorImageSpinV183A {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes avaGeneratorImageBarV183A {
+  0% { transform: translateX(-110%); }
+  55% { transform: translateX(72%); }
+  100% { transform: translateX(168%); }
+}
+/* GENERATOR_PHOTO_UPLOAD_UI_V183A_END */
+
+/* WORKSPACE_PAGE_BACKGROUND_BLEND_V185A_START */
+/* Workspace-mode background blend for Generator.
+   Visual-only: removes the dark rectangular page slab when no project is open. */
+.avaShell.isWorkspaceMode .avaGeneratorPage {
+  background: transparent !important;
+  position: relative;
+  isolation: isolate;
+}
+
+.avaShell.isWorkspaceMode .avaGeneratorPage::before {
+  content: "";
+  position: absolute;
+  inset: -34px -54px -72px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 14% 6%, rgba(69, 216, 255, 0.15), transparent 36%),
+    radial-gradient(circle at 88% 16%, rgba(143, 124, 255, 0.10), transparent 34%),
+    linear-gradient(135deg, rgba(4, 14, 30, 0.42), rgba(5, 9, 20, 0.12) 44%, rgba(7, 12, 30, 0.28));
+  opacity: 0.86;
+}
+
+.avaShell.isWorkspaceMode .avaGeneratorHero,
+.avaShell.isWorkspaceMode .avaGeneratorPanel,
+.avaShell.isWorkspaceMode .avaGeneratorDebug {
+  background:
+    radial-gradient(circle at 14% 0%, rgba(69, 216, 255, 0.07), transparent 34%),
+    linear-gradient(180deg, rgba(13, 21, 42, 0.78), rgba(4, 9, 22, 0.64)) !important;
+  border-color: rgba(156, 190, 255, 0.16);
+}
+/* WORKSPACE_PAGE_BACKGROUND_BLEND_V185A_END */
