@@ -1,3 +1,4 @@
+// AVA_ASSEMBLY_TRANSITION_VISUAL_MODE_V196E: choose xfade or fade-to-black for timing-safe transitions.
 // AVA_ASSEMBLY_TWO_TRANSITION_MODES_V134G: two mutually-exclusive transition modes: shorten vs preserve timing.
 // AVA_ASSEMBLY_FORCE_POST_XFADE_PAYLOAD_V134F: send transition checkbox as the real backend switch.
 // AVA_ASSEMBLY_FORCE_TRANSITION_PAYLOAD_V134E: send transition checkbox to backend even when UI says mode is blocked.
@@ -10,6 +11,20 @@ import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, getAuthHe
 import '../styles/ava-board.css'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
 import { AVA_BOARD_ASSEMBLY_CLEARED_KEY, clearWorkflowEntry, readWorkflowEntry } from '../utils/workflowNavigation.js'
+
+
+const TRANSITION_VISUAL_MODES_V196E = [
+  {
+    value: 'fade_to_black',
+    title: 'fade-to-black',
+    text: 'Безопасный переход через затемнение. Не двигает lip-sync.',
+  },
+  {
+    value: 'xfade',
+    title: 'xfade',
+    text: 'Красивый xfade с freeze-handle ручками. Тестовый режим для lip-sync.',
+  },
+]
 
 const AUDIO_MODES = [
   {
@@ -108,6 +123,99 @@ function formatTime(seconds) {
   const secs = String(Math.floor(safe % 60)).padStart(2, '0')
   const ms = String(Math.floor((safe - Math.floor(safe)) * 1000)).padStart(3, '0')
   return `${mins}:${secs}.${ms}`
+}
+
+// AVA_ASSEMBLY_FORMAT_WATERMARK_V195A: project format controls final MP4 size and watermark preview.
+function normalizeAssemblyAspectRatioV195A(board = {}, scenes = []) {
+  const sceneList = asArray(scenes)
+  const firstScene = sceneList[0]?.raw || sceneList[0] || asArray(board?.scenes)[0] || {}
+  const candidates = [
+    board?.aspectRatio,
+    board?.aspect_ratio,
+    board?.outputFormat,
+    board?.output_format,
+    board?.format,
+    board?.project?.aspectRatio,
+    board?.project?.aspect_ratio,
+    board?.project?.format,
+    board?.projectContext?.aspectRatio,
+    board?.projectContext?.aspect_ratio,
+    board?.projectContext?.format,
+    board?.project_context?.aspectRatio,
+    board?.project_context?.aspect_ratio,
+    board?.project_context?.format,
+    board?.formatContract?.aspectRatio,
+    board?.formatContract?.aspect_ratio,
+    board?.formatContract?.format,
+    board?.format_contract?.aspectRatio,
+    board?.format_contract?.aspect_ratio,
+    board?.format_contract?.format,
+    firstScene?.aspectRatio,
+    firstScene?.aspect_ratio,
+    firstScene?.outputFormat,
+    firstScene?.output_format,
+    firstScene?.format,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+
+  for (const raw of candidates) {
+    const value = raw.replace(/\s+/g, '')
+    if (value.includes('9:16') || value.includes('916') || value.includes('vertical') || value.includes('portrait')) return '9:16'
+    if (value.includes('1:1') || value.includes('11') || value.includes('square')) return '1:1'
+    if (value.includes('16:9') || value.includes('169') || value.includes('horizontal') || value.includes('landscape')) return '16:9'
+    const match = value.match(/(\d{3,4})[x×:](\d{3,4})/)
+    if (match) {
+      const width = Number(match[1])
+      const height = Number(match[2])
+      if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+        if (height > width * 1.2) return '9:16'
+        if (width > height * 1.2) return '16:9'
+        return '1:1'
+      }
+    }
+  }
+
+  const width = Number(board?.width || board?.videoWidth || board?.video_width || board?.targetWidth || board?.target_width || 0)
+  const height = Number(board?.height || board?.videoHeight || board?.video_height || board?.targetHeight || board?.target_height || 0)
+  if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    if (height > width * 1.2) return '9:16'
+    if (width > height * 1.2) return '16:9'
+    return '1:1'
+  }
+  return '16:9'
+}
+
+function assemblyOutputSpecV195A(board = {}, scenes = []) {
+  const aspectRatio = normalizeAssemblyAspectRatioV195A(board, scenes)
+  if (aspectRatio === '9:16') {
+    return {
+      aspectRatio,
+      outputFormat: '9:16',
+      width: 720,
+      height: 1280,
+      label: '9:16 · 720×1280',
+      previewClass: 'isFormat916',
+    }
+  }
+  if (aspectRatio === '1:1') {
+    return {
+      aspectRatio,
+      outputFormat: '1:1',
+      width: 1024,
+      height: 1024,
+      label: '1:1 · 1024×1024',
+      previewClass: 'isFormat11',
+    }
+  }
+  return {
+    aspectRatio: '16:9',
+    outputFormat: '16:9',
+    width: 1280,
+    height: 720,
+    label: '16:9 · 1280×720',
+    previewClass: 'isFormat169',
+  }
 }
 
 function durationOf(scene) {
@@ -418,6 +526,39 @@ function buildSceneItems(board, preferMmaudio = true) {
   })
 }
 
+
+// AVA_ASSEMBLY_OUTPUT_SPEC_V195F
+function assemblyFormatTokenV195F(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return ''
+  const compact = raw.replace(/\s+/g, '')
+  if (compact.includes('9:16') || compact.includes('vertical') || compact.includes('portrait')) return '9:16'
+  if (compact.includes('1:1') || compact.includes('square')) return '1:1'
+  if (compact.includes('16:9') || compact.includes('horizontal') || compact.includes('landscape')) return '16:9'
+  return ''
+}
+
+function assemblyOutputSpecV195F(board = {}, sceneItems = []) {
+  const scenes = Array.isArray(sceneItems) ? sceneItems : []
+  const rawScenes = scenes.map((item) => item?.raw || item || {})
+  const candidates = [
+    board?.output_format, board?.outputFormat, board?.aspect_ratio, board?.aspectRatio, board?.format,
+    board?.project?.output_format, board?.project?.outputFormat, board?.project?.aspect_ratio, board?.project?.aspectRatio, board?.project?.format,
+    board?.project_context?.output_format, board?.project_context?.outputFormat, board?.project_context?.aspect_ratio, board?.project_context?.aspectRatio, board?.project_context?.format,
+    board?.projectContext?.output_format, board?.projectContext?.outputFormat, board?.projectContext?.aspect_ratio, board?.projectContext?.aspectRatio, board?.projectContext?.format,
+    ...rawScenes.flatMap((scene) => [scene?.output_format, scene?.outputFormat, scene?.aspect_ratio, scene?.aspectRatio, scene?.format]),
+  ]
+  let format = ''
+  for (const candidate of candidates) {
+    format = assemblyFormatTokenV195F(candidate)
+    if (format) break
+  }
+  if (!format) format = '16:9'
+  if (format === '9:16') return { format, width: 720, height: 1280, fitMode: 'cover', label: '9:16 · 720×1280 · crop', className: 'isPortraitV195F' }
+  if (format === '1:1') return { format, width: 1024, height: 1024, fitMode: 'cover', label: '1:1 · 1024×1024', className: 'isSquareV195F' }
+  return { format: '16:9', width: 1280, height: 720, fitMode: 'contain', label: '16:9 · 1280×720', className: 'isLandscapeV195F' }
+}
+
 export default function BoardAssemblyPage() {
   // AVA_ASSEMBLY_BOARD_HANDOFF_SOURCE_OF_TRUTH_V8
   const { projectId } = useParams()
@@ -441,6 +582,7 @@ export default function BoardAssemblyPage() {
   const [smoothTransitionDurationSecV134B, setSmoothTransitionDurationSecV134B] = useState(0.5)
   const [smoothTransitionsTimingEnabledV134G, setSmoothTransitionsTimingEnabledV134G] = useState(false)
   const [smoothTransitionTimingDurationSecV134G, setSmoothTransitionTimingDurationSecV134G] = useState(0.5)
+  const [transitionVisualModeV196E, setTransitionVisualModeV196E] = useState('fade_to_black')
   const [originalVolume, setOriginalVolume] = useState(100)
   const [sceneVolume, setSceneVolume] = useState(25)
   const [musicVolume, setMusicVolume] = useState(15)
@@ -477,10 +619,11 @@ export default function BoardAssemblyPage() {
     setAudioMode(savedSettings.audioMode || 'original_plus_scene')
     setPreferMmaudio(savedSettings.preferMmaudio ?? true)
     setSkipMissing(savedSettings.skipMissing ?? false)
-    setSmoothTransitionsEnabledV134B(Boolean(savedSettings.smoothTransitionsEnabledV134B ?? savedSettings.smoothTransitionsEnabled ?? false))
+    setSmoothTransitionsEnabledV134B(false)
     setSmoothTransitionDurationSecV134B(clampNumber(savedSettings.smoothTransitionDurationSecV134B ?? savedSettings.smoothTransitionDurationSec, 0.1, 3, 0.5))
     setSmoothTransitionsTimingEnabledV134G(Boolean(savedSettings.smoothTransitionsTimingEnabledV134G ?? false))
     setSmoothTransitionTimingDurationSecV134G(clampNumber(savedSettings.smoothTransitionTimingDurationSecV134G ?? savedSettings.smoothTransitionDurationSecV134G, 0.1, 3, 0.5))
+    setTransitionVisualModeV196E(['xfade', 'fade_to_black'].includes(savedSettings.transitionVisualModeV196E) ? savedSettings.transitionVisualModeV196E : 'fade_to_black')
     setOriginalVolume(clampNumber(savedSettings.originalVolume, 0, 150, 100))
     setSceneVolume(clampNumber(savedSettings.sceneVolume, 0, 150, 25))
     setMusicVolume(clampNumber(savedSettings.musicVolume, 0, 150, 15))
@@ -535,7 +678,7 @@ export default function BoardAssemblyPage() {
   const sceneItems = useMemo(() => buildSceneItems(board || {}, preferMmaudio), [board, preferMmaudio])
   const selectedItem = sceneItems.find((item) => item.id === selectedSceneId) || sceneItems[0] || null
   const selectedItemVideoAssetApiPath = selectedItem?.videoAssetApiPath || ''
-
+  const assemblyOutputSpec = useMemo(() => assemblyOutputSpecV195F(board || {}, sceneItems), [board, sceneItems])
   useEffect(() => {
     let cancelled = false
     let objectUrl = ''
@@ -607,13 +750,9 @@ export default function BoardAssemblyPage() {
     : 'выкл'
   const assemblyTransitionModeV134G = smoothTransitionsTimingEnabledV134G
     ? 'preserve_timing_v134g'
-    : smoothTransitionsEnabledV134B
-      ? 'shorten_v134f'
-      : 'off'
-  const assemblyTransitionRequestedV134G = Boolean(smoothTransitionsEnabledV134B || smoothTransitionsTimingEnabledV134G)
-  const assemblyTransitionDurationSafeV134G = smoothTransitionsTimingEnabledV134G
-    ? smoothTransitionTimingDurationSafeV134G
-    : smoothTransitionDurationSafeV134B
+    : 'off'
+  const assemblyTransitionRequestedV134G = Boolean(smoothTransitionsTimingEnabledV134G)
+  const assemblyTransitionDurationSafeV134G = smoothTransitionTimingDurationSafeV134G
 
 
   function buildAssemblySnapshotForSave({ source = 'board_assembly_autosave_v8', overrides = {} } = {}) {
@@ -667,10 +806,10 @@ export default function BoardAssemblyPage() {
       audioMode: overrides.audioMode ?? audioMode,
       preferMmaudio: overrides.preferMmaudio ?? preferMmaudio,
       skipMissing: overrides.skipMissing ?? skipMissing,
-      smoothTransitionsEnabledV134B: overrides.smoothTransitionsEnabledV134B ?? smoothTransitionsEnabledV134B,
+      smoothTransitionsEnabledV134B: false,
       smoothTransitionDurationSecV134B: overrides.smoothTransitionDurationSecV134B ?? smoothTransitionDurationSafeV134B,
       smoothTransitionsAllowedV134B: overrides.smoothTransitionsAllowedV134B ?? smoothTransitionsAllowedV134B,
-      smoothTransitionsActiveV134B: overrides.smoothTransitionsActiveV134B ?? smoothTransitionsActiveV134B,
+      smoothTransitionsActiveV134B: false,
       smoothTransitionsModeV134B: 'background_video_only_v134b',
       smoothTransitionsTimingEnabledV134G,
       smoothTransitionTimingDurationSecV134G: smoothTransitionTimingDurationSafeV134G,
@@ -678,12 +817,21 @@ export default function BoardAssemblyPage() {
       smoothTransitionsTimingEnabledV134G: overrides.smoothTransitionsTimingEnabledV134G ?? smoothTransitionsTimingEnabledV134G,
       smoothTransitionTimingDurationSecV134G: overrides.smoothTransitionTimingDurationSecV134G ?? smoothTransitionTimingDurationSafeV134G,
       assemblyTransitionModeV134G: overrides.assemblyTransitionModeV134G ?? assemblyTransitionModeV134G,
+      transitionVisualModeV196E: overrides.transitionVisualModeV196E ?? transitionVisualModeV196E,
       originalVolume: overrides.originalVolume ?? originalVolume,
       sceneVolume: overrides.sceneVolume ?? sceneVolume,
       musicVolume: overrides.musicVolume ?? musicVolume,
       musicAsset: overrides.musicAsset ?? musicAsset,
       musicLoop: overrides.musicLoop ?? musicLoop,
       musicFadeOut: overrides.musicFadeOut ?? musicFadeOut,
+      outputFormat: assemblyOutputSpec.outputFormat,
+      output_format: assemblyOutputSpec.outputFormat,
+      aspectRatio: assemblyOutputSpec.aspectRatio,
+      aspect_ratio: assemblyOutputSpec.aspectRatio,
+      outputWidth: assemblyOutputSpec.width,
+      output_width: assemblyOutputSpec.width,
+      outputHeight: assemblyOutputSpec.height,
+      output_height: assemblyOutputSpec.height,
       watermark: {
         enabled: Boolean(overrides.watermark?.enabled ?? (watermarkEnabled && String(watermarkText || '').trim())),
         text: overrides.watermark?.text ?? watermarkText,
@@ -761,9 +909,6 @@ export default function BoardAssemblyPage() {
     }
     if (['music_plus_scene', 'original_plus_music_scene'].includes(audioMode) && !musicFile) {
       list.push('Фоновая музыка пока не загружена. Можно собрать без неё или загрузить MP3/WAV.')
-    }
-    if (smoothTransitionsEnabledV134B && !smoothTransitionsAllowedV134B) {
-      list.push('Плавные переходы включены, но не применятся: этот режим только для фоновых видео без original/master audio.')
     }
     return list
   }, [stats, audioMode, musicFile, board, smoothTransitionsEnabledV134B, smoothTransitionsAllowedV134B])
@@ -1003,6 +1148,7 @@ export default function BoardAssemblyPage() {
     smoothTransitionDurationSecV134B,
     smoothTransitionsTimingEnabledV134G,
     smoothTransitionTimingDurationSecV134G,
+    transitionVisualModeV196E,
   ])
 
 
@@ -1258,9 +1404,24 @@ export default function BoardAssemblyPage() {
       original_audio_name: originalAudio.name,
       skip_missing: skipMissing,
       prefer_mmaudio: preferMmaudio,
-      width: 1280,
-      height: 720,
+      width: assemblyOutputSpec.width,
+      height: assemblyOutputSpec.height,
       fps: 30,
+      aspect_ratio: assemblyOutputSpec.format,
+      aspectRatio: assemblyOutputSpec.format,
+      output_format: assemblyOutputSpec.format,
+      outputFormat: assemblyOutputSpec.format,
+      fit_mode: assemblyOutputSpec.fitMode,
+      fitMode: assemblyOutputSpec.fitMode,
+      aspect_ratio: assemblyOutputSpec.aspectRatio,
+      aspectRatio: assemblyOutputSpec.aspectRatio,
+      output_format: assemblyOutputSpec.outputFormat,
+      outputFormat: assemblyOutputSpec.outputFormat,
+      output_size_label: assemblyOutputSpec.label,
+      fit_mode: 'contain',
+      fitMode: 'contain',
+      output_fit_mode: 'contain',
+      outputFitMode: 'contain',
       duration_sec: stats.duration,
       timeline_duration_sec: stats.duration,
       volumes: {
@@ -1297,6 +1458,9 @@ export default function BoardAssemblyPage() {
         mode: assemblyTransitionModeV134G,
         forceEnabled: assemblyTransitionRequestedV134G,
         forcePayloadV134G: true,
+        visualMode: transitionVisualModeV196E,
+        visual_mode: transitionVisualModeV196E,
+        visualModeV196E: transitionVisualModeV196E,
       },
       items,
     }
@@ -1373,6 +1537,7 @@ export default function BoardAssemblyPage() {
         placeholderItems: payload.items.filter((item) => item.placeholder || item.missing_video).length,
         smoothTransitions: payload.transitions,
         transitionPayloadDebugV134E: '[ASSEMBLY TRANSITIONS PAYLOAD V134E]',
+        output: `${payload.output_format || payload.aspect_ratio || '16:9'} · ${payload.width}×${payload.height}`,
         firstItems: payload.items.slice(0, 8).map((item) => ({
           scene_id: item.scene_id,
           start_sec: item.start_sec,
@@ -1521,8 +1686,9 @@ export default function BoardAssemblyPage() {
         <span>Звук: <strong>{stats.withSound}</strong></span>
         <span>Дл: <strong>{formatTime(stats.duration)}</strong></span>
         <span>Audio: <strong>{stats.hasOriginalAudio ? 'есть' : 'нет'}</strong></span>
+        <span>Итог: <strong>{assemblyOutputSpec.label}</strong></span>
         {status && <span className="avaBoardStatusText">{status}</span>}
-        <span className="avaBoardStatusText">Водн.: {watermarkEnabled && String(watermarkText || '').trim() ? 'prev ON / exp OFF' : 'off'}</span>
+        <span className="avaBoardStatusText">Водн.: {watermarkEnabled && String(watermarkText || '').trim() ? 'ON' : 'off'}</span>
         <span className="avaBoardStatusText">Автосохр.</span>
       </section>
 
@@ -1567,9 +1733,10 @@ export default function BoardAssemblyPage() {
             <span>{selectedItem?.hasMmaudio ? 'MMAudio версия' : selectedItem?.hasVideo ? 'base video' : 'missing'}</span>
           </div>
 
-          <div className="avaAssemblyPreview">
+          <div className={`avaAssemblyPreview ${assemblyOutputSpec.className || ''} `}>
             {selectedItemPlayableVideoUrl ? (
-              <div className="avaAssemblyVideoWithWatermark">
+              <div className="avaAssemblyVideoPreviewShellV195C">
+                <div className={`avaAssemblyVideoViewportV195C ${assemblyOutputSpec.previewClass}`} title={`Preview crop/output frame: ${assemblyOutputSpec.label}`}>
                 <video
                   src={selectedItemPlayableVideoUrl}
                   controls
@@ -1591,6 +1758,7 @@ export default function BoardAssemblyPage() {
                     {watermarkText}
                   </span>
                 )}
+                </div>
                 <div className="avaBoardVideoActions">
                   <button type="button" onClick={(event) => openVideoExplicitly(event, selectedItemPlayableVideoUrl)}>Смотреть видео</button>
                   <button type="button" onClick={(event) => downloadVideoExplicitly(event, selectedItemPlayableVideoUrl, `${selectedItem.id || 'scene'}.mp4`)}>Скачать видео</button>
@@ -1620,7 +1788,7 @@ export default function BoardAssemblyPage() {
                 {assemblyRunning
                   ? 'FFmpeg собирает финальный файл…'
                   : stats.canAssemble
-                    ? 'Сцены, звук и музыка уйдут в один MP4. Watermark пока показывается как preview-overlay.'
+                    ? 'Сцены, звук и музыка уйдут в один MP4. Watermark будет запечён в финальный MP4 с учётом формата проекта.'
                     : 'Сначала подготовь хотя бы одну сцену с видео.'}
               </span>
             </div>
@@ -1637,7 +1805,7 @@ export default function BoardAssemblyPage() {
           )}
 
           {finalVideoUrl && !finalDirty && (
-            <div className="avaAssemblyFinalPreview">
+            <div className={`avaAssemblyFinalPreview ${assemblyOutputSpec.className || ''} `}>
               <div className="avaBoardSectionHead">
                 <div>
                   <p className="avaEyebrow">final output</p>
@@ -1645,7 +1813,8 @@ export default function BoardAssemblyPage() {
                 </div>
                 <button type="button" onClick={(event) => openVideoExplicitly(event, finalVideoUrl)}>Открыть файл</button>
               </div>
-              <div className="avaAssemblyVideoWithWatermark avaAssemblyFinalVideoWithWatermark">
+              <div className="avaAssemblyVideoPreviewShellV195C avaAssemblyFinalPreviewShellV195C">
+                <div className={`avaAssemblyVideoViewportV195C avaAssemblyFinalVideoWithWatermark ${assemblyOutputSpec.previewClass}`} title={`Final output frame: ${assemblyOutputSpec.label}`}>
                 <video
                   src={finalVideoUrl}
                   controls
@@ -1667,6 +1836,7 @@ export default function BoardAssemblyPage() {
                     {watermarkText}
                   </span>
                 )}
+                </div>
                 <div className="avaBoardVideoActions">
                   <button type="button" onClick={(event) => openVideoExplicitly(event, finalVideoUrl)}>Смотреть видео</button>
                   <button type="button" onClick={(event) => downloadVideoExplicitly(event, finalVideoUrl, 'ava-board-assembly.mp4')}>Скачать MP4</button>
@@ -1741,45 +1911,6 @@ export default function BoardAssemblyPage() {
             Пропускать сцены без видео
           </label>
 
-          <div className={`avaAssemblyTransitionMini isVideoBlendV170A ${smoothTransitionsEnabledV134B ? 'isOn' : ''} ${smoothTransitionsEnabledV134B && !smoothTransitionsAllowedV134B ? 'isBlocked' : ''}`}>
-            <div className="avaAssemblyTransitionMiniHead">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={smoothTransitionsEnabledV134B}
-                  onChange={(event) => {
-                    const next = event.target.checked
-                    setSmoothTransitionsEnabledV134B(next)
-                    if (next) setSmoothTransitionsTimingEnabledV134G(false)
-                  }}
-                />
-                <span>
-                  <strong>Плавные переходы</strong>
-                  <em>{smoothTransitionsHintV134B}</em>
-                </span>
-              </label>
-              <b>{smoothTransitionDurationSafeV134B.toFixed(1)}с</b>
-            </div>
-            <div className="avaAssemblyTransitionMiniControls">
-              <input
-                type="range"
-                min="0.1"
-                max="3"
-                step="0.1"
-                value={smoothTransitionDurationSafeV134B}
-                onChange={(event) => setSmoothTransitionDurationSecV134B(Number(event.target.value))}
-              />
-              <input
-                type="number"
-                min="0.1"
-                max="3"
-                step="0.1"
-                value={smoothTransitionDurationSafeV134B}
-                onChange={(event) => setSmoothTransitionDurationSecV134B(clampNumber(event.target.value, 0.1, 3, 0.5))}
-              />
-            </div>
-          </div>
-
           <div className={`avaAssemblyTransitionMini avaAssemblyTransitionMiniTimingV134G isTimingV170A ${smoothTransitionsTimingEnabledV134G ? 'isOn' : ''}`}>
             <div className="avaAssemblyTransitionMiniHead">
               <label>
@@ -1817,6 +1948,15 @@ export default function BoardAssemblyPage() {
                 onChange={(event) => setSmoothTransitionTimingDurationSecV134G(clampNumber(event.target.value, 0.1, 3, 0.5))}
               />
             </div>
+            <label className="avaAssemblyTransitionModeSelectV196E">
+              <span>Вид перехода</span>
+              <select value={transitionVisualModeV196E} onChange={(event) => setTransitionVisualModeV196E(event.target.value)}>
+                {TRANSITION_VISUAL_MODES_V196E.map((mode) => (
+                  <option key={mode.value} value={mode.value}>{mode.title}</option>
+                ))}
+              </select>
+              <em>{TRANSITION_VISUAL_MODES_V196E.find((mode) => mode.value === transitionVisualModeV196E)?.text || ''}</em>
+            </label>
           </div>
 
           <div className={`avaAssemblyMusicBox isMusicV170A ${musicPanelOpen ? 'isOpen' : 'isCollapsed'}`}>
@@ -1923,8 +2063,9 @@ export default function BoardAssemblyPage() {
                 </select>
               </label>
 
-              <div className="avaAssemblyWatermarkPreview">
+              <div className={`avaAssemblyWatermarkPreview ${assemblyOutputSpec.previewClass}`} title={`Итоговый кадр: ${assemblyOutputSpec.label}`}>
                 <span className={`wm ${watermarkPosition}`}>{watermarkText || 'Ava Studio'}</span>
+                <em className="avaAssemblyWatermarkFormatBadge">{assemblyOutputSpec.label}</em>
               </div>
             </div>
 

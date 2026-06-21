@@ -4232,6 +4232,90 @@ def _ffprobe_has_audio(path: Path) -> bool:
     return bool(data.get("streams"))
 
 
+
+
+def _assembly_make_local_player_safe_v196f(
+    source_path: Path,
+    out_path: Path,
+    *,
+    fps: int,
+    job_id: str,
+) -> dict[str, Any]:
+    """Final MP4 compatibility pass for Windows/iPhone local players.
+
+    Important: this does NOT use setpts/asetpts and does NOT shift the master audio.
+    It only re-encodes the video into a simple CFR H.264 stream with no B-frames,
+    copies the already-synced audio stream, and writes a simple faststart MP4.
+    V196A changed PTS for both streams and could break browser sync; V196F must not.
+    """
+    fps_safe = max(1, int(fps or 30))
+    duration_before = _ffprobe_duration(source_path)
+    has_audio = _ffprobe_has_audio(source_path)
+    gop = max(1, fps_safe * 2)
+
+    _log_board_assembly("[BOARD ASSEMBLY LOCAL PLAYER SAFE START V196F]", {
+        "job_id": job_id,
+        "source": str(source_path),
+        "out": str(out_path),
+        "fps": fps_safe,
+        "durationBeforeSec": duration_before,
+        "hasAudio": has_audio,
+    })
+
+    args = [
+        "-y",
+        "-fflags", "+genpts",
+        "-i", str(source_path),
+        "-map", "0:v:0",
+    ]
+    if has_audio:
+        args.extend(["-map", "0:a:0"])
+
+    args.extend([
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-profile:v", "main",
+        "-level", "4.1",
+        "-bf", "0",
+        "-g", str(gop),
+        "-keyint_min", str(gop),
+        "-sc_threshold", "0",
+        "-r", str(fps_safe),
+        "-fps_mode", "cfr",
+    ])
+    if has_audio:
+        # Keep audio exactly as Assembly produced it. Re-encoding AAC can add encoder
+        # delay/priming and was the likely cause of V196A making browser sync worse.
+        args.extend(["-c:a", "copy"])
+    args.extend([
+        "-movflags", "+faststart",
+        "-avoid_negative_ts", "make_zero",
+        "-video_track_timescale", "90000",
+        "-muxdelay", "0",
+        "-muxpreload", "0",
+        str(out_path),
+    ])
+
+    _run_ffmpeg(args)
+    duration_after = _ffprobe_duration(out_path)
+    result = {
+        "applied": bool(out_path.exists() and out_path.stat().st_size > 0),
+        "reason": "local_player_safe_video_reencode_audio_copy_v196f",
+        "durationBeforeSec": duration_before,
+        "durationAfterSec": duration_after,
+        "durationDeltaSec": round(float(duration_after or 0.0) - float(duration_before or 0.0), 6),
+        "audioCopied": bool(has_audio),
+        "videoReencoded": True,
+        "bframesDisabled": True,
+        "fps": fps_safe,
+        "videoTrackTimescale": 90000,
+    }
+    _log_board_assembly("[BOARD ASSEMBLY LOCAL PLAYER SAFE DONE V196F]", {"job_id": job_id, **result})
+    return result
+
+
 def _assembly_item_video_value(item: dict[str, Any]) -> str:
     return str(
         item.get("video_api_path")
@@ -4365,58 +4449,90 @@ def _normalize_assembly_clip(
     fps: int,
     fallback_duration: float,
     audio_volume: float = 1.0,
+    fit_mode: str = "contain",
 ) -> dict[str, Any]:
     source_duration = _ffprobe_duration(source_path)
-    duration = source_duration or fallback_duration or 0.1
+    target_duration = max(float(fallback_duration or source_duration or 0.0), 0.1)
     has_audio = _ffprobe_has_audio(source_path)
+    fit_mode_normalized = str(fit_mode or "contain").strip().lower()
 
-    vf = (
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
-        f"setsar=1,fps={fps},format=yuv420p"
+    # V196B: Board timing is the authority. Every generated clip is converted to a fresh
+    # CFR intermediate with PTS starting at zero and exact target duration. This prevents
+    # scene MP4 B-frames/AAC priming/edit-lists from accumulating drift in Assembly.
+    pad_duration = max(0.0, target_duration - float(source_duration or 0.0))
+    if fit_mode_normalized in {"cover", "crop", "fill", "center_crop"}:
+        scale_chain = (
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height}"
+        )
+    else:
+        scale_chain = (
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+        )
+
+    video_chain = (
+        f"[0:v]{scale_chain},setsar=1,fps={fps},"
+        f"trim=duration={target_duration:.6f},"
+        f"tpad=stop_mode=clone:stop_duration={pad_duration:.6f},"
+        f"setpts=PTS-STARTPTS,format=yuv420p[v]"
     )
 
-    if has_audio:
+    print("[BOARD ASSEMBLY NORMALIZE EXACT V196B]", {
+        "source": str(source_path),
+        "out": str(out_path),
+        "sourceDurationSec": source_duration,
+        "targetDurationSec": target_duration,
+        "padDurationSec": pad_duration,
+        "fitMode": fit_mode_normalized,
+        "audioVolume": audio_volume,
+        "hasAudio": has_audio,
+    }, flush=True)
+
+    if has_audio and float(audio_volume or 0.0) > 0.0001:
+        audio_chain = (
+            f"[0:a]volume={max(0.0, float(audio_volume)):.4f},"
+            f"aresample=48000,apad,atrim=duration={target_duration:.6f},"
+            f"asetpts=PTS-STARTPTS[a]"
+        )
         _run_ffmpeg([
-            "-y",
-            "-i", str(source_path),
-            "-vf", vf,
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "18",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-ar", "48000",
-            "-ac", "2",
-            "-af", f"volume={max(0.0, float(audio_volume)):.4f}",
-            "-shortest",
+            "-y", "-i", str(source_path),
+            "-filter_complex", video_chain + ";" + audio_chain,
+            "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-x264-params", "bframes=0:keyint=60:min-keyint=60:scenecut=0",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-movflags", "+faststart", "-video_track_timescale", "30000",
             str(out_path),
         ])
     else:
+        silence_index = 1
+        audio_chain = f"[{silence_index}:a]atrim=duration={target_duration:.6f},asetpts=PTS-STARTPTS[a]"
         _run_ffmpeg([
-            "-y",
-            "-i", str(source_path),
-            "-f", "lavfi",
-            "-t", f"{max(duration, 0.1):.3f}",
+            "-y", "-i", str(source_path),
+            "-f", "lavfi", "-t", f"{target_duration:.6f}",
             "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-vf", vf,
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "18",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-shortest",
+            "-filter_complex", video_chain + ";" + audio_chain,
+            "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-x264-params", "bframes=0:keyint=60:min-keyint=60:scenecut=0",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-movflags", "+faststart", "-video_track_timescale", "30000",
             str(out_path),
         ])
 
+    normalized_duration = _ffprobe_duration(out_path) or target_duration
     return {
         "sourcePath": str(source_path),
         "normalizedPath": str(out_path),
         "sourceDurationSec": source_duration,
-        "durationSec": _ffprobe_duration(out_path) or duration,
+        "targetDurationSecV196B": target_duration,
+        "durationSec": normalized_duration,
+        "durationDriftSecV196B": normalized_duration - target_duration,
         "hadAudio": has_audio,
+        "exactTimingV196B": True,
     }
 
 
@@ -4906,6 +5022,246 @@ def _assembly_apply_visual_xfade_preserve_timing_v134g(paths: list[Path], target
                 pass
 
 
+
+
+# AVA_BOARD_ASSEMBLY_FREEZE_HANDLE_XFADE_V196E:
+# Lip-sync-safe real xfade without dark fade. It creates synthetic handles from freeze frames:
+#   prev clip: actual scene + cloned last frame for T/2
+#   next clip: cloned first frame for T/2 + actual scene
+# Then it applies a normal xfade of T seconds. Output duration remains exactly sum(scene durations),
+# and the next clip's real mouth movement begins at the original scene boundary.
+def _assembly_apply_visual_freeze_handle_xfade_v196e(paths: list[Path], target: Path, transition_sec: float, job_id: str) -> dict[str, Any]:
+    if len(paths) < 2:
+        return {"applied": False, "reason": "not_enough_clips"}
+
+    durations = [float(_ffprobe_duration(path) or 0.0) for path in paths]
+    if any(value <= 0.1 for value in durations):
+        return {"applied": False, "reason": "clip_duration_missing", "durations": durations}
+
+    requested_transition = max(0.05, min(3.0, float(transition_sec or 0.5)))
+    max_by_shortest = max(0.05, min(durations) * 0.80)
+    safe_transition = min(requested_transition, max_by_shortest)
+    half = safe_transition / 2.0
+    original_total = sum(durations)
+
+    audio_source = target.with_name(target.stem + "_pre_freeze_handle_xfade_v196e.mp4")
+    shutil.copy2(target, audio_source)
+
+    args = ["-y"]
+    filters: list[str] = []
+    padded_durations: list[float] = []
+
+    print("[BOARD ASSEMBLY FREEZE HANDLE XFADE START V196E]", {
+        "job_id": job_id,
+        "requestedDurationSec": requested_transition,
+        "appliedDurationSec": safe_transition,
+        "halfHandleSec": half,
+        "inputDurations": durations,
+        "expectedDurationSec": original_total,
+    }, flush=True)
+
+    for index, path in enumerate(paths):
+        args.extend(["-i", str(path)])
+        start_pad = half if index > 0 else 0.0
+        stop_pad = half if index < len(paths) - 1 else 0.0
+        padded_duration = durations[index] + start_pad + stop_pad
+        padded_durations.append(padded_duration)
+        filters.append(
+            f"[{index}:v]setpts=PTS-STARTPTS,"
+            f"tpad=start_mode=clone:start_duration={start_pad:.6f}:stop_mode=clone:stop_duration={stop_pad:.6f},"
+            f"trim=duration={padded_duration:.6f},setpts=PTS-STARTPTS,format=yuv420p[v{index}]"
+        )
+
+    video_label = "v0"
+    combined_duration = padded_durations[0]
+    for index in range(1, len(paths)):
+        next_label = f"vfhxe{index}"
+        offset = max(0.0, combined_duration - safe_transition)
+        filters.append(
+            f"[{video_label}][v{index}]xfade=transition=fade:duration={safe_transition:.6f}:offset={offset:.6f}[{next_label}]"
+        )
+        video_label = next_label
+        combined_duration = combined_duration + padded_durations[index] - safe_transition
+
+    audio_input_index = len(paths)
+    args.extend(["-i", str(audio_source)])
+
+    temp_target = target.with_name(target.stem + "_freeze_handle_xfade_v196e.mp4")
+    try:
+        _run_ffmpeg([
+            *args,
+            "-filter_complex", ";".join(filters),
+            "-map", f"[{video_label}]",
+            "-map", f"{audio_input_index}:a?",
+            "-t", f"{max(original_total, 0.1):.6f}",
+            "-shortest",
+            "-c:v", "libx264",
+            "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+            "-crf", AVA_BOARD_ASSEMBLY_CRF,
+            "-pix_fmt", "yuv420p",
+            "-x264-params", "bframes=0:keyint=60:min-keyint=60:scenecut=0",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-ar", "48000",
+            "-ac", "2",
+            "-movflags", "+faststart",
+            "-video_track_timescale", "30000",
+            str(temp_target),
+        ])
+        if not temp_target.exists():
+            return {"applied": False, "reason": "freeze_handle_xfade_output_missing"}
+        shutil.copy2(temp_target, target)
+        result = {
+            "applied": True,
+            "reason": "visual_freeze_handle_xfade_preserve_lipsync_v196e",
+            "preserveTiming": True,
+            "audioPreserved": True,
+            "durationSec": safe_transition,
+            "requestedDurationSec": requested_transition,
+            "halfHandleSec": half,
+            "inputDurations": durations,
+            "expectedDurationSec": original_total,
+            "actualDurationSec": _ffprobe_duration(target) or 0.0,
+        }
+        print("[BOARD ASSEMBLY FREEZE HANDLE XFADE APPLIED V196E]", {"job_id": job_id, **result}, flush=True)
+        return result
+    finally:
+        for tmp in (temp_target, audio_source):
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+# AVA_BOARD_ASSEMBLY_LIPSYNC_SAFE_FADE_TRANSITIONS_V196C:
+# For master-audio lip-sync timelines, true xfade can reveal mouth movement before/after
+# the exact lyric boundary. This mode keeps the exact concat timing and applies per-clip
+# fade-in/fade-out to black instead. It gives a soft visual transition without moving the
+# next/previous clip in time, so lip-sync remains tied to the master audio.
+def _assembly_apply_visual_safe_fades_v196c(paths: list[Path], target: Path, transition_sec: float, job_id: str) -> dict[str, Any]:
+    if len(paths) < 2:
+        return {"applied": False, "reason": "not_enough_clips"}
+
+    durations = [float(_ffprobe_duration(path) or 0.0) for path in paths]
+    if any(value <= 0.1 for value in durations):
+        return {"applied": False, "reason": "clip_duration_missing", "durations": durations}
+
+    requested_transition = max(0.05, min(3.0, float(transition_sec or 0.5)))
+    # Fade-to-black is not an overlap, but keep it below half of the shortest clip so the
+    # center of short lip-sync clips is still visible.
+    max_by_shortest = max(0.05, (min(durations) * 0.45))
+    safe_transition = min(requested_transition, max_by_shortest)
+    original_total = sum(durations)
+
+    fade_dir = target.with_name(target.stem + "_safe_fades_v196c")
+    fade_dir.mkdir(parents=True, exist_ok=True)
+    faded_paths: list[Path] = []
+
+    print("[BOARD ASSEMBLY SAFE FADE TRANSITIONS START V196C]", {
+        "job_id": job_id,
+        "requestedDurationSec": requested_transition,
+        "appliedDurationSec": safe_transition,
+        "inputDurations": durations,
+        "expectedDurationSec": original_total,
+    }, flush=True)
+
+    try:
+        for index, path in enumerate(paths):
+            duration = durations[index]
+            fade_in = safe_transition if index > 0 else 0.0
+            fade_out = safe_transition if index < len(paths) - 1 else 0.0
+            out_clip = fade_dir / f"{index + 1:04d}_safe_fade.mp4"
+
+            vf_parts = ["setpts=PTS-STARTPTS", "format=yuv420p"]
+            if fade_in > 0.001:
+                vf_parts.append(f"fade=t=in:st=0:d={fade_in:.6f}:color=black")
+            if fade_out > 0.001:
+                fade_out_start = max(0.0, duration - fade_out)
+                vf_parts.append(f"fade=t=out:st={fade_out_start:.6f}:d={fade_out:.6f}:color=black")
+            vf_parts.append(f"trim=duration={duration:.6f}")
+            vf_parts.append("setpts=PTS-STARTPTS")
+            vf = ",".join(vf_parts)
+
+            _run_ffmpeg([
+                "-y",
+                "-i", str(path),
+                "-vf", vf,
+                "-map", "0:v:0",
+                "-map", "0:a?",
+                "-t", f"{max(duration, 0.1):.6f}",
+                "-c:v", "libx264",
+                "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+                "-crf", AVA_BOARD_ASSEMBLY_CRF,
+                "-pix_fmt", "yuv420p",
+                "-x264-params", "bframes=0:keyint=60:min-keyint=60:scenecut=0",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-ar", "48000",
+                "-ac", "2",
+                "-movflags", "+faststart",
+                "-video_track_timescale", "30000",
+                str(out_clip),
+            ])
+            faded_paths.append(out_clip)
+
+        concat_file = fade_dir / "concat_safe_fades_v196c.txt"
+        _write_concat_file(faded_paths, concat_file)
+        temp_target = target.with_name(target.stem + "_safe_fades_v196c.mp4")
+        _run_ffmpeg([
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_file),
+            "-c", "copy",
+            str(temp_target),
+        ])
+        if not temp_target.exists():
+            return {"applied": False, "reason": "safe_fade_output_missing"}
+        shutil.copy2(temp_target, target)
+        result = {
+            "applied": True,
+            "reason": "visual_safe_fade_preserve_lipsync_v196c",
+            "preserveTiming": True,
+            "audioPreserved": True,
+            "durationSec": safe_transition,
+            "requestedDurationSec": requested_transition,
+            "inputDurations": durations,
+            "expectedDurationSec": original_total,
+            "actualDurationSec": _ffprobe_duration(target) or 0.0,
+        }
+        print("[BOARD ASSEMBLY SAFE FADE TRANSITIONS APPLIED V196C]", {"job_id": job_id, **result}, flush=True)
+        return result
+    finally:
+        try:
+            if fade_dir.exists():
+                shutil.rmtree(fade_dir, ignore_errors=True)
+        except Exception:
+            pass
+        try:
+            target.with_name(target.stem + "_safe_fades_v196c.mp4").unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+
+# AVA_BOARD_ASSEMBLY_TRANSITION_VISUAL_MODE_V196E:
+def _assembly_transition_visual_mode_v196e(payload: dict[str, Any]) -> str:
+    transitions = payload.get("transitions") if isinstance(payload.get("transitions"), dict) else {}
+    raw = (
+        transitions.get("visualModeV196E")
+        or transitions.get("visualMode")
+        or transitions.get("visual_mode")
+        or payload.get("transitionVisualModeV196E")
+        or payload.get("transitionVisualMode")
+        or payload.get("transition_visual_mode")
+        or "fade_to_black"
+    )
+    mode = str(raw or "fade_to_black").strip().lower().replace("-", "_")
+    if mode in {"xfade", "crossfade", "cross_fade", "freeze_handle_xfade"}:
+        return "xfade"
+    return "fade_to_black"
+
+
 def _run_board_assembly_job(job_id: str) -> None:
     job = BOARD_ASSEMBLY_JOBS.get(job_id)
     if not job:
@@ -4934,9 +5290,15 @@ def _run_board_assembly_job(job_id: str) -> None:
         wants_original_audio = audio_mode in {"original_only", "original_plus_scene", "original_plus_music_scene"}
         wants_music_audio = audio_mode in {"music_plus_scene", "original_plus_music_scene"}
         transition_debug_v134e = _assembly_transition_debug_v134e(payload, audio_mode, original_audio_path, job_id)
+
         width = _assembly_int(payload.get("width"), 1280)
         height = _assembly_int(payload.get("height"), 720)
         fps = _assembly_int(payload.get("fps"), 30)
+        fit_mode = str(payload.get("fit_mode") or payload.get("fitMode") or "contain").strip().lower()
+        if fit_mode not in {"contain", "cover"}:
+            fit_mode = "contain"
+        _log_board_assembly("[BOARD ASSEMBLY OUTPUT SPEC V195F]", {"job_id": job_id, "width": width, "height": height, "fps": fps, "fit_mode": fit_mode, "aspect_ratio": payload.get("aspect_ratio") or payload.get("aspectRatio") or payload.get("output_format") or payload.get("outputFormat")})
+        fit_mode = str(payload.get("fit_mode") or payload.get("fitMode") or payload.get("output_fit_mode") or payload.get("outputFitMode") or "contain").strip().lower()
 
         work_dir = Path(tempfile.gettempdir()) / f"ava_board_assembly_{job_id}"
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -5089,6 +5451,7 @@ def _run_board_assembly_job(job_id: str) -> None:
                 fps=fps,
                 fallback_duration=duration,
                 audio_volume=_assembly_scene_audio_volume_for_item(item, audio_mode, scene_volume),
+                fit_mode=fit_mode,
             )
             prepared.update({
                 "sceneId": scene_id,
@@ -5164,6 +5527,40 @@ def _run_board_assembly_job(job_id: str) -> None:
         # already replaced scene_concat_path, scenes become silent and only music remains.
         # Prefer the newer V134F/V134G path because V134H preserves timing-mode scene audio.
         transition_request_v134f = _assembly_transition_request_v134f(payload, original_audio_path, job_id)
+        # V196E: user can choose the visual transition style for timing-preserve mode.
+        # fade_to_black keeps the proven V196C behavior; xfade uses freeze handles to avoid moving lip-sync words.
+        try:
+            transition_visual_mode_v196e = _assembly_transition_visual_mode_v196e(payload)
+            lipsync_routes_v196e = {"ia2v", "ia2v_lipsync", "lip_sync", "lipsync", "vocal"}
+            has_lipsync_route_v196e = any(
+                isinstance(raw_item_v196e, dict)
+                and (
+                    str(raw_item_v196e.get("route") or raw_item_v196e.get("planned_route") or raw_item_v196e.get("model_route") or "").strip().lower() in lipsync_routes_v196e
+                    or _assembly_bool(raw_item_v196e.get("lip_sync_required") or raw_item_v196e.get("lipSyncRequired"))
+                    or _assembly_bool(raw_item_v196e.get("contains_vocal") or raw_item_v196e.get("containsVocal"))
+                )
+                for raw_item_v196e in raw_items
+            )
+            if original_audio_path and has_lipsync_route_v196e and transition_request_v134f.get("requested"):
+                transition_request_v134f = {
+                    **transition_request_v134f,
+                    "allowed": True,
+                    "preserveTiming": True,
+                    "transitionVisualModeV196E": transition_visual_mode_v196e,
+                    "freezeHandleXfadeForLipSyncV196E": transition_visual_mode_v196e == "xfade",
+                    "freezeHandleXfadeForLipSyncV196D": transition_visual_mode_v196e == "xfade",
+                    "safeFadeForLipSyncV196C": transition_visual_mode_v196e != "xfade",
+                    "reason": f"{transition_visual_mode_v196e}_for_lipsync_master_audio_v196e",
+                }
+                print("[BOARD ASSEMBLY TRANSITION VISUAL MODE SELECTED V196E]", {
+                    "job_id": job_id,
+                    "visualMode": transition_visual_mode_v196e,
+                    "hasOriginalAudio": bool(original_audio_path),
+                    "hasLipSyncRoute": bool(has_lipsync_route_v196e),
+                    "requestedDurationSec": transition_request_v134f.get("durationSec"),
+                }, flush=True)
+        except Exception as exc:
+            print("[BOARD ASSEMBLY TRANSITION VISUAL MODE CHECK ERROR V196E]", {"job_id": job_id, "error": str(exc)}, flush=True)
         transition_result_v134f = dict(transition_request_v134f)
         transition_config_v134d = _assembly_transition_config_v134d(payload, audio_mode, original_audio_path)
         if transition_request_v134f.get("requested"):
@@ -5206,12 +5603,35 @@ def _run_board_assembly_job(job_id: str) -> None:
         if transition_request_v134f.get("allowed"):
             try:
                 if transition_request_v134f.get("preserveTiming"):
-                    transition_result_v134f = _assembly_apply_visual_xfade_preserve_timing_v134g(
-                        normalized_paths,
-                        scene_concat_path,
-                        float(transition_request_v134f.get("durationSec") or 0.5),
-                        job_id,
-                    )
+                    if transition_request_v134f.get("freezeHandleXfadeForLipSyncV196E"):
+                        if "_assembly_apply_visual_freeze_handle_xfade_v196d" in globals():
+                            transition_result_v134f = _assembly_apply_visual_freeze_handle_xfade_v196d(
+                                normalized_paths,
+                                scene_concat_path,
+                                float(transition_request_v134f.get("durationSec") or 0.5),
+                                job_id,
+                            )
+                        else:
+                            transition_result_v134f = _assembly_apply_visual_freeze_handle_xfade_v196e(
+                                normalized_paths,
+                                scene_concat_path,
+                                float(transition_request_v134f.get("durationSec") or 0.5),
+                                job_id,
+                            )
+                    elif transition_request_v134f.get("safeFadeForLipSyncV196C"):
+                        transition_result_v134f = _assembly_apply_visual_safe_fades_v196c(
+                            normalized_paths,
+                            scene_concat_path,
+                            float(transition_request_v134f.get("durationSec") or 0.5),
+                            job_id,
+                        )
+                    else:
+                        transition_result_v134f = _assembly_apply_visual_xfade_preserve_timing_v134g(
+                            normalized_paths,
+                            scene_concat_path,
+                            float(transition_request_v134f.get("durationSec") or 0.5),
+                            job_id,
+                        )
                 else:
                     transition_result_v134f = _assembly_apply_visual_xfade_v134f(
                         normalized_paths,
@@ -5318,6 +5738,24 @@ def _run_board_assembly_job(job_id: str) -> None:
                     "opacity": watermark_payload.get("opacity"),
                 })
 
+
+        # V196F: after watermark/transitions, make the final MP4 safe for Windows/iPhone
+        # local players without changing the actual audio/video timeline.
+        local_player_safe_result_v196f = {"applied": False, "reason": "not_run"}
+        try:
+            local_player_safe_path_v196f = work_dir / f"{job_id}_local_player_safe_v196f.mp4"
+            local_player_safe_result_v196f = _assembly_make_local_player_safe_v196f(
+                out_path,
+                local_player_safe_path_v196f,
+                fps=fps,
+                job_id=job_id,
+            )
+            if local_player_safe_result_v196f.get("applied") and local_player_safe_path_v196f.exists() and local_player_safe_path_v196f.stat().st_size > 0:
+                shutil.copy2(local_player_safe_path_v196f, out_path)
+        except Exception as exc:
+            local_player_safe_result_v196f = {"applied": False, "reason": f"failed: {exc}"}
+            print("[BOARD ASSEMBLY LOCAL PLAYER SAFE ERROR V196F]", {"job_id": job_id, "error": str(exc)}, flush=True)
+
         urls = _public_static_url(f"assets/board_assembly/{out_path.name}")
         final_duration = _ffprobe_duration(out_path)
 
@@ -5336,6 +5774,7 @@ def _run_board_assembly_job(job_id: str) -> None:
             "watermarkApplied": watermark_applied,
             "watermarkError": watermark_error,
             "watermarkText": watermark_text if watermark_requested else "",
+            "localPlayerSafeV196F": locals().get("local_player_safe_result_v196f") or {},
             "watermark": watermark_payload if watermark_requested else {},
             "transitionRequestedV134F": bool(locals().get("transition_request_v134f", {}).get("requested")),
             "transitionAllowedV134F": bool(locals().get("transition_request_v134f", {}).get("allowed")),
@@ -5466,6 +5905,7 @@ def start_board_assembly(payload: dict[str, Any], user: dict = Depends(get_curre
         "creditCharged": False,
         "jobStored": True,
     }
+
 
 
 @router.get("/board-assembly/status/{job_id}")
@@ -6742,6 +7182,7 @@ def _normalize_assembly_clip(
     fps,
     fallback_duration,
     audio_volume=1.0,
+    fit_mode="contain",
 ):
     source_duration = _ffprobe_duration(source_path)
     target_duration = _assembly_float(fallback_duration, 0.0)
@@ -6754,14 +7195,18 @@ def _normalize_assembly_clip(
     # Final montage must follow Manual Timing / Board timeline, not the real
     # duration returned by each generated MP4. If a generated clip is shorter,
     # freeze its last frame; if longer, trim it. This prevents cumulative drift.
-    vf = (
-        f"scale={width}:{height}:flags=fast_bilinear:force_original_aspect_ratio=decrease,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
-        f"setsar=1,"
-        f"tpad=stop_mode=clone:stop_duration={target_duration:.6f},"
-        f"trim=duration={target_duration:.6f},setpts=PTS-STARTPTS,"
-        f"fps={fps},format=yuv420p"
-    )
+
+    # AVA_ASSEMBLY_OUTPUT_SPEC_V195F normalize
+
+    fit_mode_safe = str(fit_mode or "contain").strip().lower()
+
+    if fit_mode_safe == "cover":
+
+        vf = (f"scale={width}:{height}:flags=fast_bilinear:force_original_aspect_ratio=increase," f"crop={width}:{height}," f"setsar=1," f"tpad=stop_mode=clone:stop_duration={target_duration:.6f}," f"trim=duration={target_duration:.6f},setpts=PTS-STARTPTS," f"fps={fps},format=yuv420p")
+
+    else:
+
+        vf = (f"scale={width}:{height}:flags=fast_bilinear:force_original_aspect_ratio=decrease," f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2," f"setsar=1," f"tpad=stop_mode=clone:stop_duration={target_duration:.6f}," f"trim=duration={target_duration:.6f},setpts=PTS-STARTPTS," f"fps={fps},format=yuv420p")
 
     if has_audio:
         _run_ffmpeg([
