@@ -108,6 +108,43 @@ function writeAssemblySettings(key, value) {
   }
 }
 
+
+function normalizeAssemblyLocalUiSettingsV197F(raw = {}) {
+  const hasAudioModeV197F = AUDIO_MODES.some((mode) => mode.value === raw.audioMode)
+  const audioMode = hasAudioModeV197F ? raw.audioMode : ''
+  const hasTransitionVisualModeV197F = ['xfade', 'fade_to_black'].includes(raw.transitionVisualModeV196E)
+  const transitionVisualModeV196E = hasTransitionVisualModeV197F ? raw.transitionVisualModeV196E : ''
+  const hasSmoothTransitionsTimingEnabledV197F = Object.prototype.hasOwnProperty.call(raw, 'smoothTransitionsTimingEnabledV134G')
+  const hasSmoothTransitionTimingDurationV197F = raw.smoothTransitionTimingDurationSecV134G !== undefined || raw.smoothTransitionDurationSecV134G !== undefined
+  const smoothTransitionsTimingEnabledV134G = Boolean(raw.smoothTransitionsTimingEnabledV134G)
+  const smoothTransitionTimingDurationSecV134G = clampNumber(
+    raw.smoothTransitionTimingDurationSecV134G ?? raw.smoothTransitionDurationSecV134G,
+    0.1,
+    3,
+    0.5,
+  )
+  return {
+    uiLocalVersionV197F: 'assembly_ui_local_v197f',
+    hasAudioModeV197F,
+    audioMode,
+    hasSmoothTransitionsTimingEnabledV197F,
+    smoothTransitionsTimingEnabledV134G,
+    hasSmoothTransitionTimingDurationV197F,
+    smoothTransitionTimingDurationSecV134G,
+    hasTransitionVisualModeV197F,
+    transitionVisualModeV196E,
+  }
+}
+
+function readAssemblyLocalUiSettingsV197F(key) {
+  return normalizeAssemblyLocalUiSettingsV197F(readAssemblySettings(key))
+}
+
+function writeAssemblyLocalUiSettingsV197F(key, value) {
+  const normalized = normalizeAssemblyLocalUiSettingsV197F(value)
+  writeAssemblySettings(key, normalized)
+}
+
 function asArray(value) {
   return Array.isArray(value) ? value : []
 }
@@ -613,65 +650,16 @@ export default function BoardAssemblyPage() {
   const settingsStorageKey = assemblySettingsKey(projectId || '')
 
   useEffect(() => {
-    let cancelled = false
-    const savedSettings = readAssemblySettings(settingsStorageKey)
+    const savedSettings = readAssemblyLocalUiSettingsV197F(settingsStorageKey)
 
-    setAudioMode(savedSettings.audioMode || 'original_plus_scene')
-    setPreferMmaudio(savedSettings.preferMmaudio ?? true)
-    setSkipMissing(savedSettings.skipMissing ?? false)
+    if (savedSettings.audioMode) setAudioMode(savedSettings.audioMode)
     setSmoothTransitionsEnabledV134B(false)
-    setSmoothTransitionDurationSecV134B(clampNumber(savedSettings.smoothTransitionDurationSecV134B ?? savedSettings.smoothTransitionDurationSec, 0.1, 3, 0.5))
-    setSmoothTransitionsTimingEnabledV134G(Boolean(savedSettings.smoothTransitionsTimingEnabledV134G ?? false))
-    setSmoothTransitionTimingDurationSecV134G(clampNumber(savedSettings.smoothTransitionTimingDurationSecV134G ?? savedSettings.smoothTransitionDurationSecV134G, 0.1, 3, 0.5))
-    setTransitionVisualModeV196E(['xfade', 'fade_to_black'].includes(savedSettings.transitionVisualModeV196E) ? savedSettings.transitionVisualModeV196E : 'fade_to_black')
-    setOriginalVolume(clampNumber(savedSettings.originalVolume, 0, 150, 100))
-    setSceneVolume(clampNumber(savedSettings.sceneVolume, 0, 150, 25))
-    setMusicVolume(clampNumber(savedSettings.musicVolume, 0, 150, 15))
-    setMusicAsset(savedSettings.musicAsset || null)
-    setMusicFile(null)
-    setMusicPreviewUrl('')
-    setMusicLoop(savedSettings.musicLoop ?? true)
-    setMusicFadeOut(savedSettings.musicFadeOut ?? true)
-
-    const shouldApplyWatermarkDefaults = savedSettings.watermarkDefaultVersion !== 'wm_defaults_07an_ava_studio_top_right_wander_35_28'
-    const watermark = {
-      enabled: true,
-      text: 'ava studio',
-      position: 'top_right',
-      motion: 'corners',
-      opacityPercent: 35,
-      size: 28,
-    }
-    setWatermarkEnabled(true)
-    setWatermarkText('ava studio')
-    setWatermarkPosition('top_right')
-    setWatermarkOpacity(35)
-    setWatermarkSize(28)
-    setWatermarkMotion('corners')
-    setMusicPanelOpen(savedSettings.musicPanelOpen ?? false)
-    setWatermarkPanelOpen(savedSettings.watermarkPanelOpen ?? false)
-
-    setFinalVideoUrl(normalizePlayableVideoUrl(savedSettings.finalVideoUrl || ''))
-    setFinalDirty(Boolean(savedSettings.finalDirty))
-    setSelectedSceneId(savedSettings.selectedSceneId || '')
-    setAssemblyJob(savedSettings.assemblyJob || null)
-
-    const assetPath = savedSettings.musicAsset?.asset_api_path || ''
-    if (assetPath) {
-      fetchProtectedBlobUrl(assetPath)
-        .then((url) => {
-          if (!cancelled) setMusicPreviewUrl(url)
-        })
-        .catch(() => {
-          if (!cancelled) setMusicPreviewUrl('')
-        })
-    }
+    setSmoothTransitionDurationSecV134B(0.5)
+    setSmoothTransitionsTimingEnabledV134G(Boolean(savedSettings.smoothTransitionsTimingEnabledV134G))
+    setSmoothTransitionTimingDurationSecV134G(savedSettings.smoothTransitionTimingDurationSecV134G)
+    if (savedSettings.transitionVisualModeV196E) setTransitionVisualModeV196E(savedSettings.transitionVisualModeV196E)
 
     setSettingsHydrated(true)
-
-    return () => {
-      cancelled = true
-    }
   }, [settingsStorageKey])
 
   const boardRoute = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
@@ -1050,6 +1038,7 @@ export default function BoardAssemblyPage() {
     const entry = readBoardAssemblyEntryV11()
     const fromBoardEntry = String(entry?.from || '').trim() === 'board' || String(entry?.source || '').includes('board_to_assembly')
     const shouldImportBoard = forceBoard || fromBoardEntry
+    const localUiSettingsV197F = readAssemblyLocalUiSettingsV197F(settingsStorageKey)
 
     try {
       if (!shouldImportBoard) {
@@ -1064,9 +1053,13 @@ export default function BoardAssemblyPage() {
           setBoard(restoredBoard)
           const firstSceneId = assemblyData.selectedSceneId || restoredBoard.scenes?.[0]?.id || restoredBoard.scenes?.[0]?.scene_id || assemblyItems?.[0]?.id || ''
           setSelectedSceneId(firstSceneId)
-          setAudioMode(assemblyData.audioMode || assemblyData.audio_mode || audioMode || 'original_plus_scene')
+          setAudioMode(localUiSettingsV197F.hasAudioModeV197F ? localUiSettingsV197F.audioMode : (assemblyData.audioMode || assemblyData.audio_mode || audioMode || 'original_plus_scene'))
           setPreferMmaudio(assemblyData.preferMmaudio ?? assemblyData.prefer_mmaudio ?? true)
           setSkipMissing(assemblyData.skipMissing ?? assemblyData.skip_missing ?? false)
+          setSmoothTransitionsEnabledV134B(false)
+          setSmoothTransitionsTimingEnabledV134G(localUiSettingsV197F.hasSmoothTransitionsTimingEnabledV197F ? localUiSettingsV197F.smoothTransitionsTimingEnabledV134G : Boolean(assemblyData.smoothTransitionsTimingEnabledV134G))
+          setSmoothTransitionTimingDurationSecV134G(clampNumber(localUiSettingsV197F.hasSmoothTransitionTimingDurationV197F ? localUiSettingsV197F.smoothTransitionTimingDurationSecV134G : assemblyData.smoothTransitionTimingDurationSecV134G, 0.1, 3, 0.5))
+          setTransitionVisualModeV196E(localUiSettingsV197F.hasTransitionVisualModeV197F ? localUiSettingsV197F.transitionVisualModeV196E : (assemblyData.transitionVisualModeV196E || 'fade_to_black'))
           if (assemblyData.musicAsset) setMusicAsset(assemblyData.musicAsset)
           const wm = assemblyData.watermark || {}
           if (Object.keys(wm).length) {
@@ -1098,9 +1091,13 @@ export default function BoardAssemblyPage() {
       setSelectedSceneId(firstSceneId)
 
       // Board -> Montage is authoritative: replace stale montage items/assets with current Board assets.
-      setAudioMode('original_plus_scene')
+      setAudioMode(localUiSettingsV197F.hasAudioModeV197F ? localUiSettingsV197F.audioMode : 'original_plus_scene')
       setPreferMmaudio(true)
       setSkipMissing(false)
+      setSmoothTransitionsEnabledV134B(false)
+      setSmoothTransitionsTimingEnabledV134G(localUiSettingsV197F.hasSmoothTransitionsTimingEnabledV197F ? localUiSettingsV197F.smoothTransitionsTimingEnabledV134G : false)
+      setSmoothTransitionTimingDurationSecV134G(localUiSettingsV197F.hasSmoothTransitionTimingDurationV197F ? localUiSettingsV197F.smoothTransitionTimingDurationSecV134G : 0.5)
+      setTransitionVisualModeV196E(localUiSettingsV197F.hasTransitionVisualModeV197F ? localUiSettingsV197F.transitionVisualModeV196E : 'fade_to_black')
       setFinalVideoUrl('')
       setFinalDirty(false)
       setAssemblyJob(null)
@@ -1130,7 +1127,6 @@ export default function BoardAssemblyPage() {
     if (!finalVideoUrl) return
     setFinalDirty(true)
   }, [
-    audioMode,
     preferMmaudio,
     skipMissing,
     originalVolume,
@@ -1146,92 +1142,24 @@ export default function BoardAssemblyPage() {
     watermarkSize,
     smoothTransitionsEnabledV134B,
     smoothTransitionDurationSecV134B,
-    smoothTransitionsTimingEnabledV134G,
-    smoothTransitionTimingDurationSecV134G,
-    transitionVisualModeV196E,
   ])
 
 
   useEffect(() => {
     if (!settingsHydrated) return
-
-    writeAssemblySettings(settingsStorageKey, {
+    writeAssemblyLocalUiSettingsV197F(settingsStorageKey, {
       audioMode,
-      preferMmaudio,
-      skipMissing,
-      smoothTransitionsEnabledV134B,
-      smoothTransitionDurationSecV134B: smoothTransitionDurationSafeV134B,
-      smoothTransitionsAllowedV134B,
-      smoothTransitionsActiveV134B,
-      smoothTransitionsModeV134B: 'background_video_only_v134b',
-      originalVolume,
-      sceneVolume,
-      musicVolume,
-      musicAsset,
-      musicLoop,
-      musicFadeOut,
-      watermarkDefaultVersion: 'wm_defaults_07ap_ava_studio_top_right_corners_35_28',
-      watermark: {
-        enabled: Boolean(watermarkEnabled && String(watermarkText || '').trim()),
-        text: watermarkText,
-        position: watermarkPosition,
-        opacityPercent: watermarkOpacity,
-        size: watermarkSize,
-        motion: watermarkMotion,
-      },
-      selectedSceneId,
-      finalVideoUrl: normalizePlayableVideoUrl(finalVideoUrl),
-      finalDirty,
-      assemblyJob: assemblyJob
-        ? {
-            jobId: assemblyJob.jobId || assemblyJob.job_id || '',
-            job_id: assemblyJob.job_id || assemblyJob.jobId || '',
-            status: assemblyJob.status || '',
-            statusEndpoint: assemblyJob.statusEndpoint || '',
-            videoUrl: normalizePlayableVideoUrl(assemblyJob.videoUrl || assemblyJob.video_url || ''),
-            video_url: normalizePlayableVideoUrl(assemblyJob.video_url || assemblyJob.videoUrl || ''),
-            videoApiPath: assemblyJob.videoApiPath || assemblyJob.video_api_path || '',
-            video_api_path: assemblyJob.video_api_path || assemblyJob.videoApiPath || '',
-            videoName: assemblyJob.videoName || assemblyJob.video_name || '',
-            video_name: assemblyJob.video_name || assemblyJob.videoName || '',
-            audioMode: assemblyJob.audioMode || '',
-            watermarkApplied: assemblyJob.watermarkApplied || false,
-          }
-        : null,
+      smoothTransitionsTimingEnabledV134G,
+      smoothTransitionTimingDurationSecV134G: smoothTransitionTimingDurationSafeV134G,
+      transitionVisualModeV196E,
     })
   }, [
     settingsHydrated,
     settingsStorageKey,
     audioMode,
-    preferMmaudio,
-    skipMissing,
-    originalVolume,
-    sceneVolume,
-    musicVolume,
-    musicAsset,
-    musicLoop,
-    musicFadeOut,
-    watermarkEnabled,
-    watermarkText,
-    watermarkPosition,
-    watermarkOpacity,
-    watermarkSize,
-    watermarkMotion,
-    smoothTransitionsEnabledV134B,
-    smoothTransitionDurationSafeV134B,
-    smoothTransitionsAllowedV134B,
-    smoothTransitionsActiveV134B,
     smoothTransitionsTimingEnabledV134G,
     smoothTransitionTimingDurationSafeV134G,
-    assemblyTransitionModeV134G,
-    assemblyTransitionRequestedV134G,
-    assemblyTransitionDurationSafeV134G,
-    musicPanelOpen,
-    watermarkPanelOpen,
-    selectedSceneId,
-    finalVideoUrl,
-    finalDirty,
-    assemblyJob,
+    transitionVisualModeV196E,
   ])
 
 
@@ -1252,7 +1180,6 @@ export default function BoardAssemblyPage() {
     loading,
     board,
     selectedSceneId,
-    audioMode,
     preferMmaudio,
     skipMissing,
     originalVolume,
