@@ -1546,12 +1546,11 @@ def extract_last_frame(payload: ExtractLastFrameIn) -> dict[str, Any]:
 @router.post("/clip/video/start")
 def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     route = (payload.route or "i2v").strip() or "i2v"
-    # AVA_ROUTE_WORKFLOW_LOCK: route is the source of truth for sound/no-sound workflows.
-    # Old Board scenes may keep stale workflow_key values after route changes.
-    if route in ("i2v_text", "i2v_sound", "first_last", "first_last_sound"):
-        workflow_key = WORKFLOW_ROUTE_MAP.get(route) or WORKFLOW_ROUTE_MAP["i2v"]
-    else:
-        workflow_key = payload.workflow_key or payload.workflowKey or WORKFLOW_ROUTE_MAP.get(route) or WORKFLOW_ROUTE_MAP["i2v"]
+    # AVA_BOARD_BATCH_AUDIO_WAV_ROUTE_LOCK_V193A:
+    # Route is the source of truth for every built-in Board route. A stale
+    # scene.workflow_key from an earlier route must not override the selected
+    # route, otherwise image/audio/workflow can get mixed between scenes.
+    workflow_key = WORKFLOW_ROUTE_MAP.get(route) or payload.workflow_key or payload.workflowKey or WORKFLOW_ROUTE_MAP["i2v"]
     workflow_path = WORKFLOWS_DIR / workflow_key
     target_duration = _target_duration(payload)
     generation_duration = _generation_duration(route, target_duration)
@@ -2074,7 +2073,19 @@ def _board_batch_scene_audio_ref(scene: dict[str, Any]) -> str:
 # routes automatically. This mirrors /manual-clip/slice-audio but runs before
 # batch validation so the user does not have to press the slice button scene by scene.
 def _board_batch_is_audio_slice_route(route: str | None) -> bool:
-    return str(route or "").strip() in {"ia2v", "ia2v_lipsync", "lip_sync", "instrumental", "i2v_audio", "audio2video", "a2v"}
+    # AVA_BOARD_BATCH_AUDIO_WAV_ROUTE_LOCK_V193A:
+    # ia2v_instrumental uses the same audio-driven workflow as ia2v, so it must
+    # be auto-sliced by the server batch too.
+    return str(route or "").strip() in {
+        "ia2v",
+        "ia2v_lipsync",
+        "ia2v_instrumental",
+        "lip_sync",
+        "instrumental",
+        "i2v_audio",
+        "audio2video",
+        "a2v",
+    }
 
 
 def _board_batch_root_audio_source(board_data: dict[str, Any], payload: Any = None) -> tuple[str, str]:
@@ -2331,15 +2342,25 @@ def _board_batch_cut_audio_slice_for_scene(scene: dict[str, Any], board_data: di
     route = str(scene.get("route") or "i2v").strip() or "i2v"
     if not _board_batch_is_audio_slice_route(route):
         return scene, False
-    if _board_batch_scene_audio_ref(scene):
-        return scene, False
 
-    # AVA_BOARD_AUTOSLICE_AUDIO_FALLBACK_V151A:
-    # The first audio ref can be stale. Resolve against payload, Board snapshot,
-    # Manual Timing snapshot and latest project audio assets before failing.
+    # AVA_BOARD_BATCH_AUDIO_WAV_ROUTE_LOCK_V193A:
+    # Server batch must not trust old per-scene audio slices. They can belong
+    # to an earlier master audio file or earlier scene timing, producing
+    # mismatched image/audio pairs. Always regenerate a fresh WAV slice for
+    # every queued audio-driven scene. WAV is more reliable for Comfy/PyAV
+    # LoadAudio than MP3 slices made from MOV/MP4 sources.
     audio_source_path_v151a, audio_ref, source_asset_id, audio_source_errors_v151a = _board_batch_resolve_root_audio_source_v151a(project_id, board_data, payload)
     if audio_source_path_v151a is None:
-        return scene, False
+        patched = dict(scene)
+        patched.update({
+            "audio_slice_status": "error",
+            "audioSliceStatus": "error",
+            "audio_slice_error": "root_audio_not_found_for_autoslice",
+            "audioSliceError": "root_audio_not_found_for_autoslice",
+            "audio_slice_source_errors": audio_source_errors_v151a,
+            "audioSliceSourceErrors": audio_source_errors_v151a,
+        })
+        return patched, False
 
     range_info = _board_batch_scene_audio_range(scene)
     if not range_info:
@@ -2358,7 +2379,7 @@ def _board_batch_cut_audio_slice_for_scene(scene: dict[str, Any], board_data: di
     target_dir = static_root / "assets" / "manual_clip_audio"
     target_dir.mkdir(parents=True, exist_ok=True)
     scene_id = _safe_name(_board_batch_scene_id(scene) or "scene")
-    out_name = f"{scene_id}_{start_f:.3f}_{end_f:.3f}_{uuid4().hex[:12]}.mp3".replace(".", "_", 2)
+    out_name = f"{scene_id}_{start_f:.3f}_{end_f:.3f}_{uuid4().hex[:12]}.wav".replace(".", "_", 2)
     out_path = target_dir / out_name
     _run_ffmpeg([
         "-y",
@@ -2366,10 +2387,9 @@ def _board_batch_cut_audio_slice_for_scene(scene: dict[str, Any], board_data: di
         "-t", f"{duration_f:.3f}",
         "-i", str(source_path),
         "-vn",
-        "-acodec", "libmp3lame",
+        "-acodec", "pcm_s16le",
         "-ar", "44100",
         "-ac", "2",
-        "-b:a", "192k",
         str(out_path),
     ])
     urls = _public_static_url(f"assets/manual_clip_audio/{out_name}")
@@ -2383,16 +2403,16 @@ def _board_batch_cut_audio_slice_for_scene(scene: dict[str, Any], board_data: di
         "audioSliceApiPath": urls.get("apiPath") or urls.get("url") or "",
         "audio_slice_name": out_name,
         "audioSliceName": out_name,
-        "audio_slice_mime": "audio/mpeg",
-        "audioSliceMime": "audio/mpeg",
+        "audio_slice_mime": "audio/wav",
+        "audioSliceMime": "audio/wav",
         "audio_slice_start": start_f,
         "audioSliceStart": start_f,
         "audio_slice_end": end_f,
         "audioSliceEnd": end_f,
         "audio_slice_duration": duration_f,
         "audioSliceDuration": duration_f,
-        "audio_slice_source": "server_batch_auto_slice_v147a",
-        "audioSliceSource": "server_batch_auto_slice_v147a",
+        "audio_slice_source": "server_batch_auto_slice_v193a_wav",
+        "audioSliceSource": "server_batch_auto_slice_v193a_wav",
         "audio_slice_source_asset_api_path": audio_ref,
         "audioSliceSourceAssetApiPath": audio_ref,
         "audio_slice_source_asset_id": source_asset_id,
@@ -2400,8 +2420,18 @@ def _board_batch_cut_audio_slice_for_scene(scene: dict[str, Any], board_data: di
         "audio_slice_error": "",
         "audioSliceError": "",
     })
+    print("[BOARD SERVER BATCH AUTOSLICE WAV V193A]", {
+        "project_id": project_id,
+        "scene_id": _board_batch_scene_id(scene),
+        "route": route,
+        "start": start_f,
+        "end": end_f,
+        "duration": duration_f,
+        "audio": urls.get("apiPath") or urls.get("url") or "",
+        "source_ref": audio_ref,
+        "source_asset_id": source_asset_id,
+    }, flush=True)
     return patched, True
-
 
 def _board_batch_prepare_auto_audio_slices(
     scenes: list[dict[str, Any]],
@@ -2427,7 +2457,7 @@ def _board_batch_prepare_auto_audio_slices(
         if mode in {"missing", "remaining"} and _board_batch_scene_has_video(scene) and not _board_batch_scene_has_bad_review(scene):
             prepared.append(scene)
             continue
-        if not _board_batch_is_audio_slice_route(scene.get("route")) or _board_batch_scene_audio_ref(scene):
+        if not _board_batch_is_audio_slice_route(scene.get("route")):
             prepared.append(scene)
             continue
         try:
@@ -2449,9 +2479,11 @@ def _board_batch_prepare_auto_audio_slices(
             print("[BOARD SERVER BATCH AUTOSLICE ERROR V147A]", {"scene_id": scene_id, "error": err}, flush=True)
 
     if auto_sliced or failed:
-        print("[BOARD SERVER BATCH AUTOSLICE V147A]", {
+        print("[BOARD SERVER BATCH AUTOSLICE V193A]", {
             "autoSliced": auto_sliced,
             "failed": failed,
+            "format": "wav",
+            "forceReslice": True,
             "audioSourcePresent": bool(_board_batch_root_audio_source(board_data, payload)[0] or _board_batch_root_audio_source(board_data, payload)[1]),
             "audioFallbackCandidateCountV151A": len(_board_batch_root_audio_candidates_v151a(project_id, board_data, payload)),
         }, flush=True)
@@ -2584,14 +2616,26 @@ def _board_batch_video_payload(scene: dict[str, Any], project_id: str) -> VideoS
     end_ref = _board_batch_scene_end_image_ref(scene)
     audio_ref = _board_batch_scene_audio_ref(scene)
     fmt = str(scene.get("format") or scene.get("aspect_ratio") or scene.get("aspectRatio") or ("9:16" if height > width else "16:9")).strip()
+    workflow_key = str(WORKFLOW_ROUTE_MAP.get(route) or scene.get("workflow_key") or scene.get("workflowKey") or "")
+    print("[BOARD SERVER BATCH START PAYLOAD V193A]", {
+        "project_id": project_id,
+        "scene_id": _board_batch_scene_id(scene),
+        "route": route,
+        "workflowKey": workflow_key,
+        "image": start_ref,
+        "audio": audio_ref,
+        "start": scene.get("start") or scene.get("scene_start_sec") or scene.get("sceneStartSec"),
+        "end": scene.get("end") or scene.get("scene_end_sec") or scene.get("sceneEndSec"),
+        "promptHead": _board_batch_prompt(scene)[:160],
+    }, flush=True)
     return VideoStartIn(
         scene_id=_board_batch_scene_id(scene),
         sceneId=_board_batch_scene_id(scene),
         project_id=project_id,
         projectId=project_id,
         route=route,
-        workflow_key=str(scene.get("workflow_key") or scene.get("workflowKey") or WORKFLOW_ROUTE_MAP.get(route) or ""),
-        workflowKey=str(scene.get("workflow_key") or scene.get("workflowKey") or WORKFLOW_ROUTE_MAP.get(route) or ""),
+        workflow_key=workflow_key,
+        workflowKey=workflow_key,
         image_url=start_ref,
         imageUrl=start_ref,
         start_image_url=start_ref,

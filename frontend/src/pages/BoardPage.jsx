@@ -265,6 +265,46 @@ function boardAudioHasAsset(audio = {}) {
   )
 }
 
+function boardNormalizeAudioObjectV194A(audio = {}, fallback = {}) {
+  const source = audio && typeof audio === 'object' ? audio : {}
+  const extra = fallback && typeof fallback === 'object' ? fallback : {}
+  const assetId = firstTextValue(
+    source.assetId, source.asset_id, source.audioAssetId, source.audio_asset_id,
+    extra.assetId, extra.asset_id, extra.audioAssetId, extra.audio_asset_id,
+  )
+  const assetApiPath = firstTextValue(
+    source.assetApiPath, source.asset_api_path, source.audioApiPath, source.audio_api_path,
+    extra.assetApiPath, extra.asset_api_path, extra.audioApiPath, extra.audio_api_path,
+    boardCanonicalAssetApiPath(assetId),
+  )
+  const name = firstTextValue(source.name, source.audioName, source.audio_name, extra.name, extra.audioName, extra.audio_name)
+  const durationSec = toNumber(
+    source.durationSec ?? source.duration_sec ?? source.audioDurationSec ?? source.audio_duration_sec
+      ?? extra.durationSec ?? extra.duration_sec ?? extra.audioDurationSec ?? extra.audio_duration_sec,
+    0,
+  )
+  if (!assetId && !assetApiPath) return null
+  return {
+    ...extra,
+    ...source,
+    name,
+    audioName: name,
+    audio_name: name,
+    assetId,
+    asset_id: assetId,
+    audioAssetId: assetId,
+    audio_asset_id: assetId,
+    assetApiPath,
+    asset_api_path: assetApiPath,
+    audioApiPath: assetApiPath,
+    audio_api_path: assetApiPath,
+    durationSec,
+    duration_sec: durationSec,
+    audioDurationSec: durationSec,
+    audio_duration_sec: durationSec,
+  }
+}
+
 function boardAudioFromTiming(timing = {}) {
   const audio = timing.audio && typeof timing.audio === 'object' ? timing.audio : {}
   const assetId = audio.assetId || audio.asset_id || timing.audioAssetId || timing.audio_asset_id || ''
@@ -2365,12 +2405,14 @@ function buildBoardFromTiming(timingData = {}, boardData = {}) {
     : rawFinalScenes
   const rootFormatV177A = boardProjectFormatV177A({ format: projectFormatV177A }, existing, finalScenes[0]) || '16:9'
   const timingAudio = boardAudioFromTiming(timing)
-  const audio = boardAudioHasAsset(existing.audio) ? existing.audio : (timingAudio || existing.audio || {
+  const existingAudio = boardNormalizeAudioObjectV194A(existing.audio, existing) || boardAudioFromTiming(existing)
+  const fallbackAudio = boardNormalizeAudioObjectV194A({}, {
     name: timing.audioName || timing.audio_name || '',
     assetId: timing.audioAssetId || timing.audio_asset_id || '',
     assetApiPath: timing.audioApiPath || timing.asset_api_path || '',
     durationSec: timing.audioDurationSec || timing.audio_duration_sec || 0,
   })
+  const audio = timingAudio || existingAudio || fallbackAudio || null
 
   const pendingOpenSceneIdForBuild = typeof sessionStorage !== 'undefined'
     ? asText(sessionStorage.getItem(AVA_OPEN_BOARD_SCENE_KEY))
@@ -4453,6 +4495,20 @@ function sceneVideoActionState(scene) {
     event?.preventDefault?.()
     event?.stopPropagation?.()
 
+    // AVA_BOARD_WORKSPACE_SERVER_QUEUE_GUARD_V193B:
+    // "Сгенерировать все" is server-owned and only works in a Project Board.
+    // In workspace/import preview mode it must not open the confirm modal or mutate queue UI.
+    if (workspaceMode || !projectId) {
+      setStatus('Серверная очередь доступна только внутри проекта.')
+      pushBoardToast({
+        type: 'warning',
+        title: 'Серверная очередь',
+        message: 'Открой проект, чтобы backend мог сам вести очередь генерации.',
+        dedupeKey: 'board:server_batch:no_project_v193b',
+      })
+      return
+    }
+
     const plan = makeAllScenesVideoQueuePlan()
     setAutoVideoQueueConfirm({ open: true, plan })
 
@@ -4483,10 +4539,6 @@ function sceneVideoActionState(scene) {
   }
 
   async function requestAllScenesVideoQueue(event = null) {
-    // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M: once user starts "Сгенерировать все", backend owns the whole queue.
-    if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = true
-    localVideoQueueRef.current = []
-
     // AVA_BOARD_SERVER_BATCH_ENSURE_IMAGE_ASSETS_V131C:
     // Server-owned batch cannot use browser-only previews. Before calling the backend batch
     // endpoint, make sure every visible start image has a durable /assets/.../file reference.
@@ -4523,6 +4575,11 @@ function sceneVideoActionState(scene) {
       })
       return
     }
+
+    // AVA_BOARD_WORKSPACE_SERVER_QUEUE_GUARD_V193B:
+    // Only after projectId is confirmed, mark the server queue as active.
+    if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = true
+    localVideoQueueRef.current = []
 
     async function ensureSceneStartAsset(scene = {}) {
       const sceneId = serverBatchSceneIdV131D(scene)
@@ -6129,9 +6186,32 @@ function sceneVideoActionState(scene) {
         const rawBoardData = chooseBoardDataForLoad(serverBoardData, localBoardData)
         const boardData = openedFromTiming || !workspaceMode ? rawBoardData : boardDataForStandaloneEntry(rawBoardData)
 
-        // AVA_TIMING_TO_BOARD_NO_AUTO_MERGE_V14B:
-        // Navigation from Timing only opens a confirm dialog. The old Board is not merged.
-        const timingData = {}
+        // AVA_BOARD_AUDIO_AUTHORITY_V194B:
+        // Do not merge Timing scenes automatically here, but always read the current master audio from Manual Timing.
+        // This keeps old scene splits/photos while replacing dead old audio refs from imported packs.
+        let timingData = {}
+        try {
+          const timingStageDataV194B = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
+          const recoveredAudioV194B = boardAudioFromTiming(timingStageDataV194B?.manualTiming || timingStageDataV194B?.manual_timing || timingStageDataV194B || {})
+          if (recoveredAudioV194B) {
+            timingData = {
+              manualTiming: {
+                audio: recoveredAudioV194B,
+                audioAssetId: recoveredAudioV194B.assetId || recoveredAudioV194B.asset_id || '',
+                audioApiPath: recoveredAudioV194B.assetApiPath || recoveredAudioV194B.asset_api_path || '',
+                audioName: recoveredAudioV194B.name || recoveredAudioV194B.audioName || '',
+                audioDurationSec: recoveredAudioV194B.durationSec || recoveredAudioV194B.audioDurationSec || 0,
+              },
+            }
+            console.log('[BOARD AUDIO AUTHORITY V194B]', {
+              assetId: recoveredAudioV194B.assetId || recoveredAudioV194B.asset_id || '',
+              apiPath: recoveredAudioV194B.assetApiPath || recoveredAudioV194B.asset_api_path || '',
+              name: recoveredAudioV194B.name || recoveredAudioV194B.audioName || '',
+            })
+          }
+        } catch (timingAudioRestoreErrorV194B) {
+          console.warn('[BOARD AUDIO AUTHORITY V194B] failed to load Manual Timing audio', timingAudioRestoreErrorV194B)
+        }
 
         if (!active) return
         // AVA09D2_STANDALONE_BOARD_DOES_NOT_PULL_TIMING
@@ -6281,7 +6361,36 @@ function sceneVideoActionState(scene) {
         objectUrl = await fetchProtectedBlobUrl(apiPath)
         if (!cancelled) setAudioSrc(objectUrl)
       } catch (err) {
-        if (!cancelled) setStatus(`Аудио preview недоступен: ${err.message}`)
+        if (!cancelled) {
+          setStatus(`Аудио preview недоступен: ${err.message}`)
+          // AVA_BOARD_AUDIO_PREVIEW_FALLBACK_V194B:
+          // If a stale imported audio ref 404s, recover from the current Manual Timing master audio.
+          if (!workspaceMode && projectId) {
+            try {
+              const timingStageDataV194B = await loadStage(projectId, 'manual_timing')
+              const recoveredAudioV194B = boardAudioFromTiming(timingStageDataV194B?.manualTiming || timingStageDataV194B?.manual_timing || timingStageDataV194B || {})
+              const recoveredApiPathV194B = recoveredAudioV194B?.assetApiPath || recoveredAudioV194B?.asset_api_path || ''
+              if (recoveredApiPathV194B && recoveredApiPathV194B !== apiPath) {
+                setBoard((current) => ({
+                  ...current,
+                  audio: recoveredAudioV194B,
+                  audioAssetId: recoveredAudioV194B.assetId || recoveredAudioV194B.asset_id || '',
+                  audio_asset_id: recoveredAudioV194B.assetId || recoveredAudioV194B.asset_id || '',
+                  audioApiPath: recoveredApiPathV194B,
+                  audio_api_path: recoveredApiPathV194B,
+                  audioName: recoveredAudioV194B.name || recoveredAudioV194B.audioName || '',
+                  audio_name: recoveredAudioV194B.name || recoveredAudioV194B.audioName || '',
+                  audioDurationSec: recoveredAudioV194B.durationSec || recoveredAudioV194B.audioDurationSec || 0,
+                  audio_duration_sec: recoveredAudioV194B.durationSec || recoveredAudioV194B.audioDurationSec || 0,
+                  updatedAt: new Date().toISOString(),
+                }))
+                console.log('[BOARD AUDIO PREVIEW FALLBACK V194B]', { from: apiPath, to: recoveredApiPathV194B })
+              }
+            } catch (fallbackErrorV194B) {
+              console.warn('[BOARD AUDIO PREVIEW FALLBACK V194B] failed', fallbackErrorV194B)
+            }
+          }
+        }
       }
     }
     loadAudio()
@@ -10542,12 +10651,15 @@ async function importTimingJson(event) {
         <div className="avaBoardStillQueueTools" data-ava-patch="AVA_BOARD_FRONTEND_AUTO_MANUAL_RUNNER_TOPBAR_V110B">
           <button
             type="button"
-            className={`avaBoardHeaderButton avaBoardActionGenerateAllScenes ${autoVideoQueueState.active ? 'isActive' : ''}`}
+            className={`avaBoardHeaderButton avaBoardActionGenerateAllScenes ${autoVideoQueueState.active ? 'isActive' : ''} ${(workspaceMode || !projectId) ? 'isDisabled' : ''}`}
+            disabled={workspaceMode || !projectId}
             onClick={(event) => {
               stopBoardActionEvent(event)
               openAllScenesVideoQueueConfirm(event)
             }}
-            title="Спецрежим: поставить в очередь все сцены без готового видео. Использует ту же ручную очередь, что и кнопка Сделать видео."
+            title={(workspaceMode || !projectId)
+              ? 'Серверная очередь доступна только внутри проекта. Открой проект и запускай генерацию там.'
+              : 'Спецрежим: поставить в очередь все сцены без готового видео. Использует backend-серверную очередь.'}
           >
             <Sparkles size={15} /> Сгенерировать все
           </button>

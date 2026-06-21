@@ -3747,12 +3747,31 @@ const useVocalStem = mode === 'vocal'
                 ? draft.storyBlocks
                 : []
 
+      const importedAudioNameV194B = root.audioName || root.audio_name || root.audio?.name || raw.audio?.name || raw.assets?.audio?.name || ''
+      const importedAudioAssetIdV194B = root.audioAssetId || root.audio_asset_id || root.audio?.assetId || root.audio?.asset_id || raw.assets?.audio?.assetId || raw.assets?.audio?.asset_id || ''
+      const importedAudioApiPathV194B = root.audioApiPath || root.audio_api_path || root.audio?.assetApiPath || root.audio?.asset_api_path || raw.assets?.audio?.assetApiPath || raw.assets?.audio?.asset_api_path || ''
+      const hasCurrentUploadedAudioV194B = Boolean(draft.audioAssetId || draft.audioApiPath || draft.audioUrl)
+      const chosenAudioNameV194B = hasCurrentUploadedAudioV194B ? draft.audioName : (importedAudioNameV194B || draft.audioName)
+      const chosenAudioAssetIdV194B = hasCurrentUploadedAudioV194B ? draft.audioAssetId : (importedAudioAssetIdV194B || draft.audioAssetId)
+      const chosenAudioApiPathV194B = hasCurrentUploadedAudioV194B ? draft.audioApiPath : (importedAudioApiPathV194B || draft.audioApiPath)
+      const chosenAudioDurationSecV194B = hasCurrentUploadedAudioV194B
+        ? (draft.audioDurationSec || importedDuration || 0)
+        : (importedDuration || draft.audioDurationSec || 0)
+      if (hasCurrentUploadedAudioV194B && (importedAudioAssetIdV194B || importedAudioApiPathV194B) && (importedAudioAssetIdV194B !== draft.audioAssetId || importedAudioApiPathV194B !== draft.audioApiPath)) {
+        console.log('[MANUAL TIMING IMPORT AUDIO PRESERVE V194B]', {
+          keptAssetId: draft.audioAssetId,
+          ignoredImportedAssetId: importedAudioAssetIdV194B,
+          keptApiPath: draft.audioApiPath,
+          ignoredImportedApiPath: importedAudioApiPathV194B,
+        })
+      }
+
       const nextDraft = normalizeDraft({
         ...draft,
-        audioName: root.audioName || root.audio_name || root.audio?.name || raw.audio?.name || raw.assets?.audio?.name || draft.audioName,
-        audioAssetId: root.audioAssetId || root.audio_asset_id || root.audio?.assetId || root.audio?.asset_id || raw.assets?.audio?.assetId || raw.assets?.audio?.asset_id || draft.audioAssetId,
-        audioApiPath: root.audioApiPath || root.audio_api_path || root.audio?.assetApiPath || root.audio?.asset_api_path || raw.assets?.audio?.assetApiPath || raw.assets?.audio?.asset_api_path || draft.audioApiPath,
-        audioDurationSec: importedDuration || draft.audioDurationSec,
+        audioName: chosenAudioNameV194B,
+        audioAssetId: chosenAudioAssetIdV194B,
+        audioApiPath: chosenAudioApiPathV194B,
+        audioDurationSec: chosenAudioDurationSecV194B,
         roles,
         speechSegments,
         audioPhrases: Array.isArray(root.audio_phrases) ? root.audio_phrases : Array.isArray(root.audioPhrases) ? root.audioPhrases : Array.isArray(raw.timing?.speech_segments) ? raw.timing.speech_segments : speechSegments,
