@@ -2989,6 +2989,112 @@ function normalizeLoadedBoardVideoStatuses(boardData = {}) {
   }
 }
 
+// AVA_BOARD_IMPORT_PROMPT_OVERRIDE_V199A:
+// When importing an Ava Board JSON, visible prompt fields from the imported file
+// must win over the currently saved Board text. Media refs are still preserved
+// by normalize/mergePreserveMediaRefs; this helper only replaces text metadata.
+const BOARD_FORMAT_RULE_TEXT_V199A = /(?:Use the structured project format settings|structured project format|project_context\.format|Do not change aspect ratio|Photo\/video prompts must match|prompt_format_rule)/i
+
+function boardLooksLikeFormatRuleTextV199A(value = '') {
+  const text = asText(value)
+  if (!text) return false
+  return BOARD_FORMAT_RULE_TEXT_V199A.test(text)
+}
+
+function boardCleanImportedPromptTextV199A(value = '') {
+  const text = asText(value)
+  if (!text) return ''
+  if (boardLooksLikeFormatRuleTextV199A(text)) return ''
+  return text
+    .replace(/^\s*(?:Vertical|Horizontal|Square)\s+(?:9:16|16:9|1:1|4:5)\s*(?:composition|format)?\s*[:.,;\-–—]*\s*/i, '')
+    .replace(/^\s*(?:Use\s+)?(?:vertical|horizontal|square)\s+(?:9:16|16:9|1:1|4:5)\s*(?:composition|format)?\s*[:.,;\-–—]*\s*/i, '')
+    .trim()
+}
+
+function boardImportedSceneTextPatchV199A(importedScene = {}) {
+  const videoPrompt = boardCleanImportedPromptTextV199A(firstTextValue(
+    importedScene.video_prompt,
+    importedScene.videoPrompt,
+    importedScene.positive_prompt,
+    importedScene.positivePrompt,
+    importedScene.prompt
+  ))
+  const negativePrompt = boardCleanImportedPromptTextV199A(firstTextValue(
+    importedScene.negative_prompt,
+    importedScene.negativePrompt,
+    importedScene.video_motion_negative,
+    importedScene.videoMotionNegative,
+    importedScene.final_negative_prompt,
+    importedScene.finalNegativePrompt
+  ))
+  const soundPrompt = boardCleanImportedPromptTextV199A(firstTextValue(
+    importedScene.sound_prompt,
+    importedScene.soundPrompt,
+    importedScene.mmaudio_prompt,
+    importedScene.mmaudioPrompt
+  ))
+  const blockId = boardCleanImportedPromptTextV199A(firstTextValue(importedScene.blockId, importedScene.block_id))
+  const blockTitle = boardCleanImportedPromptTextV199A(firstTextValue(importedScene.blockTitle, importedScene.block_title))
+
+  const patch = {
+    blockId,
+    block_id: blockId,
+    blockTitle,
+    block_title: blockTitle,
+    prompt_import_source_v199a: 'json_import_visible_prompt_fields',
+  }
+
+  // Imported prompts intentionally override old Board prompts, even with empty strings
+  // when the imported file was cleaned. This is what removes stale format-rule text.
+  patch.video_prompt = videoPrompt
+  patch.positive_prompt = videoPrompt
+  patch.prompt = videoPrompt
+
+  patch.negative_prompt = negativePrompt
+  patch.negativePrompt = negativePrompt
+  patch.video_motion_negative = negativePrompt
+  patch.videoMotionNegative = negativePrompt
+  patch.final_negative_prompt = negativePrompt
+  patch.finalNegativePrompt = negativePrompt
+
+  patch.sound_prompt = soundPrompt
+  patch.soundPrompt = soundPrompt
+
+  return patch
+}
+
+function boardApplyImportedPromptTextFieldsV199A(nextBoard = {}, importedJson = {}) {
+  const timing = importedJson?.manualTiming || importedJson?.manual_timing || importedJson || {}
+  const importedScenes = asSceneArray(timing.scenes)
+  if (!importedScenes.length || !Array.isArray(nextBoard?.scenes)) return nextBoard
+
+  const importedById = new Map(importedScenes.map((scene, index) => {
+    const id = asText(scene?.scene_id || scene?.id || `seg_${String(index + 1).padStart(2, '0')}`)
+    return [id, scene]
+  }))
+
+  let changed = false
+  const scenes = nextBoard.scenes.map((scene) => {
+    const id = asText(scene?.scene_id || scene?.id)
+    const importedScene = importedById.get(id)
+    if (!importedScene) return scene
+    changed = true
+    return {
+      ...scene,
+      ...boardImportedSceneTextPatchV199A(importedScene),
+    }
+  })
+
+  if (!changed) return nextBoard
+  return {
+    ...nextBoard,
+    scenes,
+    prompt_import_applied_v199a: true,
+    promptImportAppliedV199A: true,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
 function sceneStatus(scene) {
   const reviewStatusPriorityV132D2 = boardSceneVideoReviewStatus(scene)
   const rawVideoStatusPriorityV132D2 = boardSceneVideoUiStatusV130F(scene)
@@ -3026,8 +3132,9 @@ function sceneStatus(scene) {
   if (reviewStatusPriorityV132D2 === 'bad') return { label: 'плохое', className: 'isBad' }
   if (reviewStatusPriorityV132D2 === 'needs_review') return { label: 'посмотри', className: 'isReview' }
   if (hasCurrentVideo) return { label: 'видео готово', className: 'isReady' }
-  if (hasImage) return { label: 'фото готово', className: 'isImage' }
+  if (hasImage && hasPrompt) return { label: 'промт+фото', className: 'isPrompt' }
   if (hasPrompt) return { label: 'промт готов', className: 'isPrompt' }
+  if (hasImage) return { label: 'фото готово', className: 'isImage' }
   return { label: 'черновик', className: 'isDraft' }
 }
 
@@ -10255,6 +10362,7 @@ async function importTimingJson(event) {
       const jsonWithProjectFormatV177B = boardInjectProjectFormatIntoTimingV177C(json, boardProjectFormatV177A(json, { format: activeProjectFormatV177B }))
       let nextBoard = buildBoardFromTiming(jsonWithProjectFormatV177B, board)
       nextBoard = applyCookingPromptMemoryToBoard(nextBoard, { sourceBoard: json, force: Boolean(json?.cooking_prompt_memory_v1) })
+      nextBoard = boardApplyImportedPromptTextFieldsV199A(nextBoard, json)
       setBoard(nextBoard)
       setStatus(`Импортировано сцен: ${nextBoard.scenes.length}`)
     } catch (err) {
