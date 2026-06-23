@@ -1,3 +1,6 @@
+# AVA_BOARD_MASTER_AUDIO_MANUAL_SLICE_V199I: manual slice uses project master/mixed audio fallback, rejects vocal-ASR stems.
+# AVA_BOARD_MASTER_AUDIO_FORCE_RECUT_V199G: audio routes always recut from master/mixed song audio; never from vocal-ASR stem.
+# AVA_BOARD_MASTER_AUDIO_FORCE_RECUT_V199F: never reuse old per-scene audio slices for lip-sync/instrumental; recut from master mixed song audio only.
 # AVA_BOARD_STALE_BATCH_UNBLOCK_V150A: clean orphaned server-batch state after backend reload.
 # AVA_TELEGRAM_LIGHT_REVIEW_NO_BLOCK_V149A: send Telegram scene-ready from batch in background.
 # AVA_BOARD_BATCH_READY_ACTIVE_CLEAR_V148A: completed batch scene clears active scene/job fields before UI polling.
@@ -225,6 +228,8 @@ class SliceAudioIn(BaseModel):
     audioUrl: str | None = None
     audio_asset_id: str | None = None
     audioAssetId: str | None = None
+    project_id: str | None = None
+    projectId: str | None = None
     audio_asset_api_path: str | None = None
     audioAssetApiPath: str | None = None
     asset_id: str | None = None
@@ -1510,9 +1515,71 @@ def slice_audio(payload: SliceAudioIn) -> dict[str, Any]:
             end_f = start_f + duration_f
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid start/end/duration")
+    # AVA_BOARD_MASTER_AUDIO_MANUAL_SLICE_V199I:
+    # Manual "изъять аудио" must follow the same authority as server batch:
+    # use master/mixed song audio, never the vocal-ASR stem. If the Board root
+    # audio ref is stale/missing/vocal-only, fall back to project audio assets.
+    project_id_for_audio_v199i = str(payload.project_id or payload.projectId or "").strip()
     source_value = payload.audio_url or payload.audioUrl or payload.audio_asset_api_path or payload.audioAssetApiPath
     source_asset_id = payload.audio_asset_id or payload.audioAssetId or payload.asset_id or payload.assetId
-    source_path = _resolve_local_file(source_value, asset_id=source_asset_id)
+    source_path = None
+    source_errors_v199i: list[dict[str, str]] = []
+
+    def _manual_slice_source_candidate_v199i() -> dict[str, str]:
+        return {
+            "source": "manual_slice.payload_v199i",
+            "ref": str(source_value or ""),
+            "asset_id": str(source_asset_id or ""),
+        }
+
+    if source_value or source_asset_id:
+        try:
+            candidate_v199i = _manual_slice_source_candidate_v199i()
+            resolved_v199i = _resolve_local_file(source_value, asset_id=source_asset_id)
+            if _board_batch_audio_candidate_is_vocal_only_v199g(candidate_v199i, resolved_v199i):
+                source_errors_v199i.append({
+                    "source": candidate_v199i.get("source", "manual_slice.payload_v199i"),
+                    "ref": candidate_v199i.get("ref", ""),
+                    "asset_id": candidate_v199i.get("asset_id", ""),
+                    "path": str(resolved_v199i),
+                    "error": "vocal_only_asr_stem_rejected_v199i",
+                })
+                print("[BOARD MANUAL SLICE VOCAL STEM REJECTED V199I]", {
+                    "project_id": project_id_for_audio_v199i,
+                    "ref": candidate_v199i.get("ref", ""),
+                    "asset_id": candidate_v199i.get("asset_id", ""),
+                    "path": str(resolved_v199i),
+                }, flush=True)
+            else:
+                source_path = resolved_v199i
+        except Exception as exc:
+            source_errors_v199i.append({
+                "source": "manual_slice.payload_v199i",
+                "ref": str(source_value or ""),
+                "asset_id": str(source_asset_id or ""),
+                "error": str(exc),
+            })
+
+    if source_path is None:
+        if not project_id_for_audio_v199i:
+            first_error_v199i = source_errors_v199i[0].get("error") if source_errors_v199i else "missing_audio_source"
+            raise HTTPException(status_code=404, detail=f"No usable master audio source for manual slice; {first_error_v199i}")
+        master_path_v199i, master_ref_v199i, master_asset_id_v199i, master_errors_v199i = _board_batch_resolve_master_audio_source_v199g(
+            project_id_for_audio_v199i,
+            {},
+            payload,
+        )
+        source_path = master_path_v199i
+        source_value = master_ref_v199i
+        source_asset_id = master_asset_id_v199i
+        print("[BOARD MANUAL SLICE MASTER AUDIO SELECTED V199I]", {
+            "project_id": project_id_for_audio_v199i,
+            "ref": master_ref_v199i,
+            "asset_id": master_asset_id_v199i,
+            "path": str(master_path_v199i),
+            "payload_errors": source_errors_v199i[:6],
+            "master_errors": master_errors_v199i[:6],
+        }, flush=True)
     static_root = _settings_static_path()
     target_dir = static_root / "assets" / "manual_clip_audio"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -1522,7 +1589,25 @@ def slice_audio(payload: SliceAudioIn) -> dict[str, Any]:
     out_path = target_dir / out_name
     _run_ffmpeg(["-y", "-ss", f"{start_f:.3f}", "-t", f"{duration_f:.3f}", "-i", str(source_path), "-vn", "-acodec", "libmp3lame", "-ar", "44100", "-ac", "2", "-b:a", "192k", str(out_path)])
     urls = _public_static_url(f"assets/manual_clip_audio/{out_name}")
-    return {"ok": True, "audioSliceUrl": urls["url"], "audio_slice_url": urls["url"], "audioSliceApiPath": urls["apiPath"], "audio_slice_api_path": urls["apiPath"], "audioSliceName": out_name, "audio_slice_name": out_name, "mimeType": "audio/mpeg", "startSec": start_f, "endSec": end_f, "durationSec": duration_f, "sourcePath": str(source_path), "source": "manual_scene_range_server_mp3"}
+    return {
+        "ok": True,
+        "audioSliceUrl": urls["url"],
+        "audio_slice_url": urls["url"],
+        "audioSliceApiPath": urls["apiPath"],
+        "audio_slice_api_path": urls["apiPath"],
+        "audioSliceName": out_name,
+        "audio_slice_name": out_name,
+        "mimeType": "audio/mpeg",
+        "startSec": start_f,
+        "endSec": end_f,
+        "durationSec": duration_f,
+        "sourcePath": str(source_path),
+        "source": "manual_scene_range_master_audio_v199i",
+        "sourceAssetId": source_asset_id or "",
+        "source_asset_id": source_asset_id or "",
+        "sourceAssetApiPath": source_value or "",
+        "source_asset_api_path": source_value or "",
+    }
 
 
 @router.post("/clip/video/extract-last-frame")
@@ -2059,6 +2144,76 @@ def _board_batch_scene_end_image_ref(scene: dict[str, Any]) -> str:
     ])
 
 
+
+
+# AVA_BOARD_MASTER_AUDIO_FORCE_RECUT_V199F:
+# Old per-scene audio slices may have been cut from the vocal-ASR stem.
+# For batch generation, audio routes must always recut from the current master/mixed song audio.
+def _board_batch_clear_scene_audio_slice_v199f(scene: dict[str, Any]) -> dict[str, Any]:
+    patched = dict(scene) if isinstance(scene, dict) else {}
+    keys = (
+        "audio_slice_status", "audioSliceStatus", "audio_slice_url", "audioSliceUrl",
+        "audio_slice_api_path", "audioSliceApiPath", "audio_slice_name", "audioSliceName",
+        "audio_slice_mime", "audioSliceMime", "audio_slice_start", "audioSliceStart",
+        "audio_slice_end", "audioSliceEnd", "audio_slice_duration", "audioSliceDuration",
+        "audio_slice_source", "audioSliceSource", "audio_slice_source_asset_api_path", "audioSliceSourceAssetApiPath",
+        "audio_slice_source_asset_id", "audioSliceSourceAssetId", "audio_slice_error", "audioSliceError",
+        "manual_lipsync_audio_api_path", "manualLipSyncAudioApiPath",
+        "manual_lipsync_audio_url", "manualLipSyncAudioUrl",
+        "manual_lipsync_audio_asset_id", "manualLipSyncAudioAssetId",
+        "audio_api_path", "audioApiPath", "audio_url", "audioUrl", "audio_asset_id", "audioAssetId",
+    )
+    for key in keys:
+        patched.pop(key, None)
+    patched["audio_slice_status"] = "recut_required_from_master_v199f"
+    patched["audioSliceStatus"] = "recut_required_from_master_v199f"
+    return patched
+
+
+def _board_batch_text_looks_vocal_only_v199f(*parts: Any) -> bool:
+    low = " ".join(str(part or "") for part in parts).lower().replace("\\", "/")
+    bad = (
+        "manual_timing_vocal", "vocal_stem", "vocal-stem", "vocals_stem", "vocals-stem",
+        "asr_vocal", "vocal_asr", "stem_vocal", "isolated_vocal", "voice_only",
+        "vocals_only", "/vocals/", "vocal stem", "voice stem",
+    )
+    return any(item in low for item in bad)
+
+
+def _board_batch_asset_record_v199f(asset_id: str | None) -> dict[str, Any]:
+    aid = str(asset_id or "").strip()
+    if not aid:
+        return {}
+    try:
+        db = store.get_db() or {}
+        assets = db.get("assets") or {}
+        rec = assets.get(aid) if isinstance(assets, dict) else None
+        return rec if isinstance(rec, dict) else {}
+    except Exception:
+        return {}
+
+
+def _board_batch_asset_record_text_v199f(asset: dict[str, Any] | None) -> str:
+    if not isinstance(asset, dict):
+        return ""
+    keys = (
+        "id", "name", "filename", "file_name", "fileName", "original_name", "originalName",
+        "display_name", "displayName", "title", "kind", "role", "source", "source_type", "sourceType",
+        "path", "file_path", "filePath", "local_path", "localPath", "asset_path", "assetPath",
+        "folder", "subfolder", "category", "tag", "label", "purpose", "stage",
+    )
+    return " ".join(str(asset.get(key) or "") for key in keys).lower().replace("\\", "/")
+
+
+def _board_batch_audio_candidate_is_vocal_only_v199f(candidate: dict[str, str] | None, resolved_path: Path | None = None) -> bool:
+    if not isinstance(candidate, dict):
+        return False
+    aid = str(candidate.get("asset_id") or "").strip()
+    asset = _board_batch_asset_record_v199f(aid)
+    return _board_batch_text_looks_vocal_only_v199f(
+        candidate.get("source"), candidate.get("ref"), candidate.get("asset_id"), resolved_path,
+        _board_batch_asset_record_text_v199f(asset),
+    )
 def _board_batch_scene_audio_ref(scene: dict[str, Any]) -> str:
     return _board_batch_media_ref(scene, [
         "audio_slice_api_path", "audioSliceApiPath", "audio_slice_url", "audioSliceUrl",
@@ -2073,20 +2228,12 @@ def _board_batch_scene_audio_ref(scene: dict[str, Any]) -> str:
 # routes automatically. This mirrors /manual-clip/slice-audio but runs before
 # batch validation so the user does not have to press the slice button scene by scene.
 def _board_batch_is_audio_slice_route(route: str | None) -> bool:
-    # AVA_BOARD_BATCH_AUDIO_WAV_ROUTE_LOCK_V193A:
-    # ia2v_instrumental uses the same audio-driven workflow as ia2v, so it must
-    # be auto-sliced by the server batch too.
-    return str(route or "").strip() in {
-        "ia2v",
-        "ia2v_lipsync",
-        "ia2v_instrumental",
-        "lip_sync",
-        "instrumental",
-        "i2v_audio",
-        "audio2video",
-        "a2v",
+    value = str(route or "").strip().lower()
+    return value in {
+        "ia2v", "ia2v_lipsync", "ia2v_instrumental",
+        "lip_sync", "lipsync", "instrumental",
+        "i2v_audio", "audio2video", "a2v",
     }
-
 
 def _board_batch_root_audio_source(board_data: dict[str, Any], payload: Any = None) -> tuple[str, str]:
     candidates: list[dict[str, Any]] = []
@@ -2132,6 +2279,7 @@ def _board_batch_root_audio_source(board_data: dict[str, Any], payload: Any = No
 
 
 
+# AVA_BOARD_LIPSYNC_MASTER_AUDIO_V199E: lip-sync/instrumental autoslice must use main mixed song audio, not vocal ASR stem.
 # AVA_BOARD_AUTOSLICE_AUDIO_FALLBACK_V151A:
 # Batch autoslice must not trust only the first audio ref from the client. A Board
 # can keep a stale /assets/<id>/file after reloads or after moving between
@@ -2183,6 +2331,139 @@ def _board_batch_audio_candidate_add_v151a(
     seen.add(key)
     candidates.append({"ref": ref, "asset_id": aid, "source": source})
 
+
+
+
+# AVA_BOARD_LIPSYNC_MASTER_AUDIO_V199E:
+# Batch lip-sync / instrumental slicing must use the main mixed song audio.
+# Never silently use the Manual Timing vocal-ASR stem, because it has words only and no music.
+def _board_batch_audio_asset_record_v199e(asset_id: str | None) -> dict[str, Any]:
+    aid = str(asset_id or "").strip()
+    if not aid:
+        return {}
+    try:
+        db = store.get_db() or {}
+        assets = db.get("assets") or {}
+        item = assets.get(aid) if isinstance(assets, dict) else None
+        return item if isinstance(item, dict) else {}
+    except Exception:
+        return {}
+
+
+def _board_batch_audio_record_text_v199e(asset: dict[str, Any] | None) -> str:
+    if not isinstance(asset, dict):
+        return ""
+    fields = []
+    for key in (
+        "id", "name", "filename", "file_name", "fileName", "original_name", "originalName",
+        "display_name", "displayName", "title", "kind", "role", "source", "source_type", "sourceType",
+        "path", "file_path", "filePath", "local_path", "localPath", "asset_path", "assetPath",
+        "folder", "subfolder", "category", "tag", "label", "purpose", "stage",
+    ):
+        value = asset.get(key)
+        if value is not None:
+            fields.append(str(value))
+    return " ".join(fields).lower().replace("\\", "/")
+
+
+def _board_batch_audio_record_is_vocal_only_v199e(asset: dict[str, Any] | None) -> bool:
+    low = _board_batch_audio_record_text_v199e(asset)
+    if not low:
+        return False
+    bad_markers = (
+        "manual_timing_vocal",
+        "vocal_stem",
+        "vocal-stem",
+        "vocals_stem",
+        "vocals-stem",
+        "asr_vocal",
+        "vocal_asr",
+        "stem_vocal",
+        "stem/vocal",
+        "/vocals/",
+        "\\vocals\\",
+        "isolated_vocal",
+        "voice_only",
+        "vocals_only",
+        "voice stem",
+        "vocal stem",
+    )
+    if any(marker in low for marker in bad_markers):
+        return True
+    # Be conservative: a path/name explicitly ending in vocal/vocals is a stem.
+    return bool(re.search(r"(^|[/_\\\-\s])(vocal|vocals)([/_\\\-\s.]|$)", low))
+
+
+def _board_batch_audio_candidate_is_vocal_only_v199e(candidate: dict[str, str] | None, resolved_path: Path | None = None) -> bool:
+    if not isinstance(candidate, dict):
+        return False
+    aid = str(candidate.get("asset_id") or "").strip()
+    asset = _board_batch_audio_asset_record_v199e(aid)
+    parts = [
+        str(candidate.get("source") or ""),
+        str(candidate.get("ref") or ""),
+        str(candidate.get("asset_id") or ""),
+        str(resolved_path or ""),
+        _board_batch_audio_record_text_v199e(asset),
+    ]
+    low = " ".join(parts).lower().replace("\\", "/")
+    bad_markers = (
+        "manual_timing_vocal",
+        "vocal_stem",
+        "vocal-stem",
+        "asr_vocal",
+        "vocal_asr",
+        "isolated_vocal",
+        "voice_only",
+        "vocals_only",
+        "/vocals/",
+        "vocal stem",
+        "voice stem",
+    )
+    return any(marker in low for marker in bad_markers) or _board_batch_audio_record_is_vocal_only_v199e(asset)
+
+
+def _board_batch_scene_audio_ref_is_from_vocal_only_v199e(scene: dict[str, Any] | None) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    for key in (
+        "audio_slice_source_asset_id", "audioSliceSourceAssetId",
+        "audio_source_asset_id", "audioSourceAssetId",
+        "source_audio_asset_id", "sourceAudioAssetId",
+        "manual_lipsync_audio_asset_id", "manualLipSyncAudioAssetId",
+        "audio_asset_id", "audioAssetId",
+    ):
+        aid = str(scene.get(key) or "").strip()
+        if aid and _board_batch_audio_record_is_vocal_only_v199e(_board_batch_audio_asset_record_v199e(aid)):
+            return True
+    combined = " ".join(str(scene.get(key) or "") for key in (
+        "audio_slice_source", "audioSliceSource",
+        "audio_slice_url", "audioSliceUrl", "audio_slice_api_path", "audioSliceApiPath",
+        "manual_lipsync_audio_url", "manualLipSyncAudioUrl",
+        "manual_lipsync_audio_api_path", "manualLipSyncAudioApiPath",
+    )).lower().replace("\\", "/")
+    return "manual_timing_vocal" in combined or "vocal_stem" in combined or "asr_vocal" in combined
+
+
+def _board_batch_clear_scene_audio_slice_v199e(scene: dict[str, Any]) -> dict[str, Any]:
+    patched = dict(scene) if isinstance(scene, dict) else {}
+    keys = (
+        "audio_slice_status", "audioSliceStatus", "audio_slice_url", "audioSliceUrl",
+        "audio_slice_api_path", "audioSliceApiPath", "audio_slice_name", "audioSliceName",
+        "audio_slice_mime", "audioSliceMime", "audio_slice_start", "audioSliceStart",
+        "audio_slice_end", "audioSliceEnd", "audio_slice_duration", "audioSliceDuration",
+        "audio_slice_source", "audioSliceSource", "audio_slice_source_asset_api_path", "audioSliceSourceAssetApiPath",
+        "audio_slice_source_asset_id", "audioSliceSourceAssetId", "audio_slice_error", "audioSliceError",
+        "manual_lipsync_audio_api_path", "manualLipSyncAudioApiPath",
+        "manual_lipsync_audio_url", "manualLipSyncAudioUrl",
+        "manual_lipsync_audio_asset_id", "manualLipSyncAudioAssetId",
+        "audio_api_path", "audioApiPath", "audio_url", "audioUrl", "audio_asset_id", "audioAssetId",
+    )
+    for key in keys:
+        patched.pop(key, None)
+    patched["audio_slice_status"] = "cleared_vocal_stem_rejected_v199e"
+    patched["audioSliceStatus"] = "cleared_vocal_stem_rejected_v199e"
+    return patched
 
 def _board_batch_audio_candidate_scan_v151a(
     candidates: list[dict[str, str]],
@@ -2267,7 +2548,13 @@ def _board_batch_root_audio_candidates_v151a(
                 except Exception:
                     continue
                 audio_assets.append(asset)
-            audio_assets.sort(key=lambda item: str(item.get("updated_at") or item.get("updatedAt") or item.get("created_at") or item.get("createdAt") or ""), reverse=True)
+            audio_assets.sort(
+                key=lambda item: (
+                    0 if _board_batch_audio_record_is_vocal_only_v199e(item) else 1,
+                    str(item.get("updated_at") or item.get("updatedAt") or item.get("created_at") or item.get("createdAt") or ""),
+                ),
+                reverse=True,
+            )
             for asset in audio_assets[:8]:
                 aid = str(asset.get("id") or "").strip()
                 if aid:
@@ -2295,12 +2582,36 @@ def _board_batch_resolve_root_audio_source_v151a(
         try:
             path = _resolve_local_file(ref, asset_id=aid)
             if path and path.exists() and path.is_file():
+                if _board_batch_audio_candidate_is_vocal_only_v199e(candidate, path):
+                    errors.append({
+                        "source": source,
+                        "ref": ref,
+                        "asset_id": aid,
+                        "path": str(path),
+                        "error": "vocal_only_asr_stem_rejected_v199e",
+                    })
+                    print("[BOARD SERVER BATCH VOCAL STEM AUDIO REJECTED V199E]", {
+                        "project_id": project_id,
+                        "source": source,
+                        "ref": ref,
+                        "asset_id": aid,
+                        "path": str(path),
+                        "reason": "lip_sync_requires_main_mixed_song_audio",
+                    }, flush=True)
+                    continue
                 if errors:
                     print("[BOARD SERVER BATCH AUDIO FALLBACK HIT V151A]", {
                         "project_id": project_id,
                         "using": {"source": source, "ref": ref, "asset_id": aid, "path": str(path)},
                         "skipped": errors[:8],
                     }, flush=True)
+                print("[BOARD SERVER BATCH MASTER AUDIO SELECTED V199E]", {
+                    "project_id": project_id,
+                    "source": source,
+                    "ref": ref,
+                    "asset_id": aid,
+                    "path": str(path),
+                }, flush=True)
                 return path, ref, aid, errors
             errors.append({"source": source, "ref": ref, "asset_id": aid, "error": "resolved_path_missing"})
         except Exception as exc:
@@ -2338,43 +2649,219 @@ def _board_batch_scene_audio_range(scene: dict[str, Any]) -> tuple[float, float,
     return None
 
 
+
+
+# AVA_BOARD_MASTER_AUDIO_FORCE_RECUT_V199G helpers:
+def _board_batch_clear_scene_audio_slice_v199g(scene: dict[str, Any]) -> dict[str, Any]:
+    patched = dict(scene) if isinstance(scene, dict) else {}
+    keys = (
+        "audio_slice_status", "audioSliceStatus", "audio_slice_url", "audioSliceUrl",
+        "audio_slice_api_path", "audioSliceApiPath", "audio_slice_name", "audioSliceName",
+        "audio_slice_mime", "audioSliceMime", "audio_slice_start", "audioSliceStart",
+        "audio_slice_end", "audioSliceEnd", "audio_slice_duration", "audioSliceDuration",
+        "audio_slice_source", "audioSliceSource", "audio_slice_source_asset_api_path", "audioSliceSourceAssetApiPath",
+        "audio_slice_source_asset_id", "audioSliceSourceAssetId", "audio_slice_error", "audioSliceError",
+        "manual_lipsync_audio_api_path", "manualLipSyncAudioApiPath",
+        "manual_lipsync_audio_url", "manualLipSyncAudioUrl",
+        "manual_lipsync_audio_asset_id", "manualLipSyncAudioAssetId",
+        "audio_api_path", "audioApiPath", "audio_url", "audioUrl", "audio_asset_id", "audioAssetId",
+    )
+    for key in keys:
+        patched.pop(key, None)
+    patched["audio_slice_status"] = "recut_required_from_master_v199g"
+    patched["audioSliceStatus"] = "recut_required_from_master_v199g"
+    return patched
+
+
+def _board_batch_asset_record_v199g(asset_id: str | None) -> dict[str, Any]:
+    aid = str(asset_id or "").strip()
+    if not aid:
+        return {}
+    try:
+        db = store.get_db() or {}
+        assets = db.get("assets") or {}
+        rec = assets.get(aid) if isinstance(assets, dict) else None
+        return rec if isinstance(rec, dict) else {}
+    except Exception:
+        return {}
+
+
+def _board_batch_asset_record_text_v199g(asset: dict[str, Any] | None) -> str:
+    if not isinstance(asset, dict):
+        return ""
+    keys = (
+        "id", "name", "filename", "file_name", "fileName", "original_name", "originalName",
+        "display_name", "displayName", "title", "kind", "role", "source", "source_type", "sourceType",
+        "path", "file_path", "filePath", "local_path", "localPath", "asset_path", "assetPath",
+        "folder", "subfolder", "category", "tag", "label", "purpose", "stage",
+    )
+    return " ".join(str(asset.get(key) or "") for key in keys).lower().replace("\\", "/")
+
+
+def _board_batch_text_looks_vocal_only_v199g(*parts: Any) -> bool:
+    low = " ".join(str(part or "") for part in parts).lower().replace("\\", "/")
+    bad = (
+        "manual_timing_vocal", "vocal_stem", "vocal-stem", "vocals_stem", "vocals-stem",
+        "asr_vocal", "vocal_asr", "stem_vocal", "stem/vocal", "isolated_vocal",
+        "voice_only", "vocals_only", "/vocals/", "vocal stem", "voice stem",
+    )
+    return any(item in low for item in bad)
+
+
+def _board_batch_audio_candidate_is_vocal_only_v199g(candidate: dict[str, Any] | None, resolved_path: Path | None = None) -> bool:
+    if not isinstance(candidate, dict):
+        return False
+    aid = str(candidate.get("asset_id") or candidate.get("assetId") or "").strip()
+    asset = _board_batch_asset_record_v199g(aid)
+    return _board_batch_text_looks_vocal_only_v199g(
+        candidate.get("source"), candidate.get("ref"), candidate.get("asset_id"), candidate.get("assetId"),
+        candidate.get("path"), resolved_path, _board_batch_asset_record_text_v199g(asset),
+    )
+
+
+def _board_batch_master_audio_extra_candidates_v199g(project_id: str | None, board_data: dict[str, Any]) -> list[dict[str, str]]:
+    pid = str(project_id or (board_data or {}).get("project_id") or (board_data or {}).get("projectId") or "").strip()
+    if not pid:
+        return []
+    try:
+        db = store.get_db() or {}
+        assets = list((db.get("assets") or {}).values()) if isinstance(db, dict) else []
+    except Exception:
+        assets = []
+    out: list[dict[str, str]] = []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        if str(asset.get("project_id") or asset.get("projectId") or "") != pid:
+            continue
+        kind = str(asset.get("kind") or "").lower().strip()
+        mime = str(asset.get("mime_type") or asset.get("mimeType") or "").lower().strip()
+        if kind != "audio" and not mime.startswith("audio/"):
+            continue
+        aid = str(asset.get("id") or "").strip()
+        if not aid:
+            continue
+        try:
+            path = _asset_file_path_from_record(asset)
+            if not path or not path.exists() or not path.is_file():
+                continue
+        except Exception:
+            continue
+        # Keep vocal records in the list for logging/rejection, but sort them last.
+        out.append({
+            "source": "assets.db.project_audio_v199g",
+            "ref": f"/assets/{aid}/file",
+            "asset_id": aid,
+            "path": str(path),
+            "updated": str(asset.get("updated_at") or asset.get("updatedAt") or asset.get("created_at") or asset.get("createdAt") or ""),
+        })
+    out.sort(key=lambda item: (
+        0 if _board_batch_audio_candidate_is_vocal_only_v199g(item, Path(item.get("path") or "")) else 1,
+        item.get("updated") or "",
+    ), reverse=True)
+    return out
+
+
+def _board_batch_resolve_master_audio_source_v199g(
+    project_id: str | None,
+    board_data: dict[str, Any],
+    payload: Any = None,
+) -> tuple[Path | None, str, str, list[dict[str, str]]]:
+    candidates: list[dict[str, str]] = []
+    try:
+        candidates.extend(_board_batch_root_audio_candidates_v151a(project_id, board_data, payload))
+    except Exception as exc:
+        print("[BOARD SERVER BATCH MASTER AUDIO CANDIDATE ERROR V199G]", {"project_id": project_id, "error": str(exc)}, flush=True)
+    candidates.extend(_board_batch_master_audio_extra_candidates_v199g(project_id, board_data))
+
+    seen: set[tuple[str, str]] = set()
+    deduped: list[dict[str, str]] = []
+    for c in candidates:
+        if not isinstance(c, dict):
+            continue
+        key = (str(c.get("ref") or ""), str(c.get("asset_id") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(c)
+
+    errors: list[dict[str, str]] = []
+    for candidate in deduped:
+        ref = str(candidate.get("ref") or "").strip()
+        aid = str(candidate.get("asset_id") or "").strip()
+        source = str(candidate.get("source") or "").strip()
+        try:
+            path: Path | None = None
+            direct = str(candidate.get("path") or "").strip()
+            if direct:
+                path = Path(direct)
+            if not path or not path.exists() or not path.is_file():
+                path = _resolve_local_file(ref, asset_id=aid)
+            if path and path.exists() and path.is_file():
+                if _board_batch_audio_candidate_is_vocal_only_v199g(candidate, path):
+                    errors.append({"source": source, "ref": ref, "asset_id": aid, "path": str(path), "error": "vocal_only_asr_stem_rejected_v199g"})
+                    print("[BOARD SERVER BATCH VOCAL STEM AUDIO REJECTED V199G]", {
+                        "project_id": project_id,
+                        "source": source,
+                        "ref": ref,
+                        "asset_id": aid,
+                        "path": str(path),
+                        "reason": "lip_sync_requires_main_mixed_song_audio",
+                    }, flush=True)
+                    continue
+                if errors:
+                    print("[BOARD SERVER BATCH AUDIO FALLBACK HIT V199G]", {
+                        "project_id": project_id,
+                        "using": {"source": source, "ref": ref, "asset_id": aid, "path": str(path)},
+                        "skipped": errors[:8],
+                    }, flush=True)
+                print("[BOARD SERVER BATCH MASTER AUDIO SELECTED V199G]", {
+                    "project_id": project_id,
+                    "source": source,
+                    "ref": ref,
+                    "asset_id": aid,
+                    "path": str(path),
+                }, flush=True)
+                return path, ref, aid, errors
+            errors.append({"source": source, "ref": ref, "asset_id": aid, "error": "resolved_path_missing"})
+        except Exception as exc:
+            errors.append({"source": source, "ref": ref, "asset_id": aid, "error": str(exc)})
+
+    print("[BOARD SERVER BATCH MASTER AUDIO MISS V199G]", {
+        "project_id": project_id,
+        "candidateCount": len(deduped),
+        "errors": errors[:12],
+    }, flush=True)
+    detail = "No usable MASTER/MIXED song audio for lip-sync autoslice. Vocal-ASR stems are rejected. Re-upload the original full song audio."
+    if errors:
+        detail += "; first_error=" + str(errors[0].get("error") or "unknown")
+    raise HTTPException(status_code=404, detail=detail)
+
 def _board_batch_cut_audio_slice_for_scene(scene: dict[str, Any], board_data: dict[str, Any], payload: Any = None, project_id: str | None = None) -> tuple[dict[str, Any], bool]:
     route = str(scene.get("route") or "i2v").strip() or "i2v"
     if not _board_batch_is_audio_slice_route(route):
         return scene, False
 
-    # AVA_BOARD_BATCH_AUDIO_WAV_ROUTE_LOCK_V193A:
-    # Server batch must not trust old per-scene audio slices. They can belong
-    # to an earlier master audio file or earlier scene timing, producing
-    # mismatched image/audio pairs. Always regenerate a fresh WAV slice for
-    # every queued audio-driven scene. WAV is more reliable for Comfy/PyAV
-    # LoadAudio than MP3 slices made from MOV/MP4 sources.
-    audio_source_path_v151a, audio_ref, source_asset_id, audio_source_errors_v151a = _board_batch_resolve_root_audio_source_v151a(project_id, board_data, payload)
-    if audio_source_path_v151a is None:
-        patched = dict(scene)
-        patched.update({
-            "audio_slice_status": "error",
-            "audioSliceStatus": "error",
-            "audio_slice_error": "root_audio_not_found_for_autoslice",
-            "audioSliceError": "root_audio_not_found_for_autoslice",
-            "audio_slice_source_errors": audio_source_errors_v151a,
-            "audioSliceSourceErrors": audio_source_errors_v151a,
-        })
-        return patched, False
+    existing_audio_ref_v199g = _board_batch_scene_audio_ref(scene)
+    if existing_audio_ref_v199g:
+        print("[BOARD SERVER BATCH EXISTING AUDIO SLICE IGNORED V199G]", {
+            "scene_id": _board_batch_scene_id(scene),
+            "route": route,
+            "audio": str(existing_audio_ref_v199g)[:180],
+            "reason": "always_recut_audio_routes_from_master_mixed_song_audio",
+        }, flush=True)
+        scene = _board_batch_clear_scene_audio_slice_v199g(scene)
+
+    audio_source_path_v199g, audio_ref, source_asset_id, audio_source_errors_v199g = _board_batch_resolve_master_audio_source_v199g(project_id, board_data, payload)
+    if audio_source_path_v199g is None:
+        raise RuntimeError("missing_master_mixed_audio_for_lipsync_v199g")
 
     range_info = _board_batch_scene_audio_range(scene)
     if not range_info:
-        patched = dict(scene)
-        patched.update({
-            "audio_slice_status": "error",
-            "audioSliceStatus": "error",
-            "audio_slice_error": "missing_scene_start_end_for_autoslice",
-            "audioSliceError": "missing_scene_start_end_for_autoslice",
-        })
-        return patched, False
+        raise RuntimeError("missing_scene_start_end_for_autoslice")
 
     start_f, end_f, duration_f = range_info
-    source_path = audio_source_path_v151a
+    source_path = audio_source_path_v199g
     static_root = _settings_static_path()
     target_dir = static_root / "assets" / "manual_clip_audio"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -2411,8 +2898,8 @@ def _board_batch_cut_audio_slice_for_scene(scene: dict[str, Any], board_data: di
         "audioSliceEnd": end_f,
         "audio_slice_duration": duration_f,
         "audioSliceDuration": duration_f,
-        "audio_slice_source": "server_batch_auto_slice_v193a_wav",
-        "audioSliceSource": "server_batch_auto_slice_v193a_wav",
+        "audio_slice_source": "server_batch_master_audio_recut_v199g",
+        "audioSliceSource": "server_batch_master_audio_recut_v199g",
         "audio_slice_source_asset_api_path": audio_ref,
         "audioSliceSourceAssetApiPath": audio_ref,
         "audio_slice_source_asset_id": source_asset_id,
@@ -2420,14 +2907,14 @@ def _board_batch_cut_audio_slice_for_scene(scene: dict[str, Any], board_data: di
         "audio_slice_error": "",
         "audioSliceError": "",
     })
-    print("[BOARD SERVER BATCH AUTOSLICE WAV V193A]", {
+    print("[BOARD SERVER BATCH AUTOSLICE WAV V199G]", {
         "project_id": project_id,
         "scene_id": _board_batch_scene_id(scene),
         "route": route,
         "start": start_f,
         "end": end_f,
         "duration": duration_f,
-        "audio": urls.get("apiPath") or urls.get("url") or "",
+        "audio": patched.get("audio_slice_api_path"),
         "source_ref": audio_ref,
         "source_asset_id": source_asset_id,
     }, flush=True)
@@ -2460,6 +2947,17 @@ def _board_batch_prepare_auto_audio_slices(
         if not _board_batch_is_audio_slice_route(scene.get("route")):
             prepared.append(scene)
             continue
+
+        existing_audio_ref_v199g = _board_batch_scene_audio_ref(scene)
+        if existing_audio_ref_v199g:
+            print("[BOARD SERVER BATCH PREPARE OLD AUDIO SLICE RECUT V199G]", {
+                "scene_id": scene_id,
+                "route": scene.get("route"),
+                "audio": str(existing_audio_ref_v199g)[:180],
+                "reason": "always_recut_audio_routes_from_master_mixed_song_audio",
+            }, flush=True)
+            scene = _board_batch_clear_scene_audio_slice_v199g(scene)
+
         try:
             patched, sliced = _board_batch_cut_audio_slice_for_scene(scene, board_data, payload, project_id=project_id)
             prepared.append(patched)
@@ -2476,19 +2974,16 @@ def _board_batch_prepare_auto_audio_slices(
             })
             prepared.append(patched)
             failed.append({"sceneId": scene_id, "error": err})
-            print("[BOARD SERVER BATCH AUTOSLICE ERROR V147A]", {"scene_id": scene_id, "error": err}, flush=True)
+            print("[BOARD SERVER BATCH AUTOSLICE ERROR V199G]", {"scene_id": scene_id, "error": err}, flush=True)
 
     if auto_sliced or failed:
-        print("[BOARD SERVER BATCH AUTOSLICE V193A]", {
+        print("[BOARD SERVER BATCH AUTOSLICE V199G]", {
             "autoSliced": auto_sliced,
             "failed": failed,
-            "format": "wav",
-            "forceReslice": True,
             "audioSourcePresent": bool(_board_batch_root_audio_source(board_data, payload)[0] or _board_batch_root_audio_source(board_data, payload)[1]),
             "audioFallbackCandidateCountV151A": len(_board_batch_root_audio_candidates_v151a(project_id, board_data, payload)),
         }, flush=True)
     return prepared, auto_sliced, failed
-
 
 def _board_batch_prompt(scene: dict[str, Any]) -> str:
     return str(
@@ -5262,6 +5757,331 @@ def _assembly_transition_visual_mode_v196e(payload: dict[str, Any]) -> str:
     return "fade_to_black"
 
 
+
+# V199V_STRICT_BOARD_TIMELINE:
+# Build the visual montage on the absolute Board timeline instead of trusting each
+# generated mp4 duration. Generated i2v/ia2v clips are often 24fps and 2-3 frames
+# longer than requested; if those durations are concatenated, lip-sync drifts by
+# seconds over a long song. This renderer trims/pads every prepared clip to its
+# Board target duration, concatenates inside one filter graph, then applies CFR
+# only once at the end so rounding does not accumulate per scene.
+def _render_board_strict_timeline_concat_v199v(
+    paths: list[Path],
+    prepared_items: list[dict[str, Any]],
+    target: Path,
+    *,
+    width: int,
+    height: int,
+    fps: int,
+    job_id: str,
+) -> dict[str, Any]:
+    if not paths:
+        return {"applied": False, "reason": "no_paths"}
+
+    safe_fps = max(1, int(fps or 30))
+    args = ["-y"]
+    filters: list[str] = []
+    labels: list[str] = []
+    durations: list[float] = []
+
+    for index, path in enumerate(paths):
+        args.extend(["-i", str(path)])
+        item = prepared_items[index] if index < len(prepared_items) and isinstance(prepared_items[index], dict) else {}
+        start_sec = _assembly_float(item.get("targetStartSec") or item.get("target_start_sec") or item.get("start_sec") or item.get("startSec"), 0.0)
+        end_sec = _assembly_float(item.get("targetEndSec") or item.get("target_end_sec") or item.get("end_sec") or item.get("endSec"), 0.0)
+        fallback = _assembly_float(item.get("durationSec") or item.get("duration_sec"), 0.0)
+        target_duration = end_sec - start_sec if end_sec > start_sec else fallback
+        target_duration = max(0.04, float(target_duration or fallback or 0.1))
+        durations.append(target_duration)
+        label = f"v199v_{index}"
+        # tpad before trim makes short clips safe; trim enforces the Board duration.
+        filters.append(
+            f"[{index}:v:0]"
+            f"setpts=PTS-STARTPTS,"
+            f"tpad=stop_mode=clone:stop_duration=2.000,"
+            f"trim=duration={target_duration:.6f},"
+            f"setpts=PTS-STARTPTS"
+            f"[{label}]"
+        )
+        labels.append(f"[{label}]")
+
+    timeline_duration = max(0.1, sum(durations))
+    silence_index = len(paths)
+    args.extend([
+        "-f", "lavfi",
+        "-t", f"{timeline_duration:.6f}",
+        "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+    ])
+
+    concat_inputs = "".join(labels)
+    filters.append(
+        f"{concat_inputs}concat=n={len(labels)}:v=1:a=0[v199vcat];"
+        f"[v199vcat]"
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+        f"setsar=1,"
+        f"fps={safe_fps},"
+        f"format=yuv420p,"
+        f"setpts=PTS-STARTPTS[v199vout]"
+    )
+
+    print("[BOARD ASSEMBLY STRICT BOARD TIMELINE START V199V]", {
+        "job_id": job_id,
+        "items": len(paths),
+        "boardTimelineDurationSec": round(timeline_duration, 6),
+        "fps": safe_fps,
+        "mode": "trim_pad_each_scene_then_global_cfr",
+    })
+
+    _run_ffmpeg([
+        *args,
+        "-filter_complex", ";".join(filters),
+        "-map", "[v199vout]",
+        "-map", f"{silence_index}:a:0",
+        "-t", f"{timeline_duration:.6f}",
+        "-c:v", "libx264",
+        "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+        "-crf", AVA_BOARD_ASSEMBLY_CRF,
+        "-pix_fmt", "yuv420p",
+        "-r", str(safe_fps),
+        "-video_track_timescale", "90000",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-ar", "48000",
+        "-ac", "2",
+        "-movflags", "+faststart",
+        str(target),
+    ])
+
+    actual = _ffprobe_duration(target) or 0.0
+    result = {
+        "applied": True,
+        "reason": "strict_board_timeline_v199v",
+        "items": len(paths),
+        "expectedDurationSec": timeline_duration,
+        "actualDurationSec": actual,
+        "durationDeltaSec": actual - timeline_duration,
+        "fps": safe_fps,
+    }
+    print("[BOARD ASSEMBLY STRICT BOARD TIMELINE DONE V199V]", {"job_id": job_id, **result})
+    return result
+
+
+# V199AB_ABSOLUTE_FRAME_TIMELINE:
+# Experimental renderer: place every scene on the absolute Board timeline instead of
+# concatenating by summed durations. This is meant to catch/fix internal boundary
+# jumps where the final length is correct but a later scene visually appears late.
+# It also reads optional per-scene fields for future/manual correction:
+#   assembly_visual_offset_sec / visual_offset_sec / video_offset_sec
+# Negative offset means: advance visual content inside that scene slot.
+def _render_board_absolute_frame_timeline_concat_v199ab(
+    paths: list[Path],
+    prepared_items: list[dict[str, Any]],
+    target: Path,
+    *,
+    width: int,
+    height: int,
+    fps: int,
+    job_id: str,
+) -> dict[str, Any]:
+    if not paths:
+        return {"applied": False, "reason": "no_paths"}
+
+    safe_fps = max(1, int(fps or 30))
+    args = ["-y"]
+    filters: list[str] = []
+    overlays: list[dict[str, Any]] = []
+
+    for index, path in enumerate(paths):
+        args.extend(["-i", str(path)])
+        item = prepared_items[index] if index < len(prepared_items) and isinstance(prepared_items[index], dict) else {}
+        scene_id = str(item.get("scene_id") or item.get("sceneId") or item.get("id") or f"scene_{index+1:02d}")
+        start_sec = _assembly_float(item.get("targetStartSec") or item.get("target_start_sec") or item.get("start_sec") or item.get("startSec"), 0.0)
+        end_sec = _assembly_float(item.get("targetEndSec") or item.get("target_end_sec") or item.get("end_sec") or item.get("endSec"), 0.0)
+        fallback = _assembly_float(item.get("durationSec") or item.get("duration_sec"), 0.0)
+        target_duration = end_sec - start_sec if end_sec > start_sec else fallback
+        target_duration = max(0.04, float(target_duration or fallback or 0.1))
+        if end_sec <= start_sec:
+            end_sec = start_sec + target_duration
+
+        visual_offset = _assembly_float(
+            item.get("assembly_visual_offset_sec")
+            or item.get("assemblyVisualOffsetSec")
+            or item.get("visual_offset_sec")
+            or item.get("visualOffsetSec")
+            or item.get("video_offset_sec")
+            or item.get("videoOffsetSec"),
+            0.0,
+        )
+
+        # Snap only for audit; placement still uses Board seconds so total timeline stays exact.
+        expected_start_frame = int(round(start_sec * safe_fps))
+        expected_end_frame = int(round(end_sec * safe_fps))
+        expected_frames = max(1, expected_end_frame - expected_start_frame)
+        snapped_duration = expected_frames / float(safe_fps)
+
+        overlays.append({
+            "index": index,
+            "path": path,
+            "scene_id": scene_id,
+            "start_sec": start_sec,
+            "end_sec": end_sec,
+            "target_duration": target_duration,
+            "visual_offset": visual_offset,
+            "expected_start_frame": expected_start_frame,
+            "expected_end_frame": expected_end_frame,
+            "expected_frames": expected_frames,
+            "snapped_duration": snapped_duration,
+        })
+
+    if not overlays:
+        return {"applied": False, "reason": "no_overlays"}
+
+    timeline_duration = max(0.1, max(float(x["end_sec"]) for x in overlays))
+    total_frame_estimate = int(round(timeline_duration * safe_fps))
+    silence_index = len(paths)
+    args.extend([
+        "-f", "lavfi",
+        "-t", f"{timeline_duration:.6f}",
+        "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+    ])
+
+    # Base canvas. Overlay all scene videos at absolute Board starts.
+    filters.append(
+        f"color=c=black:s={width}x{height}:r={safe_fps}:d={timeline_duration:.6f},"
+        f"format=yuv420p,setpts=PTS-STARTPTS[v199ab_base]"
+    )
+
+    print("[BOARD ASSEMBLY ABSOLUTE FRAME TIMELINE START V199AB]", {
+        "job_id": job_id,
+        "items": len(overlays),
+        "boardTimelineDurationSec": round(timeline_duration, 6),
+        "fps": safe_fps,
+        "totalFrameEstimate": total_frame_estimate,
+        "mode": "absolute_overlay_by_board_start_end",
+    }, flush=True)
+
+    prev_label = "v199ab_base"
+    audit_rows: list[dict[str, Any]] = []
+    for row in overlays:
+        index = int(row["index"])
+        scene_id = str(row["scene_id"])
+        start_sec = float(row["start_sec"])
+        end_sec = float(row["end_sec"])
+        target_duration = float(row["target_duration"])
+        visual_offset = float(row["visual_offset"])
+        expected_frames = int(row["expected_frames"])
+        expected_start_frame = int(row["expected_start_frame"])
+        expected_end_frame = int(row["expected_end_frame"])
+
+        content_seek = max(0.0, -visual_offset)
+        start_hold = max(0.0, visual_offset)
+        raw_label = f"v199ab_raw_{index}"
+        label = f"v199ab_{index}"
+        out_label = f"v199ab_mix_{index}"
+
+        # Negative visual offset advances content by seeking into the source video.
+        # Positive visual offset delays visual motion by cloning the first frame first.
+        if start_hold > 0.0005:
+            filters.append(
+                f"[{index}:v:0]"
+                f"setpts=PTS-STARTPTS,"
+                f"tpad=start_mode=clone:start_duration={start_hold:.6f}:stop_mode=clone:stop_duration=2.000,"
+                f"trim=duration={target_duration:.6f},"
+                f"setpts=PTS-STARTPTS"
+                f"[{raw_label}]"
+            )
+        elif content_seek > 0.0005:
+            filters.append(
+                f"[{index}:v:0]"
+                f"setpts=PTS-STARTPTS,"
+                f"tpad=stop_mode=clone:stop_duration=2.000,"
+                f"trim=start={content_seek:.6f}:duration={target_duration:.6f},"
+                f"setpts=PTS-STARTPTS"
+                f"[{raw_label}]"
+            )
+        else:
+            filters.append(
+                f"[{index}:v:0]"
+                f"setpts=PTS-STARTPTS,"
+                f"tpad=stop_mode=clone:stop_duration=2.000,"
+                f"trim=duration={target_duration:.6f},"
+                f"setpts=PTS-STARTPTS"
+                f"[{raw_label}]"
+            )
+
+        filters.append(
+            f"[{raw_label}]"
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+            f"setsar=1,"
+            f"fps={safe_fps},"
+            f"format=yuv420p,"
+            f"setpts=PTS-STARTPTS+{start_sec:.6f}/TB"
+            f"[{label}]"
+        )
+        filters.append(
+            f"[{prev_label}][{label}]"
+            f"overlay=eof_action=pass:shortest=0:enable='between(t,{start_sec:.6f},{end_sec:.6f})'"
+            f"[{out_label}]"
+        )
+        prev_label = out_label
+        audit_rows.append({
+            "scene_id": scene_id,
+            "start_sec": round(start_sec, 6),
+            "end_sec": round(end_sec, 6),
+            "duration_sec": round(target_duration, 6),
+            "start_frame": expected_start_frame,
+            "end_frame": expected_end_frame,
+            "frames": expected_frames,
+            "visual_offset_sec": round(visual_offset, 6),
+            "content_seek_sec": round(content_seek, 6),
+        })
+
+    filters.append(f"[{prev_label}]setpts=PTS-STARTPTS,format=yuv420p[v199about]")
+
+    # Log compact audit around scene boundaries. Full row list is useful for diagnosing
+    # whether late scenes start from accumulated duration or absolute Board time.
+    print("[BOARD ASSEMBLY ABSOLUTE FRAME AUDIT V199AB]", {
+        "job_id": job_id,
+        "fps": safe_fps,
+        "rows": audit_rows,
+    }, flush=True)
+
+    _run_ffmpeg([
+        *args,
+        "-filter_complex", ";".join(filters),
+        "-map", "[v199about]",
+        "-map", f"{silence_index}:a:0",
+        "-t", f"{timeline_duration:.6f}",
+        "-c:v", "libx264",
+        "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+        "-crf", AVA_BOARD_ASSEMBLY_CRF,
+        "-pix_fmt", "yuv420p",
+        "-r", str(safe_fps),
+        "-video_track_timescale", "90000",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-ar", "48000",
+        "-ac", "2",
+        "-movflags", "+faststart",
+        str(target),
+    ])
+
+    actual = _ffprobe_duration(target) or 0.0
+    result = {
+        "applied": True,
+        "reason": "absolute_frame_timeline_v199ab",
+        "items": len(paths),
+        "expectedDurationSec": timeline_duration,
+        "actualDurationSec": actual,
+        "durationDeltaSec": actual - timeline_duration,
+        "fps": safe_fps,
+        "totalFrameEstimate": total_frame_estimate,
+    }
+    print("[BOARD ASSEMBLY ABSOLUTE FRAME TIMELINE DONE V199AB]", {"job_id": job_id, **result}, flush=True)
+    return result
+
 def _run_board_assembly_job(job_id: str) -> None:
     job = BOARD_ASSEMBLY_JOBS.get(job_id)
     if not job:
@@ -5511,14 +6331,37 @@ def _run_board_assembly_job(job_id: str) -> None:
             suffix = "scene_audio_draft"
         out_path = target_dir / f"{job_id}_{suffix}.mp4"
 
-        _run_ffmpeg([
-            "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(concat_file),
-            "-c", "copy",
-            str(scene_concat_path),
-        ])
+        # V199W: force strict visual timeline for every Board Assembly export.
+        # V199V was too narrow: it only ran for audio_mode == "original_only".
+        # Current mixed i2v/ia2v projects may still have master/original audio but a different
+        # audio_mode flag, so the strict timeline was skipped and drift remained.
+        strict_timeline_result_v199v = {"applied": False, "reason": "no_normalized_paths_v199w"}
+        if normalized_paths:
+            print("[BOARD ASSEMBLY STRICT BOARD TIMELINE FORCE V199W]", {
+                "job_id": job_id,
+                "audio_mode": audio_mode,
+                "wants_original_audio": bool(wants_original_audio),
+                "has_original_audio_path": bool(original_audio_path),
+                "items": len(normalized_paths),
+            })
+            strict_timeline_result_v199v = _render_board_absolute_frame_timeline_concat_v199ab(
+                normalized_paths,
+                prepared_items,
+                scene_concat_path,
+                width=width,
+                height=height,
+                fps=fps,
+                job_id=job_id,
+            )
+        else:
+            _run_ffmpeg([
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(concat_file),
+                "-c", "copy",
+                str(scene_concat_path),
+            ])
 
         # AVA_ASSEMBLY_SKIP_LEGACY_SILENT_XFADE_V140A:
         # There are two transition engines in this file. The older V134D engine renders
@@ -5739,22 +6582,37 @@ def _run_board_assembly_job(job_id: str) -> None:
                 })
 
 
-        # V196F: after watermark/transitions, make the final MP4 safe for Windows/iPhone
-        # local players without changing the actual audio/video timeline.
+        # V199X: if V199V/V199W already built the file on the exact Board timeline,
+        # do not run the older V196F reencode pass on top of it. V196F was useful
+        # for Windows-safe packaging, but after strict timeline it can re-time the
+        # already-correct file by a few frames and bring back end-of-song lip drift.
         local_player_safe_result_v196f = {"applied": False, "reason": "not_run"}
-        try:
-            local_player_safe_path_v196f = work_dir / f"{job_id}_local_player_safe_v196f.mp4"
-            local_player_safe_result_v196f = _assembly_make_local_player_safe_v196f(
-                out_path,
-                local_player_safe_path_v196f,
-                fps=fps,
-                job_id=job_id,
-            )
-            if local_player_safe_result_v196f.get("applied") and local_player_safe_path_v196f.exists() and local_player_safe_path_v196f.stat().st_size > 0:
-                shutil.copy2(local_player_safe_path_v196f, out_path)
-        except Exception as exc:
-            local_player_safe_result_v196f = {"applied": False, "reason": f"failed: {exc}"}
-            print("[BOARD ASSEMBLY LOCAL PLAYER SAFE ERROR V196F]", {"job_id": job_id, "error": str(exc)}, flush=True)
+        strict_timeline_applied_v199x = bool((locals().get("strict_timeline_result_v199v") or {}).get("applied"))
+        if strict_timeline_applied_v199x:
+            local_player_safe_result_v196f = {
+                "applied": False,
+                "reason": "skipped_after_strict_board_timeline_v199x",
+                "strictTimelineApplied": True,
+            }
+            print("[BOARD ASSEMBLY LOCAL PLAYER SAFE SKIP V199X]", {
+                "job_id": job_id,
+                "reason": "strict_board_timeline_already_exact",
+                "strict_timeline": locals().get("strict_timeline_result_v199v") or {},
+            }, flush=True)
+        else:
+            try:
+                local_player_safe_path_v196f = work_dir / f"{job_id}_local_player_safe_v196f.mp4"
+                local_player_safe_result_v196f = _assembly_make_local_player_safe_v196f(
+                    out_path,
+                    local_player_safe_path_v196f,
+                    fps=fps,
+                    job_id=job_id,
+                )
+                if local_player_safe_result_v196f.get("applied") and local_player_safe_path_v196f.exists() and local_player_safe_path_v196f.stat().st_size > 0:
+                    shutil.copy2(local_player_safe_path_v196f, out_path)
+            except Exception as exc:
+                local_player_safe_result_v196f = {"applied": False, "reason": f"failed: {exc}"}
+                print("[BOARD ASSEMBLY LOCAL PLAYER SAFE ERROR V196F]", {"job_id": job_id, "error": str(exc)}, flush=True)
 
         urls = _public_static_url(f"assets/board_assembly/{out_path.name}")
         final_duration = _ffprobe_duration(out_path)
