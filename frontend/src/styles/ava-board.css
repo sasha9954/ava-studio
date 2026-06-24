@@ -7384,3 +7384,155 @@
   font-weight: 900;
 }
 
+/* AVA_BOARD_TRIM_COMPACT_TIMEPICKER_V201D: tiny play/pause + current-time IN/OUT picker. */
+.avaBoardAssemblyVideoTrimBodyV201A {
+  padding: 7px 9px 8px;
+  gap: 6px;
+}
+
+.avaBoardAssemblyVideoTrimCompactV201D {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.avaBoardAssemblyVideoTrimCompactPlayerV201D {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.avaBoardAssemblyVideoTrimPlayV201D,
+.avaBoardAssemblyVideoTrimPickersV201D button,
+.avaBoardAssemblyVideoTrimMiniActionsV201D button {
+  border: 1px solid rgba(120, 255, 224, .22);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .72);
+  color: rgba(232, 243, 255, .9);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.avaBoardAssemblyVideoTrimPlayV201D {
+  height: 30px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.avaBoardAssemblyVideoTrimClockV201D {
+  height: 30px;
+  border: 1px solid rgba(120, 255, 224, .18);
+  border-radius: 999px;
+  background: rgba(3, 8, 20, .56);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: rgba(203, 213, 225, .78);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.avaBoardAssemblyVideoTrimClockV201D strong {
+  color: #78ffe0;
+  font-size: 13px;
+  min-width: 42px;
+  text-align: right;
+}
+
+.avaBoardAssemblyVideoTrimPickersV201D {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.avaBoardAssemblyVideoTrimPickersV201D button {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.avaBoardAssemblyVideoTrimPickersV201D strong {
+  color: #f7d36b;
+  font-size: 12px;
+  text-align: center;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.avaBoardAssemblyVideoTrimMiniActionsV201D {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: -1px;
+}
+
+.avaBoardAssemblyVideoTrimMiniActionsV201D button {
+  min-height: 22px;
+  padding: 0 9px;
+  font-size: 10px;
+}
+
+.avaBoardAssemblyVideoTrimPlayV201D:disabled,
+.avaBoardAssemblyVideoTrimPickersV201D button:disabled,
+.avaBoardAssemblyVideoTrimMiniActionsV201D button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* AVA_BOARD_TRIM_COMPACT_LAYOUT_V201E: keep video visible; only review action under preview. */
+.avaBoardVideoActions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.avaBoardVideoActions:empty {
+  display: none;
+  margin: 0;
+  padding: 0;
+}
+
+.avaBoardVideoActions .avaBoardVideoReviewAction {
+  width: 100%;
+  min-height: 28px;
+  padding: 0 12px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.avaBoardAssemblyVideoTrimPanelV201A {
+  margin-top: 8px;
+}
+
+.avaBoardAssemblyVideoTrimSummaryV201A {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.avaBoardAssemblyVideoTrimBodyV201A {
+  padding: 6px 8px 7px;
+}
+
+.avaBoardSceneDurationPanel {
+  margin-top: 8px;
+}
+
+.avaBoardSceneDurationPanel:not(.isTimingLocked) {
+  padding: 8px 12px;
+}
+
+.avaBoardDurationSlider {
+  gap: 6px;
+}
+
+.avaBoardDurationSlider input[type='range'] {
+  margin: 0;
+}
+
