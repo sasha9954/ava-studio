@@ -7060,3 +7060,156 @@
   }
 }
 
+/* AVA_ASSEMBLY_VERTICAL_PROJECT_FRAME_V200N: make Assembly preview/result frame match project format after F5. */
+.avaAssemblyPreview.isPortraitV195F,
+.avaAssemblyFinalPreview.isPortraitV195F {
+  display: grid;
+  justify-items: center;
+  align-items: start;
+  overflow: visible;
+}
+
+.avaAssemblyPreview.isPortraitV195F .avaAssemblyVideoPreviewShellV195C,
+.avaAssemblyFinalPreview.isPortraitV195F .avaAssemblyVideoPreviewShellV195C {
+  width: min(100%, 460px);
+  margin: 0 auto;
+}
+
+.avaAssemblyVideoViewportV195C.isFormat916 {
+  width: min(100%, 430px) !important;
+  max-width: min(100%, 46vh, 430px);
+  aspect-ratio: 9 / 16 !important;
+  margin: 0 auto;
+}
+
+.avaAssemblyVideoViewportV195C.isFormat916 video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.avaAssemblyVideoViewportV195C.isFormat11 {
+  width: min(100%, 620px) !important;
+  aspect-ratio: 1 / 1 !important;
+  margin: 0 auto;
+}
+
+.avaAssemblyVideoViewportV195C.isFormat169 {
+  width: 100%;
+  aspect-ratio: 16 / 9 !important;
+}
+
+/* AVA_ASSEMBLY_RESULT_FORMAT_LOCK_V200O: Assembly preview/final/result frame follows project format. */
+.avaAssemblyPreview.isPortraitV195F,
+.avaAssemblyFinalPreview.isPortraitV195F {
+  display: grid;
+  justify-items: center;
+  align-items: start;
+}
+
+.avaAssemblyVideoViewportV195C.isFormat916,
+.avaAssemblyWatermarkPreview.isFormat916 {
+  width: min(100%, 360px) !important;
+  max-width: min(100%, 42vh, 360px) !important;
+  aspect-ratio: 9 / 16 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.avaAssemblyVideoViewportV195C.isFormat916 video,
+.avaAssemblyFinalPreview.isPortraitV195F video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+}
+
+.avaAssemblyVideoViewportV195C.isFormat11,
+.avaAssemblyWatermarkPreview.isFormat11 {
+  width: min(100%, 560px) !important;
+  aspect-ratio: 1 / 1 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.avaAssemblyVideoViewportV195C.isFormat169,
+.avaAssemblyWatermarkPreview.isFormat169 {
+  width: 100% !important;
+  aspect-ratio: 16 / 9 !important;
+}
+
+
+/* AVA_ASSEMBLY_FINAL_PREVIEW_VERTICAL_V200Q
+   Final preview follows the actual MP4 metadata. Backend may build 720x1280 even if
+   an older payload label says 16:9; the loaded <video> metadata switches class. */
+.avaAssemblyFinalPreviewShellV195C {
+  display: grid;
+  justify-items: center;
+}
+
+.avaAssemblyFinalPreviewShellV195C .avaAssemblyVideoViewportV195C.isFormat916 {
+  width: min(100%, 420px);
+  aspect-ratio: 9 / 16;
+  max-height: min(82vh, 820px);
+}
+
+.avaAssemblyFinalPreviewShellV195C .avaAssemblyVideoViewportV195C.isFormat916 video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.avaAssemblyFinalPreviewShellV195C .avaAssemblyVideoViewportV195C.isFormat169 {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.avaAssemblyFinalPreviewShellV195C .avaAssemblyVideoViewportV195C.isFormat11 {
+  width: min(100%, 620px);
+  aspect-ratio: 1 / 1;
+}
+/* AVA_ASSEMBLY_FINAL_PREVIEW_VERTICAL_V200Q_END */
+
+
+/* AVA_ASSEMBLY_COMPACT_PORTRAIT_FINAL_PREVIEW_V200R
+   The exported MP4 can be true 9:16, but the browser preview shell was still leaving
+   a big dark stage around it. Keep the final/scene preview card compact for portrait. */
+.avaAssemblyPage .avaAssemblyFinalPreviewShellV195C,
+.avaAssemblyPage .avaAssemblyVideoPreviewShellV195C {
+  display: grid;
+  justify-items: center;
+}
+
+.avaAssemblyPage .avaAssemblyFinalPreview .avaAssemblyVideoViewportV195C.isFormat916,
+.avaAssemblyPage .avaAssemblyFinalPreview .avaAssemblyVideoViewportV195C.isPortraitV195F,
+.avaAssemblyPage .avaAssemblyFinalPreview .avaAssemblyVideoViewportV195C[data-format="9:16"],
+.avaAssemblyPage .avaAssemblyFinalVideoWithWatermark.isFormat916,
+.avaAssemblyPage .avaAssemblyFinalVideoWithWatermark.isPortraitV195F {
+  width: min(100%, 300px) !important;
+  max-width: min(300px, 34vh) !important;
+  aspect-ratio: 9 / 16 !important;
+  margin-inline: auto !important;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  background: #050816 !important;
+}
+
+.avaAssemblyPage .avaAssemblyFinalPreview .avaAssemblyVideoViewportV195C.isFormat916 > video,
+.avaAssemblyPage .avaAssemblyFinalPreview .avaAssemblyVideoViewportV195C.isPortraitV195F > video,
+.avaAssemblyPage .avaAssemblyFinalVideoWithWatermark.isFormat916 > video,
+.avaAssemblyPage .avaAssemblyFinalVideoWithWatermark.isPortraitV195F > video {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  aspect-ratio: 9 / 16 !important;
+  object-fit: cover !important;
+  display: block !important;
+  background: #050816 !important;
+}
+
+.avaAssemblyPage .avaAssemblyFinalPreview .avaBoardSectionHead {
+  max-width: 520px;
+  margin-inline: auto;
+  width: 100%;
+}
+/* AVA_ASSEMBLY_COMPACT_PORTRAIT_FINAL_PREVIEW_V200R_END */
+

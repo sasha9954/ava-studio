@@ -5677,18 +5677,27 @@ def _create_black_assembly_clip(
 
 
 def _assembly_scene_audio_volume_for_item(item: dict[str, Any], audio_mode: str, scene_volume: float) -> float:
+    """AVA_BOARD_ASSEMBLY_SCENE_AUDIO_ABSOLUTE_V200U.
+
+    Scene videos can contain generated dialogue/SFX. Earlier logic muted IA2V/lip-sync
+    scene audio whenever the selected mode referenced original/master audio. If the
+    master audio path is missing after restore/import, that makes the final Assembly
+    silent even though scene MP4 files have audio. Keep scene audio unless the user
+    explicitly selected original_only or the scene explicitly asks to mute it.
+    """
     mode = str(audio_mode or "").lower()
-    route = str((item or {}).get("route") or "").lower()
+    data = item or {}
 
     if mode == "original_only":
         return 0.0
 
-    uses_original = mode in {"original_plus_scene", "original_plus_music_scene"}
-    is_lipsync = route in {"ia2v", "ia2v_lipsync", "ia2v_instrumental", "lip_sync", "lipsync"}
-
-    # Lip-sync / ia2v audio is only a driver for mouth movement.
-    # If master/original audio is present, mute generated scene audio to avoid echo/lead/lag.
-    if uses_original and is_lipsync:
+    explicit_mute = _assembly_bool(
+        data.get("mute_scene_audio")
+        or data.get("muteSceneAudio")
+        or data.get("scene_audio_muted")
+        or data.get("sceneAudioMuted")
+    )
+    if explicit_mute:
         return 0.0
 
     return max(0.0, float(scene_volume))
@@ -5698,6 +5707,111 @@ def _assembly_scene_audio_volume_for_item(item: dict[str, Any], audio_mode: str,
 # Optional post-concat visual xfade. It never changes the stable plain concat path first.
 # Flow: build normal scene_concat_path -> if transitions enabled and allowed, try visual xfade into temp -> replace concat.
 # If xfade fails, keep normal concat and finish job.
+
+
+# AVA_BOARD_ASSEMBLY_PROJECT_AUDIO_FALLBACK_V200R:
+# If the Assembly page was restored from board_assembly snapshot, the payload can miss
+# original_audio_url even though the project still has master/timing audio in Board or
+# Manual Timing snapshots. Recover that top-level project audio here so audio modes like
+# original_plus_scene / original_plus_music_scene actually get a real master track.
+def _assembly_project_original_audio_path_v200r(payload: dict[str, Any], *, job_id: str = "") -> Path | None:
+    project_id = str(payload.get("project_id") or payload.get("projectId") or "").strip()
+    if not project_id:
+        return None
+
+    def try_resolve(value: Any = "", asset_id: Any = "", *, label: str = "") -> Path | None:
+        value_text = str(value or "").strip()
+        asset_text = str(asset_id or "").strip()
+        if not value_text and not asset_text:
+            return None
+        try:
+            path = _resolve_local_file(value_text, asset_id=asset_text or None)
+            if path and path.exists():
+                print("[BOARD ASSEMBLY PROJECT AUDIO FALLBACK V200R]", {
+                    "job_id": job_id,
+                    "project_id": project_id,
+                    "label": label,
+                    "path": str(path),
+                }, flush=True)
+                return path
+        except Exception as exc:
+            print("[BOARD ASSEMBLY PROJECT AUDIO FALLBACK SKIP V200R]", {
+                "job_id": job_id,
+                "project_id": project_id,
+                "label": label,
+                "error": str(exc)[:240],
+            }, flush=True)
+        return None
+
+    url_keys = (
+        "assetApiPath", "asset_api_path", "audioAssetApiPath", "audio_asset_api_path",
+        "apiPath", "api_path", "url", "src", "audioUrl", "audio_url",
+        "sourceAudioUrl", "source_audio_url", "masterAudioUrl", "master_audio_url",
+        "fileUrl", "file_url",
+    )
+    id_keys = (
+        "assetId", "asset_id", "audioAssetId", "audio_asset_id",
+        "sourceAudioAssetId", "source_audio_asset_id",
+        "masterAudioAssetId", "master_audio_asset_id",
+    )
+    audio_object_keys = (
+        "audio", "sourceAudio", "source_audio", "timingAudio", "timing_audio",
+        "originalAudio", "original_audio", "masterAudio", "master_audio",
+        "mixedAudio", "mixed_audio", "mainAudio", "main_audio", "uploadedAudio", "uploaded_audio",
+    )
+
+    def from_dict(obj: Any, *, label: str) -> Path | None:
+        if not isinstance(obj, dict):
+            return None
+        direct_value = ""
+        direct_asset = ""
+        for key in url_keys:
+            if obj.get(key):
+                direct_value = obj.get(key)
+                break
+        for key in id_keys:
+            if obj.get(key):
+                direct_asset = obj.get(key)
+                break
+        resolved = try_resolve(direct_value, direct_asset, label=label)
+        if resolved:
+            return resolved
+        return None
+
+    try:
+        db = store.get_db() or {}
+        snapshots = ((db.get("snapshots") or {}).get(project_id) or {})
+    except Exception as exc:
+        print("[BOARD ASSEMBLY PROJECT AUDIO FALLBACK DB ERROR V200R]", {
+            "job_id": job_id,
+            "project_id": project_id,
+            "error": str(exc)[:240],
+        }, flush=True)
+        return None
+
+    # Prefer Board/Manual Timing project-level audio, then existing Assembly snapshot audio.
+    for stage in ("board", "manual_timing", "board_assembly"):
+        wrapper = snapshots.get(stage) if isinstance(snapshots, dict) else None
+        data = wrapper.get("data") if isinstance(wrapper, dict) else wrapper
+        if not isinstance(data, dict):
+            continue
+
+        resolved = from_dict(data, label=f"{stage}:root")
+        if resolved:
+            return resolved
+
+        for key in audio_object_keys:
+            resolved = from_dict(data.get(key), label=f"{stage}:{key}")
+            if resolved:
+                return resolved
+
+    print("[BOARD ASSEMBLY PROJECT AUDIO FALLBACK MISS V200R]", {
+        "job_id": job_id,
+        "project_id": project_id,
+    }, flush=True)
+    return None
+
+
 def _assembly_transition_config_v134d(payload: dict[str, Any], audio_mode: str, original_audio_path: Path | None) -> dict[str, Any]:
     transitions = payload.get("transitions") if isinstance(payload.get("transitions"), dict) else {}
     requested = _assembly_bool(
@@ -6642,7 +6756,59 @@ def _render_board_absolute_frame_timeline_concat_v199ab(
             "content_seek_sec": round(content_seek, 6),
         })
 
+    audio_labels_v200u: list[str] = []
+    audio_audit_v200u: list[dict[str, Any]] = []
+    for row_audio_v200u in overlays:
+        try:
+            audio_index_v200u = int(row_audio_v200u["index"])
+            audio_path_v200u = Path(row_audio_v200u["path"])
+            if not _ffprobe_has_audio(audio_path_v200u):
+                audio_audit_v200u.append({"index": audio_index_v200u, "scene_id": row_audio_v200u.get("scene_id"), "has_audio": False})
+                continue
+            audio_start_v200u = max(0.0, float(row_audio_v200u["start_sec"]))
+            audio_duration_v200u = max(0.04, float(row_audio_v200u["target_duration"]))
+            audio_delay_ms_v200u = max(0, int(round(audio_start_v200u * 1000.0)))
+            audio_label_v200u = f"v199ab_audio_{audio_index_v200u}"
+            filters.append(
+                f"[{audio_index_v200u}:a:0]"
+                f"aresample=48000,atrim=duration={audio_duration_v200u:.6f},"
+                f"asetpts=PTS-STARTPTS,"
+                f"adelay={audio_delay_ms_v200u}|{audio_delay_ms_v200u},"
+                f"apad,atrim=duration={timeline_duration:.6f},"
+                f"asetpts=N/SR/TB"
+                f"[{audio_label_v200u}]"
+            )
+            audio_labels_v200u.append(f"[{audio_label_v200u}]")
+            audio_audit_v200u.append({
+                "index": audio_index_v200u,
+                "scene_id": row_audio_v200u.get("scene_id"),
+                "has_audio": True,
+                "start_sec": round(audio_start_v200u, 6),
+                "duration_sec": round(audio_duration_v200u, 6),
+                "delay_ms": audio_delay_ms_v200u,
+            })
+        except Exception as exc:
+            audio_audit_v200u.append({"index": row_audio_v200u.get("index"), "scene_id": row_audio_v200u.get("scene_id"), "error": str(exc)})
+
+    audio_map_v200u = f"{silence_index}:a:0"
+    if audio_labels_v200u:
+        audio_map_v200u = "[v199ab_audio_mix_v200u]"
+        filters.append(
+            "".join(audio_labels_v200u)
+            + f"amix=inputs={len(audio_labels_v200u)}:duration=longest:dropout_transition=0:normalize=0,"
+            + f"atrim=duration={timeline_duration:.6f},asetpts=N/SR/TB[v199ab_audio_mix_v200u]"
+        )
+
     filters.append(f"[{prev_label}]setpts=PTS-STARTPTS,format=yuv420p[v199about]")
+
+    print("[BOARD ASSEMBLY SCENE AUDIO ABSOLUTE MIX V200U]", {
+        "job_id": job_id,
+        "items": len(overlays),
+        "audioInputs": len(audio_labels_v200u),
+        "audioMap": audio_map_v200u,
+        "timelineDurationSec": round(timeline_duration, 6),
+        "rows": audio_audit_v200u,
+    }, flush=True)
 
     # Log compact audit around scene boundaries. Full row list is useful for diagnosing
     # whether late scenes start from accumulated duration or absolute Board time.
@@ -6656,7 +6822,7 @@ def _render_board_absolute_frame_timeline_concat_v199ab(
         *args,
         "-filter_complex", ";".join(filters),
         "-map", "[v199about]",
-        "-map", f"{silence_index}:a:0",
+        "-map", audio_map_v200u,
         "-t", f"{timeline_duration:.6f}",
         "-c:v", "libx264",
         "-preset", AVA_BOARD_ASSEMBLY_PRESET,
@@ -6682,9 +6848,350 @@ def _render_board_absolute_frame_timeline_concat_v199ab(
         "durationDeltaSec": actual - timeline_duration,
         "fps": safe_fps,
         "totalFrameEstimate": total_frame_estimate,
+        "sceneAudioAbsoluteV200U": bool(audio_labels_v200u),
+        "sceneAudioInputsV200U": len(audio_labels_v200u),
     }
+    if audio_labels_v200u:
+        print("[BOARD ASSEMBLY SCENE AUDIO ABSOLUTE APPLIED V200U]", {
+            "job_id": job_id,
+            "audioInputs": len(audio_labels_v200u),
+            "timelineDurationSec": round(timeline_duration, 6),
+        }, flush=True)
     print("[BOARD ASSEMBLY ABSOLUTE FRAME TIMELINE DONE V199AB]", {"job_id": job_id, **result}, flush=True)
     return result
+
+
+
+def _assembly_output_format_lock_v200o(payload: dict[str, Any], default_width: int = 1280, default_height: int = 720) -> dict[str, Any]:
+    """AVA_ASSEMBLY_RESULT_FORMAT_LOCK_V200O: enforce project output format on backend."""
+    def token(value: Any) -> str:
+        raw = str(value or "").strip().lower().replace(" ", "")
+        if not raw:
+            return ""
+        if "9:16" in raw or "916" in raw or "720x1280" in raw or "720×1280" in raw or "vertical" in raw or "portrait" in raw:
+            return "9:16"
+        if "1:1" in raw or raw == "11" or "1024x1024" in raw or "1024×1024" in raw or "square" in raw:
+            return "1:1"
+        if "16:9" in raw or "169" in raw or "1280x720" in raw or "1280×720" in raw or "horizontal" in raw or "landscape" in raw:
+            return "16:9"
+        match = re.search(r"(\d{3,4})[x×:](\d{3,4})", raw)
+        if match:
+            w = int(match.group(1))
+            h = int(match.group(2))
+            if h > w * 1.2:
+                return "9:16"
+            if w > h * 1.2:
+                return "16:9"
+            return "1:1"
+        return ""
+
+    candidates: list[Any] = [
+        payload.get("aspect_ratio"), payload.get("aspectRatio"), payload.get("output_format"), payload.get("outputFormat"), payload.get("format"),
+        payload.get("resolution"), payload.get("orientation"), payload.get("project_format"), payload.get("projectFormat"),
+        f"{payload.get('width')}x{payload.get('height')}" if payload.get("width") and payload.get("height") else "",
+        f"{payload.get('output_width')}x{payload.get('output_height')}" if payload.get("output_width") and payload.get("output_height") else "",
+        f"{payload.get('outputWidth')}x{payload.get('outputHeight')}" if payload.get("outputWidth") and payload.get("outputHeight") else "",
+    ]
+
+    project_id = str(payload.get("project_id") or payload.get("projectId") or "").strip()
+    if project_id:
+        try:
+            db = store.get_db()
+            project = (db.get("projects") or {}).get(project_id) or {}
+            board = ((db.get("snapshots") or {}).get(project_id) or {}).get("board") or {}
+            objs = [project, board, board.get("project") or {}, board.get("project_context") or {}, board.get("projectContext") or {}, board.get("format_contract") or {}, board.get("formatContract") or {}]
+            scenes = board.get("scenes") if isinstance(board.get("scenes"), list) else []
+            objs.extend([scene for scene in scenes[:3] if isinstance(scene, dict)])
+            for obj in objs:
+                if not isinstance(obj, dict):
+                    continue
+                candidates.extend([
+                    obj.get("format"), obj.get("project_format"), obj.get("projectFormat"), obj.get("resolution"), obj.get("orientation"),
+                    obj.get("aspect_ratio"), obj.get("aspectRatio"), obj.get("output_format"), obj.get("outputFormat"), obj.get("video_format"), obj.get("videoFormat"),
+                    f"{obj.get('width')}x{obj.get('height')}" if obj.get("width") and obj.get("height") else "",
+                    f"{obj.get('output_width')}x{obj.get('output_height')}" if obj.get("output_width") and obj.get("output_height") else "",
+                    f"{obj.get('outputWidth')}x{obj.get('outputHeight')}" if obj.get("outputWidth") and obj.get("outputHeight") else "",
+                    f"{obj.get('target_width')}x{obj.get('target_height')}" if obj.get("target_width") and obj.get("target_height") else "",
+                    f"{obj.get('targetWidth')}x{obj.get('targetHeight')}" if obj.get("targetWidth") and obj.get("targetHeight") else "",
+                ])
+        except Exception as exc:
+            print("[BOARD ASSEMBLY FORMAT PROJECT READ V200O ERROR]", {"project_id": project_id, "error": str(exc)}, flush=True)
+
+    aspect = ""
+    for candidate in candidates:
+        aspect = token(candidate)
+        if aspect:
+            break
+
+    width = _assembly_int(payload.get("width") or payload.get("output_width") or payload.get("outputWidth"), default_width)
+    height = _assembly_int(payload.get("height") or payload.get("output_height") or payload.get("outputHeight"), default_height)
+    if aspect == "9:16":
+        width, height = 720, 1280
+    elif aspect == "1:1":
+        width, height = 1024, 1024
+    elif aspect == "16:9":
+        width, height = 1280, 720
+    elif height > width * 1.2:
+        aspect = "9:16"
+    elif width > height * 1.2:
+        aspect = "16:9"
+    else:
+        aspect = "1:1"
+
+    fit_mode = str(payload.get("fit_mode") or payload.get("fitMode") or payload.get("output_fit_mode") or payload.get("outputFitMode") or ("cover" if aspect in {"9:16", "1:1"} else "contain")).strip().lower()
+    if fit_mode not in {"contain", "cover", "crop", "fill", "center_crop"}:
+        fit_mode = "cover" if aspect in {"9:16", "1:1"} else "contain"
+    if fit_mode in {"crop", "fill", "center_crop"}:
+        fit_mode = "cover"
+    return {"width": width, "height": height, "aspect_ratio": aspect, "fit_mode": fit_mode}
+
+
+
+def _assembly_output_format_lock_v200p(payload: dict[str, Any], raw_items: list[Any] | None = None, default_width: int = 1280, default_height: int = 720) -> dict[str, Any]:
+    """AVA_ASSEMBLY_PORTRAIT_PROBE_V200P: lock Assembly canvas to project/real video orientation.
+
+    Important: V200O read the snapshot wrapper instead of snapshot['data'], and frontend
+    may still send default 16:9. This helper prefers real project/board/scene format
+    contracts and then probes source videos before falling back to payload defaults.
+    """
+    def token(value: Any) -> str:
+        raw = str(value or "").strip().lower().replace(" ", "")
+        if not raw:
+            return ""
+        raw = raw.replace("_", "-")
+        if "9:16" in raw or "916" in raw or "720x1280" in raw or "720×1280" in raw or "vertical" in raw or "portrait" in raw or "shorts" in raw or "reels" in raw or "tiktok" in raw:
+            return "9:16"
+        if "1:1" in raw or raw == "11" or "1024x1024" in raw or "1024×1024" in raw or "square" in raw:
+            return "1:1"
+        if "16:9" in raw or "169" in raw or "1280x720" in raw or "1280×720" in raw or "horizontal" in raw or "landscape" in raw:
+            return "16:9"
+        match = re.search(r"(\d{3,4})[x×:](\d{3,4})", raw)
+        if match:
+            w = int(match.group(1))
+            h = int(match.group(2))
+            if h > w * 1.18:
+                return "9:16"
+            if w > h * 1.18:
+                return "16:9"
+            return "1:1"
+        return ""
+
+    def add_obj(candidates: list[Any], obj: Any) -> None:
+        if not isinstance(obj, dict):
+            return
+        keys = [
+            "format", "project_format", "projectFormat", "resolution", "orientation",
+            "aspect_ratio", "aspectRatio", "output_format", "outputFormat",
+            "video_format", "videoFormat", "target_format", "targetFormat",
+            "canvas_format", "canvasFormat", "ratio", "projectRatio",
+        ]
+        for key in keys:
+            candidates.append(obj.get(key))
+        for a, b in [
+            ("width", "height"), ("video_width", "video_height"), ("videoWidth", "videoHeight"),
+            ("output_width", "output_height"), ("outputWidth", "outputHeight"),
+            ("target_width", "target_height"), ("targetWidth", "targetHeight"),
+            ("canvas_width", "canvas_height"), ("canvasWidth", "canvasHeight"),
+        ]:
+            if obj.get(a) and obj.get(b):
+                candidates.append(f"{obj.get(a)}x{obj.get(b)}")
+
+    def choose(candidates: list[Any]) -> str:
+        found: list[str] = []
+        for candidate in candidates:
+            t = token(candidate)
+            if t:
+                found.append(t)
+        # In this app 16:9 is often a default fallback. If any real contract says 9:16,
+        # portrait must win over a stale/default 16:9.
+        if "9:16" in found:
+            return "9:16"
+        if "1:1" in found:
+            return "1:1"
+        if "16:9" in found:
+            return "16:9"
+        return ""
+
+    project_candidates: list[Any] = []
+    payload_candidates: list[Any] = []
+    item_candidates: list[Any] = []
+
+    project_id = str(payload.get("project_id") or payload.get("projectId") or "").strip()
+    if project_id:
+        try:
+            db = store.get_db()
+            project = (db.get("projects") or {}).get(project_id) or {}
+            snapshots = (db.get("snapshots") or {}).get(project_id) or {}
+            board_snap = snapshots.get("board") or {}
+            manual_snap = snapshots.get("manual_timing") or {}
+            assembly_snap = snapshots.get("board_assembly") or {}
+            board = board_snap.get("data") if isinstance(board_snap, dict) and isinstance(board_snap.get("data"), dict) else board_snap
+            manual = manual_snap.get("data") if isinstance(manual_snap, dict) and isinstance(manual_snap.get("data"), dict) else manual_snap
+            assembly = assembly_snap.get("data") if isinstance(assembly_snap, dict) and isinstance(assembly_snap.get("data"), dict) else assembly_snap
+            for obj in [
+                project,
+                project.get("settings") if isinstance(project, dict) else {},
+                project.get("format_contract") if isinstance(project, dict) else {},
+                project.get("formatContract") if isinstance(project, dict) else {},
+                board,
+                board.get("project") if isinstance(board, dict) else {},
+                board.get("project_context") if isinstance(board, dict) else {},
+                board.get("projectContext") if isinstance(board, dict) else {},
+                board.get("format_contract") if isinstance(board, dict) else {},
+                board.get("formatContract") if isinstance(board, dict) else {},
+                manual,
+                manual.get("project") if isinstance(manual, dict) else {},
+                manual.get("format_contract") if isinstance(manual, dict) else {},
+                assembly,
+                assembly.get("project") if isinstance(assembly, dict) else {},
+            ]:
+                add_obj(project_candidates, obj)
+            scenes = []
+            if isinstance(board, dict):
+                for key in ("scenes", "boardScenes", "board_scenes", "segments"):
+                    value = board.get(key)
+                    if isinstance(value, list) and value:
+                        scenes = value
+                        break
+            for scene in scenes[:12]:
+                add_obj(project_candidates, scene)
+                if isinstance(scene, dict):
+                    add_obj(project_candidates, scene.get("raw"))
+                    add_obj(project_candidates, scene.get("format_contract"))
+                    add_obj(project_candidates, scene.get("formatContract"))
+        except Exception as exc:
+            print("[BOARD ASSEMBLY FORMAT PROJECT READ V200P ERROR]", {"project_id": project_id, "error": str(exc)}, flush=True)
+
+    for obj in [payload, payload.get("project") if isinstance(payload, dict) else {}, payload.get("board") if isinstance(payload, dict) else {}, payload.get("boardSnapshot") if isinstance(payload, dict) else {}]:
+        add_obj(payload_candidates, obj)
+    if isinstance(raw_items, list):
+        for item in raw_items[:12]:
+            add_obj(item_candidates, item)
+            if isinstance(item, dict):
+                add_obj(item_candidates, item.get("raw"))
+                add_obj(item_candidates, item.get("format_contract"))
+                add_obj(item_candidates, item.get("formatContract"))
+
+    aspect = choose(project_candidates) or choose(item_candidates)
+
+    # If project metadata is missing, inspect real input files. This catches vertical scenes
+    # even when the frontend sent default 16:9. If sources are already 16:9 with black bars,
+    # project/scene format above is still the authoritative fix.
+    probe_rows: list[dict[str, Any]] = []
+    if not aspect and isinstance(raw_items, list):
+        portrait = landscape = square = 0
+        for item in raw_items[:10]:
+            if not isinstance(item, dict):
+                continue
+            try:
+                video_value = _assembly_item_video_value(item)
+                if not video_value:
+                    continue
+                source_path = _resolve_local_file(video_value)
+                w, h = _assembly_probe_video_size_v200p(source_path)
+                if w <= 0 or h <= 0:
+                    continue
+                row = {"scene_id": item.get("scene_id") or item.get("sceneId") or item.get("id"), "width": w, "height": h}
+                probe_rows.append(row)
+                if h > w * 1.18:
+                    portrait += 1
+                elif w > h * 1.18:
+                    landscape += 1
+                else:
+                    square += 1
+            except Exception:
+                continue
+        if portrait and portrait >= landscape:
+            aspect = "9:16"
+        elif square and square > portrait and square >= landscape:
+            aspect = "1:1"
+        elif landscape:
+            aspect = "16:9"
+        if probe_rows:
+            print("[BOARD ASSEMBLY SOURCE ORIENTATION PROBE V200P]", {"project_id": project_id, "aspect": aspect, "rows": probe_rows[:5]}, flush=True)
+
+    # Payload fallback must be last because many old Assembly payloads default to 16:9.
+    if not aspect:
+        aspect = choose(payload_candidates)
+
+    width = _assembly_int(payload.get("width") or payload.get("output_width") or payload.get("outputWidth"), default_width)
+    height = _assembly_int(payload.get("height") or payload.get("output_height") or payload.get("outputHeight"), default_height)
+    if aspect == "9:16":
+        width, height = 720, 1280
+    elif aspect == "1:1":
+        width, height = 1024, 1024
+    elif aspect == "16:9":
+        width, height = 1280, 720
+    elif height > width * 1.18:
+        aspect = "9:16"
+    elif width > height * 1.18:
+        aspect = "16:9"
+    else:
+        aspect = "1:1"
+
+    fit_mode = str(payload.get("fit_mode") or payload.get("fitMode") or payload.get("output_fit_mode") or payload.get("outputFitMode") or ("cover" if aspect in {"9:16", "1:1"} else "contain")).strip().lower()
+    if fit_mode not in {"contain", "cover", "crop", "fill", "center_crop"}:
+        fit_mode = "cover" if aspect in {"9:16", "1:1"} else "contain"
+    if fit_mode in {"crop", "fill", "center_crop"}:
+        fit_mode = "cover"
+    if aspect == "9:16" and fit_mode == "contain":
+        # For vertical projects, contain keeps old black side bars when scene videos are 16:9.
+        fit_mode = "cover"
+    return {
+        "width": int(width),
+        "height": int(height),
+        "aspect_ratio": aspect,
+        "fit_mode": fit_mode,
+        "project_candidates": project_candidates[:20],
+        "payload_aspect": payload.get("aspect_ratio") or payload.get("aspectRatio") or payload.get("output_format") or payload.get("outputFormat"),
+    }
+
+
+def _assembly_probe_video_size_v200p(path: Path) -> tuple[int, int]:
+    """Return first video stream width/height using ffprobe; safe fallback to (0,0)."""
+    try:
+        import json as _json
+        import subprocess as _subprocess
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "json",
+            str(path),
+        ]
+        proc = _subprocess.run(cmd, capture_output=True, text=True, check=False)
+        data = _json.loads(proc.stdout or "{}")
+        streams = data.get("streams") or []
+        if not streams:
+            return 0, 0
+        w = int(streams[0].get("width") or 0)
+        h = int(streams[0].get("height") or 0)
+        return w, h
+    except Exception:
+        return 0, 0
+
+def _assembly_probe_video_size_v200p(path: Path) -> tuple[int, int]:
+    """Return first video stream width/height using ffprobe; safe fallback to (0,0)."""
+    try:
+        import json as _json
+        import subprocess as _subprocess
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "json",
+            str(path),
+        ]
+        proc = _subprocess.run(cmd, capture_output=True, text=True, check=False)
+        data = _json.loads(proc.stdout or "{}")
+        streams = data.get("streams") or []
+        if not streams:
+            return 0, 0
+        w = int(streams[0].get("width") or 0)
+        h = int(streams[0].get("height") or 0)
+        return w, h
+    except Exception:
+        return 0, 0
 
 def _run_board_assembly_job(job_id: str) -> None:
     job = BOARD_ASSEMBLY_JOBS.get(job_id)
@@ -6707,6 +7214,8 @@ def _run_board_assembly_job(job_id: str) -> None:
         original_volume = _assembly_float(volumes.get("original"), 1.0)
         music_volume = _assembly_float(volumes.get("music"), 1.0)
         original_audio_path = _assembly_original_audio_path(payload)
+        if not original_audio_path:
+            original_audio_path = _assembly_project_original_audio_path_v200r(payload, job_id=job_id)
         music_audio_path = _assembly_music_audio_path(payload)
         music_payload = payload.get("music") if isinstance(payload.get("music"), dict) else {}
         music_loop = bool(music_payload.get("loop", True))
@@ -6715,15 +7224,21 @@ def _run_board_assembly_job(job_id: str) -> None:
         wants_music_audio = audio_mode in {"music_plus_scene", "original_plus_music_scene"}
         transition_debug_v134e = _assembly_transition_debug_v134e(payload, audio_mode, original_audio_path, job_id)
 
-        width = _assembly_int(payload.get("width"), 1280)
-        height = _assembly_int(payload.get("height"), 720)
+        output_lock_v200p = _assembly_output_format_lock_v200p(payload, raw_items, 1280, 720)
+        width = int(output_lock_v200p["width"])
+        height = int(output_lock_v200p["height"])
         fps = _assembly_int(payload.get("fps"), 30)
-        fit_mode = str(payload.get("fit_mode") or payload.get("fitMode") or "contain").strip().lower()
-        if fit_mode not in {"contain", "cover"}:
-            fit_mode = "contain"
-        _log_board_assembly("[BOARD ASSEMBLY OUTPUT SPEC V195F]", {"job_id": job_id, "width": width, "height": height, "fps": fps, "fit_mode": fit_mode, "aspect_ratio": payload.get("aspect_ratio") or payload.get("aspectRatio") or payload.get("output_format") or payload.get("outputFormat")})
-        fit_mode = str(payload.get("fit_mode") or payload.get("fitMode") or payload.get("output_fit_mode") or payload.get("outputFitMode") or "contain").strip().lower()
-
+        fit_mode = str(output_lock_v200p["fit_mode"] or "contain").strip().lower()
+        _log_board_assembly("[BOARD ASSEMBLY OUTPUT SPEC LOCK V200P]", {
+            "job_id": job_id,
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "fit_mode": fit_mode,
+            "aspect_ratio": output_lock_v200p.get("aspect_ratio"),
+            "payload_aspect": output_lock_v200p.get("payload_aspect"),
+            "project_id": payload.get("project_id") or payload.get("projectId"),
+        })
         work_dir = Path(tempfile.gettempdir()) / f"ava_board_assembly_{job_id}"
         work_dir.mkdir(parents=True, exist_ok=True)
 

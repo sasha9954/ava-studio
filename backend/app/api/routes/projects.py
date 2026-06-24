@@ -1,3 +1,4 @@
+from typing import Any
 # AVA_PROJECT_SERVER_REVIEW_EVENT_MEMORY_V136E: server remembers newest per-scene review event and blocks stale autosave revival.
 # AVA_PROJECT_V132Z_DO_NOT_CLEAR_INCOMING_REVIEW_V136C: V132Z clear/accept cannot win when incoming still has bad/needs_review.
 # AVA_PROJECT_REVIEW_IMAGE_RESET_ONESHOT_V136B: V133B image-change review reset is one-shot and never self-retriggers from clear_reason.
@@ -23,6 +24,7 @@ from app.core.storage import store
 from app.core.media_cleanup import cleanup_project_media, cleanup_project_stage_media
 from app.schemas import ProjectCreateRequest, ProjectUpdateRequest, SnapshotSaveRequest
 import copy
+from copy import deepcopy
 
 router = APIRouter(prefix='/projects', tags=['projects'])
 
@@ -3023,6 +3025,55 @@ def _ava_project_snapshot_noop_equal_v200b(current_data, incoming_data) -> bool:
         return False
 
 
+
+
+def _ava_project_preserve_board_assembly_final_v200p(current_data: Any, incoming_data: Any) -> tuple[Any, int]:
+    """AVA_ASSEMBLY_FINAL_F5_PRESERVE_V200P: don't let Board re-import wipe final Assembly MP4."""
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, 0
+
+    final_keys = [
+        "finalVideoUrl", "final_video_url", "finalUrl", "final_url",
+        "assemblyUrl", "assembly_url", "outputUrl", "output_url",
+        "resultUrl", "result_url", "downloadUrl", "download_url", "videoUrl", "video_url",
+        "assemblyApiPath", "assembly_api_path", "finalVideoApiPath", "final_video_api_path",
+        "resultVideoApiPath", "result_video_api_path", "outputApiPath", "output_api_path",
+        "assemblyAssetId", "assembly_asset_id", "finalVideoAssetId", "final_video_asset_id",
+        "assetId", "asset_id",
+    ]
+    current_has_final = any(bool(current_data.get(k)) for k in final_keys)
+    incoming_has_final = any(bool(incoming_data.get(k)) for k in final_keys)
+    if not current_has_final or incoming_has_final:
+        return incoming_data, 0
+
+    # Treat incoming as a stale Board->Assembly bootstrap if it has scenes/items but no final refs.
+    merged = deepcopy(incoming_data)
+    changed = 0
+    for key in final_keys:
+        value = current_data.get(key)
+        if value and not merged.get(key):
+            merged[key] = deepcopy(value)
+            changed += 1
+
+    # Preserve result metadata that helps UI display/open/download without requiring another register.
+    meta_keys = [
+        "assemblyResult", "assembly_result", "result", "finalResult", "final_result",
+        "registeredAsset", "registered_asset", "assemblyAsset", "assembly_asset",
+        "finalDirty", "updatedAt", "completedAt", "completed_at",
+    ]
+    for key in meta_keys:
+        value = current_data.get(key)
+        if value and not merged.get(key):
+            merged[key] = deepcopy(value)
+            changed += 1
+
+    # The final MP4 still exists; do not mark dirty just because a restore save happened.
+    if changed:
+        merged["finalDirty"] = bool(current_data.get("finalDirty", False))
+        merged["final_dirty"] = bool(current_data.get("final_dirty", merged["finalDirty"]))
+        merged["assemblyFinalPreservedV200P"] = True
+    return merged, changed
+
 @router.post('/{project_id}/snapshots/{stage}')
 def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depends(ensure_project_access)):
     if project.get('status') == 'deleted':
@@ -3198,6 +3249,20 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
+
+        if stage == 'board_assembly' and current and not is_destructive_clear:
+            incoming_data, assembly_final_preserved_v200p = _ava_project_preserve_board_assembly_final_v200p(
+                current.get('data') if isinstance(current, dict) else {},
+                incoming_data,
+            )
+            if assembly_final_preserved_v200p:
+                preserved_media_refs += assembly_final_preserved_v200p
+                print('[PROJECT BOARD ASSEMBLY FINAL PRESERVED V200P]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'preservedAssemblyFinalRefs': assembly_final_preserved_v200p,
+                    **media_refs_summary(incoming_data),
+                })
 
         if current and cleanup is None and not is_destructive_clear:
             current_data_for_noop_v200b = current.get('data') if isinstance(current, dict) else {}

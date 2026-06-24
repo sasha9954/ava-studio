@@ -124,7 +124,7 @@ function normalizeAssemblyLocalUiSettingsV197F(raw = {}) {
     0.5,
   )
   return {
-    uiLocalVersionV197F: 'assembly_ui_local_v197f',
+    uiLocalVersionV197F: 'assembly_ui_local_v200n',
     hasAudioModeV197F,
     audioMode,
     hasSmoothTransitionsTimingEnabledV197F,
@@ -133,6 +133,12 @@ function normalizeAssemblyLocalUiSettingsV197F(raw = {}) {
     smoothTransitionTimingDurationSecV134G,
     hasTransitionVisualModeV197F,
     transitionVisualModeV196E,
+    hasOriginalVolumeV200N: Object.prototype.hasOwnProperty.call(raw, 'originalVolume'),
+    originalVolume: clampNumber(raw.originalVolume, 0, 150, 100),
+    hasSceneVolumeV200N: Object.prototype.hasOwnProperty.call(raw, 'sceneVolume'),
+    sceneVolume: clampNumber(raw.sceneVolume, 0, 150, 25),
+    hasMusicVolumeV200N: Object.prototype.hasOwnProperty.call(raw, 'musicVolume'),
+    musicVolume: clampNumber(raw.musicVolume, 0, 150, 15),
   }
 }
 
@@ -486,9 +492,13 @@ function assemblyHasScenes(raw = {}) {
 }
 
 function assemblyFinalUrlFromSnapshot(raw = {}) {
+  // AVA_ASSEMBLY_FINAL_STATIC_URL_V200Q: <video> cannot reliably play protected /api/assets URLs after F5.
+  // Prefer static/public result paths for playback, while asset ids/api paths remain saved separately.
   return normalizePlayableVideoUrl(
+    raw.finalPlayableUrl || raw.final_playable_url || raw.finalStaticUrl || raw.final_static_url ||
+    raw.staticUrl || raw.static_url || raw.publicUrl || raw.public_url || raw.fileUrl || raw.file_url ||
     raw.finalVideoUrl || raw.finalUrl || raw.assemblyUrl || raw.outputUrl || raw.resultUrl || raw.downloadUrl ||
-    raw.videoApiPath || raw.video_api_path || raw.videoUrl || raw.video_url || raw.assemblyApiPath || raw.assembly_api_path || ''
+    raw.videoUrl || raw.video_url || raw.videoApiPath || raw.video_api_path || raw.assemblyApiPath || raw.assembly_api_path || ''
   )
 }
 
@@ -566,47 +576,154 @@ function buildSceneItems(board, preferMmaudio = true) {
 
 // AVA_ASSEMBLY_OUTPUT_SPEC_V195F
 function assemblyFormatTokenV195F(value) {
-  const raw = String(value || '').trim().toLowerCase()
+  // AVA_ASSEMBLY_RESULT_FORMAT_LOCK_V200O
+  const raw = String(value ?? '').trim().toLowerCase()
   if (!raw) return ''
-  const compact = raw.replace(/\s+/g, '')
-  if (compact.includes('9:16') || compact.includes('vertical') || compact.includes('portrait')) return '9:16'
-  if (compact.includes('1:1') || compact.includes('square')) return '1:1'
-  if (compact.includes('16:9') || compact.includes('horizontal') || compact.includes('landscape')) return '16:9'
+  const compact = raw.replace(/\s+/g, '').replace(/_/g, '-')
+  if (compact.includes('9:16') || compact.includes('916') || compact.includes('720x1280') || compact.includes('720×1280') || compact.includes('vertical') || compact.includes('portrait')) return '9:16'
+  if (compact.includes('1:1') || compact === '11' || compact.includes('1024x1024') || compact.includes('1024×1024') || compact.includes('square')) return '1:1'
+  if (compact.includes('16:9') || compact.includes('169') || compact.includes('1280x720') || compact.includes('1280×720') || compact.includes('horizontal') || compact.includes('landscape')) return '16:9'
+  const sizeMatchV200O = compact.match(/(\d{3,4})[x×:](\d{3,4})/)
+  if (sizeMatchV200O) {
+    const w = Number(sizeMatchV200O[1])
+    const h = Number(sizeMatchV200O[2])
+    if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+      if (h > w * 1.2) return '9:16'
+      if (w > h * 1.2) return '16:9'
+      return '1:1'
+    }
+  }
   return ''
 }
 
+
 function assemblyOutputSpecV195F(board = {}, sceneItems = []) {
+  // AVA_ASSEMBLY_RESULT_FORMAT_LOCK_V200O
   const scenes = Array.isArray(sceneItems) ? sceneItems : []
   const rawScenes = scenes.map((item) => item?.raw || item || {})
-  const candidates = [
-    board?.output_format, board?.outputFormat, board?.aspect_ratio, board?.aspectRatio, board?.format,
-    board?.project?.output_format, board?.project?.outputFormat, board?.project?.aspect_ratio, board?.project?.aspectRatio, board?.project?.format,
-    board?.project_context?.output_format, board?.project_context?.outputFormat, board?.project_context?.aspect_ratio, board?.project_context?.aspectRatio, board?.project_context?.format,
-    board?.projectContext?.output_format, board?.projectContext?.outputFormat, board?.projectContext?.aspect_ratio, board?.projectContext?.aspectRatio, board?.projectContext?.format,
-    ...rawScenes.flatMap((scene) => [scene?.output_format, scene?.outputFormat, scene?.aspect_ratio, scene?.aspectRatio, scene?.format]),
-  ]
+  const nestedCandidatesV200O = []
+  const pushObjectV200O = (obj) => {
+    if (!obj || typeof obj !== 'object') return
+    nestedCandidatesV200O.push(
+      obj.format,
+      obj.project_format,
+      obj.projectFormat,
+      obj.aspect_ratio,
+      obj.aspectRatio,
+      obj.output_format,
+      obj.outputFormat,
+      obj.resolution,
+      obj.orientation,
+      obj.video_format,
+      obj.videoFormat,
+      obj.target_format,
+      obj.targetFormat,
+      obj.output_size,
+      obj.outputSize,
+      obj.width && obj.height ? `${obj.width}x${obj.height}` : '',
+      obj.output_width && obj.output_height ? `${obj.output_width}x${obj.output_height}` : '',
+      obj.outputWidth && obj.outputHeight ? `${obj.outputWidth}x${obj.outputHeight}` : '',
+      obj.target_width && obj.target_height ? `${obj.target_width}x${obj.target_height}` : '',
+      obj.targetWidth && obj.targetHeight ? `${obj.targetWidth}x${obj.targetHeight}` : '',
+    )
+  }
+
+  pushObjectV200O(board)
+  pushObjectV200O(board?.project)
+  pushObjectV200O(board?.project_context)
+  pushObjectV200O(board?.projectContext)
+  pushObjectV200O(board?.format_contract)
+  pushObjectV200O(board?.formatContract)
+  rawScenes.forEach((scene) => {
+    pushObjectV200O(scene)
+    pushObjectV200O(scene?.project)
+    pushObjectV200O(scene?.project_context)
+    pushObjectV200O(scene?.projectContext)
+    pushObjectV200O(scene?.format_contract)
+    pushObjectV200O(scene?.formatContract)
+  })
+
   let format = ''
-  for (const candidate of candidates) {
+  for (const candidate of nestedCandidatesV200O) {
     format = assemblyFormatTokenV195F(candidate)
     if (format) break
   }
   if (!format) format = '16:9'
-  if (format === '9:16') return { format, width: 720, height: 1280, fitMode: 'cover', label: '9:16 · 720×1280 · crop', className: 'isPortraitV195F' }
-  if (format === '1:1') return { format, width: 1024, height: 1024, fitMode: 'cover', label: '1:1 · 1024×1024', className: 'isSquareV195F' }
-  return { format: '16:9', width: 1280, height: 720, fitMode: 'contain', label: '16:9 · 1280×720', className: 'isLandscapeV195F' }
+
+  if (format === '9:16') {
+    return {
+      format: '9:16',
+      aspectRatio: '9:16',
+      outputFormat: '9:16',
+      width: 720,
+      height: 1280,
+      fitMode: 'cover',
+      outputFitMode: 'cover',
+      label: '9:16 · 720×1280 · crop',
+      className: 'isPortraitV195F',
+      previewClass: 'isFormat916',
+    }
+  }
+  if (format === '1:1') {
+    return {
+      format: '1:1',
+      aspectRatio: '1:1',
+      outputFormat: '1:1',
+      width: 1024,
+      height: 1024,
+      fitMode: 'cover',
+      outputFitMode: 'cover',
+      label: '1:1 · 1024×1024',
+      className: 'isSquareV195F',
+      previewClass: 'isFormat11',
+    }
+  }
+  return {
+    format: '16:9',
+    aspectRatio: '16:9',
+    outputFormat: '16:9',
+    width: 1280,
+    height: 720,
+    fitMode: 'contain',
+    outputFitMode: 'contain',
+    label: '16:9 · 1280×720',
+    className: 'isLandscapeV195F',
+    previewClass: 'isFormat169',
+  }
 }
+
 
 export default function BoardAssemblyPage() {
   // AVA_ASSEMBLY_BOARD_HANDOFF_SOURCE_OF_TRUTH_V8
   const { projectId } = useParams()
   const location = useLocation()
   const workspaceMode = !projectId
-  const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage } = useProjects()
+  const { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage, projects, activeProject } = useProjects()
   const workflowEntry = useMemo(() => readWorkflowEntry('board_assembly', location.state), [location.state])
+  const routeProjectRecordV200O = useMemo(() => {
+    const cleanProjectId = String(projectId || '').trim()
+    const list = Array.isArray(projects) ? projects : []
+    const fromList = list.find((project) => String(project?.id || project?.project_id || project?.projectId || '') === cleanProjectId) || null
+    if (fromList) return fromList
+    if (String(activeProject?.id || activeProject?.project_id || activeProject?.projectId || '') === cleanProjectId) return activeProject
+    return null
+  }, [projects, activeProject, projectId])
+  // AVA_ASSEMBLY_F5_RESULT_FORMAT_VOLUME_V200N:
+  // Route project format is the last-resort source of truth for Assembly output.
+  // This keeps 9:16 / 1:1 / 16:9 consistent after Timing -> Board -> Assembly and after F5.
+  const routeProjectRecordV200N = useMemo(() => {
+    const cleanProjectId = String(projectId || '').trim()
+    const fromList = asArray(projects).find((project) => String(project?.id || '') === cleanProjectId) || null
+    if (fromList) return fromList
+    if (String(activeProject?.id || '') === cleanProjectId) return activeProject
+    return null
+  }, [projects, activeProject, projectId])
   const entryFromBoard = workflowEntry?.from === 'board'
   const entryFromGenerator = workflowEntry?.from === 'standalone_generator'
   const autosaveTimerRef = useRef(null)
   const resumedAssemblyJobRef = useRef('')
+  const assemblyF5HydrateGuardRefV200O = useRef(false)
+  const assemblyF5HydrateGuardRefV200N = useRef(false)
   const assemblyVideoBlobUrlCacheRefV200C = useRef(new Map())
 
   const [board, setBoard] = useState(null)
@@ -645,6 +762,7 @@ export default function BoardAssemblyPage() {
   const [assemblyJob, setAssemblyJob] = useState(null)
   const [assemblyRunning, setAssemblyRunning] = useState(false)
   const [finalVideoUrl, setFinalVideoUrl] = useState('')
+  const [finalVideoMetaV200Q, setFinalVideoMetaV200Q] = useState(null)
   const [finalDirty, setFinalDirty] = useState(false)
   const [settingsHydrated, setSettingsHydrated] = useState(false)
 
@@ -654,6 +772,9 @@ export default function BoardAssemblyPage() {
     const savedSettings = readAssemblyLocalUiSettingsV197F(settingsStorageKey)
 
     if (savedSettings.audioMode) setAudioMode(savedSettings.audioMode)
+    if (savedSettings.hasOriginalVolumeV200N) setOriginalVolume(savedSettings.originalVolume)
+    if (savedSettings.hasSceneVolumeV200N) setSceneVolume(savedSettings.sceneVolume)
+    if (savedSettings.hasMusicVolumeV200N) setMusicVolume(savedSettings.musicVolume)
     setSmoothTransitionsEnabledV134B(false)
     setSmoothTransitionDurationSecV134B(0.5)
     setSmoothTransitionsTimingEnabledV134G(Boolean(savedSettings.smoothTransitionsTimingEnabledV134G))
@@ -667,7 +788,33 @@ export default function BoardAssemblyPage() {
   const sceneItems = useMemo(() => buildSceneItems(board || {}, preferMmaudio), [board, preferMmaudio])
   const selectedItem = sceneItems.find((item) => item.id === selectedSceneId) || sceneItems[0] || null
   const selectedItemVideoAssetApiPath = selectedItem?.videoAssetApiPath || ''
-  const assemblyOutputSpec = useMemo(() => assemblyOutputSpecV195F(board || {}, sceneItems), [board, sceneItems])
+  const assemblyOutputSpec = useMemo(() => {
+    const projectFormatV200O = assemblyFormatTokenV195F(
+      routeProjectRecordV200O?.format ||
+      routeProjectRecordV200O?.project_format ||
+      routeProjectRecordV200O?.projectFormat ||
+      routeProjectRecordV200O?.resolution ||
+      routeProjectRecordV200O?.orientation ||
+      routeProjectRecordV200O?.output_format ||
+      routeProjectRecordV200O?.outputFormat ||
+      routeProjectRecordV200O?.aspect_ratio ||
+      routeProjectRecordV200O?.aspectRatio ||
+      ''
+    )
+    const boardWithProjectFormatV200O = {
+      ...(board || {}),
+      format: board?.format || board?.resolution || board?.aspect_ratio || board?.aspectRatio || board?.output_format || board?.outputFormat || projectFormatV200O || '',
+      resolution: board?.resolution || board?.format || projectFormatV200O || '',
+      output_format: board?.output_format || board?.outputFormat || board?.format || projectFormatV200O || '',
+      aspect_ratio: board?.aspect_ratio || board?.aspectRatio || board?.format || projectFormatV200O || '',
+      project: { ...(routeProjectRecordV200O || {}), ...(board?.project || {}) },
+      projectContext: { ...(routeProjectRecordV200O || {}), ...(board?.projectContext || {}) },
+      project_context: { ...(routeProjectRecordV200O || {}), ...(board?.project_context || {}) },
+    }
+    const spec = assemblyOutputSpecV195F(boardWithProjectFormatV200O, sceneItems)
+    console.log('[AVA ASSEMBLY OUTPUT SPEC V200O]', { projectId, projectFormatV200O, spec, boardFormat: boardWithProjectFormatV200O.format })
+    return spec
+  }, [board, sceneItems, routeProjectRecordV200O, projectId])
   useEffect(() => {
     let cancelled = false
     setSelectedVideoLoadError('')
@@ -732,6 +879,29 @@ export default function BoardAssemblyPage() {
   useEffect(() => {
     setFinalPreviewVideoLoading(Boolean(finalVideoUrl && !finalDirty))
   }, [finalVideoUrl, finalDirty])
+
+  useEffect(() => {
+    setFinalVideoMetaV200Q(null)
+  }, [finalVideoUrl])
+
+  function handleFinalVideoMetadataV200Q(event) {
+    const video = event?.currentTarget
+    const width = Number(video?.videoWidth || 0)
+    const height = Number(video?.videoHeight || 0)
+    if (width > 0 && height > 0) {
+      const aspect = height > width * 1.18 ? '9:16' : width > height * 1.18 ? '16:9' : '1:1'
+      const previewClass = aspect === '9:16' ? 'isFormat916' : aspect === '1:1' ? 'isFormat11' : 'isFormat169'
+      setFinalVideoMetaV200Q({
+        width,
+        height,
+        aspect,
+        previewClass,
+        label: `${aspect} · ${width}×${height}`,
+      })
+      console.log('[BOARD ASSEMBLY FINAL VIDEO META V200Q]', { width, height, aspect, url: finalVideoUrl })
+    }
+    setFinalPreviewVideoLoading(false)
+  }
   const watermarkPreviewStyle = {
     opacity: Math.max(0.05, Math.min(1, watermarkOpacity / 100)),
     fontSize: `${Math.max(10, Math.round(watermarkSize * 0.42))}px`,
@@ -930,6 +1100,13 @@ export default function BoardAssemblyPage() {
   // AVA_ASSEMBLY_FORCE_BOARD_IMPORT_V11:
   // Board → Montage must import the *current* Board snapshot as source-of-truth.
   // Normal Montage entry may restore saved board_assembly, but explicit Board entry / Refresh replaces it.
+
+function clearBoardAssemblyWorkflowEntryV200O() {
+  try {
+    sessionStorage.removeItem('ava:workflow-entry:board_assembly')
+  } catch {}
+}
+
   function readBoardAssemblyEntryV11() {
     try {
       return JSON.parse(sessionStorage.getItem('ava:workflow-entry:board_assembly') || '{}') || {}
@@ -1030,6 +1207,37 @@ export default function BoardAssemblyPage() {
 
   async function persistBoardImportToAssemblyV11(nextBoard, sourceLabel = 'board_to_assembly_imported_v11') {
     const snapshot = buildBoardAssemblySnapshotV11(nextBoard, sourceLabel)
+    // AVA_ASSEMBLY_PRESERVE_FINAL_ON_BOARD_IMPORT_V200O:
+    // A stale Board->Assembly workflow marker after F5 must not wipe the final MP4.
+    // Preserve existing result refs and mark them dirty instead of deleting them.
+    try {
+      const existingRawV200O = workspaceMode ? await loadWorkspaceStage('board_assembly') : await loadStage(projectId, 'board_assembly')
+      const existingDataV200O = boardAssemblyDataV11(existingRawV200O)
+      const existingFinalV200O = normalizePlayableVideoUrl(
+        existingDataV200O.finalVideoUrl || existingDataV200O.finalUrl || existingDataV200O.assemblyUrl || existingDataV200O.outputUrl || existingDataV200O.downloadUrl || existingDataV200O.resultUrl || existingDataV200O.videoUrl || existingDataV200O.video_url || ''
+      )
+      if (existingFinalV200O) {
+        snapshot.finalVideoUrl = existingFinalV200O
+        snapshot.finalUrl = existingFinalV200O
+        snapshot.assemblyUrl = existingFinalV200O
+        snapshot.outputUrl = existingFinalV200O
+        snapshot.downloadUrl = existingFinalV200O
+        snapshot.resultUrl = existingFinalV200O
+        snapshot.videoUrl = existingFinalV200O
+        snapshot.video_url = existingFinalV200O
+        snapshot.videoApiPath = existingDataV200O.videoApiPath || existingDataV200O.video_api_path || existingDataV200O.assemblyApiPath || existingDataV200O.assembly_api_path || ''
+        snapshot.video_api_path = snapshot.videoApiPath
+        snapshot.assemblyAssetId = existingDataV200O.assemblyAssetId || existingDataV200O.assembly_asset_id || ''
+        snapshot.assembly_asset_id = snapshot.assemblyAssetId
+        snapshot.assemblyApiPath = existingDataV200O.assemblyApiPath || existingDataV200O.assembly_api_path || snapshot.videoApiPath || ''
+        snapshot.assembly_api_path = snapshot.assemblyApiPath
+        snapshot.finalDirty = true
+        snapshot.source = `${sourceLabel}_preserved_final_v200o`
+        console.log('[AVA ASSEMBLY PRESERVE FINAL ON BOARD IMPORT V200O]', { source: sourceLabel, finalVideoUrl: existingFinalV200O })
+      }
+    } catch (error) {
+      console.warn('[AVA ASSEMBLY PRESERVE FINAL ON BOARD IMPORT V200O FAILED]', error?.message || error)
+    }
     try {
       if (projectId) await saveStage(projectId, 'board_assembly', snapshot, 'replace')
       else await saveWorkspaceStage('board_assembly', snapshot)
@@ -1047,6 +1255,7 @@ export default function BoardAssemblyPage() {
   async function loadBoardSnapshot(options = {}) {
     const forceBoard = Boolean(options.forceBoard)
     setLoading(true)
+    assemblyF5HydrateGuardRefV200N.current = true
     setStatus(forceBoard ? 'Обновляем монтаж из текущей Доски…' : 'Загружаем монтаж…')
 
     if (isBoardAssemblyCleared() && !forceBoard) {
@@ -1058,12 +1267,19 @@ export default function BoardAssemblyPage() {
       setAssemblyRunning(false)
       setStatus('Монтаж очищен. Нажми “Обновить из Board”, чтобы снова подтянуть сцены.')
       setLoading(false)
+      assemblyF5HydrateGuardRefV200N.current = false
       return
     }
 
     const entry = readBoardAssemblyEntryV11()
+    const locationEntryV200N = location?.state?.workflowEntry || null
     const fromBoardEntry = String(entry?.from || '').trim() === 'board' || String(entry?.source || '').includes('board_to_assembly')
-    const shouldImportBoard = forceBoard || fromBoardEntry
+    const fromCurrentBoardNavigationV200N = Boolean(
+      locationEntryV200N?.enteredByUserClick &&
+      locationEntryV200N?.to === 'board_assembly' &&
+      String(locationEntryV200N?.from || '').trim() === 'board'
+    )
+    const shouldImportBoard = forceBoard || fromCurrentBoardNavigationV200N
     const localUiSettingsV197F = readAssemblyLocalUiSettingsV197F(settingsStorageKey)
 
     try {
@@ -1086,7 +1302,27 @@ export default function BoardAssemblyPage() {
           setSmoothTransitionsTimingEnabledV134G(localUiSettingsV197F.hasSmoothTransitionsTimingEnabledV197F ? localUiSettingsV197F.smoothTransitionsTimingEnabledV134G : Boolean(assemblyData.smoothTransitionsTimingEnabledV134G))
           setSmoothTransitionTimingDurationSecV134G(clampNumber(localUiSettingsV197F.hasSmoothTransitionTimingDurationV197F ? localUiSettingsV197F.smoothTransitionTimingDurationSecV134G : assemblyData.smoothTransitionTimingDurationSecV134G, 0.1, 3, 0.5))
           setTransitionVisualModeV196E(localUiSettingsV197F.hasTransitionVisualModeV197F ? localUiSettingsV197F.transitionVisualModeV196E : (assemblyData.transitionVisualModeV196E || 'fade_to_black'))
-          if (assemblyData.musicAsset) setMusicAsset(assemblyData.musicAsset)
+          setOriginalVolume(clampNumber(
+            assemblyData.originalVolume ?? (Number(assemblyData.volumes?.original) * 100),
+            0,
+            150,
+            localUiSettingsV197F.hasOriginalVolumeV200N ? localUiSettingsV197F.originalVolume : (isGeneratorAssemblyBoard(restoredBoard) ? 0 : 100),
+          ))
+          setSceneVolume(clampNumber(
+            assemblyData.sceneVolume ?? (Number(assemblyData.volumes?.scene) * 100),
+            0,
+            150,
+            localUiSettingsV197F.hasSceneVolumeV200N ? localUiSettingsV197F.sceneVolume : (isGeneratorAssemblyBoard(restoredBoard) ? 100 : 25),
+          ))
+          setMusicVolume(clampNumber(
+            assemblyData.musicVolume ?? (Number(assemblyData.volumes?.music) * 100),
+            0,
+            150,
+            localUiSettingsV197F.hasMusicVolumeV200N ? localUiSettingsV197F.musicVolume : 15,
+          ))
+          setMusicLoop(assemblyData.musicLoop ?? assemblyData.music?.loop ?? true)
+          setMusicFadeOut(assemblyData.musicFadeOut ?? assemblyData.music?.fade_out ?? true)
+          setMusicAsset(assemblyData.musicAsset || null)
           const wm = assemblyData.watermark || {}
           if (Object.keys(wm).length) {
             setWatermarkEnabled(wm.enabled ?? true)
@@ -1098,7 +1334,7 @@ export default function BoardAssemblyPage() {
           }
           const finalUrl = assemblyData.finalVideoUrl || assemblyData.finalUrl || assemblyData.assemblyUrl || assemblyData.outputUrl || assemblyData.downloadUrl || assemblyData.resultUrl || assemblyData.videoUrl || ''
           setFinalVideoUrl(normalizePlayableVideoUrl(finalUrl))
-          setFinalDirty(false)
+          setFinalDirty(Boolean(assemblyData.finalDirty ?? false))
           setAssemblyJob(assemblyData.assemblyJob || assemblyData.job || null)
           setAssemblyRunning(Boolean((assemblyData.assemblyJob || assemblyData.job)?.jobId || (assemblyData.assemblyJob || assemblyData.job)?.job_id) && !finalUrl)
           setStatus(`Монтаж восстановлен из project snapshot: сцен ${assemblyScenes.length || assemblyItems.length}`)
@@ -1135,12 +1371,18 @@ export default function BoardAssemblyPage() {
       setWatermarkSize(28)
       setWatermarkMotion('corners')
       await persistBoardImportToAssemblyV11(nextBoard, shouldImportBoard ? 'board_to_assembly_imported_v11' : 'board_fallback_imported_v11')
+      clearWorkflowEntry('board_assembly')
       setStatus(nextBoard.scenes?.length ? `Доска: сцен ${nextBoard.scenes.length}` : 'Board пустой')
     } catch (error) {
       setStatus(`Не удалось загрузить монтаж/Board: ${error?.message || 'unknown_error'}`)
       setBoard({ scenes: [] })
     } finally {
       setLoading(false)
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => { assemblyF5HydrateGuardRefV200N.current = false }, 200)
+      } else {
+        assemblyF5HydrateGuardRefV200N.current = false
+      }
     }
   }
 
@@ -1150,6 +1392,7 @@ export default function BoardAssemblyPage() {
 
   useEffect(() => {
     if (!settingsHydrated) return
+    if (assemblyF5HydrateGuardRefV200N.current) return
     if (!finalVideoUrl) return
     setFinalDirty(true)
   }, [
@@ -1178,6 +1421,9 @@ export default function BoardAssemblyPage() {
       smoothTransitionsTimingEnabledV134G,
       smoothTransitionTimingDurationSecV134G: smoothTransitionTimingDurationSafeV134G,
       transitionVisualModeV196E,
+      originalVolume,
+      sceneVolume,
+      musicVolume,
     })
   }, [
     settingsHydrated,
@@ -1186,6 +1432,9 @@ export default function BoardAssemblyPage() {
     smoothTransitionsTimingEnabledV134G,
     smoothTransitionTimingDurationSafeV134G,
     transitionVisualModeV196E,
+    originalVolume,
+    sceneVolume,
+    musicVolume,
   ])
 
 
@@ -1252,10 +1501,13 @@ export default function BoardAssemblyPage() {
   }
 
   async function persistBoardAssemblyResult(data = {}, videoUrl = '') {
-    const rawUrl = data?.videoApiPath || data?.video_api_path || data?.videoUrl || data?.video_url || videoUrl || ''
+    // AVA_ASSEMBLY_FINAL_STATIC_URL_V200Q: keep the browser-playable static file URL for preview/F5.
+    const rawStaticUrl = data?.finalStaticUrl || data?.final_static_url || data?.staticUrl || data?.static_url || data?.publicUrl || data?.public_url || data?.fileUrl || data?.file_url || data?.videoUrl || data?.video_url || videoUrl || ''
+    const rawUrl = rawStaticUrl || data?.videoApiPath || data?.video_api_path || ''
     let assemblyAssetId = data?.assemblyAssetId || data?.assembly_asset_id || data?.assetId || data?.asset_id || ''
     let assemblyApiPath = data?.assemblyApiPath || data?.assembly_api_path || data?.videoApiPath || data?.video_api_path || ''
-    const normalizedUrl = normalizePlayableVideoUrl(assemblyApiPath || rawUrl)
+    const normalizedUrl = normalizePlayableVideoUrl(rawStaticUrl || rawUrl || assemblyApiPath)
+    const finalPlayableUrl = normalizedUrl || normalizePlayableVideoUrl(rawUrl) || normalizePlayableVideoUrl(assemblyApiPath)
 
     if (!assemblyAssetId && normalizedUrl.includes('/static/assets/')) {
       try {
@@ -1274,7 +1526,7 @@ export default function BoardAssemblyPage() {
     }
 
     const snapshot = {
-      ...buildAssemblySnapshotForSave({ source: 'board_assembly_result_v8', overrides: { finalVideoUrl: assemblyApiPath || normalizedUrl, finalDirty: false, assemblyJob: null } }),
+      ...buildAssemblySnapshotForSave({ source: 'board_assembly_result_v8', overrides: { finalVideoUrl: finalPlayableUrl, finalDirty: false, assemblyJob: null } }),
       stage: 'board_assembly',
       source: 'board_assembly_result_v8',
       boardVersion: board?.boardVersion || board?.board_version || '',
@@ -1282,15 +1534,18 @@ export default function BoardAssemblyPage() {
       assemblyAssetId: assemblyAssetId,
       assembly_api_path: assemblyApiPath,
       assemblyApiPath: assemblyApiPath,
-      assemblyUrl: assemblyApiPath || normalizedUrl,
-      finalVideoUrl: assemblyApiPath || normalizedUrl,
-      finalUrl: assemblyApiPath || normalizedUrl,
-      assemblyUrl: assemblyApiPath || normalizedUrl,
-      outputUrl: assemblyApiPath || normalizedUrl,
-      resultUrl: assemblyApiPath || normalizedUrl,
-      downloadUrl: assemblyApiPath || normalizedUrl,
-      video_url: assemblyApiPath || normalizedUrl,
-      videoUrl: assemblyApiPath || normalizedUrl,
+      assemblyUrl: finalPlayableUrl,
+      finalVideoUrl: finalPlayableUrl,
+      finalUrl: finalPlayableUrl,
+      outputUrl: finalPlayableUrl,
+      resultUrl: finalPlayableUrl,
+      downloadUrl: finalPlayableUrl,
+      video_url: finalPlayableUrl,
+      videoUrl: finalPlayableUrl,
+      final_playable_url: finalPlayableUrl,
+      finalPlayableUrl: finalPlayableUrl,
+      final_static_url: finalPlayableUrl,
+      finalStaticUrl: finalPlayableUrl,
       video_api_path: assemblyApiPath,
       videoApiPath: assemblyApiPath,
       video_name: data?.videoName || data?.video_name || 'board-assembly.mp4',
@@ -1310,7 +1565,8 @@ export default function BoardAssemblyPage() {
     try {
       if (projectId) await saveStage(projectId, 'board_assembly', snapshot, 'replace')
       else await saveWorkspaceStage('board_assembly', snapshot)
-      console.log('[BOARD ASSEMBLY RESULT SAVED]', { assemblyAssetId, assemblyApiPath, videoUrl: snapshot.finalVideoUrl })
+      clearBoardAssemblyWorkflowEntryV200O()
+      console.log('[BOARD ASSEMBLY RESULT SAVED V200Q]', { assemblyAssetId, assemblyApiPath, finalPlayableUrl, videoUrl: snapshot.finalVideoUrl })
     } catch (error) {
       console.warn('[BOARD ASSEMBLY RESULT SAVE_FAILED]', { error: error?.message || error })
     }
@@ -1348,6 +1604,10 @@ export default function BoardAssemblyPage() {
 
     const originalAudio = boardOriginalAudio(board || {})
     const generatorAssemblyBoard = isGeneratorAssemblyBoard(board || {})
+    const lockedAssemblyFormatV200O = assemblyOutputSpec.outputFormat || assemblyOutputSpec.aspectRatio || assemblyOutputSpec.format || '16:9'
+    const lockedAssemblyFitModeV200O = assemblyOutputSpec.outputFitMode || assemblyOutputSpec.fitMode || (lockedAssemblyFormatV200O === '9:16' ? 'cover' : 'contain')
+    const lockedAssemblyFormatV200N = assemblyOutputSpec.outputFormat || assemblyOutputSpec.aspectRatio || assemblyOutputSpec.format || '16:9'
+    const lockedAssemblyFitModeV200N = assemblyOutputSpec.fitMode || (lockedAssemblyFormatV200N === '9:16' ? 'cover' : 'contain')
 
     return {
       project_id: projectId || '',
@@ -1360,21 +1620,15 @@ export default function BoardAssemblyPage() {
       width: assemblyOutputSpec.width,
       height: assemblyOutputSpec.height,
       fps: 30,
-      aspect_ratio: assemblyOutputSpec.format,
-      aspectRatio: assemblyOutputSpec.format,
-      output_format: assemblyOutputSpec.format,
-      outputFormat: assemblyOutputSpec.format,
-      fit_mode: assemblyOutputSpec.fitMode,
-      fitMode: assemblyOutputSpec.fitMode,
-      aspect_ratio: assemblyOutputSpec.aspectRatio,
-      aspectRatio: assemblyOutputSpec.aspectRatio,
-      output_format: assemblyOutputSpec.outputFormat,
-      outputFormat: assemblyOutputSpec.outputFormat,
+      aspect_ratio: lockedAssemblyFormatV200O,
+      aspectRatio: lockedAssemblyFormatV200O,
+      output_format: lockedAssemblyFormatV200O,
+      outputFormat: lockedAssemblyFormatV200O,
       output_size_label: assemblyOutputSpec.label,
-      fit_mode: 'contain',
-      fitMode: 'contain',
-      output_fit_mode: 'contain',
-      outputFitMode: 'contain',
+      fit_mode: lockedAssemblyFitModeV200O,
+      fitMode: lockedAssemblyFitModeV200O,
+      output_fit_mode: lockedAssemblyFitModeV200O,
+      outputFitMode: lockedAssemblyFitModeV200O,
       duration_sec: stats.duration,
       timeline_duration_sec: stats.duration,
       volumes: {
@@ -1767,13 +2021,15 @@ export default function BoardAssemblyPage() {
                 <button type="button" onClick={(event) => openVideoExplicitly(event, finalVideoUrl)}>Открыть файл</button>
               </div>
               <div className="avaAssemblyVideoPreviewShellV195C avaAssemblyFinalPreviewShellV195C">
-                <div className={`avaAssemblyVideoViewportV195C avaAssemblyFinalVideoWithWatermark ${assemblyOutputSpec.previewClass}`} title={`Final output frame: ${assemblyOutputSpec.label}`}>
+                <div className={`avaAssemblyVideoViewportV195C avaAssemblyFinalVideoWithWatermark ${finalVideoMetaV200Q?.previewClass || assemblyOutputSpec.previewClass}`} title={`Final output frame: ${finalVideoMetaV200Q?.label || assemblyOutputSpec.label}`}>
                 <video
+                  key={finalVideoUrl}
                   src={finalVideoUrl}
                   controls
                   preload="metadata"
                   playsInline
                   onLoadStart={() => setFinalPreviewVideoLoading(true)}
+                  onLoadedMetadata={handleFinalVideoMetadataV200Q}
                   onLoadedData={() => setFinalPreviewVideoLoading(false)}
                   onCanPlay={() => setFinalPreviewVideoLoading(false)}
                   onError={() => setFinalPreviewVideoLoading(false)}
