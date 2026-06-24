@@ -7251,6 +7251,258 @@ def _assembly_probe_video_size_v200p(path: Path) -> tuple[int, int]:
     except Exception:
         return 0, 0
 
+
+
+# AVA_BOARD_ASSEMBLY_VIDEO_TRIM_V201A:
+# Backend safety: only payload items explicitly allowed by the frontend can trim, and never Timing/audio-driven scenes.
+def _assembly_item_audio_driven_trim_locked_v201a(item: dict[str, Any]) -> bool:
+    route = str(
+        item.get("route")
+        or item.get("planned_route")
+        or item.get("plannedRoute")
+        or item.get("model_route")
+        or item.get("modelRoute")
+        or ""
+    ).strip().lower()
+    # V201B: block trim only for ia2v/lip-sync/instrumental/explicit audio-slice clips.
+    # Other clips may contain embedded audio; Assembly trims the video asset as a single ready clip.
+    if (
+        "ia2v" in route
+        or "lip" in route
+        or "sync" in route
+        or "instrument" in route
+    ):
+        return True
+    return bool(
+        _assembly_bool(item.get("lip_sync_required") or item.get("lipSyncRequired"))
+        or item.get("audio_slice_asset_id")
+        or item.get("audioSliceAssetId")
+        or item.get("audio_slice_api_path")
+        or item.get("audioSliceApiPath")
+        or item.get("manual_lipsync_audio_asset_id")
+        or item.get("manualLipSyncAudioAssetId")
+        or item.get("manual_lipsync_audio_api_path")
+        or item.get("manualLipSyncAudioApiPath")
+    )
+
+
+def _assembly_item_video_trim_v201a(item: dict[str, Any]) -> dict[str, float] | None:
+    if not isinstance(item, dict):
+        return None
+    enabled = _assembly_bool(item.get("assembly_video_trim_enabled") or item.get("assemblyVideoTrimEnabled"))
+    allowed = _assembly_bool(item.get("assembly_video_trim_allowed") or item.get("assemblyVideoTrimAllowed"))
+    timing_locked = _assembly_bool(item.get("assembly_timing_locked") or item.get("assemblyTimingLocked") or item.get("timingLocked") or item.get("timing_locked"))
+    audio_locked = _assembly_bool(item.get("assembly_audio_driven_trim_locked") or item.get("assemblyAudioDrivenTrimLocked")) or _assembly_item_audio_driven_trim_locked_v201a(item)
+    if not enabled or not allowed or timing_locked or audio_locked:
+        return None
+
+    start = _assembly_float(item.get("assembly_video_trim_start_sec") or item.get("assemblyVideoTrimStartSec"), 0.0)
+    end = _assembly_float(item.get("assembly_video_trim_end_sec") or item.get("assemblyVideoTrimEndSec"), 0.0)
+    duration = _assembly_float(item.get("assembly_video_trim_duration_sec") or item.get("assemblyVideoTrimDurationSec"), 0.0)
+    if end > start:
+        duration = end - start
+    if start < 0 or duration < 0.05:
+        return None
+    return {
+        "startSec": round(float(start), 6),
+        "durationSec": round(float(duration), 6),
+        "endSec": round(float(start + duration), 6),
+    }
+
+
+def _assembly_extract_video_trim_v201a(source_path: Path, out_path: Path, trim: dict[str, float], *, job_id: str, scene_id: str) -> Path:
+    start = max(0.0, float(trim.get("startSec") or 0.0))
+    duration = max(0.05, float(trim.get("durationSec") or 0.0))
+    print("[BOARD ASSEMBLY VIDEO TRIM V201A]", {
+        "job_id": job_id,
+        "scene_id": scene_id,
+        "source": str(source_path),
+        "out": str(out_path),
+        "startSec": round(start, 6),
+        "durationSec": round(duration, 6),
+    }, flush=True)
+    _run_ffmpeg([
+        "-y",
+        "-i", str(source_path),
+        "-ss", f"{start:.6f}",
+        "-t", f"{duration:.6f}",
+        "-map", "0:v:0",
+        "-map", "0:a?",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-ar", "48000",
+        "-ac", "2",
+        "-movflags", "+faststart",
+        str(out_path),
+    ])
+    return out_path
+
+
+
+# AVA_BOARD_ASSEMBLY_VIDEO_TRIM_V201B:
+# Server-side authority merge for two-sided Assembly video trim.
+# Reason: Montage can restore a stale board_assembly snapshot; the current Board snapshot is the source of trim UI values.
+def _assembly_item_scene_id_v201b(item: dict[str, Any]) -> str:
+    if not isinstance(item, dict):
+        return ""
+    return str(item.get("scene_id") or item.get("sceneId") or item.get("id") or item.get("scene_id_text") or "").strip()
+
+
+def _assembly_board_timing_locked_v201b(board_data: dict[str, Any]) -> bool:
+    if not isinstance(board_data, dict):
+        return False
+    source = str(board_data.get("source") or board_data.get("boardSource") or board_data.get("importedFrom") or board_data.get("source_kind") or board_data.get("sourceKind") or "").lower()
+    if board_data.get("boardTimingLocked") is True or board_data.get("timingLocked") is True or board_data.get("manualTimingLocked") is True:
+        return True
+    if "manual_timing" in source or "timing_to_board" in source or source == "timing":
+        return True
+    return False
+
+
+def _assembly_scene_timing_locked_v201b(scene: dict[str, Any]) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    source = str(scene.get("source") or scene.get("importedFrom") or scene.get("durationSource") or scene.get("duration_source") or "").lower()
+    if scene.get("timingLocked") is True or scene.get("timing_locked") is True:
+        return True
+    if source in {"timing", "manual_timing"} or "manual_timing" in source or "timing_to_board" in source:
+        return True
+    if isinstance(scene.get("source_phrase_ids"), list) and scene.get("source_phrase_ids"):
+        return True
+    if isinstance(scene.get("sourcePhraseIds"), list) and scene.get("sourcePhraseIds"):
+        return True
+    return False
+
+
+def _assembly_scene_trim_payload_from_board_v201b(board_data: dict[str, Any], scene: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(scene, dict) or _assembly_board_timing_locked_v201b(board_data) or _assembly_scene_timing_locked_v201b(scene):
+        return None
+    if not _assembly_bool(scene.get("assemblyVideoTrimEnabled") or scene.get("assembly_video_trim_enabled")):
+        return None
+    # Keep the original safety rule: never trim ia2v / lip-sync / instrumental / explicit audio-slice scenes.
+    if _assembly_item_audio_driven_trim_locked_v201a(scene):
+        return None
+
+    source_duration = _assembly_float(
+        scene.get("assemblyVideoDurationSec")
+        or scene.get("assembly_video_duration_sec")
+        or scene.get("videoDurationSec")
+        or scene.get("video_duration_sec"),
+        0.0,
+    )
+    start = _assembly_float(scene.get("assemblyVideoTrimStartSec") or scene.get("assembly_video_trim_start_sec"), 0.0)
+    end = _assembly_float(scene.get("assemblyVideoTrimEndSec") or scene.get("assembly_video_trim_end_sec"), 0.0)
+    if source_duration > 0:
+        start = max(0.0, min(source_duration, start))
+        end = max(0.0, min(source_duration, end if end > 0 else source_duration))
+    duration = end - start if end > start else _assembly_float(scene.get("assemblyVideoTrimDurationSec") or scene.get("assembly_video_trim_duration_sec"), 0.0)
+    if start < 0 or duration < 0.05:
+        return None
+    return {
+        "assembly_video_trim_allowed": True,
+        "assemblyVideoTrimAllowed": True,
+        "assembly_video_trim_enabled": True,
+        "assemblyVideoTrimEnabled": True,
+        "assembly_video_trim_start_sec": round(float(start), 6),
+        "assemblyVideoTrimStartSec": round(float(start), 6),
+        "assembly_video_trim_end_sec": round(float(start + duration), 6),
+        "assemblyVideoTrimEndSec": round(float(start + duration), 6),
+        "assembly_video_trim_duration_sec": round(float(duration), 6),
+        "assemblyVideoTrimDurationSec": round(float(duration), 6),
+        "assembly_video_source_duration_sec": round(float(source_duration), 6) if source_duration > 0 else 0,
+        "assemblyVideoSourceDurationSec": round(float(source_duration), 6) if source_duration > 0 else 0,
+        "assembly_timing_locked": False,
+        "assemblyTimingLocked": False,
+        "assembly_audio_driven_trim_locked": False,
+        "assemblyAudioDrivenTrimLocked": False,
+    }
+
+
+def _assembly_payload_merge_board_video_trims_v201b(payload_data: dict[str, Any], project_id: str) -> dict[str, Any]:
+    if not isinstance(payload_data, dict) or not project_id:
+        return payload_data
+    raw_items = payload_data.get("items") or payload_data.get("sceneItems") or []
+    if not isinstance(raw_items, list) or not raw_items:
+        return payload_data
+    try:
+        board_data = _board_batch_read_snapshot(project_id)
+    except Exception as exc:
+        print("[BOARD ASSEMBLY VIDEO TRIM MERGE V201B ERROR]", {"project_id": project_id, "error": str(exc)}, flush=True)
+        return payload_data
+    if not isinstance(board_data, dict) or _assembly_board_timing_locked_v201b(board_data):
+        return payload_data
+
+    scene_map: dict[str, dict[str, Any]] = {}
+    for scene in board_data.get("scenes") or []:
+        if not isinstance(scene, dict):
+            continue
+        sid = _assembly_item_scene_id_v201b(scene)
+        trim_payload = _assembly_scene_trim_payload_from_board_v201b(board_data, scene)
+        if sid and trim_payload:
+            scene_map[sid] = trim_payload
+    if not scene_map:
+        return payload_data
+
+    next_payload = copy.deepcopy(payload_data)
+    items = next_payload.get("items") or next_payload.get("sceneItems") or []
+    if not isinstance(items, list):
+        return payload_data
+
+    trimmed_scene_ids: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        sid = _assembly_item_scene_id_v201b(item)
+        trim_payload = scene_map.get(sid)
+        if not trim_payload:
+            continue
+        item.update(trim_payload)
+        item["duration_sec"] = trim_payload["assembly_video_trim_duration_sec"]
+        item["durationSec"] = trim_payload["assemblyVideoTrimDurationSec"]
+        trimmed_scene_ids.append(sid)
+
+    if not trimmed_scene_ids:
+        return payload_data
+
+    # Free/manual Board timeline: after trim, scenes must close the gaps and become sequential.
+    # Timing-imported projects are skipped above, so this cannot break Manual Timing sync.
+    sorted_items = sorted(
+        [(idx, item) for idx, item in enumerate(items) if isinstance(item, dict)],
+        key=lambda pair: (_assembly_float(pair[1].get("start_sec") or pair[1].get("startSec") or pair[1].get("start"), float(pair[0])), pair[0]),
+    )
+    cursor = 0.0
+    for _, item in sorted_items:
+        duration = _assembly_float(item.get("duration_sec") or item.get("durationSec"), 0.0)
+        if duration <= 0:
+            start0 = _assembly_float(item.get("start_sec") or item.get("startSec") or item.get("start"), 0.0)
+            end0 = _assembly_float(item.get("end_sec") or item.get("endSec") or item.get("end"), 0.0)
+            duration = max(0.05, end0 - start0)
+        item["start_sec"] = round(cursor, 6)
+        item["startSec"] = round(cursor, 6)
+        item["start"] = round(cursor, 6)
+        cursor += duration
+        item["end_sec"] = round(cursor, 6)
+        item["endSec"] = round(cursor, 6)
+        item["end"] = round(cursor, 6)
+
+    next_payload["items"] = items
+    next_payload["sceneItems"] = items
+    next_payload["duration_sec"] = round(cursor, 6)
+    next_payload["durationSec"] = round(cursor, 6)
+    next_payload["timeline_duration_sec"] = round(cursor, 6)
+    next_payload["timelineDurationSec"] = round(cursor, 6)
+    print("[BOARD ASSEMBLY VIDEO TRIM PAYLOAD MERGE V201B]", {
+        "project_id": project_id,
+        "trimmedSceneIds": trimmed_scene_ids,
+        "count": len(trimmed_scene_ids),
+        "timelineDurationSec": round(cursor, 6),
+    }, flush=True)
+    return next_payload
+
 def _run_board_assembly_job(job_id: str) -> None:
     job = BOARD_ASSEMBLY_JOBS.get(job_id)
     if not job:
@@ -7439,9 +7691,22 @@ def _run_board_assembly_job(job_id: str) -> None:
                     })
                 raise
 
+            trim_v201a = _assembly_item_video_trim_v201a(item)
+            source_for_normalize_v201a = source_path
+            if trim_v201a:
+                trim_path_v201a = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}_trim_v201a.mp4"
+                source_for_normalize_v201a = _assembly_extract_video_trim_v201a(
+                    source_path,
+                    trim_path_v201a,
+                    trim_v201a,
+                    job_id=job_id,
+                    scene_id=scene_id,
+                )
+                duration = max(0.05, float(trim_v201a.get("durationSec") or duration or 0.1))
+
             normalized_path = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}.mp4"
             prepared = _normalize_assembly_clip(
-                source_path,
+                source_for_normalize_v201a,
                 normalized_path,
                 width=width,
                 height=height,
@@ -7450,6 +7715,10 @@ def _run_board_assembly_job(job_id: str) -> None:
                 audio_volume=_assembly_scene_audio_volume_for_item(item, audio_mode, scene_volume),
                 fit_mode=fit_mode,
             )
+            if trim_v201a:
+                prepared["assemblyVideoTrimV201A"] = trim_v201a
+                prepared["sourceTrimStartSecV201A"] = trim_v201a.get("startSec")
+                prepared["sourceTrimDurationSecV201A"] = trim_v201a.get("durationSec")
             prepared.update({
                 "sceneId": scene_id,
                 "index": index,
@@ -7885,14 +8154,15 @@ def start_board_assembly(payload: dict[str, Any], user: dict = Depends(get_curre
     job_id = f"assembly_{uuid4().hex[:14]}"
     now = datetime.utcnow().isoformat() + "Z"
 
+    project_id_for_credit = _clean_project_id(payload_data.get("project_id")) or _clean_project_id(payload_data.get("projectId"))
+    if project_id_for_credit:
+        ensure_project_access(project_id_for_credit, user)
+        payload_data = _assembly_payload_merge_board_video_trims_v201b(payload_data, project_id_for_credit)
+
     raw_items = payload_data.get("items") or payload_data.get("sceneItems") or []
     ready_count = 0
     if isinstance(raw_items, list):
         ready_count = sum(1 for item in raw_items if isinstance(item, dict) and _assembly_item_video_value(item))
-
-    project_id_for_credit = _clean_project_id(payload_data.get("project_id")) or _clean_project_id(payload_data.get("projectId"))
-    if project_id_for_credit:
-        ensure_project_access(project_id_for_credit, user)
 
     assembly_credit_actions = _ava_credit_assembly_actions_from_payload(payload_data)
     assembly_credit_cost = sum(int(action.get("amount") or 0) for action in assembly_credit_actions)

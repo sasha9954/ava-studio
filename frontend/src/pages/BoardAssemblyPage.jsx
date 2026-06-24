@@ -267,6 +267,62 @@ function durationOf(scene) {
   return Math.max(0, toNumber(scene?.end_sec ?? scene?.end, 0) - toNumber(scene?.start_sec ?? scene?.start, 0))
 }
 
+
+// AVA_BOARD_ASSEMBLY_VIDEO_TRIM_V201A:
+// Assembly may trim only ordinary free/manual Board videos. Timing boards and audio-driven routes are locked.
+function assemblyBoardTimingLockedForTrimV201A(board = {}, scene = {}) {
+  const boardSource = String(board?.source || board?.importedFrom || board?.source_kind || board?.sourceKind || '').toLowerCase()
+  const sceneSource = String(scene?.source || scene?.importedFrom || scene?.durationSource || scene?.duration_source || '').toLowerCase()
+  if (board?.boardTimingLocked === true || board?.timingLocked === true || board?.importedFrom === 'manual_timing') return true
+  if (scene?.timingLocked === true || scene?.timing_locked === true || scene?.durationSource === 'timing' || scene?.duration_source === 'timing') return true
+  if (boardSource.includes('manual_timing') || boardSource.includes('timing_to_board')) return true
+  if (sceneSource.includes('manual_timing') || sceneSource.includes('timing_to_board')) return true
+  if (Array.isArray(scene?.source_phrase_ids) && scene.source_phrase_ids.length) return true
+  if (Array.isArray(scene?.sourcePhraseIds) && scene.sourcePhraseIds.length) return true
+  return false
+}
+
+function assemblySceneAudioDrivenTrimLockedV201A(scene = {}) {
+  const route = String(scene?.route || scene?.planned_route || scene?.plannedRoute || scene?.model_route || scene?.modelRoute || '').trim().toLowerCase()
+  // V201B: trim is locked only for ia2v / lip-sync / instrumental / explicit audio-slice scenes.
+  // Generic clips with embedded audio are allowed: Assembly trims the ready video asset as one piece.
+  if (
+    route.includes('ia2v') ||
+    route.includes('lip') ||
+    route.includes('sync') ||
+    route.includes('instrument')
+  ) return true
+  return Boolean(
+    scene?.lip_sync_required || scene?.lipSyncRequired ||
+    scene?.audio_slice_asset_id || scene?.audioSliceAssetId ||
+    scene?.audio_slice_api_path || scene?.audioSliceApiPath ||
+    scene?.manual_lipsync_audio_asset_id || scene?.manualLipSyncAudioAssetId ||
+    scene?.manual_lipsync_audio_api_path || scene?.manualLipSyncAudioApiPath
+  )
+}
+
+function assemblyVideoTrimForSceneV201A(board = {}, scene = {}) {
+  if (assemblyBoardTimingLockedForTrimV201A(board, scene)) return null
+  if (assemblySceneAudioDrivenTrimLockedV201A(scene)) return null
+  if (!(scene?.assemblyVideoTrimEnabled || scene?.assembly_video_trim_enabled)) return null
+  const sourceDuration = toNumber(scene?.assemblyVideoDurationSec ?? scene?.assembly_video_duration_sec ?? scene?.videoDurationSec ?? scene?.video_duration_sec, 0)
+  const rawStart = toNumber(scene?.assemblyVideoTrimStartSec ?? scene?.assembly_video_trim_start_sec, 0)
+  const rawEnd = toNumber(scene?.assemblyVideoTrimEndSec ?? scene?.assembly_video_trim_end_sec, sourceDuration)
+  if (!Number.isFinite(sourceDuration) || sourceDuration <= 0) return null
+  const start = Math.max(0, Math.min(sourceDuration, rawStart))
+  const end = Math.max(0, Math.min(sourceDuration, rawEnd))
+  const duration = end - start
+  if (!Number.isFinite(duration) || duration < 0.05) return null
+  return {
+    enabled: true,
+    startSec: Number(start.toFixed(3)),
+    endSec: Number(end.toFixed(3)),
+    durationSec: Number(duration.toFixed(3)),
+    sourceDurationSec: Number(sourceDuration.toFixed(3)),
+  }
+}
+
+
 function isLocalBrowserPath(value = '') {
   const raw = String(value || '').trim()
   return /^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\') || raw.startsWith('file:')
@@ -533,7 +589,11 @@ function isGeneratorAssemblyBoard(board = {}) {
 }
 
 function buildSceneItems(board, preferMmaudio = true) {
-  return asArray(board.scenes).map((scene, index) => {
+  const scenes = asArray(board.scenes)
+  const boardTimingLockedV201A = assemblyBoardTimingLockedForTrimV201A(board || {}, scenes[0] || {})
+  let freeBoardCursorV201A = 0
+
+  return scenes.map((scene, index) => {
     const videoApiPath = pickSceneVideoApiPath(scene, preferMmaudio)
     const videoAssetApiPath = sceneVideoAssetApiPath(scene, preferMmaudio)
     const videoJobId = pickSceneVideoJobId(scene, preferMmaudio)
@@ -543,7 +603,16 @@ function buildSceneItems(board, preferMmaudio = true) {
     const hasMmaudio = Boolean(scene?.mmaudio_video_api_path || scene?.mmaudioVideoApiPath || scene?.mmaudio_video_url || scene?.mmaudioVideoUrl)
     const hasVideo = Boolean(videoUrl)
     const hasSound = sceneHasSound(scene)
-    const duration = durationOf(scene)
+    const trimV201A = assemblyVideoTrimForSceneV201A(board || {}, scene || {})
+    const duration = trimV201A?.durationSec || durationOf(scene)
+    const rawStart = toNumber(scene?.start_sec ?? scene?.start, 0)
+    const rawEnd = toNumber(scene?.end_sec ?? scene?.end, 0)
+    const start = boardTimingLockedV201A ? rawStart : freeBoardCursorV201A
+    const end = boardTimingLockedV201A
+      ? (rawEnd > rawStart ? rawEnd : rawStart + duration)
+      : start + duration
+    if (!boardTimingLockedV201A) freeBoardCursorV201A = end
+
     return {
       id: scene?.id || scene?.scene_id || `seg_${String(index + 1).padStart(2, '0')}`,
       index,
@@ -566,12 +635,14 @@ function buildSceneItems(board, preferMmaudio = true) {
       route: scene?.route || 'i2v',
       hue: assemblySceneColor(scene, index),
       blockLabel: assemblySceneBlockLabel(scene),
-      start: toNumber(scene?.start_sec ?? scene?.start, 0),
-      end: toNumber(scene?.end_sec ?? scene?.end, 0),
+      start,
+      end,
+      assemblyVideoTrim: trimV201A,
       raw: scene,
     }
   })
 }
+
 
 
 // AVA_ASSEMBLY_OUTPUT_SPEC_V195F
@@ -1628,6 +1699,22 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           duration_sec: item.duration,
           start_sec: item.start,
           end_sec: item.end,
+          assembly_video_trim_allowed: Boolean(item.assemblyVideoTrim),
+          assemblyVideoTrimAllowed: Boolean(item.assemblyVideoTrim),
+          assembly_video_trim_enabled: Boolean(item.assemblyVideoTrim?.enabled),
+          assemblyVideoTrimEnabled: Boolean(item.assemblyVideoTrim?.enabled),
+          assembly_video_trim_start_sec: item.assemblyVideoTrim?.startSec || 0,
+          assemblyVideoTrimStartSec: item.assemblyVideoTrim?.startSec || 0,
+          assembly_video_trim_end_sec: item.assemblyVideoTrim?.endSec || 0,
+          assemblyVideoTrimEndSec: item.assemblyVideoTrim?.endSec || 0,
+          assembly_video_trim_duration_sec: item.assemblyVideoTrim?.durationSec || 0,
+          assemblyVideoTrimDurationSec: item.assemblyVideoTrim?.durationSec || 0,
+          assembly_video_source_duration_sec: item.assemblyVideoTrim?.sourceDurationSec || 0,
+          assemblyVideoSourceDurationSec: item.assemblyVideoTrim?.sourceDurationSec || 0,
+          assembly_timing_locked: assemblyBoardTimingLockedForTrimV201A(board || {}, raw || {}),
+          assemblyTimingLocked: assemblyBoardTimingLockedForTrimV201A(board || {}, raw || {}),
+          assembly_audio_driven_trim_locked: assemblySceneAudioDrivenTrimLockedV201A(raw || {}),
+          assemblyAudioDrivenTrimLocked: assemblySceneAudioDrivenTrimLockedV201A(raw || {}),
           video_url: item.videoUrl,
           videoUrl: item.videoUrl,
           video_api_path: item.videoApiPath || '',

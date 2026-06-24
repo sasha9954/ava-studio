@@ -1728,6 +1728,67 @@ function normalizePhrase(raw, index = 0) {
   }
 }
 
+
+// AVA_BOARD_ASSEMBLY_VIDEO_TRIM_V201A:
+// Select an IN/OUT range of a ready scene video for final Assembly only.
+// Never touch master audio. Never show/apply it for Timing-imported boards or audio-driven ia2v/lip-sync/instrumental scenes.
+const AVA_BOARD_VIDEO_TRIM_MIN_SEC_V201A = 0.08
+
+function boardSceneAudioDrivenTrimLockedV201A(scene = {}) {
+  const route = String(scene?.route || scene?.planned_route || scene?.plannedRoute || scene?.model_route || scene?.modelRoute || '').trim().toLowerCase()
+  // V201B: trim is locked only for ia2v / lip-sync / instrumental / explicit audio-slice scenes.
+  // Generic clips with embedded audio are allowed: Assembly trims the ready video asset as one piece.
+  if (
+    route.includes('ia2v') ||
+    route.includes('lip') ||
+    route.includes('sync') ||
+    route.includes('instrument')
+  ) return true
+  return Boolean(
+    scene?.lip_sync_required || scene?.lipSyncRequired ||
+    scene?.audio_slice_asset_id || scene?.audioSliceAssetId ||
+    scene?.audio_slice_api_path || scene?.audioSliceApiPath ||
+    scene?.manual_lipsync_audio_asset_id || scene?.manualLipSyncAudioAssetId ||
+    scene?.manual_lipsync_audio_api_path || scene?.manualLipSyncAudioApiPath
+  )
+}
+
+function boardSceneVideoDurationForTrimV201A(scene = {}) {
+  const direct = toNumber(
+    scene?.assemblyVideoDurationSec ?? scene?.assembly_video_duration_sec ??
+    scene?.videoDurationSec ?? scene?.video_duration_sec ??
+    scene?.videoMetadataDurationSec ?? scene?.video_metadata_duration_sec ?? 0,
+    0,
+  )
+  if (direct > 0) return Number(direct.toFixed(3))
+  return 0
+}
+
+function boardSceneVideoTrimRangeV201A(scene = {}) {
+  const duration = boardSceneVideoDurationForTrimV201A(scene)
+  const enabled = Boolean(scene?.assemblyVideoTrimEnabled || scene?.assembly_video_trim_enabled)
+  const fallbackEnd = duration > 0 ? duration : 0
+  const rawStart = toNumber(scene?.assemblyVideoTrimStartSec ?? scene?.assembly_video_trim_start_sec, 0)
+  const rawEnd = toNumber(scene?.assemblyVideoTrimEndSec ?? scene?.assembly_video_trim_end_sec, fallbackEnd)
+  const start = duration > 0 ? Math.max(0, Math.min(duration, rawStart)) : 0
+  const end = duration > 0 ? Math.max(0, Math.min(duration, rawEnd > 0 ? rawEnd : duration)) : 0
+  const safeEnd = duration > 0 && end <= start ? Math.min(duration, start + AVA_BOARD_VIDEO_TRIM_MIN_SEC_V201A) : end
+  return {
+    enabled,
+    duration,
+    start: Number(start.toFixed(3)),
+    end: Number(safeEnd.toFixed(3)),
+    clipDuration: Number(Math.max(0, safeEnd - start).toFixed(3)),
+  }
+}
+
+function formatBoardTrimSecondsV201A(value) {
+  const num = Number(value || 0)
+  if (!Number.isFinite(num)) return '0.00'
+  return num.toFixed(2)
+}
+
+
 function buildPhraseList(timing = {}) {
   const audioPhrases = asArray(timing.audio_phrases || timing.audioPhrases).map(normalizePhrase)
   const speechSegments = asArray(timing.speechSegments || timing.speech_segments).map(normalizePhrase)
@@ -4036,6 +4097,7 @@ export default function BoardPage() {
   const activeProjectFormatV177B = useMemo(() => boardProjectFormatFromContextV177C(projectId, activeProject, projects), [projectId, activeProject, projects])
   const [board, setBoard] = useState(emptyBoard)
   const [manualSceneDurationSec, setManualSceneDurationSec] = useState(6)
+  const [assemblyVideoTrimOpenV201A, setAssemblyVideoTrimOpenV201A] = useState(false)
 
 
     const [showTimingToBoardConfirm, setShowTimingToBoardConfirm] = useState(false)
@@ -6529,6 +6591,29 @@ function sceneVideoActionState(scene) {
     })()
   )
 
+  const selectedAssemblyVideoTrimAudioLockedV201A = Boolean(selectedScene && boardSceneAudioDrivenTrimLockedV201A(selectedScene))
+  const selectedAssemblyVideoTrimCanUseV201A = Boolean(
+    manualSceneToolsEnabled &&
+    selectedScene &&
+    !selectedSceneTimingLocked &&
+    !selectedAssemblyVideoTrimAudioLockedV201A
+  )
+  const selectedAssemblyVideoTrimRangeV201A = useMemo(
+    () => boardSceneVideoTrimRangeV201A(selectedScene || {}),
+    [
+      selectedScene?.id,
+      selectedScene?.scene_id,
+      selectedScene?.assemblyVideoDurationSec,
+      selectedScene?.assembly_video_duration_sec,
+      selectedScene?.assemblyVideoTrimEnabled,
+      selectedScene?.assembly_video_trim_enabled,
+      selectedScene?.assemblyVideoTrimStartSec,
+      selectedScene?.assembly_video_trim_start_sec,
+      selectedScene?.assemblyVideoTrimEndSec,
+      selectedScene?.assembly_video_trim_end_sec,
+    ],
+  )
+
   const timingReturnButtonEnabled = !manualSceneToolsEnabled
 
 
@@ -8307,6 +8392,103 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
         toNumber(scene?.duration_sec ?? scene?.duration, 0) !== toNumber(next?.duration_sec ?? next?.duration, 0)
       )
     })
+  }
+
+
+function rememberSelectedSceneVideoDurationV201A(rawDuration) {
+    const duration = Number(rawDuration || 0)
+    if (!Number.isFinite(duration) || duration <= 0) return
+    const safeDuration = Number(duration.toFixed(3))
+    const selectedId = asText(selectedScene?.id || selectedScene?.scene_id || selectedScene?.sceneId)
+    if (!selectedId) return
+    if (!selectedAssemblyVideoTrimCanUseV201A) return
+    const oldDuration = boardSceneVideoDurationForTrimV201A(selectedScene || {})
+    if (Math.abs(Number(oldDuration || 0) - safeDuration) <= 0.02) return
+
+    const currentRange = boardSceneVideoTrimRangeV201A(selectedScene || {})
+    const nextEnd = currentRange.enabled
+      ? Math.max(AVA_BOARD_VIDEO_TRIM_MIN_SEC_V201A, Math.min(safeDuration, currentRange.end || safeDuration))
+      : safeDuration
+    updateSceneAndSave(selectedId, {
+      assemblyVideoDurationSec: safeDuration,
+      assembly_video_duration_sec: safeDuration,
+      videoDurationSec: safeDuration,
+      video_duration_sec: safeDuration,
+      assemblyVideoTrimEndSec: Number(nextEnd.toFixed(3)),
+      assembly_video_trim_end_sec: Number(nextEnd.toFixed(3)),
+      assemblyVideoTrimUpdatedAt: new Date().toISOString(),
+      assembly_video_trim_updated_at: new Date().toISOString(),
+    })
+  }
+
+  function updateSelectedAssemblyVideoTrimV201A(patch = {}) {
+    const selectedId = asText(selectedScene?.id || selectedScene?.scene_id || selectedScene?.sceneId)
+    if (!selectedId) return
+    if (!selectedAssemblyVideoTrimCanUseV201A) {
+      setStatus(selectedAssemblyVideoTrimAudioLockedV201A
+        ? 'Обрезка заблокирована для ia2v/lip-sync/instrumental: это готовый audio-driven клип.'
+        : 'Обрезка недоступна для сцен из Тайминга.')
+      return
+    }
+
+    const current = boardSceneVideoTrimRangeV201A(selectedScene || {})
+    const duration = Number(current.duration || 0)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      setStatus('Длина видео ещё не определена. Открой preview/дождись загрузки metadata.')
+      return
+    }
+
+    const minGap = Math.min(AVA_BOARD_VIDEO_TRIM_MIN_SEC_V201A, Math.max(0.02, duration / 2))
+    let enabled = patch.enabled !== undefined ? Boolean(patch.enabled) : true
+    let start = patch.startSec !== undefined ? Number(patch.startSec) : Number(current.start || 0)
+    let end = patch.endSec !== undefined ? Number(patch.endSec) : Number(current.end || duration)
+    start = Number.isFinite(start) ? Math.max(0, Math.min(duration, start)) : 0
+    end = Number.isFinite(end) ? Math.max(0, Math.min(duration, end)) : duration
+
+    if (patch.edge === 'start' && start > end - minGap) start = Math.max(0, end - minGap)
+    if (patch.edge === 'end' && end < start + minGap) end = Math.min(duration, start + minGap)
+    if (end <= start) end = Math.min(duration, start + minGap)
+
+    start = Number(start.toFixed(3))
+    end = Number(end.toFixed(3))
+    const clipDuration = Number(Math.max(minGap, end - start).toFixed(3))
+
+    updateSceneAndSave(selectedId, {
+      assemblyVideoTrimEnabled: enabled,
+      assembly_video_trim_enabled: enabled,
+      assemblyVideoTrimStartSec: start,
+      assembly_video_trim_start_sec: start,
+      assemblyVideoTrimEndSec: end,
+      assembly_video_trim_end_sec: end,
+      assemblyVideoTrimDurationSec: clipDuration,
+      assembly_video_trim_duration_sec: clipDuration,
+      assemblyVideoDurationSec: duration,
+      assembly_video_duration_sec: duration,
+      assemblyVideoTrimUpdatedAt: new Date().toISOString(),
+      assembly_video_trim_updated_at: new Date().toISOString(),
+    })
+    setStatus(enabled
+      ? `Обрезка для сборки: ${formatBoardTrimSecondsV201A(start)}–${formatBoardTrimSecondsV201A(end)} сек`
+      : 'Обрезка видео для сборки выключена')
+  }
+
+  function resetSelectedAssemblyVideoTrimV201A() {
+    const selectedId = asText(selectedScene?.id || selectedScene?.scene_id || selectedScene?.sceneId)
+    if (!selectedId) return
+    const duration = boardSceneVideoDurationForTrimV201A(selectedScene || {})
+    updateSceneAndSave(selectedId, {
+      assemblyVideoTrimEnabled: false,
+      assembly_video_trim_enabled: false,
+      assemblyVideoTrimStartSec: 0,
+      assembly_video_trim_start_sec: 0,
+      assemblyVideoTrimEndSec: duration || null,
+      assembly_video_trim_end_sec: duration || null,
+      assemblyVideoTrimDurationSec: duration || null,
+      assembly_video_trim_duration_sec: duration || null,
+      assemblyVideoTrimUpdatedAt: new Date().toISOString(),
+      assembly_video_trim_updated_at: new Date().toISOString(),
+    })
+    setStatus('Обрезка видео для сборки сброшена')
   }
 
 function updateSelectedSceneDuration(nextValue) {
@@ -11956,6 +12138,7 @@ async function importTimingJson(event) {
                         src: selectedPreviewVideoUrl,
                         duration,
                       })
+                      rememberSelectedSceneVideoDurationV201A(duration)
                       if (!duration) setSelectedVideoLoadError('video_duration_0')
                     }}
                     onError={(event) => {
@@ -12063,6 +12246,108 @@ async function importTimingJson(event) {
               </section>
             )}
 
+
+            {!selectedSceneTimingLocked && manualSceneToolsEnabled && selectedScene ? (
+              <section className={`avaBoardAssemblyVideoTrimPanelV201A ${selectedAssemblyVideoTrimCanUseV201A ? '' : 'isLocked'} ${selectedAssemblyVideoTrimRangeV201A.enabled ? 'isEnabled' : ''}`}>
+                <button
+                  type="button"
+                  className="avaBoardAssemblyVideoTrimSummaryV201A"
+                  onClick={() => setAssemblyVideoTrimOpenV201A((value) => !value)}
+                >
+                  <span>✂ Обрезка видео в сборке</span>
+                  <strong>
+                    {selectedAssemblyVideoTrimCanUseV201A
+                      ? (selectedAssemblyVideoTrimRangeV201A.enabled
+                        ? `${formatBoardTrimSecondsV201A(selectedAssemblyVideoTrimRangeV201A.start)}–${formatBoardTrimSecondsV201A(selectedAssemblyVideoTrimRangeV201A.end)} · итог ${formatBoardTrimSecondsV201A(selectedAssemblyVideoTrimRangeV201A.clipDuration)} сек`
+                        : `выкл · видео ${selectedAssemblyVideoTrimRangeV201A.duration ? `${formatBoardTrimSecondsV201A(selectedAssemblyVideoTrimRangeV201A.duration)} сек` : 'ждём metadata'}`)
+                      : (selectedAssemblyVideoTrimAudioLockedV201A ? 'заблокировано для ia2v/lip-sync' : 'недоступно')}
+                  </strong>
+                  <i>{assemblyVideoTrimOpenV201A ? '˄' : '˅'}</i>
+                </button>
+
+                {assemblyVideoTrimOpenV201A ? (
+                  <div className="avaBoardAssemblyVideoTrimBodyV201A">
+                    {selectedAssemblyVideoTrimCanUseV201A ? (
+                      <>
+                        <label className="avaBoardAssemblyVideoTrimToggleV201A">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(selectedAssemblyVideoTrimRangeV201A.enabled)}
+                            disabled={!selectedAssemblyVideoTrimRangeV201A.duration}
+                            onChange={(event) => updateSelectedAssemblyVideoTrimV201A({ enabled: event.target.checked })}
+                          />
+                          <span>взять только выбранный кусок видео</span>
+                        </label>
+
+                        <div className="avaBoardAssemblyVideoTrimMetaV201A">
+                          <span>Видео: <strong>{selectedAssemblyVideoTrimRangeV201A.duration ? formatBoardTrimSecondsV201A(selectedAssemblyVideoTrimRangeV201A.duration) : '—'} сек</strong></span>
+                          <span>В сборку: <strong>{selectedAssemblyVideoTrimRangeV201A.enabled ? formatBoardTrimSecondsV201A(selectedAssemblyVideoTrimRangeV201A.clipDuration) : 'всё'} сек</strong></span>
+                        </div>
+
+                        <div className="avaBoardAssemblyVideoTrimRangeV201A">
+                          <input
+                            type="range"
+                            min="0"
+                            max={Math.max(0.1, selectedAssemblyVideoTrimRangeV201A.duration || 0.1)}
+                            step="0.01"
+                            value={selectedAssemblyVideoTrimRangeV201A.start}
+                            disabled={!selectedAssemblyVideoTrimRangeV201A.duration}
+                            onChange={(event) => updateSelectedAssemblyVideoTrimV201A({ startSec: Number(event.target.value), edge: 'start', enabled: true })}
+                          />
+                          <input
+                            type="range"
+                            min="0"
+                            max={Math.max(0.1, selectedAssemblyVideoTrimRangeV201A.duration || 0.1)}
+                            step="0.01"
+                            value={selectedAssemblyVideoTrimRangeV201A.end || selectedAssemblyVideoTrimRangeV201A.duration || 0}
+                            disabled={!selectedAssemblyVideoTrimRangeV201A.duration}
+                            onChange={(event) => updateSelectedAssemblyVideoTrimV201A({ endSec: Number(event.target.value), edge: 'end', enabled: true })}
+                          />
+                        </div>
+
+                        <div className="avaBoardAssemblyVideoTrimNumbersV201A">
+                          <label>Начало
+                            <input
+                              type="number"
+                              min="0"
+                              max={selectedAssemblyVideoTrimRangeV201A.duration || 0}
+                              step="0.01"
+                              value={selectedAssemblyVideoTrimRangeV201A.start}
+                              disabled={!selectedAssemblyVideoTrimRangeV201A.duration}
+                              onChange={(event) => updateSelectedAssemblyVideoTrimV201A({ startSec: Number(event.target.value), edge: 'start', enabled: true })}
+                            />
+                          </label>
+                          <label>Конец
+                            <input
+                              type="number"
+                              min="0"
+                              max={selectedAssemblyVideoTrimRangeV201A.duration || 0}
+                              step="0.01"
+                              value={selectedAssemblyVideoTrimRangeV201A.end || selectedAssemblyVideoTrimRangeV201A.duration || 0}
+                              disabled={!selectedAssemblyVideoTrimRangeV201A.duration}
+                              onChange={(event) => updateSelectedAssemblyVideoTrimV201A({ endSec: Number(event.target.value), edge: 'end', enabled: true })}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="avaBoardAssemblyVideoTrimActionsV201A">
+                          <button type="button" onClick={() => updateSelectedAssemblyVideoTrimV201A({ startSec: 0, endSec: selectedAssemblyVideoTrimRangeV201A.duration, enabled: false })}>Взять всё</button>
+                          <button type="button" onClick={resetSelectedAssemblyVideoTrimV201A}>Сброс</button>
+                        </div>
+                        <small>Режется только готовый video asset при финальной сборке. Исходное видео в Board не меняется.</small>
+                      </>
+                    ) : (
+                      <div className="avaBoardAssemblyVideoTrimLockV201A">
+                        <strong>Обрезка заблокирована 🔒</strong>
+                        <small>{selectedAssemblyVideoTrimAudioLockedV201A
+                          ? 'ia2v / lip-sync / instrumental считаем готовым синхронизированным клипом. Его не режем.'
+                          : 'Сцена привязана к Manual Timing.'}</small>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
             <div className="avaBoardSceneWorkflowPanel">
               <div className="avaBoardWorkflowHead">
