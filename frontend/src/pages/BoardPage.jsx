@@ -1,3 +1,4 @@
+/* AVA_BOARD_IMAGE_CACHE_AUTOSLICE_V200W: clear cached image spinner and auto-cut audio slice before manual ia2v start. */
 /* AVA_BOARD_TIMING_IMPORT_LOADING_V162A: no empty-board flicker during Timing -> Board import. */
 /* AVA_BOARD_BATCH_READY_UI_WINS_V148A: server video refs beat stale polling/runtime busy state. */
 /* AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A: server batch auto-cuts audio slices for ia2v/lip-sync scenes. */
@@ -3447,6 +3448,7 @@ function boardVideoWasBadBeforeRegenerate(scene = {}) {
 }
 
 function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = false, busyLabel = '', busyHint = '', statusLabel = '', statusClassName = '' }) {
+  const imageRefV200W = useRef(null)
   const [imageLoading, setImageLoading] = useState(Boolean(value))
   const [imageFailed, setImageFailed] = useState(false)
   const showBusyOverlay = Boolean(busy || imageLoading)
@@ -3454,7 +3456,42 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = fal
 
   useEffect(() => {
     setImageFailed(false)
-    setImageLoading(Boolean(value))
+    if (!value) {
+      setImageLoading(false)
+      return undefined
+    }
+
+    setImageLoading(true)
+    let cancelled = false
+    let rafId = 0
+    let timerId = 0
+
+    const checkCachedImageV200W = () => {
+      if (cancelled) return
+      const imageNode = imageRefV200W.current
+      if (!imageNode) return
+      if (!imageNode.complete) return
+      if (imageNode.naturalWidth > 0 || imageNode.naturalHeight > 0) {
+        setImageLoading(false)
+        setImageFailed(false)
+      } else {
+        setImageLoading(false)
+        setImageFailed(true)
+      }
+    }
+
+    try {
+      rafId = window.requestAnimationFrame(checkCachedImageV200W)
+      timerId = window.setTimeout(checkCachedImageV200W, 450)
+    } catch {
+      timerId = window.setTimeout(checkCachedImageV200W, 0)
+    }
+
+    return () => {
+      cancelled = true
+      try { if (rafId) window.cancelAnimationFrame(rafId) } catch {}
+      try { if (timerId) window.clearTimeout(timerId) } catch {}
+    }
   }, [value])
 
   return (
@@ -3474,9 +3511,13 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = fal
           <>
             {!imageFailed ? (
               <img
+                ref={imageRefV200W}
+                key={value}
                 src={value}
                 alt={title}
-                onLoad={() => setImageLoading(false)}
+                loading="eager"
+                decoding="async"
+                onLoad={() => { setImageLoading(false); setImageFailed(false) }}
                 onError={() => { setImageLoading(false); setImageFailed(true) }}
               />
             ) : null}
@@ -5495,23 +5536,49 @@ function sceneVideoActionState(scene) {
         const hasReadyVideo = boardSceneHasVideoResultForAuto(scene)
         const waitingOnly = stoppedSet.has(sceneId) || (videoStatus === 'queued' && !hasJob)
 
-        // Stop queue must not kill the job that is already on backend/Comfy.
-        // That active scene continues as “видео делается” and will apply when completed.
-        if (hasJob) {
-          if (['queued', 'starting', 'preparing', 'submitting'].includes(videoStatus)) {
-            activeKeptCount += 1
-            changed = true
-            return {
-              ...scene,
-              video_status: 'running',
-              videoStatus: 'running',
-              video_queue_position: 0,
-              videoQueuePosition: 0,
-              video_queue_source: '',
-              videoQueueSource: '',
+        // V200X: User stop must also release manual single-scene jobs that got stuck
+        // in starting/running after F5 or after a terminal backend status without video.
+        // Preserve already-ready video refs, but clear job ids/endpoints and busy badges.
+        if (hasJob || ['queued', 'starting', 'preparing', 'submitting', 'running', 'processing', 'queued_no_prompt_id'].includes(videoStatus)) {
+          activeKeptCount += 1
+          changed = true
+          const nextMedia = { ...(scene.media || {}) }
+          if (nextMedia.video && typeof nextMedia.video === 'object') {
+            nextMedia.video = {
+              ...nextMedia.video,
+              status: hasReadyVideo ? 'ready' : '',
+              error: '',
+              jobId: '',
+              job_id: '',
+              statusEndpoint: '',
+              status_endpoint: '',
+              progress: 0,
             }
           }
-          return scene
+          return {
+            ...scene,
+            media: nextMedia,
+            video_status: hasReadyVideo ? 'ready' : '',
+            videoStatus: hasReadyVideo ? 'ready' : '',
+            video_error: '',
+            videoError: '',
+            video_job_id: '',
+            videoJobId: '',
+            video_prompt_id: '',
+            videoPromptId: '',
+            video_status_endpoint: '',
+            videoStatusEndpoint: '',
+            video_queue_position: 0,
+            videoQueuePosition: 0,
+            video_queue_source: '',
+            videoQueueSource: '',
+            video_interrupted_reason: 'user_stop_clear_manual_job_v200x',
+            videoInterruptedReason: 'user_stop_clear_manual_job_v200x',
+            video_updated_at: new Date().toISOString(),
+            videoUpdatedAt: new Date().toISOString(),
+            video_progress: 0,
+            videoProgress: 0,
+          }
         }
 
         if (!waitingOnly) return scene
@@ -5586,7 +5653,7 @@ function sceneVideoActionState(scene) {
     }, 0)
 
     const message = activeKeptCount
-      ? `Очередь остановлена. Ожидающие сцены очищены: ${clearedWaitingCount}. Активное видео продолжит делаться.`
+      ? `Очередь остановлена. Ожидающие сцены очищены: ${clearedWaitingCount}. Активные/зависшие job сброшены: ${activeKeptCount}.`
       : `Очередь остановлена. Ожидающие сцены очищены: ${clearedWaitingCount}.`
     setStatus(message)
     pushBoardToast({
@@ -5673,8 +5740,10 @@ function sceneVideoActionState(scene) {
     const statusSceneId = asText(responseSceneId || expectedSceneId)
     const statusProjectId = asText(responseProjectId)
     if (isGeneratorSceneId(statusSceneId)) return 'generator scene'
-    if (!workspaceMode && !statusProjectId) return 'projectId null'
-    if (!workspaceMode && statusProjectId !== asText(projectId)) return 'project mismatch'
+    // V200X: Some manual /clip/video/status responses can omit projectId even when
+    // the job belongs to the current scene. Do not drop a completed video only for
+    // missing projectId; still block explicit mismatches.
+    if (!workspaceMode && statusProjectId && statusProjectId !== asText(projectId)) return 'project mismatch'
     if (statusSceneId && expectedSceneId && statusSceneId !== expectedSceneId) return 'scene mismatch'
     return ''
   }
@@ -9970,6 +10039,105 @@ function boardAudioSourcePayloadForBackend() {
   }
 
 
+  function canAutoExtractSceneAudioSliceV200W(scene = {}) {
+    if (!isIa2vRoute(scene?.route)) return false
+    if (manualLipSyncAudioSourceV129A(scene)) return false
+    const start = toNumber(scene?.start_sec ?? scene?.start ?? scene?.scene_start_sec ?? scene?.sceneStartSec, 0)
+    const end = toNumber(scene?.end_sec ?? scene?.end ?? scene?.scene_end_sec ?? scene?.sceneEndSec, start)
+    if (!(end > start)) return false
+    const sourcePayload = boardAudioSourcePayloadForBackend()
+    return Boolean(sourcePayload.audio_url || sourcePayload.audio_asset_id || sourcePayload.audio_asset_api_path)
+  }
+
+  function audioSliceReadyPatchFromServerV200W(data = {}, scene = {}) {
+    const sceneId = manualLipSyncSceneIdV129A(scene)
+    const start = toNumber(scene?.start_sec ?? scene?.start ?? scene?.scene_start_sec ?? scene?.sceneStartSec, 0)
+    const end = toNumber(scene?.end_sec ?? scene?.end ?? scene?.scene_end_sec ?? scene?.sceneEndSec, start)
+    const audioSliceUrl = asText(data.audio_slice_url || data.audioSliceUrl || data.audio_slice_api_path || data.audioSliceApiPath || '')
+    const audioSliceApiPath = asText(data.audio_slice_api_path || data.audioSliceApiPath || audioSliceUrl || '')
+    const audioSliceName = asText(data.audio_slice_name || data.audioSliceName || `${sceneId || 'scene'}_audio_slice.mp3`)
+    const duration = toNumber(data.durationSec ?? data.duration_sec ?? data.audio_slice_duration ?? data.audioSliceDuration ?? Math.max(0, end - start), Math.max(0, end - start))
+    return {
+      audio_slice_status: 'ready',
+      audioSliceStatus: 'ready',
+      audio_slice_url: audioSliceUrl,
+      audioSliceUrl: audioSliceUrl,
+      audio_slice_api_path: audioSliceApiPath,
+      audioSliceApiPath: audioSliceApiPath,
+      audio_slice_name: audioSliceName,
+      audioSliceName: audioSliceName,
+      audio_slice_mime: data.mimeType || data.mime_type || 'audio/mpeg',
+      audioSliceMime: data.mimeType || data.mime_type || 'audio/mpeg',
+      audio_slice_start: data.startSec ?? data.start_sec ?? start,
+      audioSliceStart: data.startSec ?? data.start_sec ?? start,
+      audio_slice_end: data.endSec ?? data.end_sec ?? end,
+      audioSliceEnd: data.endSec ?? data.end_sec ?? end,
+      audio_slice_duration: duration,
+      audioSliceDuration: duration,
+      audio_slice_source: data.source || 'manual_video_start_auto_slice_v200w',
+      audioSliceSource: data.source || 'manual_video_start_auto_slice_v200w',
+      audio_slice_error: '',
+      audioSliceError: '',
+    }
+  }
+
+  async function ensureAudioSliceForManualVideoStartV200W(scene = {}) {
+    if (!canAutoExtractSceneAudioSliceV200W(scene)) return scene
+
+    const sceneId = manualLipSyncSceneIdV129A(scene)
+    const start = toNumber(scene?.start_sec ?? scene?.start ?? scene?.scene_start_sec ?? scene?.sceneStartSec, 0)
+    const end = toNumber(scene?.end_sec ?? scene?.end ?? scene?.scene_end_sec ?? scene?.sceneEndSec, start)
+    const sourcePayload = boardAudioSourcePayloadForBackend()
+
+    updateSceneAndSave(sceneId, {
+      audio_slice_status: 'extracting',
+      audioSliceStatus: 'extracting',
+      audio_slice_error: '',
+      audioSliceError: '',
+    })
+    setStatus(`Авто-изъятие audio slice для lip-sync · ${sceneId}`)
+    pushBoardToast({
+      type: 'info',
+      title: 'Audio slice',
+      message: `Сцена ${sceneId}: режем аудио из Тайминга перед генерацией.`,
+      sceneId,
+      dedupeKey: `board:auto_slice_v200w:${sceneId}`,
+    })
+
+    try {
+      const data = await apiRequest('/manual-clip/slice-audio', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...sourcePayload,
+          scene_id: sceneId,
+          sceneId,
+          start_sec: start,
+          startSec: start,
+          end_sec: end,
+          endSec: end,
+          duration_sec: Math.max(0, end - start),
+          durationSec: Math.max(0, end - start),
+          format: 'mp3',
+          source: 'board_manual_video_start_auto_slice_v200w',
+        }),
+      })
+      const patch = audioSliceReadyPatchFromServerV200W(data, scene)
+      updateSceneAndSave(sceneId, patch)
+      setStatus(`Audio slice готов автоматически · ${sceneId}`)
+      return { ...scene, ...patch }
+    } catch (error) {
+      console.error('[Board] auto audio slice before video failed V200W', error)
+      const message = error?.message || 'auto_slice_audio_failed'
+      updateSceneAndSave(sceneId, {
+        audio_slice_status: 'error',
+        audioSliceStatus: 'error',
+        audio_slice_error: message,
+        audioSliceError: message,
+      })
+      throw error
+    }
+  }
+
   async function uploadManualLipSyncAudioFromInputV129A(event) {
     const file = event?.target?.files?.[0]
     if (event?.target) event.target.value = ''
@@ -10331,7 +10499,7 @@ async function markVideoPlanned(sceneOverride = null) {
 
     // AVA_BOARD_PERSIST_MARK_VIDEO_PLANNED_V51: persist start/job/error scene patches so F5 can restore active regeneration.
 
-    const sceneToStart = sceneOverride || selectedScene
+    let sceneToStart = sceneOverride || selectedScene
     if (!sceneToStart) return
     const requestSceneId = asText(sceneToStart.id || sceneToStart.scene_id)
     const reviewWasBadBeforeRegenerateV130J = boardSceneHasBadVideoReview(sceneToStart)
@@ -10349,6 +10517,16 @@ async function markVideoPlanned(sceneOverride = null) {
       window.setTimeout(processNextQueuedBoardVideo, 650)
       return
     }
+    try {
+      sceneToStart = await ensureAudioSliceForManualVideoStartV200W(sceneToStart)
+    } catch (error) {
+      const message = `Audio slice не создан: ${error?.message || 'unknown error'}`
+      showSceneVideoInputError(sceneToStart, [message])
+      pushBoardToast({ type: 'error', title: 'Audio slice', message, sceneId: requestSceneId })
+      window.setTimeout(processNextQueuedBoardVideo, 650)
+      return
+    }
+
     const inputProblems = sceneVideoInputProblems(sceneToStart)
     if (inputProblems.length) {
       showSceneVideoInputError(sceneToStart, inputProblems)
@@ -11977,8 +12155,8 @@ async function importTimingJson(event) {
                     disabled={bulkStillsImporting || selectedScene.audio_slice_status === 'extracting'}
                   >
                     <Scissors size={16} />
-                    <span>Изъять аудио</span>
-                    <small>{selectedScene.audio_slice_status === 'ready' ? ((Number(selectedScene.audio_slice_duration || 0) > 0) ? `MP3 готов · ${Number(selectedScene.audio_slice_duration || 0).toFixed(2)}с` : 'MP3 готов') : selectedScene.audio_slice_status === 'extracting' ? 'режем через backend…' : selectedScene.audio_slice_status === 'error' ? 'ошибка slice' : 'POST slice-audio'}</small>
+                    <span>{selectedScene.audio_slice_status === 'ready' ? 'Аудио изъято' : selectedScene.audio_slice_status === 'extracting' ? 'Извлекаем аудио…' : 'Изъять аудио'}</span>
+                    <small>{selectedScene.audio_slice_status === 'ready' ? ((Number(selectedScene.audio_slice_duration || 0) > 0) ? `MP3 готов · ${Number(selectedScene.audio_slice_duration || 0).toFixed(2)}с` : 'MP3 готов') : selectedScene.audio_slice_status === 'extracting' ? 'режем из master audio…' : selectedScene.audio_slice_status === 'error' ? 'ошибка slice' : 'можно заранее · иначе авто перед видео'}</small>
                   </button>
                 ) : null}
 

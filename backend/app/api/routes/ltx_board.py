@@ -4789,9 +4789,67 @@ def stop_board_video_batch(project_id: str, payload: BoardVideoBatchStopIn | Non
     board_data["board_video_batch"] = {**batch, "status": "cancel_requested", "cancelRequested": True, "stopReason": getattr(payload, "reason", None) if payload else "", "updatedAt": _board_batch_now()}
     q = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
     board_data["video_queue"] = {**q, "waitingSceneIds": [], "waiting_scene_ids": [], "source": "server_batch_stop_v131a", "updatedAt": _board_batch_now()}
+
+    # V200X: The same UI button is used to clear server queue and manual single-scene
+    # /clip/video/start jobs. Clear stuck scene job ids/endpoints in the persisted Board
+    # snapshot so F5 does not restore “отправляется/видео делается” forever.
+    cleared_scene_ids_v200x: list[str] = []
+    busy_statuses_v200x = {"queued", "starting", "preparing", "submitting", "running", "processing", "queued_no_prompt_id"}
+    scenes_v200x = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
+    for scene_v200x in scenes_v200x:
+        if not isinstance(scene_v200x, dict):
+            continue
+        scene_id_v200x = str(scene_v200x.get("id") or scene_v200x.get("scene_id") or "").strip()
+        status_v200x = str(scene_v200x.get("video_status") or scene_v200x.get("videoStatus") or "").lower().strip()
+        has_job_v200x = any(str(scene_v200x.get(key) or "").strip() for key in (
+            "video_job_id", "videoJobId", "video_status_endpoint", "videoStatusEndpoint",
+            "server_batch_job_id", "serverBatchJobId", "server_batch_status_endpoint", "serverBatchStatusEndpoint",
+        ))
+        if not (has_job_v200x or status_v200x in busy_statuses_v200x):
+            continue
+        has_video_v200x = any(str(scene_v200x.get(key) or "").strip() for key in (
+            "video_asset_id", "videoAssetId", "video_api_path", "videoApiPath", "video_url", "videoUrl",
+            "result_video_asset_id", "resultVideoAssetId", "result_video_api_path", "resultVideoApiPath", "result_video_url", "resultVideoUrl",
+        ))
+        ready_status_v200x = "ready" if has_video_v200x else ""
+        for key in ("video_status", "videoStatus"):
+            scene_v200x[key] = ready_status_v200x
+        for key in (
+            "video_job_id", "videoJobId", "video_prompt_id", "videoPromptId",
+            "video_status_endpoint", "videoStatusEndpoint", "server_batch_job_id", "serverBatchJobId",
+            "server_batch_status_endpoint", "serverBatchStatusEndpoint", "video_queue_source", "videoQueueSource",
+            "video_error", "videoError",
+        ):
+            scene_v200x[key] = ""
+        for key in ("video_queue_position", "videoQueuePosition", "video_progress", "videoProgress"):
+            scene_v200x[key] = 0
+        scene_v200x["video_interrupted_reason"] = "server_stop_clear_manual_job_v200x"
+        scene_v200x["videoInterruptedReason"] = "server_stop_clear_manual_job_v200x"
+        scene_v200x["video_updated_at"] = _board_batch_now()
+        scene_v200x["videoUpdatedAt"] = scene_v200x["video_updated_at"]
+        media_v200x = scene_v200x.get("media") if isinstance(scene_v200x.get("media"), dict) else {}
+        video_media_v200x = media_v200x.get("video") if isinstance(media_v200x.get("video"), dict) else None
+        if video_media_v200x is not None:
+            video_media_v200x["status"] = ready_status_v200x
+            video_media_v200x["error"] = ""
+            video_media_v200x["jobId"] = ""
+            video_media_v200x["job_id"] = ""
+            video_media_v200x["statusEndpoint"] = ""
+            video_media_v200x["status_endpoint"] = ""
+            video_media_v200x["progress"] = 0
+        if scene_id_v200x:
+            cleared_scene_ids_v200x.append(scene_id_v200x)
+
+    if cleared_scene_ids_v200x:
+        print("[BOARD VIDEO STOP CLEAR MANUAL JOBS V200X]", {
+            "project_id": project_id,
+            "clearedSceneIds": cleared_scene_ids_v200x,
+            "count": len(cleared_scene_ids_v200x),
+        })
+
     board_data["updatedAt"] = _board_batch_now()
-    _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-stop-v131a")
-    return {"ok": True, "status": "cancel_requested", "batchId": batch_id}
+    _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-stop-v200x")
+    return {"ok": True, "status": "cancel_requested", "batchId": batch_id, "clearedSceneIds": cleared_scene_ids_v200x, "cleared_scene_ids": cleared_scene_ids_v200x}
 
 
 

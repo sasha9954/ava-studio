@@ -1119,6 +1119,45 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     return raw?.data || raw || {}
   }
 
+  function boardAssemblyWorkflowEntrySignatureV200Z(entry = {}) {
+    return [
+      String(entry?.to || 'board_assembly'),
+      String(entry?.from || ''),
+      String(entry?.projectId || projectId || ''),
+      String(entry?.createdAt || ''),
+      String(entry?.source || ''),
+    ].join(':')
+  }
+
+  function boardAssemblyWorkflowEntryConsumedKeyV200Z(entry = {}) {
+    return `ava:workflow-entry-consumed:v200z:${boardAssemblyWorkflowEntrySignatureV200Z(entry)}`
+  }
+
+  function isBoardAssemblyWorkflowEntryConsumedV200Z(entry = {}) {
+    if (typeof window === 'undefined') return false
+    if (!entry?.enteredByUserClick || !entry?.createdAt) return false
+    try {
+      return window.sessionStorage.getItem(boardAssemblyWorkflowEntryConsumedKeyV200Z(entry)) === '1'
+    } catch {
+      return false
+    }
+  }
+
+  function markBoardAssemblyWorkflowEntryConsumedV200Z(entry = {}) {
+    if (typeof window === 'undefined') return
+    if (!entry?.enteredByUserClick || !entry?.createdAt) return
+    try {
+      window.sessionStorage.setItem(boardAssemblyWorkflowEntryConsumedKeyV200Z(entry), '1')
+      console.log('[BOARD ASSEMBLY WORKFLOW ENTRY CONSUMED V200Z]', {
+        from: entry?.from,
+        to: entry?.to,
+        projectId: entry?.projectId || projectId || '',
+        createdAt: entry?.createdAt,
+        source: entry?.source || '',
+      })
+    } catch {}
+  }
+
   function boardAssemblyScenesV11(data = {}) {
     const directScenes = asArray(data.scenes)
     if (directScenes.length) return directScenes
@@ -1213,9 +1252,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     try {
       const existingRawV200O = workspaceMode ? await loadWorkspaceStage('board_assembly') : await loadStage(projectId, 'board_assembly')
       const existingDataV200O = boardAssemblyDataV11(existingRawV200O)
-      const existingFinalV200O = normalizePlayableVideoUrl(
-        existingDataV200O.finalVideoUrl || existingDataV200O.finalUrl || existingDataV200O.assemblyUrl || existingDataV200O.outputUrl || existingDataV200O.downloadUrl || existingDataV200O.resultUrl || existingDataV200O.videoUrl || existingDataV200O.video_url || ''
-      )
+      const existingFinalV200O = assemblyFinalUrlFromSnapshot(existingDataV200O)
       if (existingFinalV200O) {
         snapshot.finalVideoUrl = existingFinalV200O
         snapshot.finalUrl = existingFinalV200O
@@ -1274,11 +1311,12 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     const entry = readBoardAssemblyEntryV11()
     const locationEntryV200N = location?.state?.workflowEntry || null
     const fromBoardEntry = String(entry?.from || '').trim() === 'board' || String(entry?.source || '').includes('board_to_assembly')
-    const fromCurrentBoardNavigationV200N = Boolean(
+    const rawFromCurrentBoardNavigationV200N = Boolean(
       locationEntryV200N?.enteredByUserClick &&
       locationEntryV200N?.to === 'board_assembly' &&
       String(locationEntryV200N?.from || '').trim() === 'board'
     )
+    const fromCurrentBoardNavigationV200N = rawFromCurrentBoardNavigationV200N && !isBoardAssemblyWorkflowEntryConsumedV200Z(locationEntryV200N)
     const shouldImportBoard = forceBoard || fromCurrentBoardNavigationV200N
     const localUiSettingsV197F = readAssemblyLocalUiSettingsV197F(settingsStorageKey)
 
@@ -1332,11 +1370,13 @@ function clearBoardAssemblyWorkflowEntryV200O() {
             setWatermarkSize(clampNumber(wm.size, 10, 96, 28))
             setWatermarkMotion(wm.motion || 'corners')
           }
-          const finalUrl = assemblyData.finalVideoUrl || assemblyData.finalUrl || assemblyData.assemblyUrl || assemblyData.outputUrl || assemblyData.downloadUrl || assemblyData.resultUrl || assemblyData.videoUrl || ''
-          setFinalVideoUrl(normalizePlayableVideoUrl(finalUrl))
-          setFinalDirty(Boolean(assemblyData.finalDirty ?? false))
+          const finalUrl = assemblyFinalUrlFromSnapshot(assemblyData)
+          const restoredFinalDirtyV200Z = Boolean(assemblyData.finalDirty ?? false)
+          setFinalVideoUrl(finalUrl)
+          setFinalDirty(restoredFinalDirtyV200Z)
           setAssemblyJob(assemblyData.assemblyJob || assemblyData.job || null)
           setAssemblyRunning(Boolean((assemblyData.assemblyJob || assemblyData.job)?.jobId || (assemblyData.assemblyJob || assemblyData.job)?.job_id) && !finalUrl)
+          console.log('[BOARD ASSEMBLY FINAL RESTORED V200Z]', { finalUrl, finalDirty: restoredFinalDirtyV200Z, source: assemblyData.source || '' })
           setStatus(`Монтаж восстановлен из project snapshot: сцен ${assemblyScenes.length || assemblyItems.length}`)
           setLoading(false)
           return
@@ -1371,6 +1411,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       setWatermarkSize(28)
       setWatermarkMotion('corners')
       await persistBoardImportToAssemblyV11(nextBoard, shouldImportBoard ? 'board_to_assembly_imported_v11' : 'board_fallback_imported_v11')
+      if (fromCurrentBoardNavigationV200N) markBoardAssemblyWorkflowEntryConsumedV200Z(locationEntryV200N)
       clearWorkflowEntry('board_assembly')
       setStatus(nextBoard.scenes?.length ? `Доска: сцен ${nextBoard.scenes.length}` : 'Board пустой')
     } catch (error) {
@@ -2011,7 +2052,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
             </div>
           )}
 
-          {finalVideoUrl && !finalDirty && (
+          {finalVideoUrl && (
             <div className={`avaAssemblyFinalPreview ${assemblyOutputSpec.className || ''} `}>
               <div className="avaBoardSectionHead">
                 <div>
