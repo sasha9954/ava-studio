@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './context/AuthContext.jsx'
 import AvaShellLayout from './layout/AvaShellLayout.jsx'
@@ -10,13 +11,15 @@ import CreateProjectPage from './pages/CreateProjectPage.jsx'
 import AccountPage from './pages/AccountPage.jsx'
 import CreditsPage from './pages/CreditsPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
-import ManualTimingPage from './pages/ManualTimingPage.jsx'
-import BoardPage from './pages/BoardPage.jsx'
-import BoardAssemblyPage from './pages/BoardAssemblyPage.jsx'
-import ModulePlaceholderPage from './pages/ModulePlaceholderPage.jsx'
-import PodcastAudioComposerPage from './pages/podcast_audio/PodcastAudioComposerPage.jsx'
-import VideoMatchBoardPage from './pages/video_match_board/VideoMatchBoardPage.jsx'
-import StandaloneGeneratorPage from './pages/standalone_generator/StandaloneGeneratorPage.jsx'
+
+// AVA_ROUTE_LAZY_LOAD_V200C:
+// Board/Timing/Assembly/Generator pages are heavy; do not put all of them into the first app bundle.
+const ManualTimingPage = lazy(() => import('./pages/ManualTimingPage.jsx'))
+const BoardPage = lazy(() => import('./pages/BoardPage.jsx'))
+const BoardAssemblyPage = lazy(() => import('./pages/BoardAssemblyPage.jsx'))
+const PodcastAudioComposerPage = lazy(() => import('./pages/podcast_audio/PodcastAudioComposerPage.jsx'))
+const VideoMatchBoardPage = lazy(() => import('./pages/video_match_board/VideoMatchBoardPage.jsx'))
+const StandaloneGeneratorPage = lazy(() => import('./pages/standalone_generator/StandaloneGeneratorPage.jsx'))
 
 function Protected({ children }) {
   const { token, booting } = useAuth()
@@ -27,7 +30,8 @@ function Protected({ children }) {
 
 export default function App() {
   return (
-    <Routes>
+    <Suspense fallback={<div className="avaBoot">Загрузка модуля ava-studio…</div>}>
+      <Routes>
       <Route path="/" element={<SplashPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -66,7 +70,8 @@ export default function App() {
         <Route path="credits" element={<CreditsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   )
 }

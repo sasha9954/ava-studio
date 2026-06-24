@@ -991,6 +991,11 @@ const BOARD_SERVER_VIDEO_KEYS_V131N = [
   'video_source_image_mutation_at', 'videoSourceImageMutationAt',
   'video_ready_at', 'videoReadyAt',
   'video_name', 'videoName',
+  // AVA_BOARD_SERVER_CLEAR_WINS_V200I: keep backend stale/orphan clear markers.
+  'video_interrupted_reason', 'videoInterruptedReason',
+  'video_runtime_status_v136i', 'videoRuntimeStatusV136I',
+  'video_runtime_job_id_v136i', 'videoRuntimeJobIdV136I',
+  'video_runtime_status_endpoint_v136i', 'videoRuntimeStatusEndpointV136I',
 ]
 
 function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
@@ -1019,7 +1024,32 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
     )
     const serverReviewStatusV132T = String(serverScene.video_review_status || serverScene.videoReviewStatus || serverScene.review_status || serverScene.reviewStatus || '').toLowerCase()
     const hasServerReviewStatusV132T = ['bad', 'poor', 'reject', 'rejected', 'плохое', 'плохая', 'needs_review', 'review', 'check', 'посмотри', 'на проверку'].includes(serverReviewStatusV132T)
-    const shouldCopy = serverScore > localScore || hasServerVideoRefV132T || hasServerReviewStatusV132T
+    // AVA_BOARD_SERVER_CLEAR_WINS_V200I:
+    // V200H can clear an orphaned job in the saved server snapshot. That cleaned
+    // server scene has a LOWER score than the stale local scene because the job id
+    // and running status were removed. Without this explicit rule the UI keeps
+    // showing "видео делается" until a hard manual reset.
+    const localStatusV200I = String(scene.video_status || scene.videoStatus || '').toLowerCase()
+    const serverStatusV200I = String(serverScene.video_status || serverScene.videoStatus || '').toLowerCase()
+    const localHasJobV200I = Boolean(scene.video_job_id || scene.videoJobId || scene.video_status_endpoint || scene.videoStatusEndpoint)
+    const serverHasJobV200I = Boolean(serverScene.video_job_id || serverScene.videoJobId || serverScene.video_status_endpoint || serverScene.videoStatusEndpoint)
+    const serverClearReasonV200I = String(
+      serverScene.video_interrupted_reason || serverScene.videoInterruptedReason ||
+      serverScene.video_error || serverScene.videoError ||
+      serverScene.video_result?.error || serverScene.videoResult?.error || ''
+    ).toLowerCase()
+    const serverLooksClearedV200I = localHasJobV200I &&
+      BOARD_SERVER_BATCH_ACTIVE_STATUSES_V131N.has(localStatusV200I) &&
+      !serverHasJobV200I &&
+      !BOARD_SERVER_BATCH_ACTIVE_STATUSES_V131N.has(serverStatusV200I) &&
+      (
+        serverClearReasonV200I.includes('stale') ||
+        serverClearReasonV200I.includes('orphan') ||
+        serverClearReasonV200I.includes('not_live') ||
+        serverClearReasonV200I.includes('v200h') ||
+        serverClearReasonV200I.includes('board_video_job_orphaned')
+      )
+    const shouldCopy = serverLooksClearedV200I || serverScore > localScore || hasServerVideoRefV132T || hasServerReviewStatusV132T
     if (!shouldCopy) return scene
 
     const next = { ...scene }
@@ -1043,6 +1073,36 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
       serverScene.result_video_api_path || serverScene.resultVideoApiPath ||
       serverScene.result_video_url || serverScene.resultVideoUrl
     )
+    if (serverLooksClearedV200I) {
+      next.video_status = serverScene.video_status || ''
+      next.videoStatus = serverScene.videoStatus || serverScene.video_status || ''
+      next.video_job_id = ''
+      next.videoJobId = ''
+      next.video_status_endpoint = ''
+      next.videoStatusEndpoint = ''
+      next.video_queue_position = 0
+      next.videoQueuePosition = 0
+      next.video_queue_source = ''
+      next.videoQueueSource = ''
+      next.video_runtime_status_v136i = ''
+      next.videoRuntimeStatusV136I = ''
+      next.video_runtime_job_id_v136i = ''
+      next.videoRuntimeJobIdV136I = ''
+      next.video_runtime_status_endpoint_v136i = ''
+      next.videoRuntimeStatusEndpointV136I = ''
+      next.video_error = serverScene.video_error || serverScene.videoError || serverClearReasonV200I || 'stale_job_cleared_by_server_v200i'
+      next.videoError = next.video_error
+      next.video_interrupted_reason = serverScene.video_interrupted_reason || serverScene.videoInterruptedReason || next.video_error
+      next.videoInterruptedReason = next.video_interrupted_reason
+      next.video_updated_at = serverScene.video_updated_at || serverScene.videoUpdatedAt || new Date().toISOString()
+      next.videoUpdatedAt = next.video_updated_at
+      console.log('[BOARD SERVER CLEAR APPLIED V200I]', {
+        sceneId: id,
+        previousStatus: localStatusV200I,
+        reason: next.video_interrupted_reason || next.video_error || '',
+      })
+    }
+
     if (hasServerVideoRefV131O) {
       const imageEpochV131O = Number(
         next.image_mutation_epoch ?? next.imageMutationEpoch ??
@@ -1111,8 +1171,55 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
   return nextBoard
 }
 
+// AVA_BOARD_STALE_JOB_UI_V200E:
+// Server-batch refresh polling must be active-only. The old score-based test returned true
+// for any board that already had videos/job history, causing endless /board/video-batch/status
+// + /snapshots/board calls after F5 even when no backend batch was running.
+function boardServerBatchActiveInfoV200E(boardData = {}) {
+  // AVA_BOARD_SERVER_BATCH_STALE_POINTERS_V200G:
+  // Old snapshots can keep activeJobId/activeSceneId even after backend restart.
+  // Do not treat those stale pointers as an active backend batch unless the batch
+  // status itself is active. This stops endless /board/video-batch/status + snapshot
+  // refresh after F5 when no real server batch is running.
+  const queue = boardData?.video_queue || boardData?.videoQueue || {}
+  const batch = boardData?.video_batch || boardData?.videoBatch || boardData?.board_video_batch || boardData?.boardVideoBatch || {}
+  const status = String(batch.status || batch.batch_status || batch.video_status || queue.status || queue.batch_status || '').toLowerCase()
+  const activeStatuses = BOARD_SERVER_BATCH_ACTIVE_STATUSES_V131N
+  const terminalStatuses = new Set([
+    '', 'idle', 'ready', 'done', 'completed', 'success', 'error', 'failed',
+    'canceled', 'cancelled', 'stopped', 'interrupted', 'interrupted_after_backend_reload',
+    'orphaned_after_reload', 'backend_reload_orphaned_batch_v150a',
+  ])
+  if (activeStatuses.has(status)) return true
+  if (terminalStatuses.has(status)) return false
+
+  const queueWaiting = asArray(queue.waitingSceneIds || queue.waiting_scene_ids)
+  const batchWaiting = asArray(batch.waitingSceneIds || batch.waiting_scene_ids || batch.queued || batch.queuedSceneIds || batch.queued_scene_ids)
+  const activeSceneId = asText(batch.activeSceneId || batch.active_scene_id || queue.activeSceneId || queue.active_scene_id)
+  const activeJobId = asText(batch.activeJobId || batch.active_job_id || queue.activeJobId || queue.active_job_id)
+  const activeEndpoint = asText(batch.activeStatusEndpoint || batch.active_status_endpoint || queue.activeStatusEndpoint || queue.active_status_endpoint)
+  return Boolean(status && (queueWaiting.length || batchWaiting.length || activeSceneId || activeJobId || activeEndpoint))
+}
+
+function boardServerBatchPollTokenV200E(boardData = {}) {
+  const queue = boardData?.video_queue || boardData?.videoQueue || {}
+  const batch = boardData?.video_batch || boardData?.videoBatch || boardData?.board_video_batch || boardData?.boardVideoBatch || {}
+  const waiting = [
+    ...asArray(queue.waitingSceneIds || queue.waiting_scene_ids),
+    ...asArray(batch.waitingSceneIds || batch.waiting_scene_ids || batch.queued || batch.queuedSceneIds || batch.queued_scene_ids),
+  ].map((item) => asText(item)).filter(Boolean).join(',')
+  return [
+    asText(batch.batchId || batch.batch_id || batch.id),
+    String(batch.status || batch.batch_status || batch.video_status || '').toLowerCase(),
+    asText(batch.activeSceneId || batch.active_scene_id || queue.activeSceneId || queue.active_scene_id),
+    asText(batch.activeJobId || batch.active_job_id || queue.activeJobId || queue.active_job_id),
+    asText(batch.activeStatusEndpoint || batch.active_status_endpoint || queue.activeStatusEndpoint || queue.active_status_endpoint),
+    waiting,
+  ].join('|')
+}
+
 function boardNeedsServerBatchRefreshV131N(boardData = {}) {
-  return boardVideoStateScoreV131N(boardData) > 0
+  return boardServerBatchActiveInfoV200E(boardData)
 }
 
 
@@ -3831,6 +3938,42 @@ function boardInjectProjectFormatIntoTimingV177C(timingData = {}, projectFormat 
   return next
 }
 
+// AVA_BOARD_SPEED_CACHE_NOOP_V200C:
+// UI-only scene selection must not dirty/save the whole board.
+// This fingerprint is used only for autosave de-dupe; real saves still use the full board payload.
+function boardStripAutosaveUiOnlyV200C(value) {
+  const volatileKeys = new Set([
+    'selectedSceneId',
+    'selected_scene_id',
+    'updatedAt',
+    'updated_at',
+    'lastSavedAt',
+    'last_saved_at',
+    'clientUpdatedAt',
+    'client_updated_at',
+    'lastAutoSaveAt',
+    'last_auto_save_at',
+  ])
+  if (Array.isArray(value)) return value.map((item) => boardStripAutosaveUiOnlyV200C(item))
+  if (value && typeof value === 'object') {
+    const next = {}
+    Object.entries(value).forEach(([key, item]) => {
+      if (volatileKeys.has(String(key))) return
+      next[key] = boardStripAutosaveUiOnlyV200C(item)
+    })
+    return next
+  }
+  return value
+}
+
+function boardAutosaveFingerprintV200C(value) {
+  try {
+    return JSON.stringify(boardStripAutosaveUiOnlyV200C(value || {}))
+  } catch {
+    return `${Date.now()}:${Math.random()}`
+  }
+}
+
 export default function BoardPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -3893,19 +4036,39 @@ function isBoardVideoDoneStatus(status) {
   }
 
   function isBoardVideoStaleJobStatus(status, data = {}) {
+    // AVA_BOARD_STALE_JOB_CODES_V200H: backend can return orphan/stale codes, not only BOARD_VIDEO_JOB_NOT_FOUND.
     const normalized = String(status || '').toLowerCase()
     const code = String(data?.code || data?.error?.code || '').toUpperCase()
-    return normalized === 'not_found' || code === 'BOARD_VIDEO_JOB_NOT_FOUND'
+    const errorText = String(data?.error || data?.detail || '').toLowerCase()
+    return normalized === 'not_found' ||
+      normalized === 'orphaned' ||
+      normalized === 'stale' ||
+      code === 'BOARD_VIDEO_JOB_NOT_FOUND' ||
+      code.includes('BOARD_VIDEO_JOB_ORPHANED') ||
+      code.includes('BOARD_VIDEO_JOB_STALE') ||
+      errorText.includes('orphan') ||
+      errorText.includes('stale_job')
   }
 
   function resetStaleVideoJobPatch(data = {}) {
+    const reason = data?.error || data?.detail || data?.code || 'stale_job_reset_v200h'
     return {
       video_status: '',
+      videoStatus: '',
       video_job_id: '',
+      videoJobId: '',
       video_status_endpoint: '',
-      video_error: '',
+      videoStatusEndpoint: '',
+      video_error: reason,
+      videoError: reason,
       video_queue_position: 0,
+      videoQueuePosition: 0,
       video_result: data || null,
+      videoResult: data || null,
+      video_interrupted_reason: reason,
+      videoInterruptedReason: reason,
+      video_updated_at: new Date().toISOString(),
+      videoUpdatedAt: new Date().toISOString(),
     }
   }
 
@@ -4023,7 +4186,7 @@ function sceneVideoActionState(scene) {
       scene?.updatedAt || scene?.updated_at || ''
     )
     if (!Number.isFinite(stamp) || stamp <= 0) return false
-    return (Date.now() - stamp) < (4 * 60 * 1000)
+    return (Date.now() - stamp) < (90 * 1000) // V200A: no-job submit/start grace window
   }
 
   function boardSceneHasBackendVideoJobV150A(scene = {}) {
@@ -4043,20 +4206,103 @@ function sceneVideoActionState(scene) {
     return false
   }
 
-  function activeBoardVideoScene(currentBoard) {
-    return asArray(currentBoard?.scenes).find((scene) => {
-      const status = String(scene?.video_status || '').toLowerCase()
-      const hasVideoResult = boardSceneHasCurrentVideoResultV129P(scene)
-      const hasServerJob = Boolean(scene?.video_job_id || scene?.video_status_endpoint)
 
-      // AVA_BOARD_CLEAR_OLD_VIDEO_DURING_RUNNING_V52:
-      // A real active job/status must win over stale ready video refs from a previous generation.
-      if (['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status)) return true
+  // AVA_BOARD_MANUAL_QUEUE_STALE_LOCK_V200A:
+  // Manual scene queue can get stuck when a scene remains "starting" but /clip/video/start
+  // did not return a job_id. Such stale local locks must not block the next queued scene.
+  function boardManualQueueStaleNoJobV200A(scene = {}) {
+    const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+    if (!['starting', 'preparing', 'submitting', 'running', 'processing', 'queued_no_prompt_id'].includes(status)) return false
+    if (boardSceneHasBackendVideoJobV150A(scene)) return false
+    const stamp = Date.parse(
+      scene?.video_started_at || scene?.videoStartedAt ||
+      scene?.video_updated_at || scene?.videoUpdatedAt ||
+      scene?.updatedAt || scene?.updated_at || ''
+    )
+    if (!Number.isFinite(stamp) || stamp <= 0) return true
+    return (Date.now() - stamp) > (90 * 1000)
+  }
+
+  function boardClearStaleManualQueueLocksV200A(currentBoard = boardRef.current, reason = 'stale_manual_start_without_job_v200a') {
+    const scenes = asSceneArray(currentBoard?.scenes)
+    const staleIds = scenes
+      .filter((scene) => boardManualQueueStaleNoJobV200A(scene))
+      .map((scene) => asText(scene?.id || scene?.scene_id))
+      .filter(Boolean)
+    if (!staleIds.length) return false
+
+    const staleSet = new Set(staleIds)
+    localVideoQueueRef.current = (localVideoQueueRef.current || []).filter((id) => !staleSet.has(asText(id)))
+    setBoard((current) => {
+      let changed = false
+      const nextScenes = asSceneArray(current?.scenes).map((scene) => {
+        const id = asText(scene?.id || scene?.scene_id)
+        if (!staleSet.has(id)) return scene
+        const hasVideo = boardSceneHasCurrentVideoResultV129P(scene)
+        changed = true
+        return canonicalizeBoardSceneMediaRefs({
+          ...scene,
+          video_status: hasVideo ? 'ready' : 'error',
+          videoStatus: hasVideo ? 'ready' : 'error',
+          video_error: hasVideo ? '' : reason,
+          videoError: hasVideo ? '' : reason,
+          video_job_id: '',
+          videoJobId: '',
+          video_status_endpoint: '',
+          videoStatusEndpoint: '',
+          server_batch_job_id: '',
+          serverBatchJobId: '',
+          server_batch_status_endpoint: '',
+          serverBatchStatusEndpoint: '',
+          video_queue_position: 0,
+          videoQueuePosition: 0,
+          video_queue_source: '',
+          videoQueueSource: '',
+          video_batch_active_v132r: false,
+          videoBatchActiveV132R: false,
+          video_interrupted_reason: reason,
+          videoInterruptedReason: reason,
+          video_updated_at: new Date().toISOString(),
+          videoUpdatedAt: new Date().toISOString(),
+        })
+      })
+      if (!changed) return current
+      const waitingIds = boardMergeWaitingSceneIdsV57B({ ...current, scenes: nextScenes }, localVideoQueueRef.current || [])
+      return {
+        ...current,
+        scenes: nextScenes,
+        video_queue: {
+          ...(current.video_queue || {}),
+          activeSceneId: '',
+          activeJobId: '',
+          activeStatusEndpoint: '',
+          waitingSceneIds: waitingIds,
+          waiting_scene_ids: waitingIds,
+          source: reason,
+          updatedAt: new Date().toISOString(),
+        },
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    setStatus(`Снята зависшая отправка: ${staleIds.join(', ')}`)
+    console.warn('[BOARD MANUAL QUEUE STALE LOCK CLEAR V200A]', { staleIds, reason })
+    return true
+  }
+
+  function activeBoardVideoScene(currentBoard) {
+    // AVA_BOARD_MANUAL_QUEUE_STALE_LOCK_V200A:
+    // Do not treat old "starting/submitting" without job_id as active forever.
+    return asArray(currentBoard?.scenes).find((scene) => {
+      if (boardManualQueueStaleNoJobV200A(scene)) return false
+      if (isBoardVideoActiveWorkerStatus(scene)) return true
+      const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+      const hasServerJob = boardSceneHasBackendVideoJobV150A(scene)
       if (status === 'queued' && hasServerJob) return true
-      if (hasVideoResult) return false
       return false
     }) || null
   }
+
+
 
   // AVA_BOARD_QUEUE_HARD_SINGLE_ACTIVE_V61:
   // A runtime guard for the small gap between "we decided to start a queued scene"
@@ -4366,6 +4612,7 @@ function sceneVideoActionState(scene) {
     }
 
     const currentBoard = boardRef.current
+    boardClearStaleManualQueueLocksV200A(currentBoard)
 
     // AVA_BOARD_QUEUE_HARD_SINGLE_ACTIVE_V61:
     // Only one Board video may be submitted at a time. The check includes:
@@ -4426,7 +4673,7 @@ function sceneVideoActionState(scene) {
     const selectedStatus = String(selectedScene.video_status || '').toLowerCase()
     const selectedHasServerJob = Boolean(selectedScene.video_job_id || selectedScene.video_status_endpoint)
     const selectedIsLocalQueued = (selectedStatus === 'queued' && !selectedHasServerJob) || localVideoQueueRef.current.includes(selectedScene.id)
-    const selectedIsBusy = ['starting', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(selectedStatus) || (selectedStatus === 'queued' && selectedHasServerJob)
+    const selectedIsBusy = isBoardVideoActiveWorkerStatus(selectedScene) || (selectedStatus === 'queued' && selectedHasServerJob) // V200A stale no-job status does not block manual queue
 
     const selectedForceBadRegenV156A = boardBadReviewForceRegenerateAllowedV156A(selectedScene)
     if ((selectedIsBusy || selectedIsLocalQueued) && !selectedForceBadRegenV156A) {
@@ -5122,11 +5369,48 @@ function sceneVideoActionState(scene) {
         }
       }))
 
+      // AVA_BOARD_BATCH_ACCEPTED_MARKER_V200M:
+      // Start the live batch poller immediately from local accepted state. Some start
+      // responses do not round-trip the freshly saved board_video_batch back to the
+      // browser quickly enough, while runtime statuses are intentionally not persisted.
+      const acceptedBatchMarkerV200M = {
+        status: 'running',
+        batch_id: batchIdV136I,
+        batchId: batchIdV136I,
+        active_scene_id: addedIds[0] || '',
+        activeSceneId: addedIds[0] || '',
+        waiting_scene_ids: addedIds.slice(1),
+        waitingSceneIds: addedIds.slice(1),
+        queued_scene_ids: addedIds,
+        queuedSceneIds: addedIds,
+        bad_review_scene_ids: addedIds.filter((sceneId) => boardSceneHasBadVideoReview(scenesByIdV136I.get(sceneId) || {})),
+        badReviewSceneIds: addedIds.filter((sceneId) => boardSceneHasBadVideoReview(scenesByIdV136I.get(sceneId) || {})),
+        updated_at: batchAcceptedAtV136I,
+        updatedAt: batchAcceptedAtV136I,
+        source: 'frontend_batch_accepted_marker_v200m',
+      }
+      setBoard((current) => {
+        const base = current || boardRef.current || board || {}
+        const next = {
+          ...base,
+          board_video_batch: { ...(base.board_video_batch || base.video_batch || {}), ...acceptedBatchMarkerV200M },
+          boardVideoBatch: { ...(base.boardVideoBatch || base.videoBatch || {}), ...acceptedBatchMarkerV200M },
+          video_batch: { ...(base.video_batch || base.board_video_batch || {}), ...acceptedBatchMarkerV200M },
+          videoBatch: { ...(base.videoBatch || base.boardVideoBatch || {}), ...acceptedBatchMarkerV200M },
+        }
+        boardRef.current = next
+        return next
+      })
+
       const nextBoard = result?.board || result?.snapshot?.data || null
       if (nextBoard && Array.isArray(nextBoard.scenes)) {
-        boardRef.current = nextBoard
-        setBoard(nextBoard)
-        reconcileBadRegenRuntimeWithBoardV136I(nextBoard, { sceneIds: addedIds })
+        const mergedStartBoardV200M = boardMergeServerVideoStateV131N(
+          { ...(boardRef.current || board || {}), board_video_batch: acceptedBatchMarkerV200M, boardVideoBatch: acceptedBatchMarkerV200M, video_batch: acceptedBatchMarkerV200M, videoBatch: acceptedBatchMarkerV200M },
+          nextBoard
+        )
+        boardRef.current = mergedStartBoardV200M
+        setBoard(mergedStartBoardV200M)
+        reconcileBadRegenRuntimeWithBoardV136I(mergedStartBoardV200M, { sceneIds: addedIds })
       }
 
       setAutoVideoQueueState({
@@ -5492,7 +5776,9 @@ function sceneVideoActionState(scene) {
 
         if (isBoardVideoStaleJobStatus(status, data)) {
           finishPoll()
-          updateSceneForVideoJob(sceneId, jobId, resetStaleVideoJobPatch(data))
+          // AVA_BOARD_STALE_JOB_RESET_SAVE_V200H: persist stale-job cleanup immediately.
+          updateSceneAndSave(sceneId, resetStaleVideoJobPatch(data))
+          markBoardJobSeen(jobId || data?.jobId || data?.job_id || '')
           setStatus(`Старый video job не найден: ${sceneId}. Статус сброшен.`)
           pushBoardToast({
             type: 'info',
@@ -5585,30 +5871,50 @@ function sceneVideoActionState(scene) {
 
         if (isBoardVideoDoneStatus(status)) {
           finishPoll()
-          updateScene(sceneId, {
+          updateSceneAndSave(sceneId, {
             video_status: 'error',
+            videoStatus: 'error',
             video_error: 'completed_without_video_url',
-            video_job_id: data?.jobId || data?.job_id || jobId || '',
-            video_status_endpoint: endpoint,
+            videoError: 'completed_without_video_url',
+            video_job_id: '',
+            videoJobId: '',
+            video_status_endpoint: '',
+            videoStatusEndpoint: '',
+            video_queue_position: 0,
+            videoQueuePosition: 0,
             video_result: data || null,
+            videoResult: data || null,
+            video_updated_at: new Date().toISOString(),
+            videoUpdatedAt: new Date().toISOString(),
           })
           setStatus('Comfy завершил job, но backend не вернул video_url')
           pushBoardToast({ type: 'error', title: 'Видео без результата', message: `Сцена ${sceneId}: backend не вернул video_url`, sceneId })
+          finishBoardVideoQueueStepV130H(sceneId, jobId || '', 'completed_without_video_url_v200a')
           window.setTimeout(processNextQueuedBoardVideo, 650)
           return
         }
 
         if (isBoardVideoErrorStatus(status)) {
           finishPoll()
-          updateScene(sceneId, {
+          updateSceneAndSave(sceneId, {
             video_status: 'error',
+            videoStatus: 'error',
             video_error: data?.error || data?.detail || status,
-            video_job_id: data?.jobId || data?.job_id || jobId || '',
-            video_status_endpoint: endpoint,
+            videoError: data?.error || data?.detail || status,
+            video_job_id: '',
+            videoJobId: '',
+            video_status_endpoint: '',
+            videoStatusEndpoint: '',
             video_queue_position: 0,
+            videoQueuePosition: 0,
+            video_result: data || null,
+            videoResult: data || null,
+            video_updated_at: new Date().toISOString(),
+            videoUpdatedAt: new Date().toISOString(),
           })
           setStatus(`Видео не собрано: ${data?.error || data?.detail || status}`)
           pushBoardToast({ type: 'error', title: 'Видео не собрано', message: `Сцена ${sceneId}: ${data?.error || data?.detail || status}`, sceneId })
+          finishBoardVideoQueueStepV130H(sceneId, jobId || '', 'video_error_status_v200a')
           window.setTimeout(processNextQueuedBoardVideo, 650)
           return
         }
@@ -5704,6 +6010,8 @@ function sceneVideoActionState(scene) {
   const activeVideoPollsRef = useRef(new Set())
   const staticAssetRepairRef = useRef(new Set())
   const imageBlobUrlCacheRefV129O = useRef(new Map())
+  const videoBlobUrlCacheRefV200C = useRef(new Map())
+  const lastBoardAutosaveFingerprintRefV200C = useRef('')
   const badRegenRuntimeStatusRef = useRef({})
   const seenCompletedJobIdsRef = useRef(readBoardSeenCompletedJobIds())
   const sceneStripRef = useRef(null)
@@ -5768,6 +6076,24 @@ function sceneVideoActionState(scene) {
       }
     })
     if (changed) setBadRegenRuntimeStatusMapV136I(nextMap)
+  }
+
+  function boardBatchRuntimePollActiveV200M() {
+    // AVA_BOARD_BATCH_RUNTIME_POLL_GATE_V200M:
+    // Bad-video regeneration uses runtime-only queued/running badges so autosave
+    // does not persist transient state. Therefore the server-batch refresh poller
+    // must also run while these runtime badges exist, even if the saved board_batch
+    // object is missing/stale in the current React board.
+    return Object.keys(badRegenRuntimeStatusRef.current || {}).length > 0
+  }
+
+  function boardBatchRefreshShouldRunV200M() {
+    if (workspaceMode || !projectId) return false
+    return Boolean(
+      boardServerBatchActiveInfoV200E(boardRef.current || board) ||
+      autoVideoQueueState?.serverBatchActive ||
+      boardBatchRuntimePollActiveV200M()
+    )
   }
 
   function reconcileBadRegenRuntimeWithBoardV136I(boardData = {}, options = {}) {
@@ -5986,6 +6312,22 @@ function sceneVideoActionState(scene) {
         !failedIds.has(safeSceneId)
       )
       if (keepUntilReviewUpdate) {
+        // AVA_BOARD_BATCH_COMPLETED_RUNTIME_CLEAR_V200L:
+        // The scene already has the fresh video. Do not keep the runtime overlay
+        // as "видео делается" only because a stale bad review mark has not yet
+        // been replaced by needs_review/посмотри in the local React state.
+        const hasCurrentVideoForCompletedV200L = Boolean(
+          typeof boardSceneHasCurrentVideoResultV129P === 'function' &&
+          boardSceneHasCurrentVideoResultV129P(scene)
+        )
+        if (completedIds.has(safeSceneId) && hasCurrentVideoForCompletedV200L) {
+          console.log('[BOARD BAD REGEN RUNTIME CLEARED V200L] completed video is present', {
+            batchId,
+            sceneId: safeSceneId,
+            reviewStatus,
+          })
+          return true
+        }
         console.log('[BOARD BAD REGEN STICKY RUNTIME V136K] keep completed scene until review updates', {
           batchId,
           sceneId: safeSceneId,
@@ -6032,8 +6374,9 @@ function sceneVideoActionState(scene) {
 
   const selectedSceneBase = useMemo(() => {
     const scenes = asSceneArray(board.scenes)
-    return scenes.find((scene) => scene.id === board.selectedSceneId) || scenes[0] || null
-  }, [board.scenes, board.selectedSceneId])
+    const selectedIdV200E = asText(board.selectedSceneId || board.selected_scene_id)
+    return scenes.find((scene) => asText(scene.id || scene.scene_id || scene.sceneId) === selectedIdV200E) || scenes[0] || null
+  }, [board.scenes, board.selectedSceneId, board.selected_scene_id])
 
   const selectedScene = useMemo(
     () => boardSceneWithBadRegenRuntimeV136I(selectedSceneBase),
@@ -6123,7 +6466,8 @@ function sceneVideoActionState(scene) {
 
   const selectedIndex = useMemo(() => {
     if (!selectedScene) return -1
-    return asSceneArray(board.scenes).findIndex((scene) => scene.id === selectedScene.id)
+    const selectedIdV200E = asText(selectedScene.id || selectedScene.scene_id || selectedScene.sceneId)
+    return asSceneArray(board.scenes).findIndex((scene) => asText(scene.id || scene.scene_id || scene.sceneId) === selectedIdV200E)
   }, [board.scenes, selectedScene])
 
 
@@ -6388,6 +6732,15 @@ function sceneVideoActionState(scene) {
                 boardRef.current || nextBoard,
                 { source: 'initial_status_endpoint_v136j' }
               )
+              const boardFromInitialBatchV200I = batchStatusDataV136J?.board || batchStatusDataV136J?.snapshot || batchStatusDataV136J?.board_snapshot || null
+              if (boardFromInitialBatchV200I && Array.isArray(boardFromInitialBatchV200I.scenes)) {
+                setBoard((current) => {
+                  const merged = boardMergeServerVideoStateV131N(current || boardRef.current || nextBoard, boardFromInitialBatchV200I)
+                  if (merged === current) return current
+                  writeBoardDurableBackup(durableKey, merged)
+                  return merged
+                })
+              }
             })
             .catch((error) => console.warn('[BOARD BAD REGEN F5 RUNTIME REHYDRATE V136J] initial status failed', error))
         }
@@ -6411,6 +6764,7 @@ function sceneVideoActionState(scene) {
     // snapshot and merge server video refs/statuses into React state. This is deliberately
     // independent from old /clip/video/status browser pollers.
     if (workspaceMode || !projectId) return undefined
+    if (!boardBatchRefreshShouldRunV200M()) return undefined
 
     let cancelled = false
     let timer = null
@@ -6424,8 +6778,26 @@ function sceneVideoActionState(scene) {
           console.warn('[BOARD BAD REGEN F5 RUNTIME REHYDRATE V136J] status endpoint failed', statusErrorV136J)
         }
 
-        const serverBoardData = await loadStage(projectId, STAGE)
+        // AVA_BOARD_BATCH_STATUS_BOARD_APPLY_V200I:
+        // If backend cleaned stale jobs inside /board/video-batch/status, use that
+        // returned board immediately instead of waiting for another snapshot pass.
+        const boardFromBatchStatusV200I = batchStatusDataV136J?.board || batchStatusDataV136J?.snapshot || batchStatusDataV136J?.board_snapshot || null
+        const serverBoardData = (boardFromBatchStatusV200I && Array.isArray(boardFromBatchStatusV200I.scenes))
+          ? boardFromBatchStatusV200I
+          : await loadStage(projectId, STAGE)
         if (cancelled || !serverBoardData || !Array.isArray(serverBoardData.scenes)) return
+        const orphanCleanedV200E = Boolean(
+          batchStatusDataV136J?.orphanCleaned ||
+          batchStatusDataV136J?.orphan_cleaned ||
+          String((batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || {}).status || '').includes('interrupted_after_backend_reload')
+        )
+        if (orphanCleanedV200E) {
+          boardRef.current = serverBoardData
+          setBoard(serverBoardData)
+          writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), serverBoardData)
+          console.log('[BOARD SERVER BATCH ORPHAN MERGE V200E]', { projectId })
+          return
+        }
         rehydrateBadRegenRuntimeFromServerBatchV136J(
           batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || serverBoardData?.board_video_batch || serverBoardData?.boardVideoBatch || {},
           serverBoardData,
@@ -6434,9 +6806,43 @@ function sceneVideoActionState(scene) {
         reconcileBadRegenRuntimeWithBoardV136I(serverBoardData)
         const serverScore = boardVideoStateScoreV131N(serverBoardData)
         const localScore = boardVideoStateScoreV131N(boardRef.current || board)
-        if (serverScore > localScore || boardNeedsServerBatchRefreshV131N(serverBoardData)) {
+        const batchForMergeV200L = batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || serverBoardData?.board_video_batch || serverBoardData?.boardVideoBatch || {}
+        const batchStatusForMergeV200L = String(batchForMergeV200L?.status || batchForMergeV200L?.batch_status || '').toLowerCase()
+        // AVA_BOARD_BATCH_DONE_RUNTIME_CLEAR_V200M:
+        // Server has finished or canceled the batch. Runtime-only badges must not
+        // continue to paint cards as "видео делается" / "в очереди" after backend
+        // already wrote the final board snapshot.
+        const batchDoneV200M = ['finished', 'finished_with_errors', 'failed', 'error', 'canceled', 'cancelled', 'stopped'].includes(batchStatusForMergeV200L)
+        if (batchDoneV200M) {
+          const idsToClearV200M = Array.from(new Set([
+            ...asArray(batchForMergeV200L?.completedSceneIds || batchForMergeV200L?.completed_scene_ids),
+            ...asArray(batchForMergeV200L?.failedSceneIds || batchForMergeV200L?.failed_scene_ids),
+            ...asArray(batchForMergeV200L?.waitingSceneIds || batchForMergeV200L?.waiting_scene_ids),
+            ...asArray(batchForMergeV200L?.queuedSceneIds || batchForMergeV200L?.queued_scene_ids),
+            batchForMergeV200L?.activeSceneId || batchForMergeV200L?.active_scene_id,
+            ...Object.keys(badRegenRuntimeStatusRef.current || {}),
+          ].map((id) => asText(id)).filter(Boolean)))
+          if (idsToClearV200M.length) clearBadRegenRuntimeStatusesV136I(idsToClearV200M)
+          setAutoVideoQueueState((current) => current?.serverBatchActive
+            ? { ...(current || {}), active: false, serverBatchActive: false, queued: 0 }
+            : current
+          )
+          if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = false
+        }
+        const batchHasLiveStateV200L = Boolean(
+          boardNeedsServerBatchRefreshV131N(serverBoardData) ||
+          badRegenRuntimeBatchActiveStatusesV136J.has(batchStatusForMergeV200L) ||
+          ['finished', 'finished_with_errors', 'canceled', 'cancelled'].includes(batchStatusForMergeV200L) ||
+          asArray(batchForMergeV200L?.completedSceneIds || batchForMergeV200L?.completed_scene_ids).length ||
+          asArray(batchForMergeV200L?.failedSceneIds || batchForMergeV200L?.failed_scene_ids).length
+        )
+        // AVA_BOARD_BATCH_LIVE_STATUS_MERGE_V200L:
+        // During server-batch regeneration the backend snapshot is authoritative even when
+        // the score heuristic is equal/lower because the local scene may still contain
+        // old runtime queued/running overlays or an old bad review event.
+        if (batchHasLiveStateV200L || serverScore > localScore) {
           setBoard((current) => {
-            const merged = boardMergeServerVideoStateV131N(current, serverBoardData)
+            const merged = boardMergeServerVideoStateV131N(current || boardRef.current || board, serverBoardData)
             if (merged === current) return current
             writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), merged)
             return merged
@@ -6445,7 +6851,7 @@ function sceneVideoActionState(scene) {
       } catch (error) {
         console.warn('[BOARD SERVER BATCH REFRESH V131N] failed', error)
       } finally {
-        if (!cancelled) timer = window.setTimeout(tick, 3500)
+        if (!cancelled && boardBatchRefreshShouldRunV200M()) timer = window.setTimeout(tick, 2500)
       }
     }
 
@@ -6454,7 +6860,7 @@ function sceneVideoActionState(scene) {
       cancelled = true
       if (timer) window.clearTimeout(timer)
     }
-  }, [projectId, workspaceMode, loadStage])
+  }, [projectId, workspaceMode, loadStage, boardServerBatchPollTokenV200E(board)])
 
 
   useEffect(() => {
@@ -6621,15 +7027,30 @@ function sceneVideoActionState(scene) {
 
   useEffect(() => {
     let cancelled = false
-    let objectUrl = ''
-    setSelectedVideoBlobUrl('')
     setSelectedVideoLoadError('')
-    if (!selectedPreviewAssetApiPath) return undefined
+    if (!selectedPreviewAssetApiPath) {
+      setSelectedVideoBlobUrl('')
+      return undefined
+    }
+
+    const cacheKey = boardAssetApiPathFromRef(selectedPreviewAssetApiPath) || selectedPreviewAssetApiPath
+    const cachedUrl = videoBlobUrlCacheRefV200C.current.get(cacheKey)
+    if (cachedUrl) {
+      setSelectedVideoBlobUrl(cachedUrl)
+      return undefined
+    }
+
+    setSelectedVideoBlobUrl('')
 
     async function loadVideoBlob() {
       try {
-        objectUrl = await fetchProtectedBlobUrl(selectedPreviewAssetApiPath)
-        if (!cancelled) setSelectedVideoBlobUrl(objectUrl)
+        const objectUrl = await fetchProtectedBlobUrl(selectedPreviewAssetApiPath)
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl)
+          return
+        }
+        videoBlobUrlCacheRefV200C.current.set(cacheKey, objectUrl)
+        setSelectedVideoBlobUrl(objectUrl)
       } catch (error) {
         if (!cancelled) {
           const message = error?.message || 'asset_fetch_failed'
@@ -6641,69 +7062,28 @@ function sceneVideoActionState(scene) {
     loadVideoBlob()
     return () => {
       cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      // AVA_BOARD_SPEED_CACHE_NOOP_V200C: keep cached video blobs across scene switches.
+      // Revoke only when the Board page is closed.
     }
-  }, [selectedPreviewAssetApiPath, selectedScene?.mmaudio_video_api_path, selectedScene?.mmaudioVideoApiPath, selectedScene?.mmaudio_video_url, selectedScene?.mmaudioVideoUrl])
+  }, [selectedPreviewAssetApiPath])
 
-
-
-  // AVA_BOARD_STILLS_IMMEDIATE_PREVIEW_V129Q:
-  // Warm image asset blobs for all board scenes. Selected-scene-only restore made images disappear
-  // and reload on every scene switch, especially over Tailscale/LAN.
   useEffect(() => {
-    if (loading) return undefined
-    let cancelled = false
-    const scenes = asSceneArray(board.scenes)
-    if (!scenes.length) return undefined
-
-    const entries = []
-    scenes.forEach((scene) => {
-      const sceneId = asText(scene?.id || scene?.scene_id)
-      if (!sceneId) return
-      const runtime = runtimeSceneMediaUrls[sceneId] || {}
-      ;[
-        { slot: 'image', apiPath: sceneMediaFieldValue(scene, 'image', 'apiPath'), cleared: runtime.imageClearedV129O },
-        { slot: 'first', apiPath: sceneMediaFieldValue(scene, 'first', 'apiPath'), cleared: runtime.firstClearedV129O },
-        { slot: 'last', apiPath: sceneMediaFieldValue(scene, 'last', 'apiPath'), cleared: runtime.lastClearedV129O },
-      ].forEach((entry) => {
-        if (!entry.apiPath || entry.cleared) return
-        const cacheKey = boardAssetApiPathFromRef(entry.apiPath) || entry.apiPath
-        if (!cacheKey || imageBlobUrlCacheRefV129O.current.has(cacheKey)) return
-        if (runtime[entry.slot]) return
-        entries.push({ ...entry, sceneId, cacheKey })
+    return () => {
+      videoBlobUrlCacheRefV200C.current.forEach((objectUrl) => {
+        try { URL.revokeObjectURL(objectUrl) } catch { /* ignore */ }
       })
-    })
-
-    if (!entries.length) return undefined
-
-    async function warmImageCache() {
-      const groupedRuntimePatch = {}
-      for (const entry of entries) {
-        if (cancelled) return
-        try {
-          const objectUrl = await fetchProtectedBlobUrl(entry.apiPath)
-          imageBlobUrlCacheRefV129O.current.set(entry.cacheKey, objectUrl)
-          groupedRuntimePatch[entry.sceneId] = {
-            ...(groupedRuntimePatch[entry.sceneId] || {}),
-            [entry.slot]: objectUrl,
-          }
-        } catch (error) {
-          console.warn('[BOARD IMAGE PREFETCH FAILED V129Q]', { sceneId: entry.sceneId, slot: entry.slot, apiPath: entry.apiPath, error: error?.message || error })
-        }
-      }
-      if (!cancelled && Object.keys(groupedRuntimePatch).length) {
-        setRuntimeSceneMediaUrls((current) => {
-          const next = { ...current }
-          Object.entries(groupedRuntimePatch).forEach(([sceneId, patch]) => {
-            next[sceneId] = { ...(next[sceneId] || {}), ...patch }
-          })
-          return next
-        })
-      }
+      videoBlobUrlCacheRefV200C.current.clear()
     }
+  }, [])
 
-    warmImageCache()
-    return () => { cancelled = true }
+
+
+  // AVA_BOARD_RESTORE_NO_GLOBAL_ASSET_WARM_V200J:
+  // Do not blob-prefetch every image/first/last asset for every scene on Board F5.
+  // That burst created many OPTIONS /api/assets/... preflights and made restore feel frozen.
+  // Only the selected-scene image restore effect below is allowed to fetch protected blobs.
+  useEffect(() => {
+    return undefined
   }, [loading, board.scenes])
 
   useEffect(() => {
@@ -6713,6 +7093,10 @@ function sceneVideoActionState(scene) {
 
     async function loadSelectedImageBlobs() {
       const runtime = runtimeSceneMediaUrls[sceneId] || {}
+      // AVA_BOARD_SELECTED_IMAGE_RESTORE_SKIP_READY_V200J:
+      // During F5 the selected scene can be restored twice while Board and Timing snapshots race.
+      // Do not refetch protected blobs if the runtime preview is already present.
+      if (runtime.image || runtime.first || runtime.last) return
       const entries = [
         { slot: 'image', apiPath: sceneMediaFieldValue(selectedScene, 'image', 'apiPath'), cleared: runtime.imageClearedV129O },
         { slot: 'first', apiPath: sceneMediaFieldValue(selectedScene, 'first', 'apiPath'), cleared: runtime.firstClearedV129O },
@@ -6780,14 +7164,25 @@ function sceneVideoActionState(scene) {
       updatedAt: board?.updatedAt || new Date().toISOString(),
     })
 
+    const autosaveFingerprintV200C = boardAutosaveFingerprintV200C(board)
 
     if (skipNextBoardAutosaveRefV145A.current) {
       skipNextBoardAutosaveRefV145A.current = false
+      lastBoardAutosaveFingerprintRefV200C.current = autosaveFingerprintV200C
       console.log('[BOARD F5 INITIAL AUTOSAVE SKIPPED V145A]', { projectId: projectId || '', workspaceMode })
       return undefined
     }
 
-    const timer = window.setTimeout(() => saveBoard(board, true), 900)
+    if (lastBoardAutosaveFingerprintRefV200C.current === autosaveFingerprintV200C) {
+      console.log('[BOARD AUTOSAVE UI-ONLY SKIPPED V200C]', { projectId: projectId || '', workspaceMode })
+      return undefined
+    }
+
+    const timer = window.setTimeout(() => {
+      saveBoard(board, true).then(() => {
+        lastBoardAutosaveFingerprintRefV200C.current = autosaveFingerprintV200C
+      })
+    }, 900)
     return () => window.clearTimeout(timer)
   }, [loading, board, projectId, workspaceMode])
 
@@ -6831,11 +7226,13 @@ function sceneVideoActionState(scene) {
   useEffect(() => {
     if (loading) return undefined
     board.scenes.forEach((scene) => {
-      const status = String(scene.video_status || '').toLowerCase()
+      const status = String(scene.video_status || scene.videoStatus || '').toLowerCase()
       if (!['queued', 'preparing', 'submitting', 'running', 'starting', 'queued_no_prompt_id'].includes(status)) return
-      const endpoint = scene.video_status_endpoint || (scene.video_job_id ? `/api/clip/video/status/${scene.video_job_id}` : '')
-      if (!endpoint) return
-      pollBoardVideoJob(scene.id, endpoint, scene.video_job_id)
+      const sceneIdV200E = asText(scene.id || scene.scene_id || scene.sceneId)
+      const jobIdV200E = asText(scene.video_job_id || scene.videoJobId)
+      const endpoint = scene.video_status_endpoint || scene.videoStatusEndpoint || (jobIdV200E ? `/api/clip/video/status/${jobIdV200E}` : '')
+      if (!sceneIdV200E || !endpoint) return
+      pollBoardVideoJob(sceneIdV200E, endpoint, jobIdV200E)
     })
     return undefined
     // run only after initial load or project switch; polling updates scene statuses itself
@@ -7531,13 +7928,17 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
   }
 
   function selectScene(sceneId) {
+    const nextSceneId = asText(sceneId)
+    if (!nextSceneId) return
     setBoard((current) => {
-      const scene = asSceneArray(current.scenes).find((item) => asText(item.id || item.scene_id) === asText(sceneId))
+      const currentSceneId = asText(current?.selectedSceneId || current?.selected_scene_id)
+      const scene = asSceneArray(current.scenes).find((item) => asText(item.id || item.scene_id) === nextSceneId)
       if (scene) {
         const sceneDuration = durationOf(scene)
         if (sceneDuration > 0) setManualSceneDurationSec(sceneDuration)
       }
-      return { ...current, selectedSceneId: sceneId }
+      if (currentSceneId === nextSceneId) return current
+      return { ...current, selectedSceneId: nextSceneId }
     })
   }
 
@@ -10004,6 +10405,11 @@ async function markVideoPlanned(sceneOverride = null) {
     updateSceneAndSave(requestSceneId, {
       ...boardVideoRegenerateResetPatch('video_restarting'),
       video_status: 'starting',
+      videoStatus: 'starting',
+      video_started_at: new Date().toISOString(),
+      videoStartedAt: new Date().toISOString(),
+      video_updated_at: new Date().toISOString(),
+      videoUpdatedAt: new Date().toISOString(),
       video_error: '',
       video_start_warnings: warnings,
       video_url: '',
@@ -10118,7 +10524,13 @@ async function markVideoPlanned(sceneOverride = null) {
         // AVA_BOARD_CLEAR_OLD_VIDEO_DURING_RUNNING_V52: keep new job, but remove old ready video refs during regeneration.
         ...boardVideoRegenerateResetPatch('video_start_job_saved'),
         video_status: status,
+        videoStatus: status,
+        video_started_at: new Date().toISOString(),
+        videoStartedAt: new Date().toISOString(),
+        video_updated_at: new Date().toISOString(),
+        videoUpdatedAt: new Date().toISOString(),
         video_job_id: jobId,
+        videoJobId: jobId,
         video_status_endpoint: data.statusEndpoint || (jobId ? `/api/clip/video/status/${jobId}` : ''),
         workflow_key: data.workflowKey || boardWorkflowKeyForRoute(route, sceneToStart.workflow_key),
         workflow_exists: data.workflowExists,
@@ -10137,12 +10549,26 @@ async function markVideoPlanned(sceneOverride = null) {
       pollBoardVideoJob(requestSceneId, videoStatusEndpoint, jobId)
     } catch (error) {
       console.error('[Board] /clip/video/start failed', error)
+      boardReleaseVideoQueueStart(requestSceneId)
       updateSceneAndSave(requestSceneId, {
         video_status: 'error',
+        videoStatus: 'error',
         video_error: error?.message || 'video_start_failed',
+        videoError: error?.message || 'video_start_failed',
+        video_job_id: '',
+        videoJobId: '',
+        video_status_endpoint: '',
+        videoStatusEndpoint: '',
+        video_queue_position: 0,
+        videoQueuePosition: 0,
+        video_queue_source: '',
+        videoQueueSource: '',
+        video_updated_at: new Date().toISOString(),
+        videoUpdatedAt: new Date().toISOString(),
       })
       setStatus(error?.message || 'Не удалось отправить видео')
       pushBoardToast({ type: 'error', title: 'Видео не отправлено', message: `Сцена ${requestSceneId}: ${error?.message || 'video_start_failed'}`, sceneId: requestSceneId })
+      window.setTimeout(() => finishBoardVideoQueueStepV130H(requestSceneId, '', 'video_start_failed_v200a'), 650)
     }
   }
 
@@ -11029,18 +11455,20 @@ async function importTimingJson(event) {
         {boardScenes.map((scene, index) => {
           const statusInfo = sceneStatus(scene)
           const reviewInfo = boardSceneVideoReviewInfo(scene)
-          const active = selectedScene?.id === scene.id
+          const sceneIdV200E = asText(scene.id || scene.scene_id || scene.sceneId)
+          const selectedIdV200E = asText(selectedScene?.id || selectedScene?.scene_id || selectedScene?.sceneId)
+          const active = selectedIdV200E === sceneIdV200E
           return (
             <button
-              key={scene.id}
+              key={sceneIdV200E || scene.id}
               type="button"
               className={`avaBoardSceneCard ${active ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''}`}
               ref={(node) => {
-                if (node) sceneCardRefs.current.set(scene.id, node)
-                else sceneCardRefs.current.delete(scene.id)
+                if (node) sceneCardRefs.current.set(sceneIdV200E, node)
+                else sceneCardRefs.current.delete(sceneIdV200E)
               }}
               style={storyboardSceneCardInlineStyleV71(scene, index, board)}
-              onClick={() => selectScene(scene.id)}
+              onClick={() => selectScene(sceneIdV200E)}
             >
               <div className="avaBoardSceneCardTop">
                 <strong>{scene.title || scene.id}</strong>
@@ -11338,7 +11766,7 @@ async function importTimingJson(event) {
                 <>
                   <div className="avaBoardVideoFrameV64">
                     <video
-                    key={selectedPreviewVideoUrl}
+                    key={selectedPreviewAssetApiPath || selectedPreviewVideoUrl}
                     src={selectedPreviewVideoUrl}
                     controls
                     preload="metadata"

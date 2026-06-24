@@ -100,7 +100,9 @@ def _board_video_job_store(job_id: str, job: dict[str, Any]) -> None:
 
     def op(db):
         jobs = db.setdefault("jobs", {})
-        jobs[safe_job_id] = {
+        existing_record = jobs.get(safe_job_id) if isinstance(jobs, dict) else None
+        existing_data = existing_record.get("data") if isinstance(existing_record, dict) and existing_record.get("type") == "board_video" else existing_record
+        next_record = {
             "id": safe_job_id,
             "type": "board_video",
             "status": safe_job.get("status") or safe_job.get("video_status") or "",
@@ -109,6 +111,19 @@ def _board_video_job_store(job_id: str, job: dict[str, Any]) -> None:
             "updated_at": now_iso(),
             "data": safe_job,
         }
+        # AVA_BOARD_STALE_JOB_NOOP_V200E:
+        # /clip/video/status polls used to rewrite ava_db.json every 2.5s because only
+        # updatedAt/historyPreview changed. If the meaningful job state is identical,
+        # return a store no-op so storage.update skips the physical JSON write.
+        if _board_video_job_fingerprint_v200e(existing_data) == _board_video_job_fingerprint_v200e(safe_job):
+            return {
+                "id": safe_job_id,
+                "status": next_record["status"],
+                "reason": "board_video_job_semantic_noop_v200e",
+                "_skip_store_write_v200e": True,
+                "_skip_store_write_v200c": True,
+            }
+        jobs[safe_job_id] = next_record
         return jobs[safe_job_id]
 
     try:
@@ -136,6 +151,312 @@ def _board_video_job_load(job_id: str) -> dict[str, Any] | None:
     data["restoredFromStorage"] = True
     BOARD_VIDEO_JOBS[safe_job_id] = data
     return data
+
+
+# AVA_BOARD_FORCE_CLEAR_RESTORED_STALE_JOB_V200H:
+# After F5/backend restart an old boardjob can be loaded from storage and kept as
+# "running" even though there is no live backend runner anymore. V200H treats an
+# old restored job with no result and no active Comfy prompt as orphaned, returns
+# not_found to the browser, and lets the Board clear "видео делается" immediately.
+def _board_video_parse_dt_v200h(value: Any):
+    if not value:
+        return None
+    try:
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        dt = datetime.fromisoformat(text)
+        if getattr(dt, "tzinfo", None) is not None:
+            dt = dt.replace(tzinfo=None)
+        return dt
+    except Exception:
+        return None
+
+
+def _board_video_age_sec_v200h(job: dict[str, Any]) -> float:
+    now_value = datetime.utcnow()
+    candidates = [
+        job.get("createdAt"), job.get("created_at"),
+        job.get("startedAt"), job.get("started_at"),
+        job.get("persistedAt"), job.get("persisted_at"),
+        job.get("updatedAt"), job.get("updated_at"),
+    ]
+    ages: list[float] = []
+    for value in candidates:
+        dt = _board_video_parse_dt_v200h(value)
+        if dt is not None:
+            ages.append(max(0.0, (now_value - dt).total_seconds()))
+    if not ages:
+        return 999999.0
+    return max(ages)
+
+
+def _board_video_has_result_v200h(job: dict[str, Any]) -> bool:
+    if not isinstance(job, dict):
+        return False
+    for key in (
+        "videoUrl", "video_url", "videoApiPath", "video_api_path",
+        "resultVideoUrl", "result_video_url", "resultVideoApiPath", "result_video_api_path",
+        "videoAssetId", "video_asset_id", "imageUrl", "image_url",
+    ):
+        if str(job.get(key) or "").strip():
+            return True
+    outputs = job.get("outputs")
+    return bool(outputs)
+
+
+def _board_video_status_active_v200h(status: Any) -> bool:
+    return str(status or "").strip().lower() in {
+        "", "queued", "running", "starting", "preparing", "submitting", "processing", "queued_no_prompt_id"
+    }
+
+
+def _board_video_prompt_active_v200h(job: dict[str, Any]) -> bool | None:
+    prompt_id = str(job.get("promptId") or job.get("prompt_id") or "").strip()
+    base_url = str(job.get("targetComfyBaseUrl") or job.get("target_comfy_base_url") or "").strip()
+    if not prompt_id or not base_url:
+        return None
+    fn = globals().get("_board_video_prompt_is_active_v200e")
+    if callable(fn):
+        try:
+            return fn(base_url, prompt_id)
+        except Exception:
+            return None
+    return None
+
+
+def _board_video_should_force_orphan_v200h(job_id: str, job: dict[str, Any], *, was_in_memory: bool = False, source: str = "") -> tuple[bool, str]:
+    if not isinstance(job, dict):
+        return False, ""
+    if _board_video_has_result_v200h(job):
+        return False, ""
+    status = str(job.get("status") or job.get("video_status") or "").strip().lower()
+    if status in {"not_found", "orphaned", "error", "failed", "canceled", "cancelled", "completed_without_video_output", "output_download_failed", "output_finalize_failed"}:
+        return True, f"stored_terminal_without_video_{status or 'empty'}_v200h"
+    if not _board_video_status_active_v200h(status):
+        return False, ""
+
+    restored = bool(job.get("restoredFromStorage") or job.get("restored_from_storage"))
+    age_sec = _board_video_age_sec_v200h(job)
+    prompt_active = _board_video_prompt_active_v200h(job)
+
+    # If Comfy still explicitly reports the prompt as active, do not kill it.
+    if prompt_active is True:
+        return False, ""
+
+    # Strong signal: this job was resurrected from storage after backend restart.
+    # Old restored jobs are the exact source of the stuck "видео делается" state.
+    if restored and not was_in_memory and age_sec >= 20:
+        return True, f"restored_boardjob_not_live_age_{int(age_sec)}s_{source or 'status'}_v200h"
+
+    # If the job is old and Comfy does not confirm it as active, stop the UI loop.
+    if restored and age_sec >= 120:
+        return True, f"old_restored_boardjob_no_active_prompt_age_{int(age_sec)}s_{source or 'status'}_v200h"
+
+    if str(job_id or "").startswith("boardjob_") and age_sec >= 300 and prompt_active is not True:
+        return True, f"old_boardjob_no_active_prompt_age_{int(age_sec)}s_{source or 'status'}_v200h"
+
+    return False, ""
+
+
+def _board_video_mark_orphaned_v200h(job_id: str, job: dict[str, Any], *, reason: str, scene_id: str = "", project_id: str = "") -> dict[str, Any]:
+    now_value = now_iso()
+    job["status"] = "not_found"
+    job["video_status"] = "not_found"
+    job["code"] = "BOARD_VIDEO_JOB_ORPHANED_V200H"
+    job["error"] = reason
+    job["orphanedAfterReload"] = True
+    job["orphaned_after_reload"] = True
+    job["updatedAt"] = now_value
+    job["updated_at"] = now_value
+    if scene_id:
+        job["sceneId"] = job.get("sceneId") or scene_id
+        job["scene_id"] = job.get("scene_id") or scene_id
+    if project_id:
+        job["projectId"] = job.get("projectId") or project_id
+        job["project_id"] = job.get("project_id") or project_id
+    try:
+        _board_video_job_store(job_id, job)
+    except Exception as exc:
+        print("[BOARD VIDEO JOB ORPHAN STORE ERROR V200H]", {"job_id": job_id, "error": str(exc)}, flush=True)
+    print("[BOARD VIDEO JOB FORCE ORPHAN V200H]", {
+        "job_id": job_id,
+        "scene_id": job.get("sceneId") or job.get("scene_id") or scene_id or "",
+        "project_id": job.get("projectId") or job.get("project_id") or project_id or "",
+        "reason": reason,
+    }, flush=True)
+    return {"ok": False, **job}
+
+
+# AVA_BOARD_STALE_JOB_NOOP_V200E:
+# Detect old Board video jobs restored after F5/backend reload that are no longer present
+# in Comfy queue/history, and avoid rewriting the JSON store for unchanged running polls.
+def _board_video_job_parse_dt_v200e(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(raw)
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone().replace(tzinfo=None)
+        return parsed
+    except Exception:
+        return None
+
+
+def _board_video_job_age_sec_v200e(job: dict[str, Any]) -> float:
+    stamps: list[datetime] = []
+    for key in ("createdAt", "created_at", "startedAt", "started_at", "submittedAt", "submitted_at", "updatedAt", "updated_at"):
+        parsed = _board_video_job_parse_dt_v200e(job.get(key))
+        if parsed is not None:
+            stamps.append(parsed)
+    if not stamps:
+        return 10**9
+    oldest = min(stamps)
+    return max(0.0, (datetime.utcnow() - oldest).total_seconds())
+
+
+def _board_video_job_fingerprint_v200e(value: Any) -> str:
+    volatile = {
+        "updatedAt", "updated_at", "persistedAt", "lastCheckedAt", "last_checked_at",
+        "historyPreview", "history_preview", "historyError", "history_error",
+        "pollCount", "poll_count",
+    }
+
+    def clean(item: Any) -> Any:
+        if isinstance(item, dict):
+            return {str(k): clean(v) for k, v in sorted(item.items(), key=lambda pair: str(pair[0])) if str(k) not in volatile}
+        if isinstance(item, list):
+            return [clean(v) for v in item]
+        return item
+
+    try:
+        return json.dumps(clean(value or {}), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        return str(clean(value or {}))
+
+
+def _board_video_prompt_is_active_v200e(base_url: str, prompt_id: str) -> bool | None:
+    base = str(base_url or "").strip()
+    pid = str(prompt_id or "").strip()
+    if not base or not pid:
+        return None
+    try:
+        queue = _comfy_get_json(base, "/queue", timeout=8)
+    except Exception:
+        return None
+    if isinstance(queue, dict) and queue.get("_error"):
+        return None
+    try:
+        return pid in set(_comfy_queue_prompt_ids(queue))
+    except Exception:
+        return None
+
+
+# AVA_BOARD_STALE_JOB_FAST_ORPHAN_V200F:
+# A restored browser poll can keep a scene stuck as "видео делается" when the original
+# Comfy prompt disappeared after F5/backend reload. Keep a short in-memory probe timer
+# and clear the stale job once queue/history prove there is no live process.
+def _board_video_job_probe_age_sec_v200f(job: dict[str, Any]) -> float:
+    started = _board_video_job_parse_dt_v200e(job.get("orphanProbeStartedAtV200F") or job.get("orphan_probe_started_at_v200f"))
+    if started is None:
+        now_value = now_iso()
+        job["orphanProbeStartedAtV200F"] = now_value
+        job["orphan_probe_started_at_v200f"] = now_value
+        return 0.0
+    return max(0.0, (datetime.utcnow() - started).total_seconds())
+
+
+# AVA_BOARD_STALE_HISTORY_NO_OUTPUT_V200G:
+# Some stale Comfy prompts return a non-empty /history/<prompt_id> object, but it
+# contains no downloadable outputs. V200E/V200F only orphaned empty history, so the
+# browser kept a restored Board job as "running" forever after F5/backend restart.
+def _board_video_history_has_any_output_files_v200g(history: Any) -> bool:
+    def walk(value: Any) -> bool:
+        if isinstance(value, dict):
+            filename = value.get("filename") or value.get("file") or value.get("path")
+            if isinstance(filename, str) and filename.strip():
+                return True
+            outputs = value.get("outputs")
+            if isinstance(outputs, dict) and outputs:
+                if walk(outputs):
+                    return True
+            for child in value.values():
+                if walk(child):
+                    return True
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                if walk(child):
+                    return True
+        return False
+
+    try:
+        return walk(history)
+    except Exception:
+        return False
+
+
+def _board_video_should_orphan_v200f(job: dict[str, Any], *, base_url: str, prompt_id: str, history: Any, history_error: bool = False) -> tuple[bool, str]:
+    restored = bool(job.get("restoredFromStorage") or job.get("restored_from_storage"))
+    if not restored:
+        return False, ""
+
+    prompt_active = _board_video_prompt_is_active_v200e(base_url, prompt_id)
+    probe_age = _board_video_job_probe_age_sec_v200f(job)
+    job_age = _board_video_job_age_sec_v200e(job)
+    history_is_error = bool(history_error or (isinstance(history, dict) and "_history_error" in history))
+    history_empty = not bool(history) or history_is_error
+    history_has_outputs = _board_video_history_has_any_output_files_v200g(history)
+    history_nonempty_without_outputs = bool(isinstance(history, dict) and history and not history_is_error and not history_has_outputs)
+    prompt_not_active = prompt_active is False
+    prompt_unknown = prompt_active is None
+
+    # Strongest signal: the prompt is not in Comfy queue/running, and its history has no output files.
+    if history_nonempty_without_outputs and prompt_not_active and probe_age >= 3:
+        return True, "restored_history_without_outputs_prompt_not_active_v200g"
+
+    # If queue probing is unavailable, still stop old restored jobs after a short probe window.
+    # This avoids keeping a scene stuck as "видео делается" forever when Comfy was restarted.
+    if history_nonempty_without_outputs and prompt_unknown and (probe_age >= 12 or job_age >= 180):
+        return True, "restored_history_without_outputs_prompt_unknown_v200g"
+
+    if prompt_not_active and history_empty and probe_age >= 3:
+        return True, "restored_prompt_missing_from_comfy_queue_history_v200g"
+    if history_is_error and probe_age >= 20:
+        return True, "restored_comfy_history_unreachable_probe_timeout_v200g"
+    if history_empty and probe_age >= 20:
+        return True, "restored_empty_history_probe_timeout_v200g"
+    if not history_has_outputs and prompt_active is not True and job_age >= 300:
+        return True, "restored_old_job_no_outputs_not_active_v200g"
+    return False, ""
+
+
+def _board_video_mark_orphaned_v200e(job_id: str, job: dict[str, Any], *, reason: str, history: Any = None) -> dict[str, Any]:
+    now_value = now_iso()
+    job["status"] = "not_found"
+    job["video_status"] = "not_found"
+    job["code"] = "BOARD_VIDEO_JOB_ORPHANED_AFTER_RELOAD"
+    job["error"] = reason
+    job["orphanedAfterReload"] = True
+    job["orphaned_after_reload"] = True
+    job["updatedAt"] = now_value
+    job["updated_at"] = now_value
+    if history is not None:
+        job["historyPreview"] = history
+    _board_video_job_store(job_id, job)
+    print("[BOARD VIDEO JOB ORPHANED V200E]", {
+        "job_id": job_id,
+        "scene_id": job.get("sceneId") or job.get("scene_id") or "",
+        "project_id": job.get("projectId") or job.get("project_id") or "",
+        "prompt_id": job.get("promptId") or job.get("prompt_id") or "",
+        "reason": reason,
+    }, flush=True)
+    return {"ok": False, **job}
+
 
 WORKFLOW_ROUTE_MAP: dict[str, str] = {
     "i2v": "image-video.json",
@@ -2021,20 +2342,24 @@ def cancel_active_video_jobs(user: dict = Depends(get_current_user)) -> dict[str
 
 @router.get("/clip/video/status/{job_id}")
 def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    was_in_memory_v200h = job_id in BOARD_VIDEO_JOBS
     job = BOARD_VIDEO_JOBS.get(job_id) or _board_video_job_load(job_id)
     if not job:
         return {"ok": False, "status": "not_found", "code": "BOARD_VIDEO_JOB_NOT_FOUND", "jobId": job_id}
 
     _ava_credit_ensure_job_owner(job, user)
 
+    should_force_orphan_v200h, orphan_reason_v200h = _board_video_should_force_orphan_v200h(job_id, job, was_in_memory=was_in_memory_v200h, source="status")
+    if should_force_orphan_v200h:
+        return _board_video_mark_orphaned_v200h(job_id, job, reason=orphan_reason_v200h)
+
     if job.get("videoUrl") or job.get("video_url") or job.get("imageUrl") or job.get("image_url"):
         _ava_credit_charge_video_job_if_ready(job)
         _board_video_job_store(job_id, job)
-
         return {"ok": True, **job}
 
-    prompt_id = job.get("promptId")
-    base_url = job.get("targetComfyBaseUrl")
+    prompt_id = job.get("promptId") or job.get("prompt_id")
+    base_url = job.get("targetComfyBaseUrl") or job.get("target_comfy_base_url")
     if prompt_id and base_url:
         history = _history(base_url, prompt_id)
         outputs = _extract_comfy_outputs(base_url, history) if isinstance(history, dict) else []
@@ -2059,21 +2384,54 @@ def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[st
                 job["status"] = "output_finalize_failed"
                 job["error"] = str(exc)
 
+            job["updatedAt"] = now_iso()
+            job["historyPreview"] = history
+
         elif isinstance(history, dict) and "_history_error" in history:
+            should_orphan_v200f, orphan_reason_v200f = _board_video_should_orphan_v200f(
+                job,
+                base_url=base_url,
+                prompt_id=prompt_id,
+                history=history,
+                history_error=True,
+            )
+            if should_orphan_v200f:
+                return _board_video_mark_orphaned_v200e(
+                    job_id,
+                    job,
+                    reason=orphan_reason_v200f,
+                    history=history,
+                )
             job["historyError"] = history["_history_error"]
             job["status"] = "running"
+            job["updatedAt"] = now_iso()
+            job["historyPreview"] = history
         else:
+            # Empty history + prompt missing from Comfy queue/running after enough time means
+            # the browser resurrected an old persisted job after F5/backend reload. Without this
+            # guard the scene stays "видео делается" forever and every poll writes ava_db.json.
+            should_orphan_v200f, orphan_reason_v200f = _board_video_should_orphan_v200f(
+                job,
+                base_url=base_url,
+                prompt_id=prompt_id,
+                history=history,
+                history_error=False,
+            )
+            if should_orphan_v200f:
+                return _board_video_mark_orphaned_v200e(
+                    job_id,
+                    job,
+                    reason=orphan_reason_v200f,
+                    history=history,
+                )
             job["status"] = "running"
-
-        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
-        job["historyPreview"] = history
+            job["updatedAt"] = now_iso()
+            job["historyPreview"] = history
 
     _ava_credit_charge_video_job_if_ready(job)
     _board_video_job_store(job_id, job)
 
-
     return {"ok": True, **job}
-
 
 
 
@@ -3347,6 +3705,118 @@ def _board_batch_job_active_patch(start_data: dict[str, Any], scene: dict[str, A
     }
 
 
+
+# AVA_BOARD_MANUAL_QUEUE_STALE_LOCK_V200A:
+# Frontend/manual scene queue can leave a scene in starting/submitting/running with no job_id
+# when /clip/video/start fails between the UI start mark and the real backend job creation.
+# Clear these stale scene locks from snapshot during video-batch/status polling so a stuck
+# card cannot block the next manual queued scene forever.
+def _board_batch_parse_iso_dt_v200a(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(raw)
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone().replace(tzinfo=None)
+        return parsed
+    except Exception:
+        return None
+
+
+def _board_batch_clear_stale_manual_scene_locks_v200a(
+    project_id: str,
+    board_data: dict[str, Any],
+    *,
+    max_age_sec: int = 90,
+    reason: str = "stale_manual_start_without_job_v200a",
+) -> tuple[dict[str, Any], list[str]]:
+    scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
+    if not scenes:
+        return board_data, []
+    now_dt = datetime.utcnow()
+    transient = {"starting", "preparing", "submitting", "running", "processing", "queued_no_prompt_id"}
+    changed = False
+    cleared: list[str] = []
+    next_scenes: list[Any] = []
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            next_scenes.append(scene)
+            continue
+        status = str(scene.get("video_status") or scene.get("videoStatus") or "").strip().lower()
+        has_job = bool(
+            str(scene.get("video_job_id") or scene.get("videoJobId") or "").strip() or
+            str(scene.get("video_status_endpoint") or scene.get("videoStatusEndpoint") or "").strip() or
+            str(scene.get("server_batch_job_id") or scene.get("serverBatchJobId") or "").strip() or
+            str(scene.get("server_batch_status_endpoint") or scene.get("serverBatchStatusEndpoint") or "").strip()
+        )
+        if status not in transient or has_job:
+            next_scenes.append(scene)
+            continue
+        stamp = None
+        for key in ("video_started_at", "videoStartedAt", "video_updated_at", "videoUpdatedAt", "updatedAt", "updated_at"):
+            stamp = _board_batch_parse_iso_dt_v200a(scene.get(key))
+            if stamp is not None:
+                break
+        age = 10**9 if stamp is None else (now_dt - stamp).total_seconds()
+        if age < max_age_sec:
+            next_scenes.append(scene)
+            continue
+        scene_id = _board_batch_scene_id(scene)
+        has_video = _board_batch_scene_has_video(scene)
+        patched = dict(scene)
+        patched.update({
+            "video_status": "ready" if has_video else "error",
+            "videoStatus": "ready" if has_video else "error",
+            "video_error": "" if has_video else reason,
+            "videoError": "" if has_video else reason,
+            "video_job_id": "",
+            "videoJobId": "",
+            "video_status_endpoint": "",
+            "videoStatusEndpoint": "",
+            "server_batch_job_id": "",
+            "serverBatchJobId": "",
+            "server_batch_status_endpoint": "",
+            "serverBatchStatusEndpoint": "",
+            "video_queue_position": 0,
+            "videoQueuePosition": 0,
+            "video_queue_source": "",
+            "videoQueueSource": "",
+            "video_batch_active_v132r": False,
+            "videoBatchActiveV132R": False,
+            "video_interrupted_reason": reason,
+            "videoInterruptedReason": reason,
+            "video_updated_at": _board_batch_now(),
+            "videoUpdatedAt": _board_batch_now(),
+        })
+        next_scenes.append(patched)
+        changed = True
+        if scene_id:
+            cleared.append(scene_id)
+    if not changed:
+        return board_data, []
+    board_data["scenes"] = next_scenes
+    current_queue = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
+    waiting = [item for item in (current_queue.get("waitingSceneIds") or current_queue.get("waiting_scene_ids") or []) if str(item or "").strip() not in set(cleared)]
+    board_data["video_queue"] = {
+        **current_queue,
+        "activeSceneId": "",
+        "activeJobId": "",
+        "activeStatusEndpoint": "",
+        "waitingSceneIds": waiting,
+        "waiting_scene_ids": waiting,
+        "source": reason,
+        "updatedAt": _board_batch_now(),
+    }
+    board_data["videoQueue"] = dict(board_data["video_queue"])
+    board_data["updatedAt"] = _board_batch_now()
+    board_data["updated_at"] = _board_batch_now()
+    print("[BOARD MANUAL QUEUE STALE LOCK CLEAR V200A]", {"project_id": project_id, "clearedSceneIds": cleared, "reason": reason}, flush=True)
+    return board_data, cleared
+
+
 def _board_batch_error_patch(status: str, detail: Any = None) -> dict[str, Any]:
     return {
         "video_status": status or "error",
@@ -3509,8 +3979,9 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                     "failedSceneIds": failed,
                     "waiting_scene_ids": waiting_ids,
                     "waitingSceneIds": waiting_ids,
-                    "video_queue": {"waitingSceneIds": waiting_ids, "waiting_scene_ids": waiting_ids},
+                    "video_queue": {"activeSceneId": "", "activeJobId": "", "activeStatusEndpoint": "", "waitingSceneIds": waiting_ids, "waiting_scene_ids": waiting_ids},
                 })
+                batch.update({"activeSceneId": "", "activeJobId": "", "activeStatusEndpoint": "", "updatedAt": _board_batch_now()})
                 continue
 
             result_status, result_data = _board_batch_wait_job(project_id, batch_id, scene_id, job_id, user)
@@ -3604,6 +4075,10 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                     }, flush=True)
                 ready_patch_v132a.update(_board_batch_review_regenerate_flag_patch(False, "completed"))
                 if was_bad_review_regeneration_v132a:
+                    # AVA_BOARD_BATCH_POSMOTRI_UPDATED_AT_V200L:
+                    # Persist a fresh review timestamp so project snapshot review-event authority
+                    # does not resurrect an older Telegram/manual "bad" mark after regeneration.
+                    review_now_v200l = now_iso()
                     ready_patch_v132a.update(_board_batch_review_patch("needs_review", "bad_video_regenerated"))
                     # AVA_BOARD_BAD_REVIEW_FORCE_POSMOTRI_BACKEND_V132G:
                     # After a bad video is regenerated, the new result is video-ready
@@ -3617,6 +4092,8 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                         "reviewStatus": "needs_review",
                         "video_review_reason": "bad_video_regenerated",
                         "videoReviewReason": "bad_video_regenerated",
+                        "video_review_updated_at": review_now_v200l,
+                        "videoReviewUpdatedAt": review_now_v200l,
                         "video_review_regenerate_from_bad": False,
                         "videoReviewRegenerateFromBad": False,
                         "video_review_regenerate_reason": "",
@@ -3649,6 +4126,8 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                         "reviewStatus": "needs_review",
                         "video_review_reason": "bad_video_regenerated",
                         "videoReviewReason": "bad_video_regenerated",
+                        "video_review_updated_at": review_now_v200l,
+                        "videoReviewUpdatedAt": review_now_v200l,
                         "video_review_regenerate_from_bad": False,
                         "videoReviewRegenerateFromBad": False,
                         "video_review_regenerate_reason": "",
@@ -3738,8 +4217,9 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                     "failedSceneIds": failed,
                     "waiting_scene_ids": waiting_ids,
                     "waitingSceneIds": waiting_ids,
-                    "video_queue": {"waitingSceneIds": waiting_ids, "waiting_scene_ids": waiting_ids},
+                    "video_queue": {"activeSceneId": "", "activeJobId": "", "activeStatusEndpoint": "", "waitingSceneIds": waiting_ids, "waiting_scene_ids": waiting_ids},
                 })
+                batch.update({"activeSceneId": "", "activeJobId": "", "activeStatusEndpoint": "", "updatedAt": _board_batch_now()})
 
         final_status = "canceled" if batch.get("cancelRequested") else ("finished_with_errors" if failed else "finished")
         batch.update({
@@ -4157,18 +4637,142 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     }
 
 
+
+# AVA_BOARD_CLEAR_SNAPSHOT_STALE_SCENE_JOB_V200H:
+# The status endpoint tells the browser a stale job is gone, but a saved snapshot can
+# still contain scene.video_status="running" + video_job_id. Clear those fields in
+# the Board snapshot from the batch-status endpoint so F5 cannot resurrect them.
+def _board_batch_clear_snapshot_stale_scene_jobs_v200h(project_id: str, board_data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    if not isinstance(board_data, dict):
+        return board_data, []
+    transient = {"queued", "running", "starting", "preparing", "submitting", "processing", "queued_no_prompt_id"}
+    scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
+    if not scenes:
+        return board_data, []
+
+    cleared: list[str] = []
+    next_scenes: list[Any] = []
+    now_value = _board_batch_now() if callable(globals().get("_board_batch_now")) else now_iso()
+
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            next_scenes.append(scene)
+            continue
+        status = str(scene.get("video_status") or scene.get("videoStatus") or "").strip().lower()
+        if status not in transient:
+            next_scenes.append(scene)
+            continue
+        has_video = False
+        try:
+            has_video = bool(_board_batch_scene_has_video(scene))
+        except Exception:
+            has_video = bool(scene.get("video_url") or scene.get("videoUrl") or scene.get("video_asset_id") or scene.get("videoAssetId"))
+        if has_video:
+            next_scenes.append(scene)
+            continue
+
+        scene_id = str(scene.get("id") or scene.get("scene_id") or scene.get("sceneId") or "").strip()
+        job_id = str(scene.get("video_job_id") or scene.get("videoJobId") or "").strip()
+        endpoint = str(scene.get("video_status_endpoint") or scene.get("videoStatusEndpoint") or "").strip()
+        if not job_id:
+            m = re.search(r"/clip/video/status/([^/?#]+)", endpoint)
+            if m:
+                job_id = m.group(1).strip()
+        if not job_id:
+            next_scenes.append(scene)
+            continue
+
+        was_in_memory = job_id in BOARD_VIDEO_JOBS
+        job = BOARD_VIDEO_JOBS.get(job_id) or _board_video_job_load(job_id)
+        if not isinstance(job, dict):
+            patched = dict(scene)
+            patched.update({
+                "video_status": "", "videoStatus": "",
+                "video_job_id": "", "videoJobId": "",
+                "video_status_endpoint": "", "videoStatusEndpoint": "",
+                "video_queue_position": 0, "videoQueuePosition": 0,
+                "video_error": "stale_job_missing_v200h", "videoError": "stale_job_missing_v200h",
+                "video_interrupted_reason": "stale_job_missing_v200h", "videoInterruptedReason": "stale_job_missing_v200h",
+                "video_updated_at": now_value, "videoUpdatedAt": now_value,
+            })
+            next_scenes.append(patched)
+            cleared.append(scene_id or job_id)
+            continue
+
+        should_clear, reason = _board_video_should_force_orphan_v200h(job_id, job, was_in_memory=was_in_memory, source="batch_snapshot")
+        if should_clear:
+            _board_video_mark_orphaned_v200h(job_id, job, reason=reason, scene_id=scene_id, project_id=project_id)
+            patched = dict(scene)
+            patched.update({
+                "video_status": "", "videoStatus": "",
+                "video_job_id": "", "videoJobId": "",
+                "video_status_endpoint": "", "videoStatusEndpoint": "",
+                "video_queue_position": 0, "videoQueuePosition": 0,
+                "video_error": reason, "videoError": reason,
+                "video_interrupted_reason": reason, "videoInterruptedReason": reason,
+                "video_updated_at": now_value, "videoUpdatedAt": now_value,
+            })
+            next_scenes.append(patched)
+            cleared.append(scene_id or job_id)
+        else:
+            next_scenes.append(scene)
+
+    if not cleared:
+        return board_data, []
+
+    next_board = dict(board_data)
+    next_board["scenes"] = next_scenes
+    queue = next_board.get("video_queue") if isinstance(next_board.get("video_queue"), dict) else {}
+    next_board["video_queue"] = {
+        **queue,
+        "activeSceneId": "",
+        "activeJobId": "",
+        "activeStatusEndpoint": "",
+        "waitingSceneIds": [],
+        "waiting_scene_ids": [],
+        "source": "stale_scene_job_clear_v200h",
+        "updatedAt": now_value,
+    }
+    batch = next_board.get("board_video_batch") if isinstance(next_board.get("board_video_batch"), dict) else {}
+    if batch:
+        next_board["board_video_batch"] = {
+            **batch,
+            "activeSceneId": "",
+            "active_scene_id": "",
+            "activeJobId": "",
+            "active_job_id": "",
+            "activeStatusEndpoint": "",
+            "active_status_endpoint": "",
+            "waitingSceneIds": [],
+            "waiting_scene_ids": [],
+            "status": "idle" if str(batch.get("status") or "").lower() in transient else batch.get("status", ""),
+            "updatedAt": now_value,
+        }
+    next_board["updatedAt"] = now_value
+    try:
+        _board_batch_save_snapshot(project_id, next_board, client_version="board-stale-scene-job-clear-v200h")
+    except Exception as exc:
+        print("[BOARD STALE SCENE JOB CLEAR SAVE ERROR V200H]", {"project_id": project_id, "error": str(exc)}, flush=True)
+    print("[BOARD STALE SCENE JOB CLEAR V200H]", {"project_id": project_id, "clearedSceneIds": cleared}, flush=True)
+    return next_board, cleared
+
 @router.get("/projects/{project_id}/board/video-batch/status")
 def board_video_batch_status(project_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    # AVA_BOARD_BATCH_STATUS_RETURNS_BOARD_V200I
     ensure_project_access(project_id, user)
     board_data = _board_batch_read_snapshot(project_id)
+    board_data, cleared_scene_jobs_v200h = _board_batch_clear_snapshot_stale_scene_jobs_v200h(project_id, board_data)
+    board_data, stale_scene_ids_v200a = _board_batch_clear_stale_manual_scene_locks_v200a(project_id, board_data)
+    if stale_scene_ids_v200a:
+        _board_batch_save_snapshot(project_id, board_data, client_version="board-manual-queue-stale-lock-clear-v200a")
     batch = board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict) else {}
     batch_id = str(batch.get("batchId") or batch.get("batch_id") or "").strip()
     live = BOARD_VIDEO_BATCHES.get(batch_id) if batch_id else None
     if live is None:
         cleaned = _board_batch_cleanup_orphaned_after_reload_v150a(project_id, board_data, batch)
         if cleaned is not None:
-            return {"ok": True, "batch": cleaned, "board_video_batch": cleaned, "orphanCleaned": True, "orphan_cleaned": True}
-    return {"ok": True, "batch": live or batch or {}, "board_video_batch": live or batch or {}}
+            return {"ok": True, "batch": cleaned, "board_video_batch": cleaned, "orphanCleaned": True, "orphan_cleaned": True, "board": board_data, "clearedSceneIds": cleared_scene_jobs_v200h, "cleared_scene_ids": cleared_scene_jobs_v200h, "client_version": "board-batch-status-returns-board-v200i"}
+    return {"ok": True, "batch": live or batch or {}, "board_video_batch": live or batch or {}, "board": board_data, "clearedSceneIds": cleared_scene_jobs_v200h, "cleared_scene_ids": cleared_scene_jobs_v200h, "client_version": "board-batch-status-returns-board-v200i"}
 
 
 @router.post("/projects/{project_id}/board/video-batch/stop")

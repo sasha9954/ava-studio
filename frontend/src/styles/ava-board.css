@@ -6931,3 +6931,132 @@
   background: rgba(255,255,255,.07) !important;
   border-radius: 999px !important;
 }
+
+/* AVA_BOARD_SELECTED_SCENE_VISIBLE_V200K
+   Make the selected scene card unmistakable in the top strip.
+   The card keeps its block color, but gets a stronger animated inner glow,
+   a bright left rail, and a small breathing highlight. */
+.avaBoardSceneCard {
+  position: relative;
+  isolation: isolate;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    filter 160ms ease,
+    opacity 160ms ease;
+}
+
+.avaBoardSceneCard:not(.isActive) {
+  opacity: 0.82;
+  filter: saturate(0.90) brightness(0.92);
+}
+
+.avaBoardSceneCard:not(.isActive):hover {
+  opacity: 0.98;
+  filter: saturate(1.04) brightness(1.02);
+}
+
+.avaBoardSceneCard.isActive {
+  opacity: 1 !important;
+  transform: translateY(-2px) scale(1.018);
+  border-color: hsla(var(--scene-hue, 220), 96%, 76%, 0.98) !important;
+  background:
+    radial-gradient(circle at 18% 20%, hsla(var(--scene-hue, 220), 96%, 70%, 0.34), transparent 34%),
+    linear-gradient(135deg,
+      hsla(var(--scene-hue, 220), 78%, 28%, 0.88),
+      rgba(9, 14, 31, 0.98) 60%,
+      rgba(4, 9, 23, 0.98)
+    ) !important;
+  box-shadow:
+    inset 6px 0 0 hsla(var(--scene-hue, 220), 100%, 66%, 0.98),
+    inset 0 0 0 1px hsla(var(--scene-hue, 220), 92%, 74%, 0.30),
+    0 0 0 2px hsla(var(--scene-hue, 220), 100%, 72%, 0.52),
+    0 0 22px hsla(var(--scene-hue, 220), 96%, 62%, 0.34),
+    0 18px 42px rgba(0, 0, 0, 0.42) !important;
+  animation: avaBoardSelectedCardBreatheV200K 1.85s ease-in-out infinite;
+}
+
+.avaBoardSceneCard.isActive::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    linear-gradient(90deg,
+      hsla(var(--scene-hue, 220), 100%, 72%, 0.34),
+      transparent 38%,
+      transparent 100%
+    );
+  opacity: 0.84;
+}
+
+.avaBoardSceneCard.isActive::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 7px;
+  height: 2px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    transparent,
+    hsla(var(--scene-hue, 220), 100%, 76%, 0.92),
+    transparent
+  );
+  box-shadow: 0 0 14px hsla(var(--scene-hue, 220), 96%, 66%, 0.54);
+  animation: avaBoardSelectedCardUnderlineV200K 1.25s ease-in-out infinite;
+}
+
+.avaBoardSceneCard.isActive .avaBoardSceneCardTop strong {
+  color: #ffffff;
+  text-shadow:
+    0 0 10px hsla(var(--scene-hue, 220), 96%, 74%, 0.62),
+    0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.avaBoardSceneCard.isActive > span,
+.avaBoardSceneCard.isActive > small {
+  color: rgba(238, 247, 255, 0.92) !important;
+}
+
+.avaBoardSceneCard.isActive .avaBoardStatusBadge {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 0 18px hsla(var(--scene-hue, 220), 88%, 62%, 0.28);
+}
+
+@keyframes avaBoardSelectedCardBreatheV200K {
+  0%, 100% {
+    box-shadow:
+      inset 6px 0 0 hsla(var(--scene-hue, 220), 100%, 66%, 0.98),
+      inset 0 0 0 1px hsla(var(--scene-hue, 220), 92%, 74%, 0.30),
+      0 0 0 2px hsla(var(--scene-hue, 220), 100%, 72%, 0.44),
+      0 0 18px hsla(var(--scene-hue, 220), 96%, 62%, 0.26),
+      0 18px 42px rgba(0, 0, 0, 0.42);
+  }
+  50% {
+    box-shadow:
+      inset 6px 0 0 hsla(var(--scene-hue, 220), 100%, 70%, 1),
+      inset 0 0 0 1px hsla(var(--scene-hue, 220), 92%, 76%, 0.42),
+      0 0 0 3px hsla(var(--scene-hue, 220), 100%, 74%, 0.62),
+      0 0 30px hsla(var(--scene-hue, 220), 96%, 64%, 0.46),
+      0 20px 46px rgba(0, 0, 0, 0.46);
+  }
+}
+
+@keyframes avaBoardSelectedCardUnderlineV200K {
+  0%, 100% { opacity: 0.44; transform: scaleX(0.72); }
+  50% { opacity: 1; transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avaBoardSceneCard.isActive,
+  .avaBoardSceneCard.isActive::after {
+    animation: none !important;
+  }
+}
+

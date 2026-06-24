@@ -607,6 +607,7 @@ export default function BoardAssemblyPage() {
   const entryFromGenerator = workflowEntry?.from === 'standalone_generator'
   const autosaveTimerRef = useRef(null)
   const resumedAssemblyJobRef = useRef('')
+  const assemblyVideoBlobUrlCacheRefV200C = useRef(new Map())
 
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -669,14 +670,30 @@ export default function BoardAssemblyPage() {
   const assemblyOutputSpec = useMemo(() => assemblyOutputSpecV195F(board || {}, sceneItems), [board, sceneItems])
   useEffect(() => {
     let cancelled = false
-    let objectUrl = ''
-    setSelectedVideoBlobUrl('')
     setSelectedVideoLoadError('')
-    if (!selectedItemVideoAssetApiPath) return undefined
+    if (!selectedItemVideoAssetApiPath) {
+      setSelectedVideoBlobUrl('')
+      return undefined
+    }
+
+    const cacheKey = selectedItemVideoAssetApiPath
+    const cachedUrl = assemblyVideoBlobUrlCacheRefV200C.current.get(cacheKey)
+    if (cachedUrl) {
+      setSelectedVideoBlobUrl(cachedUrl)
+      return undefined
+    }
+
+    setSelectedVideoBlobUrl('')
+
     async function loadSelectedVideoBlob() {
       try {
-        objectUrl = await fetchProtectedBlobUrl(selectedItemVideoAssetApiPath)
-        if (!cancelled) setSelectedVideoBlobUrl(objectUrl)
+        const objectUrl = await fetchProtectedBlobUrl(selectedItemVideoAssetApiPath)
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl)
+          return
+        }
+        assemblyVideoBlobUrlCacheRefV200C.current.set(cacheKey, objectUrl)
+        setSelectedVideoBlobUrl(objectUrl)
       } catch (error) {
         const message = error?.message || 'asset_fetch_failed'
         if (!cancelled) {
@@ -688,9 +705,18 @@ export default function BoardAssemblyPage() {
     loadSelectedVideoBlob()
     return () => {
       cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      // AVA_ASSEMBLY_VIDEO_BLOB_CACHE_V200C: keep scene video blobs across assembly item switches.
     }
   }, [selectedItemVideoAssetApiPath])
+
+  useEffect(() => {
+    return () => {
+      assemblyVideoBlobUrlCacheRefV200C.current.forEach((objectUrl) => {
+        try { URL.revokeObjectURL(objectUrl) } catch { /* ignore */ }
+      })
+      assemblyVideoBlobUrlCacheRefV200C.current.clear()
+    }
+  }, [])
 
   const selectedItemPlayableVideoUrl = selectedItemVideoAssetApiPath ? selectedVideoBlobUrl : (selectedItem?.videoUrl || '')
   const selectedItemVideoHydrating = Boolean(

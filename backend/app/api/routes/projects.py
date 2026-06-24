@@ -2282,6 +2282,10 @@ def _ava_project_scenes_v136d(data):
 
 
 def _ava_project_apply_review_event_v136d(scene, event):
+    # AVA_PROJECT_REVIEW_EVENT_IDEMPOTENT_V200B:
+    # The same clear/mark event can be present in incoming and current snapshots.
+    # Older logic rewrote the same fields on every autosave and returned True,
+    # causing a save loop with repeated "source_image_changed_v133b" clear events.
     if not isinstance(scene, dict) or not isinstance(event, dict):
         return False
 
@@ -2291,85 +2295,100 @@ def _ava_project_apply_review_event_v136d(scene, event):
     reason = str(event.get("reason") or "").strip()
 
     if kind == "clear":
-        for key in (
-            "video_review_status", "videoReviewStatus",
-            "review_status", "reviewStatus",
-            "video_review_regenerate_reason", "videoReviewRegenerateReason",
-        ):
-            scene[key] = ""
-        scene["video_review_reason"] = ""
-        scene["videoReviewReason"] = ""
-        scene["video_review_regenerate_from_bad"] = False
-        scene["videoReviewRegenerateFromBad"] = False
-        scene["needs_review"] = False
-        scene["needsReview"] = False
-        scene["bad_video_review"] = False
-        scene["badVideoReview"] = False
-        scene["video_review_bad"] = False
-        scene["videoReviewBad"] = False
-        scene["video_review_clear_reason"] = reason or "manual_review_clear_v136d"
-        scene["videoReviewClearReason"] = scene["video_review_clear_reason"]
-        scene["video_review_cleared_at"] = at
-        scene["videoReviewClearedAt"] = at
-        scene["video_review_accepted_at"] = ""
-        scene["videoReviewAcceptedAt"] = ""
-        scene["video_review_accept_token_v132z"] = ""
-        scene["videoReviewAcceptTokenV132Z"] = ""
-        scene["video_review_clear_token_v132y"] = scene.get("video_review_clear_token_v132y") or scene.get("videoReviewClearTokenV132Y") or f"review_clear_v136d_{at}"
-        scene["videoReviewClearTokenV132Y"] = scene["video_review_clear_token_v132y"]
-        scene["project_review_event_authority_v136d"] = True
-        scene["projectReviewEventAuthorityV136D"] = True
+        target_reason = reason or "manual_review_clear_v136d"
+        target_token = scene.get("video_review_clear_token_v132y") or scene.get("videoReviewClearTokenV132Y") or f"review_clear_v136d_{at}"
+        desired = {
+            "video_review_status": "",
+            "videoReviewStatus": "",
+            "review_status": "",
+            "reviewStatus": "",
+            "video_review_regenerate_reason": "",
+            "videoReviewRegenerateReason": "",
+            "video_review_reason": "",
+            "videoReviewReason": "",
+            "video_review_regenerate_from_bad": False,
+            "videoReviewRegenerateFromBad": False,
+            "needs_review": False,
+            "needsReview": False,
+            "bad_video_review": False,
+            "badVideoReview": False,
+            "video_review_bad": False,
+            "videoReviewBad": False,
+            "video_review_clear_reason": target_reason,
+            "videoReviewClearReason": target_reason,
+            "video_review_cleared_at": at,
+            "videoReviewClearedAt": at,
+            "video_review_accepted_at": "",
+            "videoReviewAcceptedAt": "",
+            "video_review_accept_token_v132z": "",
+            "videoReviewAcceptTokenV132Z": "",
+            "video_review_clear_token_v132y": target_token,
+            "videoReviewClearTokenV132Y": target_token,
+            "project_review_event_authority_v136d": True,
+            "projectReviewEventAuthorityV136D": True,
+        }
+        if all(scene.get(key) == value for key, value in desired.items()):
+            return False
+        scene.update(desired)
         return True
 
     if status not in {"bad", "needs_review"}:
         return False
 
-    scene["video_review_status"] = status
-    scene["videoReviewStatus"] = status
-    scene["review_status"] = status
-    scene["reviewStatus"] = status
-    scene["video_review_reason"] = reason or ("manual_bad_toggle_v136d" if status == "bad" else "needs_review_v136d")
-    scene["videoReviewReason"] = scene["video_review_reason"]
-    scene["video_review_updated_at"] = at
-    scene["videoReviewUpdatedAt"] = at
-    scene["video_review_clear_reason"] = ""
-    scene["videoReviewClearReason"] = ""
-    scene["video_review_cleared_at"] = ""
-    scene["videoReviewClearedAt"] = ""
-    scene["video_review_accepted_at"] = ""
-    scene["videoReviewAcceptedAt"] = ""
-    scene["video_review_accept_token_v132z"] = ""
-    scene["videoReviewAcceptTokenV132Z"] = ""
-    scene["video_review_clear_token_v132y"] = ""
-    scene["videoReviewClearTokenV132Y"] = ""
-
+    target_reason = reason or ("manual_bad_toggle_v136d" if status == "bad" else "needs_review_v136d")
+    desired = {
+        "video_review_status": status,
+        "videoReviewStatus": status,
+        "review_status": status,
+        "reviewStatus": status,
+        "video_review_reason": target_reason,
+        "videoReviewReason": target_reason,
+        "video_review_updated_at": at,
+        "videoReviewUpdatedAt": at,
+        "video_review_clear_reason": "",
+        "videoReviewClearReason": "",
+        "video_review_cleared_at": "",
+        "videoReviewClearedAt": "",
+        "video_review_accepted_at": "",
+        "videoReviewAcceptedAt": "",
+        "video_review_accept_token_v132z": "",
+        "videoReviewAcceptTokenV132Z": "",
+        "video_review_clear_token_v132y": "",
+        "videoReviewClearTokenV132Y": "",
+        "project_review_event_authority_v136d": True,
+        "projectReviewEventAuthorityV136D": True,
+    }
     if status == "bad":
-        scene["video_review_regenerate_from_bad"] = True
-        scene["videoReviewRegenerateFromBad"] = True
-        scene["video_review_regenerate_reason"] = "manual_bad_review_v136d"
-        scene["videoReviewRegenerateReason"] = "manual_bad_review_v136d"
-        scene["bad_video_review"] = True
-        scene["badVideoReview"] = True
-        scene["video_review_bad"] = True
-        scene["videoReviewBad"] = True
-        scene["needs_review"] = False
-        scene["needsReview"] = False
+        desired.update({
+            "video_review_regenerate_from_bad": True,
+            "videoReviewRegenerateFromBad": True,
+            "video_review_regenerate_reason": "manual_bad_review_v136d",
+            "videoReviewRegenerateReason": "manual_bad_review_v136d",
+            "bad_video_review": True,
+            "badVideoReview": True,
+            "video_review_bad": True,
+            "videoReviewBad": True,
+            "needs_review": False,
+            "needsReview": False,
+        })
     else:
-        scene["needs_review"] = True
-        scene["needsReview"] = True
-        scene["video_review_regenerate_from_bad"] = False
-        scene["videoReviewRegenerateFromBad"] = False
-        scene["video_review_regenerate_reason"] = ""
-        scene["videoReviewRegenerateReason"] = ""
-        scene["bad_video_review"] = False
-        scene["badVideoReview"] = False
-        scene["video_review_bad"] = False
-        scene["videoReviewBad"] = False
+        desired.update({
+            "needs_review": True,
+            "needsReview": True,
+            "video_review_regenerate_from_bad": False,
+            "videoReviewRegenerateFromBad": False,
+            "video_review_regenerate_reason": "",
+            "videoReviewRegenerateReason": "",
+            "bad_video_review": False,
+            "badVideoReview": False,
+            "video_review_bad": False,
+            "videoReviewBad": False,
+        })
 
-    scene["project_review_event_authority_v136d"] = True
-    scene["projectReviewEventAuthorityV136D"] = True
+    if all(scene.get(key) == value for key, value in desired.items()):
+        return False
+    scene.update(desired)
     return True
-
 
 def _ava_project_apply_review_event_authority_v136d(source_data, current_data, final_data):
     if not isinstance(final_data, dict):
@@ -2410,12 +2429,24 @@ def _ava_project_apply_review_event_authority_v136d(source_data, current_data, f
         if source_event and not current_event:
             winner, winner_source = source_event, "incoming"
         elif source_event and current_event:
-            source_dt = source_event.get("dt")
-            current_dt = current_event.get("dt")
-            if source_dt is not None and current_dt is not None:
-                source_wins = source_dt >= current_dt
+            # AVA_PROJECT_REVIEW_REGEN_NEEDS_REVIEW_WINS_V200L:
+            # A server-batch bad-video regeneration writes needs_review/posmotri. A late autosave
+            # or old Telegram callback can still carry the previous bad mark. Do not let that
+            # stale bad event override a current regenerated needs_review result.
+            current_is_regenerated_needs_review_v200l = (
+                str(current_event.get("status") or "").strip().lower() == "needs_review" and
+                "bad_video_regenerated" in str(current_event.get("reason") or "").lower()
+            )
+            source_is_bad_v200l = str(source_event.get("status") or "").strip().lower() == "bad"
+            if current_is_regenerated_needs_review_v200l and source_is_bad_v200l:
+                source_wins = False
             else:
-                source_wins = str(source_event.get("at") or "") >= str(current_event.get("at") or "")
+                source_dt = source_event.get("dt")
+                current_dt = current_event.get("dt")
+                if source_dt is not None and current_dt is not None:
+                    source_wins = source_dt >= current_dt
+                else:
+                    source_wins = str(source_event.get("at") or "") >= str(current_event.get("at") or "")
             winner = source_event if source_wins else current_event
             winner_source = "incoming" if source_wins else "current"
         else:
@@ -2689,6 +2720,31 @@ def _ava_project_apply_server_review_memory_v136e(source_data, current_data, fin
         if not event:
             continue
         before = _ava_project_review_status_v136d(scene) if "_ava_project_review_status_v136d" in globals() else ""
+        # AVA_PROJECT_REGEN_NEEDS_REVIEW_BLOCKS_BAD_MEMORY_V200M:
+        # A freshly regenerated bad video is intentionally changed to needs_review
+        # (orange "посмотри"). The long-lived server review memory can still contain
+        # an older manual/Telegram bad mark. Do not reapply that stale bad memory
+        # over the regenerated result.
+        scene_status_v200m = str(
+            scene.get("video_review_status") or scene.get("videoReviewStatus") or scene.get("review_status") or scene.get("reviewStatus") or ""
+        ).strip().lower()
+        scene_reason_v200m = str(scene.get("video_review_reason") or scene.get("videoReviewReason") or "").strip().lower()
+        event_status_v200m = str(event.get("status") or "").strip().lower()
+        event_reason_v200m = str(event.get("reason") or "").strip().lower()
+        if (
+            scene_status_v200m == "needs_review" and
+            "bad_video_regenerated" in scene_reason_v200m and
+            event_status_v200m == "bad" and
+            "bad_video_regenerated" not in event_reason_v200m
+        ):
+            memory[scene_id] = {
+                "kind": "mark",
+                "status": "needs_review",
+                "reason": scene.get("video_review_reason") or scene.get("videoReviewReason") or "bad_video_regenerated",
+                "at": scene.get("video_review_updated_at") or scene.get("videoReviewUpdatedAt") or now_iso(),
+                "dt": _ava_project_review_memory_parse_dt_v136e(scene.get("video_review_updated_at") or scene.get("videoReviewUpdatedAt") or ""),
+            }
+            continue
         if _ava_project_review_memory_apply_event_v136e(scene, event):
             after = _ava_project_review_status_v136d(scene) if "_ava_project_review_status_v136d" in globals() else str(event.get("status") or "")
             applied.append({
@@ -2939,6 +2995,34 @@ def _ava_project_apply_telegram_review_note_memory_v137c(db, project_id, source_
     return next_data, 0
 
 
+
+# AVA_PROJECT_SNAPSHOT_NOOP_SKIP_WRITE_V200F: already covered by older patch; marker added for idempotency.
+# AVA_PROJECT_SNAPSHOT_NOOP_SAVE_GUARD_V200B:
+# Board autosave can POST the same snapshot again and again while background polling is active.
+# Do not rewrite the whole JSON database if only volatile UI timestamps changed.
+def _ava_project_snapshot_strip_volatile_v200b(value):
+    volatile_keys = {
+        "updatedAt", "updated_at", "lastSavedAt", "last_saved_at",
+        "clientUpdatedAt", "client_updated_at", "lastAutoSaveAt", "last_auto_save_at",
+    }
+    if isinstance(value, dict):
+        return {
+            str(key): _ava_project_snapshot_strip_volatile_v200b(item)
+            for key, item in value.items()
+            if str(key) not in volatile_keys
+        }
+    if isinstance(value, list):
+        return [_ava_project_snapshot_strip_volatile_v200b(item) for item in value]
+    return value
+
+
+def _ava_project_snapshot_noop_equal_v200b(current_data, incoming_data) -> bool:
+    try:
+        return _ava_project_snapshot_strip_volatile_v200b(current_data or {}) == _ava_project_snapshot_strip_volatile_v200b(incoming_data or {})
+    except Exception:
+        return False
+
+
 @router.post('/{project_id}/snapshots/{stage}')
 def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depends(ensure_project_access)):
     if project.get('status') == 'deleted':
@@ -2969,6 +3053,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     'old_score': old_score,
                     'new_score': new_score,
                     'snapshot': current,
+                    '_skip_store_write_v200c': True,
                 }
             incoming_data, preserved_media_refs = preserve_media_refs(current.get('data') or {}, incoming_data)
         else:
@@ -3113,6 +3198,16 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
+
+        if current and cleanup is None and not is_destructive_clear:
+            current_data_for_noop_v200b = current.get('data') if isinstance(current, dict) else {}
+            if _ava_project_snapshot_noop_equal_v200b(current_data_for_noop_v200b, incoming_data):
+                return {
+                    'saved': False,
+                    'reason': 'noop_snapshot_same_data_v200b',
+                    'snapshot': current,
+                    '_skip_store_write_v200c': True,
+                }
 
         print('[PROJECT SAVE MEDIA REFS SUMMARY]', {
             'scope': 'project',

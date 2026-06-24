@@ -16,13 +16,15 @@ import './styles/ava-settings.css'
 import './styles/ava-timing.css'
 
 createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <ProjectProvider>
-          <App />
-        </ProjectProvider>
-      </AuthProvider>
-    </BrowserRouter>
-  </React.StrictMode>,
+  // AVA_F5_RESTORE_NO_STRICT_DOUBLE_MOUNT_V200J:
+  // React.StrictMode intentionally double-mounts effects in dev. In Ava Board this
+  // duplicated initial /projects, /auth/me, /snapshots and asset-restore requests,
+  // making F5 look much slower than the real app. Keep the local repair build single-pass.
+  <BrowserRouter>
+    <AuthProvider>
+      <ProjectProvider>
+        <App />
+      </ProjectProvider>
+    </AuthProvider>
+  </BrowserRouter>,
 )

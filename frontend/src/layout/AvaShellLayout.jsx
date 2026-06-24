@@ -429,6 +429,7 @@ export default function AvaShellLayout() {
   const pollingJobsRef = useRef(new Set())
   const generatorSnapshotDiscoveryRef = useRef({ lastAt: 0, inFlight: false })
   const creditsRefreshInFlightRef = useRef(null)
+  const creditsRefreshLastAtRefV200J = useRef(0)
   const [shellCreditBalance, setShellCreditBalance] = useState(null)
   const [shellCreditsRefreshing, setShellCreditsRefreshing] = useState(false)
   const routeProjectId = useMemo(() => avaProjectIdFromPath(location.pathname), [location.pathname])
@@ -533,12 +534,25 @@ export default function AvaShellLayout() {
 
     const runRefresh = (reason) => {
       if (!alive) return
+      // AVA_CREDITS_EVENT_NO_SUMMARY_SPAM_V200J:
+      // F5 + Board job polling can emit many credit events. They already contain the
+      // current balance, so summary refetches must be throttled.
+      const now = Date.now()
+      if (reason !== 'shell_mount' && now - creditsRefreshLastAtRefV200J.current < 8000) return
+      creditsRefreshLastAtRefV200J.current = now
       refreshShellCredits(reason)
     }
 
     runRefresh('shell_mount')
 
-    const onCreditsChanged = () => runRefresh('ava_credits_changed')
+    const onCreditsChanged = (event) => {
+      const nextBalance = extractAvaCreditBalance(event?.detail)
+      if (nextBalance !== null) {
+        setShellCreditBalance(nextBalance)
+        return
+      }
+      runRefresh('ava_credits_changed_missing_balance')
+    }
     const onUserUpdated = (event) => {
       const nextBalance = extractAvaCreditBalance(event?.detail)
       if (nextBalance !== null) setShellCreditBalance(nextBalance)
@@ -557,7 +571,7 @@ export default function AvaShellLayout() {
     window.addEventListener('focus', onFocus)
     window.addEventListener('storage', onStorage)
 
-    const timer = window.setInterval(() => runRefresh('soft_interval'), 15000)
+    const timer = window.setInterval(() => runRefresh('soft_interval'), 60000)
 
     return () => {
       alive = false

@@ -1510,10 +1510,17 @@ async def telegram_webhook(request: Request) -> dict[str, Any]:
 def _telegram_get_updates_once(timeout_sec: int = 2) -> dict[str, Any]:
     if not _telegram_token():
         return {"ok": False, "error": "telegram_token_missing"}
-    def op(db: dict[str, Any]) -> int:
-        state = db.setdefault("telegram_poll_state_v137a", {})
-        return int(state.get("offset") or 0)
-    offset = store.update(op)
+    # AVA_TELEGRAM_POLL_NO_WRITE_ON_IDLE_V200F:
+    # Reading the Telegram offset is a GET-like operation. The old code used
+    # store.update() just to read offset, which rewrote ava_db.json on every
+    # background poll and locked the JSON store while the UI was loading Board.
+    try:
+        db_for_offset_v200f = store.get_db()
+        state_v200f = db_for_offset_v200f.get("telegram_poll_state_v137a") or {}
+        offset = int(state_v200f.get("offset") or 0)
+    except Exception as exc:
+        print("[TELEGRAM POLL OFFSET READ FALLBACK V200F]", {"error": str(exc)}, flush=True)
+        offset = 0
     params = {"timeout": str(max(0, int(timeout_sec))), "allowed_updates": json.dumps(["message", "callback_query"])}
     if offset:
         params["offset"] = str(offset)
@@ -1534,13 +1541,16 @@ def _telegram_get_updates_once(timeout_sec: int = 2) -> dict[str, Any]:
         update_id = int(update.get("update_id") or 0)
         max_update_id = max(max_update_id, update_id)
         processed.append(_process_update(update))
-    if max_update_id >= 0:
+    next_offset_v200f = max_update_id + 1 if max_update_id >= 0 else offset
+    if max_update_id >= 0 and next_offset_v200f != offset:
         def save_offset(db: dict[str, Any]) -> dict[str, Any]:
             state = db.setdefault("telegram_poll_state_v137a", {})
-            state["offset"] = max_update_id + 1
+            state["offset"] = next_offset_v200f
             state["updated_at"] = now_iso()
             return state
         store.update(save_offset)
+    elif max_update_id >= 0:
+        print("[TELEGRAM POLL OFFSET WRITE SKIPPED V200F]", {"offset": offset, "count": len(results or [])}, flush=True)
     return {"ok": bool(data.get("ok")) if isinstance(data, dict) else False, "count": len(results or []), "processed": processed}
 
 

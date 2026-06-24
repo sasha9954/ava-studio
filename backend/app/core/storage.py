@@ -216,6 +216,12 @@ class JsonStore:
         with self.lock:
             data = self._read()
             result = fn(data)
+            # AVA_JSON_STORE_SKIP_WRITE_V200C / AVA_JSON_STORE_SKIP_WRITE_V200E:
+            # Some API handlers can prove that the payload/status poll is a semantic no-op.
+            # In that case do not rewrite ava_db.json, do not fsync, and do not copy backups.
+            if isinstance(result, dict) and (result.pop('_skip_store_write_v200e', False) or result.pop('_skip_store_write_v200c', False)):
+                print('[JSON STORE WRITE SKIPPED V200E]', result.get('reason') or 'noop', flush=True)
+                return result
             self._write(data)
             return result
 
