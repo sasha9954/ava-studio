@@ -255,8 +255,16 @@ def _board_video_should_force_orphan_v200h(job_id: str, job: dict[str, Any], *, 
     if restored and age_sec >= 120:
         return True, f"old_restored_boardjob_no_active_prompt_age_{int(age_sec)}s_{source or 'status'}_v200h"
 
-    if str(job_id or "").startswith("boardjob_") and age_sec >= 300 and prompt_active is not True:
-        return True, f"old_boardjob_no_active_prompt_age_{int(age_sec)}s_{source or 'status'}_v200h"
+    # AVA_BOARD_BATCH_NO_PREMATURE_ORPHAN_V201C:
+    # Do not orphan a normal Comfy job only because its prompt disappeared from /queue.
+    # Completed prompts disappear from /queue before we fetch /history; the old guard could
+    # kill long i2v jobs around 300s, so the server batch moved to the next scene and the
+    # finished video was never registered/applied to the Board. For jobs with a promptId,
+    # let video_status continue into the /history check below; the V200E/V200F empty-history
+    # logic will still orphan truly dead jobs after it verifies there is no output.
+    prompt_id_v201c = str(job.get("promptId") or job.get("prompt_id") or "").strip()
+    if str(job_id or "").startswith("boardjob_") and age_sec >= 300 and not prompt_id_v201c and prompt_active is not True:
+        return True, f"old_boardjob_no_prompt_id_age_{int(age_sec)}s_{source or 'status'}_v201c"
 
     return False, ""
 
