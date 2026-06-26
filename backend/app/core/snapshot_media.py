@@ -32,6 +32,13 @@ def _is_media_key(key: str) -> bool:
     return any(token in lowered for token in MEDIA_KEY_TOKENS)
 
 
+def _is_audio_media_key(key: str) -> bool:
+    # AVA_BOARD_AUDIO_PRESERVE_ON_IMAGE_RESET_V201B:
+    # Image/source-frame resets must clear stale image/video refs, but they must not
+    # delete lip-sync audio slices that backend just cut for a running server batch.
+    return "audio" in str(key or "").lower()
+
+
 
 
 # AVA_BOARD_MEDIA_DELETE_BACKEND_GUARD_V129T: when frontend sends explicit scene media reset markers,
@@ -92,12 +99,26 @@ def preserve_media_refs(current: Any, incoming: Any) -> tuple[Any, int]:
         merged = deepcopy(incoming)
         media_reset = _has_media_reset_marker(incoming)
         for key, old_value in current.items():
+            # AVA_BOARD_PRESERVE_MISSING_MEDIA_KEYS_V201A:
+            # Server-side Board batch can create per-scene audio_slice_* refs before queueing.
+            # While the first scene is rendering, the browser may POST an older Board snapshot
+            # that simply does not know these new keys yet. The old merge only preserved media
+            # refs when the incoming key existed but was empty, so audio_slice_api_path could
+            # disappear before the next ia2v scene started, causing "нет audio slice".
+            #
+            # Preserve non-empty media refs even when the incoming payload is missing that key.
+            # Explicit delete/reset markers still win and prevent resurrection.
             if key not in merged:
+                # AVA_BOARD_AUDIO_PRESERVE_ON_IMAGE_RESET_V201B:
+                # Image reset markers should not wipe backend-created lip-sync audio slices.
+                if _is_media_key(key) and (not media_reset or _is_audio_media_key(key)) and not _is_empty(old_value):
+                    merged[key] = deepcopy(old_value)
+                    changed += 1
                 continue
             new_value = merged.get(key)
             # AVA_BOARD_MEDIA_DELETE_BACKEND_GUARD_V129T: explicit scene reset wins over safe_merge.
             # Empty media fields are intentional here, so never resurrect old refs.
-            if media_reset and _is_media_key(key):
+            if media_reset and _is_media_key(key) and not _is_audio_media_key(key):
                 continue
             if isinstance(old_value, (dict, list)) and isinstance(new_value, type(old_value)):
                 merged_value, count = preserve_media_refs(old_value, new_value)
@@ -124,8 +145,24 @@ def preserve_media_refs(current: Any, incoming: Any) -> tuple[Any, int]:
                 scene_id = str(new_item.get("scene_id") or new_item.get("sceneId") or new_item.get("id") or "")
                 old_item = current_by_scene.get(scene_id) or old_item
             if isinstance(new_item, dict) and _has_media_reset_marker(new_item):
-                # AVA_BOARD_MEDIA_DELETE_BACKEND_GUARD_V129T: this scene intentionally reset media; keep incoming exactly.
-                merged[index] = deepcopy(new_item)
+                # AVA_BOARD_MEDIA_DELETE_BACKEND_GUARD_V129T:
+                # Image/source-frame reset wins for image/video refs, but not for audio slices.
+                # AVA_BOARD_AUDIO_PRESERVE_ON_IMAGE_RESET_V201B:
+                # During server batch, backend may cut audio_slice_* refs, then browser can
+                # POST a source_image_changed snapshot for the same scene. Keep incoming
+                # scene for image/video, but preserve non-empty audio media keys from current.
+                merged_item = deepcopy(new_item)
+                if isinstance(old_item, dict):
+                    for audio_key, audio_old_value in old_item.items():
+                        if (
+                            _is_audio_media_key(audio_key)
+                            and _is_media_key(audio_key)
+                            and not _is_empty(audio_old_value)
+                            and (audio_key not in merged_item or _is_empty(merged_item.get(audio_key)))
+                        ):
+                            merged_item[audio_key] = deepcopy(audio_old_value)
+                            changed += 1
+                merged[index] = merged_item
                 continue
             if isinstance(old_item, (dict, list)) and isinstance(new_item, type(old_item)):
                 merged_item, count = preserve_media_refs(old_item, new_item)

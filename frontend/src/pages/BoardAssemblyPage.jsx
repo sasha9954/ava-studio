@@ -1154,7 +1154,12 @@ export default function BoardAssemblyPage() {
     const list = []
     const generatorAssemblyBoard = isGeneratorAssemblyBoard(board || {})
     if (!stats.total) list.push('В Board пока нет сцен.')
-    if (stats.missing > 0) list.push(`Нет видео у ${stats.missing} сцен — они будут собраны как пустые участки / black frame.`)
+    // AVA_BOARD_ASSEMBLY_SKIP_MISSING_WARNING_V202B
+    if (stats.missing > 0) {
+      list.push(skipMissing
+        ? `Нет видео у ${stats.missing} сцен — они будут пропущены, монтаж соберётся только из готовых видео.`
+        : `Нет видео у ${stats.missing} сцен — они будут собраны как пустые участки / black frame.`)
+    }
     if (stats.total > 0 && stats.ready === 0 && !stats.hasOriginalAudio) list.push('Нет master audio и нет готовых video-сцен для сборки.')
     if (!generatorAssemblyBoard && !stats.hasOriginalAudio && ['original_only', 'original_plus_scene', 'original_plus_music_scene'].includes(audioMode)) {
       list.push('В Board не найдено оригинальное audio. Для этого режима понадобится master audio.')
@@ -1685,20 +1690,32 @@ function clearBoardAssemblyWorkflowEntryV200O() {
   }
 
   function buildAssemblyPayload() {
-    const items = sceneItems
+    // AVA_BOARD_ASSEMBLY_SKIP_MISSING_COMPACT_V202B:
+    // When "Пропускать сцены без видео" is enabled, send only ready video
+    // scenes to backend and compact their timeline. Previously the frontend
+    // still sent missing scenes as placeholders, so backend made black gaps and
+    // users saw "missing video" even when they wanted to assemble ready 5-10.
+    let compactCursorV202B = 0
+    const sourceItemsV202B = sceneItems
       .slice()
       .sort((a, b) => (a.start - b.start) || (a.index - b.index))
+      .filter((item) => !skipMissing || item.hasVideo)
+
+    const items = sourceItemsV202B
       .map((item) => {
         const raw = item.raw || {}
         const usesMmaudioVideo = preferMmaudio && Boolean(raw.mmaudio_video_api_path || raw.mmaudioVideoApiPath || raw.mmaudio_video_url || raw.mmaudioVideoUrl)
+        const assemblyStartV202B = skipMissing ? compactCursorV202B : item.start
+        const assemblyEndV202B = skipMissing ? compactCursorV202B + item.duration : item.end
+        if (skipMissing) compactCursorV202B = assemblyEndV202B
         return {
           scene_id: item.id,
           sceneId: item.id,
           title: item.title,
           route: item.route,
           duration_sec: item.duration,
-          start_sec: item.start,
-          end_sec: item.end,
+          start_sec: assemblyStartV202B,
+          end_sec: assemblyEndV202B,
           assembly_video_trim_allowed: Boolean(item.assemblyVideoTrim),
           assemblyVideoTrimAllowed: Boolean(item.assemblyVideoTrim),
           assembly_video_trim_enabled: Boolean(item.assemblyVideoTrim?.enabled),
@@ -1757,8 +1774,8 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       fitMode: lockedAssemblyFitModeV200O,
       output_fit_mode: lockedAssemblyFitModeV200O,
       outputFitMode: lockedAssemblyFitModeV200O,
-      duration_sec: stats.duration,
-      timeline_duration_sec: stats.duration,
+      duration_sec: skipMissing ? compactCursorV202B : stats.duration,
+      timeline_duration_sec: skipMissing ? compactCursorV202B : stats.duration,
       volumes: {
         original: originalVolume / 100,
         scene: sceneVolume / 100,

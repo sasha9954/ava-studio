@@ -3514,10 +3514,12 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = fal
   const imageRefV200W = useRef(null)
   const [imageLoading, setImageLoading] = useState(Boolean(value))
   const [imageFailed, setImageFailed] = useState(false)
+  const [imageZoomOpenV202C, setImageZoomOpenV202C] = useState(false)
   const showBusyOverlay = Boolean(busy || imageLoading)
   const loaderText = busyLabel || (imageLoading ? 'Загружаем фото…' : 'Подгружаем…')
 
   useEffect(() => {
+    setImageZoomOpenV202C(false)
     setImageFailed(false)
     if (!value) {
       setImageLoading(false)
@@ -3592,6 +3594,21 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = fal
                 {busyHint ? <small>{busyHint}</small> : null}
               </div>
             ) : null}
+            {!showBusyOverlay && !imageFailed ? (
+              <button
+                type="button"
+                className="avaBoardImageZoomHotspotV202C"
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setImageZoomOpenV202C(true)
+                }}
+                title="Увеличить фото"
+                aria-label="Увеличить фото"
+              >
+                <span className="avaBoardImageZoomBadgeV202C" aria-hidden="true">⌕</span>
+              </button>
+            ) : null}
             {imageFailed ? (
               <div className="avaMediaLoadingOverlay isMissing">
                 <ImageIcon size={30} />
@@ -3613,6 +3630,25 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = fal
           </>
         )}
       </div>
+      {/* AVA_BOARD_IMAGE_ZOOM_HOTSPOT_V202C: hover photo -> loupe, click -> centered lightbox, click anywhere -> close. */}
+      {value && imageZoomOpenV202C ? (
+        <div
+          className="avaBoardImageLightboxV202C"
+          role="button"
+          tabIndex={0}
+          onClick={() => setImageZoomOpenV202C(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              setImageZoomOpenV202C(false)
+            }
+          }}
+          title="Нажми в любом месте, чтобы закрыть"
+        >
+          <img src={value} alt={title} onClick={(event) => event.stopPropagation()} />
+        </div>
+      ) : null}
+
       <div className="avaBoardSlotActions">
         <label className="avaBoardSmallButton" title="Ручная замена фото в этой сцене — имя файла может быть любым">
           <UploadCloud size={14} /> Загрузить
@@ -4863,9 +4899,19 @@ function sceneVideoActionState(scene) {
     if (!isIa2vRoute(scene?.route)) return false
     if (manualLipSyncAudioSourceV129A(scene)) return true
     const sourcePayload = boardAudioSourcePayloadForBackend()
-    const hasSourceAudio = Boolean(sourcePayload.audio_url || sourcePayload.audio_asset_id || sourcePayload.audio_asset_api_path)
+    const hasSourceAudio = Boolean(
+      sourcePayload.audio_url ||
+      sourcePayload.audio_asset_id ||
+      sourcePayload.audio_asset_api_path ||
+      sourcePayload.project_id ||
+      sourcePayload.projectId
+    )
     const start = toNumber(scene?.start_sec ?? scene?.start ?? scene?.scene_start_sec ?? scene?.sceneStartSec, 0)
     const end = toNumber(scene?.end_sec ?? scene?.end ?? scene?.scene_end_sec ?? scene?.sceneEndSec, start)
+    // AVA_BOARD_SERVER_BATCH_AUTOSLICE_PROJECT_FALLBACK_V201A:
+    // Server batch endpoint has project_id in the URL and can find the master/mixed
+    // audio from project assets even when the browser Board state no longer has a
+    // root audio object. Do not block the whole batch in UI with "нет audio slice".
     return hasSourceAudio && end > start
   }
 
@@ -10120,7 +10166,10 @@ function updateSelectedSceneDuration(nextValue) {
 function boardAudioSourcePayloadForBackend() {
     const sourceBoard = boardRef.current || board || {}
     const sourceAudio = sourceBoard.audio || board.audio || {}
+    const projectIdForAudioV201A = projectId || sourceBoard.project_id || sourceBoard.projectId || board.project_id || board.projectId || ''
     return {
+      project_id: projectIdForAudioV201A,
+      projectId: projectIdForAudioV201A,
       audio_url: sourceAudio?.url || sourceAudio?.src || sourceBoard.audioUrl || sourceBoard.audio_url || board.audioUrl || board.audio_url || '',
       audio_asset_id: sourceAudio?.assetId || sourceAudio?.asset_id || sourceBoard.audioAssetId || sourceBoard.audio_asset_id || board.audioAssetId || board.audio_asset_id || '',
       audio_asset_api_path: sourceAudio?.assetApiPath || sourceAudio?.asset_api_path || sourceBoard.audioApiPath || sourceBoard.audio_api_path || board.audioApiPath || board.audio_api_path || '',
@@ -10278,7 +10327,15 @@ function boardAudioSourcePayloadForBackend() {
     const end = toNumber(scene?.end_sec ?? scene?.end ?? scene?.scene_end_sec ?? scene?.sceneEndSec, start)
     if (!(end > start)) return false
     const sourcePayload = boardAudioSourcePayloadForBackend()
-    return Boolean(sourcePayload.audio_url || sourcePayload.audio_asset_id || sourcePayload.audio_asset_api_path)
+    // AVA_BOARD_MANUAL_AUTOSLICE_PROJECT_FALLBACK_V201A:
+    // /manual-clip/slice-audio can resolve master audio from project assets when project_id is sent.
+    return Boolean(
+      sourcePayload.audio_url ||
+      sourcePayload.audio_asset_id ||
+      sourcePayload.audio_asset_api_path ||
+      sourcePayload.project_id ||
+      sourcePayload.projectId
+    )
   }
 
   function audioSliceReadyPatchFromServerV200W(data = {}, scene = {}) {

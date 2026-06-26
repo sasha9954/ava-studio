@@ -3920,22 +3920,124 @@ def _board_batch_start_scene(project_id: str, batch_id: str, scene: dict[str, An
 
 
 def _board_batch_wait_job(project_id: str, batch_id: str, scene_id: str, job_id: str, user: dict[str, Any], max_attempts: int = 240) -> tuple[str, dict[str, Any]]:
+    # AVA_BOARD_COMFY_STALL_WATCHDOG_V203A:
+    # ComfyUI can occasionally freeze around LTX model initialization / VAE stage. In that
+    # case /history stays empty and the frontend keeps polling Board batch status forever.
+    # Use elapsed wall-clock time, not job.updatedAt, because status polling refreshes updatedAt.
+    time_mod_v203a = __import__('time')
+    try:
+        poll_seconds_v203a = max(1.0, float(os.getenv("AVA_BOARD_BATCH_POLL_SEC", "3.5") or 3.5))
+    except Exception:
+        poll_seconds_v203a = 3.5
+    try:
+        stall_seconds_v203a = max(120.0, float(os.getenv("AVA_BOARD_BATCH_SCENE_TIMEOUT_SEC", "900") or 900))
+    except Exception:
+        stall_seconds_v203a = 900.0
+    computed_attempts_v203a = max(1, int(stall_seconds_v203a / poll_seconds_v203a))
+    if max_attempts == 240:
+        max_attempts = computed_attempts_v203a
+
+    started_at_v203a = time_mod_v203a.time()
+    last_log_at_v203a = 0.0
+    last_data_v203a: dict[str, Any] = {}
+
+    def _timeout_payload_v203a(reason: str, data: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]]:
+        job_v203a = BOARD_VIDEO_JOBS.get(job_id) or _board_video_job_load(job_id) or {}
+        prompt_id_v203a = job_v203a.get("promptId") or job_v203a.get("prompt_id") or (data or {}).get("promptId") or (data or {}).get("prompt_id")
+        base_url_v203a = job_v203a.get("targetComfyBaseUrl") or job_v203a.get("target_comfy_base_url") or (data or {}).get("targetComfyBaseUrl") or (data or {}).get("target_comfy_base_url") or _main_comfy_url()
+        cancel_result_v203a: dict[str, Any] = {}
+        try:
+            if base_url_v203a:
+                cancel_result_v203a = _cancel_comfy_prompt(str(base_url_v203a), str(prompt_id_v203a or "") or None, interrupt=True, clear_pending=False)
+        except Exception as exc:
+            cancel_result_v203a = {"ok": False, "error": str(exc)}
+
+        now_v203a = now_iso()
+        job_v203a.update({
+            "status": "timeout_stalled_comfy_v203a",
+            "video_status": "error",
+            "videoStatus": "error",
+            "error": reason,
+            "video_error": reason,
+            "videoError": reason,
+            "stalledAt": now_v203a,
+            "updatedAt": now_v203a,
+            "comfyStallWatchdogV203A": True,
+            "cancelResultV203A": cancel_result_v203a,
+        })
+        try:
+            _board_video_job_store(job_id, job_v203a)
+        except Exception:
+            pass
+
+        payload_v203a = {
+            "status": "timeout_stalled_comfy_v203a",
+            "video_status": "error",
+            "error": reason,
+            "jobId": job_id,
+            "job_id": job_id,
+            "sceneId": scene_id,
+            "scene_id": scene_id,
+            "projectId": project_id,
+            "project_id": project_id,
+            "promptId": prompt_id_v203a or "",
+            "prompt_id": prompt_id_v203a or "",
+            "cancelResult": cancel_result_v203a,
+            "cancel_result": cancel_result_v203a,
+            "lastStatus": data or last_data_v203a or {},
+        }
+        print("[BOARD SERVER BATCH COMFY STALL WATCHDOG V203A]", {
+            "project_id": project_id,
+            "batch_id": batch_id,
+            "scene_id": scene_id,
+            "job_id": job_id,
+            "elapsedSec": round(time_mod_v203a.time() - started_at_v203a, 1),
+            "timeoutSec": stall_seconds_v203a,
+            "promptId": prompt_id_v203a or "",
+            "reason": reason,
+            "cancelResult": cancel_result_v203a,
+        }, flush=True)
+        return "error", payload_v203a
+
     for attempt in range(1, max_attempts + 1):
         batch = BOARD_VIDEO_BATCHES.get(batch_id) or {}
         if batch.get("cancelRequested"):
             return "canceled", {"status": "canceled"}
+
+        elapsed_v203a = time_mod_v203a.time() - started_at_v203a
+        if elapsed_v203a >= stall_seconds_v203a:
+            return _timeout_payload_v203a(f"comfy job stalled for {int(elapsed_v203a)}s without video output")
+
         try:
             data = video_status(job_id, user)
+            last_data_v203a = data if isinstance(data, dict) else {}
         except Exception as exc:
             data = {"status": "poll_error", "error": str(exc)}
+            last_data_v203a = data
+
         status_text = str(data.get("status") or data.get("video_status") or "running").lower()
         video_url = data.get("videoUrl") or data.get("video_url") or data.get("videoApiPath") or data.get("video_api_path")
         if video_url:
             return "ready", data
-        if status_text.startswith("blocked_") or status_text in {"error", "failed", "queued_no_prompt_id", "output_download_failed", "output_finalize_failed", "completed_without_video_output", "not_found"}:
+        if status_text.startswith("blocked_") or status_text in {"error", "failed", "queued_no_prompt_id", "output_download_failed", "output_finalize_failed", "completed_without_video_output", "not_found", "timeout_stalled_comfy_v203a"}:
             return "error", data
-        __import__('time').sleep(3.5)
-    return "timeout", {"status": "timeout", "error": "board server batch polling timeout"}
+
+        if elapsed_v203a - last_log_at_v203a >= 60.0:
+            last_log_at_v203a = elapsed_v203a
+            print("[BOARD SERVER BATCH WATCHDOG HEARTBEAT V203A]", {
+                "project_id": project_id,
+                "batch_id": batch_id,
+                "scene_id": scene_id,
+                "job_id": job_id,
+                "attempt": attempt,
+                "elapsedSec": round(elapsed_v203a, 1),
+                "timeoutSec": stall_seconds_v203a,
+                "status": status_text,
+                "promptId": data.get("promptId") or data.get("prompt_id") or "",
+            }, flush=True)
+        time_mod_v203a.sleep(poll_seconds_v203a)
+
+    return _timeout_payload_v203a("board server batch polling timeout watchdog reached", last_data_v203a)
 
 
 def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, Any]) -> None:
@@ -3959,6 +4061,60 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
             if not scene:
                 failed.append(scene_id)
                 continue
+            # AVA_BOARD_BATCH_RECUT_AUDIO_ON_DEMAND_V201B:
+            # A browser snapshot can wipe backend-created audio_slice_* refs between
+            # batch start and the moment this scene is pulled from the queue. Recut
+            # the lip-sync slice right here instead of failing and jumping over ia2v
+            # scenes to later i2v scenes.
+            if _board_batch_is_audio_slice_route(scene.get("route")) and not _board_batch_scene_audio_ref(scene):
+                try:
+                    recut_scene_v201b, recut_done_v201b = _board_batch_cut_audio_slice_for_scene(
+                        scene,
+                        board_data,
+                        None,
+                        project_id=project_id,
+                    )
+                    if recut_done_v201b:
+                        scene = recut_scene_v201b
+                        _board_batch_update_scene(project_id, scene_id, recut_scene_v201b, {
+                            "batch_id": batch_id,
+                            "batchId": batch_id,
+                            "status": "running",
+                            "active_scene_id": scene_id,
+                            "activeSceneId": scene_id,
+                            "waiting_scene_ids": waiting_ids,
+                            "waitingSceneIds": waiting_ids,
+                            "video_queue": {
+                                "activeSceneId": scene_id,
+                                "activeJobId": "",
+                                "activeStatusEndpoint": "",
+                                "waitingSceneIds": waiting_ids,
+                                "waiting_scene_ids": waiting_ids,
+                            },
+                        })
+                        print("[BOARD SERVER BATCH RECUT AUDIO ON DEMAND V201B]", {
+                            "project_id": project_id,
+                            "batch_id": batch_id,
+                            "scene_id": scene_id,
+                            "route": scene.get("route"),
+                            "audio": _board_batch_scene_audio_ref(scene),
+                        }, flush=True)
+                except Exception as exc:
+                    scene = {
+                        **scene,
+                        "audio_slice_status": "error",
+                        "audioSliceStatus": "error",
+                        "audio_slice_error": str(exc) or "recut_audio_on_demand_failed_v201b",
+                        "audioSliceError": str(exc) or "recut_audio_on_demand_failed_v201b",
+                    }
+                    print("[BOARD SERVER BATCH RECUT AUDIO ON DEMAND ERROR V201B]", {
+                        "project_id": project_id,
+                        "batch_id": batch_id,
+                        "scene_id": scene_id,
+                        "route": scene.get("route"),
+                        "error": str(exc),
+                    }, flush=True)
+
             problems = _board_batch_input_problems(scene)
             if problems:
                 failed.append(scene_id)
@@ -5482,11 +5638,32 @@ def _assembly_make_local_player_safe_v196f(
 
 
 def _assembly_item_video_value(item: dict[str, Any]) -> str:
+    # AVA_BOARD_ASSEMBLY_RESULT_VIDEO_REFS_BACKEND_V202B:
+    # Ready clips can be stored under resultVideo/result_video aliases before
+    # normal video_* aliases are rehydrated. Assembly must count and use them.
+    result_video = item.get("resultVideo") if isinstance(item.get("resultVideo"), dict) else {}
+    video_result = item.get("video_result") if isinstance(item.get("video_result"), dict) else {}
     return str(
         item.get("video_api_path")
         or item.get("videoApiPath")
+        or item.get("result_video_api_path")
+        or item.get("resultVideoApiPath")
+        or video_result.get("video_api_path")
+        or video_result.get("videoApiPath")
+        or video_result.get("api_path")
+        or result_video.get("video_api_path")
+        or result_video.get("videoApiPath")
+        or result_video.get("api_path")
         or item.get("video_url")
         or item.get("videoUrl")
+        or item.get("result_video_url")
+        or item.get("resultVideoUrl")
+        or video_result.get("video_url")
+        or video_result.get("videoUrl")
+        or video_result.get("url")
+        or result_video.get("video_url")
+        or result_video.get("videoUrl")
+        or result_video.get("url")
         or item.get("url")
         or ""
     ).strip()
@@ -7582,7 +7759,10 @@ def _run_board_assembly_job(job_id: str) -> None:
                 end_sec = _assembly_float(item.get("end_sec") or item.get("endSec") or item.get("end"), 0.0)
                 duration = max(0.1, end_sec - max(0.0, target_start))
 
-            if target_start > timeline_cursor + 0.025:
+            # AVA_BOARD_ASSEMBLY_SKIP_MISSING_BACKEND_COMPACT_V202B:
+            # In skip-missing mode, ready clips are assembled back-to-back; do not
+            # create black timeline gaps from original Board start times.
+            if (not skip_missing) and target_start > timeline_cursor + 0.025:
                 gap_duration = target_start - timeline_cursor
                 gap_path = work_dir / f"{sequence_index + 1:04d}_gap_{timeline_cursor:.3f}_{target_start:.3f}.mp4"
                 gap_prepared = _create_black_assembly_clip(
@@ -7608,6 +7788,19 @@ def _run_board_assembly_job(job_id: str) -> None:
 
             is_placeholder_item = _assembly_item_is_placeholder(item)
             video_value = _assembly_item_video_value(item)
+            if skip_missing and (is_placeholder_item or not video_value):
+                missing_items.append({"sceneId": scene_id, "reason": "skipped_missing_video_v202b", "skipped": True})
+                _log_board_assembly("[BOARD ASSEMBLY SKIP MISSING V202B]", {
+                    "scene_id": scene_id,
+                    "placeholder": is_placeholder_item,
+                    "has_video_url": bool(video_value),
+                    "original_start_sec": target_start,
+                    "duration_sec": duration,
+                })
+                continue
+            if skip_missing:
+                target_start = timeline_cursor
+
             _log_board_assembly("[BOARD ASSEMBLY ITEM]", {
                 "scene_id": scene_id,
                 "placeholder": is_placeholder_item,
@@ -7742,7 +7935,10 @@ def _run_board_assembly_job(job_id: str) -> None:
 
         original_audio_duration = _ffprobe_duration(original_audio_path) if original_audio_path else 0.0
         payload_duration = _assembly_float(payload.get("duration_sec") or payload.get("durationSec") or payload.get("timeline_duration_sec") or payload.get("timelineDurationSec"), 0.0)
-        target_timeline_duration = max(timeline_cursor, original_audio_duration, payload_duration)
+        # AVA_BOARD_ASSEMBLY_SKIP_MISSING_BACKEND_COMPACT_V202B:
+        # Skip-missing output should not be stretched to full original audio length.
+        # Frontend sends compact timeline_duration_sec; backend uses it as authority.
+        target_timeline_duration = max(timeline_cursor, (0.0 if skip_missing else original_audio_duration), payload_duration)
         if target_timeline_duration > timeline_cursor + 0.025:
             tail_path = work_dir / f"9999_trailing_black_{timeline_cursor:.3f}_{target_timeline_duration:.3f}.mp4"
             tail_prepared = _create_black_assembly_clip(
