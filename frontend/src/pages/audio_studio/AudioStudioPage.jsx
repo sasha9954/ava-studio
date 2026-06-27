@@ -22,7 +22,8 @@ import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, normalizeAssetFileUrl, 
 import './AudioStudioPage.css'
 
 const STAGE = 'audio_studio'
-const VERSION = 'V204C8B'
+const VERSION = 'V204D3'
+const AVA_AUDIO_REFRESH_FROM_BOARD_MODAL_V204D3 = true
 const DEFAULT_NEGATIVE = 'музыка, речь, голоса, гул, hiss, шум'
 
 function cleanId(value = '') {
@@ -1214,6 +1215,8 @@ export default function AudioStudioPage() {
   const [uploading, setUploading] = useState(false)
   const [clearConfirmOpenV204C8, setClearConfirmOpenV204C8] = useState(false)
   const [clearingAllV204C8, setClearingAllV204C8] = useState(false)
+  const [refreshBoardConfirmOpenV204D3, setRefreshBoardConfirmOpenV204D3] = useState(false)
+  const [refreshingFromBoardV204D3, setRefreshingFromBoardV204D3] = useState(false)
   const pollRef = useRef(null)
   const snapshotRef = useRef(snapshot)
   const initialLoadDoneRefV204B = useRef(false)
@@ -1441,27 +1444,35 @@ export default function AudioStudioPage() {
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
   }, [])
 
-  const refreshFromBoard = useCallback(async () => {
-    const ok = window.confirm([
-        'Обновить Audio Studio из Доски?',
-        '',
-        'Это очистит текущие prompt-поля, MMAudio-варианты и applied-выбор Audio Studio, а затем заново перенесёт сцены из текущей Доски.'
-      ].join('\\n'))
-    if (!ok) return
+  const refreshFromBoard = useCallback(() => {
     setError('')
+    setRefreshBoardConfirmOpenV204D3(true)
+    setStatus('Подтверди обновление Audio Studio из Доски.')
+  }, [])
+
+  const confirmRefreshFromBoardV204D3 = useCallback(async () => {
+    if (refreshingFromBoardV204D3) return
+    setRefreshingFromBoardV204D3(true)
+    setError('')
+    setStatus('Обновляю Audio Studio из Доски…')
     try {
       const boardData = workspaceMode ? await loadWorkspaceStage('board') : await loadStage(projectId, 'board')
       if (!asArray(boardData?.scenes).length) {
         setStatus('В Доске нет сцен для переноса')
         return
       }
-      const next = buildAudioSnapshotFromBoard(boardData, { projectId, source: 'board_manual_reset_import_v204b5' })
-      await saveSnapshot(next, 'refresh_from_board_reset_v204b5')
+      const next = buildAudioSnapshotFromBoard(boardData, { projectId, source: 'board_manual_reset_import_v204d3' })
+      await saveSnapshot(next, 'refresh_from_board_reset_v204d3')
+      setRefreshBoardConfirmOpenV204D3(false)
       setStatus(`Audio Studio очищена и заново перенесена из Доски: ${asArray(next.scenes).length} сцен`)
     } catch (err) {
       setError(`Не удалось обновить из Доски: ${err?.message || err}`)
+    } finally {
+      setRefreshingFromBoardV204D3(false)
     }
-  }, [loadStage, loadWorkspaceStage, projectId, saveSnapshot, workspaceMode])
+  }, [loadStage, loadWorkspaceStage, projectId, refreshingFromBoardV204D3, saveSnapshot, workspaceMode])
+
+
 
 
   const performClearAllAudioStudioV204C8 = useCallback(async () => {
@@ -2073,6 +2084,56 @@ export default function AudioStudioPage() {
               <button type="button" className="isDanger" onClick={performClearAllAudioStudioV204C8} disabled={clearingAllV204C8}>
                 {clearingAllV204C8 ? <span className="avaAudioModalSpinnerV204C8" /> : <Trash2 size={15} />}
                 {clearingAllV204C8 ? 'Очищаю…' : 'Да, очистить всё'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {refreshBoardConfirmOpenV204D3 ? (
+        <div
+          className="avaAudioRefreshBoardBackdropV204D3"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !refreshingFromBoardV204D3) setRefreshBoardConfirmOpenV204D3(false)
+          }}
+        >
+          <section className={`avaAudioRefreshBoardModalV204D3 ${refreshingFromBoardV204D3 ? 'isBusy' : ''}`} role="dialog" aria-modal="true" aria-labelledby="avaAudioRefreshBoardTitleV204D3" onMouseDown={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="avaAudioModalCloseV204C8"
+              onClick={() => setRefreshBoardConfirmOpenV204D3(false)}
+              disabled={refreshingFromBoardV204D3}
+              title="Отмена"
+            >
+              <X size={16} />
+            </button>
+            <div className="avaAudioRefreshBoardSweepV204D3" />
+            <div className="avaAudioRefreshBoardIconV204D3">
+              {refreshingFromBoardV204D3 ? <span className="avaAudioModalSpinnerV204C8" /> : <RefreshCcw size={23} />}
+            </div>
+            <h2 id="avaAudioRefreshBoardTitleV204D3">
+              {refreshingFromBoardV204D3 ? 'Обновляем Audio Studio…' : 'Обновить Audio Studio из Доски?'}
+            </h2>
+            <p>
+              Это очистит текущие prompt-поля, MMAudio-варианты и applied-выбор Audio Studio,
+              а затем заново перенесёт сцены из текущей Доски.
+            </p>
+            <div className="avaAudioRefreshBoardStepsV204D3">
+              <span className={refreshingFromBoardV204D3 ? 'isActive' : ''}>1 · читаем Доску</span>
+              <span className={refreshingFromBoardV204D3 ? 'isActive' : ''}>2 · очищаем варианты</span>
+              <span className={refreshingFromBoardV204D3 ? 'isActive' : ''}>3 · переносим сцены</span>
+            </div>
+            <div className="avaAudioRefreshBoardNoticeV204D3">
+              Текущая Audio Studio будет заменена свежими сценами из Доски. Сама Доска не изменится.
+            </div>
+            <div className="avaAudioModalActionsV204C8">
+              <button type="button" onClick={() => setRefreshBoardConfirmOpenV204D3(false)} disabled={refreshingFromBoardV204D3}>
+                Отмена
+              </button>
+              <button type="button" className="isRefreshBoardV204D3" onClick={confirmRefreshFromBoardV204D3} disabled={refreshingFromBoardV204D3}>
+                {refreshingFromBoardV204D3 ? <span className="avaAudioModalSpinnerV204C8" /> : <RefreshCcw size={15} />}
+                {refreshingFromBoardV204D3 ? 'Обновляю…' : 'Да, обновить из Доски'}
               </button>
             </div>
           </section>
