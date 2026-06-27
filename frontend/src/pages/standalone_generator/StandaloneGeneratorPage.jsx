@@ -1946,6 +1946,8 @@ export default function StandaloneGeneratorPage() {
   const [mmaudioResultUrl, setMmaudioResultUrl] = useState('')
   const [mmaudioRawResponse, setMmaudioRawResponse] = useState(null)
   const [cancelGenerationBusy, setCancelGenerationBusy] = useState(false)
+  const [clearDraftConfirmOpenV204D4, setClearDraftConfirmOpenV204D4] = useState(false)
+  const [clearDraftConfirmBusyV204D4, setClearDraftConfirmBusyV204D4] = useState(false)
   const pollingRef = useRef(null)
   const submitGenerationInFlightRef = useRef(false)
   const cancelGenerationInFlightRef = useRef(false)
@@ -1964,6 +1966,7 @@ export default function StandaloneGeneratorPage() {
   const deletedGeneratorGalleryRefsRef = useRef(new Set())
   const deletedMmaudioJobIdsRef = useRef(new Set())
   const generatorPollingSnapshotThrottleRef = useRef({ video: 0, mmaudio: 0 })
+  const clearDraftConfirmedRefV204D4 = useRef(false)
 
   // AVA_GENERATOR_UNMOUNT_CLEAR_INTERVALS_V203L:
   // Leaving the Generator page must not leave page-local polling intervals alive.
@@ -4213,11 +4216,18 @@ export default function StandaloneGeneratorPage() {
 
   const clearDraft = useCallback(() => {
     if (busy || generatorJobLooksActive(job) || submitGenerationInFlightRef.current || generatorCanceling) {
+      clearDraftConfirmedRefV204D4.current = false
+      setClearDraftConfirmBusyV204D4(false)
       setStatusText('Сначала отмените активную генерацию — очистка заблокирована')
       return
     }
-    const ok = window.confirm('Безвозвратно очистить ленту, текущий результат, медиа и связанные файлы генератора на сервере?')
-    if (!ok) return
+    if (!clearDraftConfirmedRefV204D4.current) {
+      setClearDraftConfirmOpenV204D4(true)
+      return
+    }
+    clearDraftConfirmedRefV204D4.current = false
+    setClearDraftConfirmOpenV204D4(false)
+    setClearDraftConfirmBusyV204D4(true)
     // AVA_GENERATOR_CLEAR_DESTRUCTIVE_DELETE_V83
     // Generator Clear is destructive: remove visible feed results and uploaded media assets.
     if (pollingRef.current) clearInterval(pollingRef.current)
@@ -4286,6 +4296,12 @@ export default function StandaloneGeneratorPage() {
     if (audioRef.current) audioRef.current.pause()
   }, [routeProjectId, saveGeneratorSnapshot, resultUrl, mmaudioResultUrl, startPersistedDataUrl, endPersistedDataUrl, audioPersistedDataUrl])
 
+  const confirmClearDraftV204D4 = useCallback(() => {
+    clearDraftConfirmedRefV204D4.current = true
+    setClearDraftConfirmBusyV204D4(true)
+    clearDraft()
+  }, [clearDraft])
+
   const durationMax = routeInfo.maxDuration || 1
 
   const generatorActionLocked = Boolean(busy || generatorJobLooksActive(job) || submitGenerationInFlightRef.current)
@@ -4293,6 +4309,54 @@ export default function StandaloneGeneratorPage() {
 
   return (
     <main className="avaGeneratorPage">
+      {clearDraftConfirmOpenV204D4 ? (
+        <div
+          className="avaGeneratorClearBackdropV204D4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !clearDraftConfirmBusyV204D4) setClearDraftConfirmOpenV204D4(false)
+          }}
+        >
+          <section className={`avaGeneratorClearModalV204D4 ${clearDraftConfirmBusyV204D4 ? 'isBusy' : ''}`} role="dialog" aria-modal="true" aria-labelledby="avaGeneratorClearTitleV204D4" onMouseDown={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="avaGeneratorClearCloseV204D4"
+              onClick={() => setClearDraftConfirmOpenV204D4(false)}
+              disabled={clearDraftConfirmBusyV204D4}
+              title="Отмена"
+            >
+              ×
+            </button>
+            <div className="avaGeneratorClearSweepV204D4" />
+            <div className="avaGeneratorClearIconV204D4">
+              {clearDraftConfirmBusyV204D4 ? <span className="avaGeneratorClearSpinnerV204D4" /> : '🧹'}
+            </div>
+            <h2 id="avaGeneratorClearTitleV204D4">
+              {clearDraftConfirmBusyV204D4 ? 'Очищаю генератор…' : 'Очистить генератор?'}
+            </h2>
+            <p>
+              Будут безвозвратно очищены лента, текущий результат, медиа и связанные файлы генератора на сервере.
+            </p>
+            <div className="avaGeneratorClearStepsV204D4">
+              <span className={clearDraftConfirmBusyV204D4 ? 'isActive' : ''}>1 · очищаем ленту</span>
+              <span className={clearDraftConfirmBusyV204D4 ? 'isActive' : ''}>2 · удаляем refs</span>
+              <span className={clearDraftConfirmBusyV204D4 ? 'isActive' : ''}>3 · сбрасываем поля</span>
+            </div>
+            <div className="avaGeneratorClearNoticeV204D4">
+              Активная генерация должна быть отменена заранее. После очистки старые превью и связанные assets будут сброшены.
+            </div>
+            <div className="avaGeneratorClearActionsV204D4">
+              <button type="button" onClick={() => setClearDraftConfirmOpenV204D4(false)} disabled={clearDraftConfirmBusyV204D4}>
+                Отмена
+              </button>
+              <button type="button" className="isDanger" onClick={confirmClearDraftV204D4} disabled={clearDraftConfirmBusyV204D4}>
+                {clearDraftConfirmBusyV204D4 ? <span className="avaGeneratorClearSpinnerV204D4" /> : null}
+                {clearDraftConfirmBusyV204D4 ? 'Очищаю…' : 'Да, очистить'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <section className="avaGeneratorHero">
         <div>
           <p className="avaGeneratorKicker">GENERATOR</p>

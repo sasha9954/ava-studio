@@ -2646,3 +2646,188 @@
   border-color: rgba(156, 190, 255, 0.16);
 }
 /* WORKSPACE_PAGE_BACKGROUND_BLEND_V185A_END */
+
+
+/* V204D4: custom Generator clear modal */
+.avaGeneratorClearBackdropV204D4 {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 42% 22%, rgba(255, 112, 140, .18), transparent 34%),
+    radial-gradient(circle at 68% 78%, rgba(139, 92, 246, .18), transparent 34%),
+    rgba(2, 6, 18, .76);
+  backdrop-filter: blur(11px);
+}
+
+.avaGeneratorClearModalV204D4 {
+  position: relative;
+  overflow: hidden;
+  width: min(600px, calc(100vw - 36px));
+  border-radius: 26px;
+  padding: 26px;
+  border: 1px solid rgba(255, 112, 140, .34);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(255, 112, 140, .18), transparent 38%),
+    radial-gradient(circle at 100% 0%, rgba(91, 217, 255, .13), transparent 34%),
+    linear-gradient(145deg, rgba(18, 22, 48, .97), rgba(8, 12, 27, .98));
+  color: #f2f7ff;
+  box-shadow: 0 34px 100px rgba(0, 0, 0, .58), inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+.avaGeneratorClearSweepV204D4 {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 160, 190, .12), transparent);
+  transform: translateX(-105%);
+}
+
+.avaGeneratorClearModalV204D4.isBusy .avaGeneratorClearSweepV204D4 {
+  animation: avaGeneratorClearSweepV204D4 1.35s ease-in-out infinite;
+}
+
+.avaGeneratorClearCloseV204D4 {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(240, 247, 255, .9);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.avaGeneratorClearIconV204D4 {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 19px;
+  border: 1px solid rgba(255, 112, 140, .3);
+  background:
+    radial-gradient(circle at 35% 22%, rgba(255,255,255,.16), transparent 34%),
+    linear-gradient(135deg, rgba(255, 112, 140, .18), rgba(139, 92, 246, .14));
+  color: #ffd1dc;
+  font-size: 22px;
+}
+
+.avaGeneratorClearModalV204D4 h2 {
+  margin: 13px 0 8px;
+  font-size: 28px;
+  font-weight: 950;
+  letter-spacing: -.025em;
+}
+
+.avaGeneratorClearModalV204D4 p {
+  margin: 0;
+  color: rgba(224, 236, 255, .78);
+  line-height: 1.55;
+}
+
+.avaGeneratorClearStepsV204D4 {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.avaGeneratorClearStepsV204D4 span {
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.045);
+  color: rgba(213, 227, 248, .76);
+  font-size: 12px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.avaGeneratorClearStepsV204D4 span.isActive {
+  border-color: rgba(255, 112, 140, .42);
+  background: rgba(255, 112, 140, .1);
+  color: #fff1f4;
+}
+
+.avaGeneratorClearNoticeV204D4 {
+  margin-top: 14px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  border: 1px solid rgba(96, 255, 209, .18);
+  background: rgba(96, 255, 209, .08);
+  color: rgba(218, 255, 245, .82);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.avaGeneratorClearActionsV204D4 {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.avaGeneratorClearActionsV204D4 button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.13);
+  background: rgba(255,255,255,.06);
+  color: #edf7ff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.avaGeneratorClearActionsV204D4 button.isDanger {
+  border-color: rgba(255, 112, 140, .38);
+  background: linear-gradient(135deg, rgba(255, 82, 112, .75), rgba(168, 85, 247, .5));
+  color: #fff;
+  box-shadow: 0 16px 34px rgba(255, 88, 110, .18);
+}
+
+.avaGeneratorClearActionsV204D4 button:disabled,
+.avaGeneratorClearCloseV204D4:disabled {
+  opacity: .62;
+  cursor: wait;
+}
+
+.avaGeneratorClearSpinnerV204D4 {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.34);
+  border-top-color: #fff;
+  animation: avaGeneratorClearSpinV204D4 .72s linear infinite;
+}
+
+@keyframes avaGeneratorClearSpinV204D4 {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes avaGeneratorClearSweepV204D4 {
+  0% { transform: translateX(-105%); opacity: .2; }
+  45% { opacity: 1; }
+  100% { transform: translateX(105%); opacity: .2; }
+}
+
+@media (max-width: 720px) {
+  .avaGeneratorClearStepsV204D4 {
+    grid-template-columns: 1fr;
+  }
+}
