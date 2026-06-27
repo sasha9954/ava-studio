@@ -6294,6 +6294,7 @@ function sceneVideoActionState(scene) {
   const [runtimeSceneMediaUrls, setRuntimeSceneMediaUrls] = useState({})
   const [badRegenRuntimeStatus, setBadRegenRuntimeStatus] = useState({})
   const [mmaudioOpen, setMmaudioOpen] = useState(false)
+  const [audioStudioOpeningV204B, setAudioStudioOpeningV204B] = useState(false)
   const audioRef = useRef(null)
   const manualLipSyncAudioInputRefV129A = useRef(null)
   const importRef = useRef(null)
@@ -8200,6 +8201,20 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
 
   async function openAudioStudioFromBoardV204A(event) {
     stopBoardActionEvent(event)
+    if (audioStudioOpeningV204B) return
+    const ok = window.confirm(
+      'Перейти из Доски в Audio Studio?
+
+Это очистит текущие данные Audio Studio для этого проекта: старые MMAudio-варианты, применённые варианты и импортированные prompt-поля.
+
+После перехода Audio Studio будет заново собрана из текущих сцен Доски.'
+    )
+    if (!ok) {
+      setStatus('Переход в Audio Studio отменён')
+      return
+    }
+    setAudioStudioOpeningV204B(true)
+    setStatus('Открываю Audio Studio… очищаю старую Audio Studio и переношу сцены Доски')
     try {
       const currentBoard = {
         ...board,
@@ -8215,7 +8230,7 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
         fromPath,
         toPath,
         projectId: projectId || '',
-        source: 'board_to_audio_studio_v204a',
+        source: 'board_to_audio_studio_reset_v204b5',
       })
       rememberWorkflowEntry(entry)
       navigate(toPath, {
@@ -8224,9 +8239,12 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
           source: 'board',
           board: currentBoard,
           forceImportFromBoard: true,
+          resetAudioStudio: true,
+          clearAudioStudio: true,
         },
       })
     } catch (error) {
+      setAudioStudioOpeningV204B(false)
       setStatus(`Не удалось открыть Audio Studio: ${error?.message || error}`)
     }
   }
@@ -11849,11 +11867,14 @@ async function importTimingJson(event) {
 
           <button
             type="button"
-            className="avaBoardHeaderLink avaBoardActionMontage"
+            className={`avaBoardHeaderLink avaBoardActionAudioStudioV204B ${audioStudioOpeningV204B ? 'isOpening' : ''}`}
             onClick={openAudioStudioFromBoardV204A}
+            disabled={audioStudioOpeningV204B}
+            aria-busy={audioStudioOpeningV204B}
             title="Перенести сцены Доски в Audio Studio для MMAudio по сценам"
           >
-            <AudioLines size={15} /> В Audio Studio
+            {audioStudioOpeningV204B ? <span className="avaBoardAudioStudioSpinnerV204B" aria-hidden="true" /> : <AudioLines size={15} />}
+            {audioStudioOpeningV204B ? 'Открываю…' : 'В Audio Studio'}
           </button>
 
           <button

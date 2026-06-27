@@ -22,7 +22,7 @@ import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, normalizeAssetFileUrl, 
 import './AudioStudioPage.css'
 
 const STAGE = 'audio_studio'
-const VERSION = 'V204B8'
+const VERSION = 'V204B9'
 const DEFAULT_NEGATIVE = 'музыка, речь, голоса, гул, hiss, шум'
 
 function cleanId(value = '') {
@@ -385,6 +385,66 @@ function sanitizeAudioSnapshot(snapshot = {}) {
     ...snapshot,
     scenes: asArray(snapshot.scenes).map(sanitizeAudioScene),
   }
+}
+
+function audioSnapshotSafeBackupKeyV204B9(projectId = '') {
+  return `ava_audio_studio_safe_snapshot_v204b9_${cleanId(projectId) || 'workspace'}`
+}
+
+function audioSnapshotScoreV204B9(snapshot = {}) {
+  const scenes = asArray(snapshot.scenes)
+  let score = scenes.length
+  scenes.forEach((scene) => {
+    const variants = asArray(scene.variants)
+    const realVariants = variants.filter(isRealMmaudioVariantV204B6)
+    score += realVariants.length * 20
+    if (cleanId(scene.appliedVariantId)) score += 80
+    if (scene.sourceVideo?.apiPath || scene.sourceVideo?.url) score += 2
+  })
+  return score
+}
+
+function readAudioSnapshotSafeBackupV204B9(projectId = '') {
+  try {
+    const raw = localStorage.getItem(audioSnapshotSafeBackupKeyV204B9(projectId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    if (!asArray(parsed.scenes).length) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function rememberAudioSnapshotSafeBackupV204B9(snapshot = {}, projectId = '') {
+  try {
+    const clean = sanitizeAudioSnapshot(snapshot)
+    if (audioSnapshotScoreV204B9(clean) <= 0) return
+    localStorage.setItem(audioSnapshotSafeBackupKeyV204B9(projectId), JSON.stringify({
+      ...clean,
+      localSafeBackupVersion: 'V204B9',
+      localSafeBackupAt: nowIso(),
+    }))
+  } catch {
+    // ignore browser storage errors
+  }
+}
+
+function forgetAudioSnapshotSafeBackupV204B9(projectId = '') {
+  try {
+    localStorage.removeItem(audioSnapshotSafeBackupKeyV204B9(projectId))
+  } catch {
+    // ignore browser storage errors
+  }
+}
+
+function chooseSaferAudioSnapshotV204B9(serverSnapshot = {}, localSnapshot = null) {
+  if (!localSnapshot) return { snapshot: serverSnapshot, usedLocal: false }
+  const serverScore = audioSnapshotScoreV204B9(serverSnapshot)
+  const localScore = audioSnapshotScoreV204B9(localSnapshot)
+  if (localScore > serverScore) return { snapshot: localSnapshot, usedLocal: true, serverScore, localScore }
+  return { snapshot: serverSnapshot, usedLocal: false, serverScore, localScore }
 }
 
 function durationOf(scene = {}) {
@@ -914,6 +974,7 @@ export default function AudioStudioPage() {
       updatedAt: nowIso(),
       lastSaveReason: reason,
     }
+    rememberAudioSnapshotSafeBackupV204B9(payload, projectId || 'workspace')
     setSnapshot(payload)
     snapshotRef.current = payload
     setSaving(true)
@@ -935,6 +996,7 @@ export default function AudioStudioPage() {
       updatedAt: nowIso(),
       lastSaveReason: reason,
     }
+    rememberAudioSnapshotSafeBackupV204B9(payload, projectId || 'workspace')
     try {
       const { saveWorkspaceStage: saveWorkspaceStageFn, saveStage: saveStageFn } = projectApiRef.current
       if (workspaceMode) await saveWorkspaceStageFn(STAGE, payload)
@@ -987,7 +1049,7 @@ export default function AudioStudioPage() {
       setError('')
       try {
         const stateBoard = location.state?.board && typeof location.state.board === 'object' ? location.state.board : null
-        const requestedForceImportV204B7 = Boolean(location.state?.forceImportFromBoard || stateBoard)
+        const requestedForceImportV204B7 = Boolean(location.state?.forceImportFromBoard && stateBoard)
         const importTokenV204B7 = firstText(
           location.state?.workflowEntry?.id,
           location.state?.workflowEntry?.createdAt,
@@ -1011,6 +1073,19 @@ export default function AudioStudioPage() {
         })
         let next = audioData && typeof audioData === 'object' ? audioData : {}
         let shouldPersist = false
+        if (!forceImport) {
+          const localSafeSnapshotV204B9 = readAudioSnapshotSafeBackupV204B9(projectId || 'workspace')
+          const safeChoiceV204B9 = chooseSaferAudioSnapshotV204B9(next, localSafeSnapshotV204B9)
+          if (safeChoiceV204B9.usedLocal) {
+            next = safeChoiceV204B9.snapshot
+            shouldPersist = true
+            console.warn('[AUDIO STUDIO SAFE SNAPSHOT RESTORE V204B9]', {
+              serverScore: safeChoiceV204B9.serverScore,
+              localScore: safeChoiceV204B9.localScore,
+            })
+            setStatus('Audio Studio восстановлена из локального safe-backup: сохранены варианты и применённые MMAudio')
+          }
+        }
 
         if (forceImport && stateBoard) {
           next = buildAudioSnapshotFromBoard(stateBoard, { projectId, source: 'board_reset_import_v204b8' })
@@ -1024,6 +1099,7 @@ export default function AudioStudioPage() {
               state: { workflowEntry: location.state?.workflowEntry || null, source: 'audio_studio_loaded' },
             })
           } catch {}
+          forgetAudioSnapshotSafeBackupV204B9(projectId || 'workspace')
           setStatus(`Audio Studio очищена и заново перенесена из Доски: ${asArray(next.scenes).length} сцен`)
         } else if (asArray(next.scenes).length) {
           // V204B8: on regular open/F5, Audio Studio snapshot is the source of truth.
@@ -1033,20 +1109,23 @@ export default function AudioStudioPage() {
           setStatus(`Audio Studio восстановлена из snapshot: ${asArray(next.scenes).length} сцен`)
           shouldPersist = false
         } else {
-          setLoadMessage('Audio Studio пустая — беру сцены из Доски…')
-          const boardData = await withUiTimeout(
-            workspaceMode ? projectApiRef.current.loadWorkspaceStage('board') : projectApiRef.current.loadStage(projectId, 'board'),
-            12000,
-            'load board snapshot',
-          ).catch((err) => {
-            console.warn('[AUDIO STUDIO LOAD BOARD V204B8]', err)
-            return {}
-          })
-          if (asArray(boardData?.scenes).length) {
-            next = buildAudioSnapshotFromBoard(boardData, { projectId, source: 'board_auto_import_empty_audio_v204b8' })
-            shouldPersist = true
-            setStatus(`Авто-импорт из Доски: ${asArray(next.scenes).length} сцен`)
+          // V204B9: never auto-import Board on normal open/F5.
+          // Coming back from Assembly or browser refresh must not wipe Audio Studio variants.
+          setLoadMessage('Audio Studio пустая — жду явный импорт из Доски…')
+          next = {
+            version: VERSION,
+            schema: 'ava_audio_studio_scene_snapshot_v1',
+            stage: STAGE,
+            source: 'empty_audio_studio_no_auto_board_import_v204b9',
+            projectId: projectId || '',
+            selectedSceneId: '',
+            scenes: [],
+            stableAudio: { enabled: false, status: 'soon' },
+            queue: { enabled: false, items: [] },
+            updatedAt: nowIso(),
           }
+          shouldPersist = false
+          setStatus('Audio Studio пустая. Нажми “Обновить из Доски”, если нужно заново перенести сцены.')
         }
 
         next = sanitizeAudioSnapshot(next)
@@ -1113,6 +1192,7 @@ export default function AudioStudioPage() {
         'Будут удалены все сцены, prompt-поля, MMAudio-варианты, applied-выбор и локальная история этой страницы. Доска не изменится.'
       ].join('\\n'))
     if (!ok) return
+    forgetAudioSnapshotSafeBackupV204B9(projectId || 'workspace')
     const next = {
       version: VERSION,
       schema: 'ava_audio_studio_scene_snapshot_v1',
