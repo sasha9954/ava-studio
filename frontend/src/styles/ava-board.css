@@ -7622,3 +7622,53 @@
   box-shadow: 0 30px 100px rgba(0, 0, 0, .68);
   cursor: default;
 }
+
+
+/* AVA_BOARD_PHOTO_UPLOAD_SPINNER_V203H2 */
+.avaBoardStatusBadge.isImageUploading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.avaBoardStatusBadge.isImageUploading::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  animation: avaBoardPhotoUploadSpinV203H2 0.75s linear infinite;
+}
+
+@keyframes avaBoardPhotoUploadSpinV203H2 {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+/* AVA_BOARD_PHOTO_UPLOAD_STATUS_V203I */
+.avaBoardStatusBadge.isImageUploading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.avaBoardStatusBadge.isImageUploading::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  animation: avaBoardPhotoUploadSpinV203I 0.75s linear infinite;
+}
+
+@keyframes avaBoardPhotoUploadSpinV203I {
+  to {
+    transform: rotate(360deg);
+  }
+}

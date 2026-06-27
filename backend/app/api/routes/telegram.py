@@ -379,6 +379,13 @@ def _apply_review_to_scene(scene: dict[str, Any], status: str, reason: str, at: 
         scene["badVideoReview"] = True
         scene["video_review_bad"] = True
         scene["videoReviewBad"] = True
+        # AVA_TELEGRAM_REVIEW_BAD_ALIASES_SET_V203C
+        scene["bad_video"] = True
+        scene["badVideo"] = True
+        scene["video_bad"] = True
+        scene["videoBad"] = True
+        scene["is_bad_video"] = True
+        scene["isBadVideo"] = True
         scene["needs_review"] = False
         scene["needsReview"] = False
         return
@@ -397,6 +404,13 @@ def _apply_review_to_scene(scene: dict[str, Any], status: str, reason: str, at: 
     scene["badVideoReview"] = False
     scene["video_review_bad"] = False
     scene["videoReviewBad"] = False
+    # AVA_TELEGRAM_REVIEW_BAD_ALIASES_CLEAR_V203C
+    scene["bad_video"] = False
+    scene["badVideo"] = False
+    scene["video_bad"] = False
+    scene["videoBad"] = False
+    scene["is_bad_video"] = False
+    scene["isBadVideo"] = False
     scene["video_review_clear_reason"] = reason
     scene["videoReviewClearReason"] = reason
     scene["video_review_cleared_at"] = at

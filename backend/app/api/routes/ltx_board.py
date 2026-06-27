@@ -1009,7 +1009,14 @@ def _mmaudio_comfy_url() -> str:
 def _settings_public_base_url() -> str:
     try:
         settings = get_settings()
-        return str(getattr(settings, "public_base_url", "") or "").rstrip("/")
+        base = str(getattr(settings, "public_base_url", "") or "").rstrip("/")
+        # AVA_PUBLIC_BASE_STRIP_API_V203J:
+        # public_base_url must be an origin/base, not the /api root.
+        # If configured as http://host:8010/api, static URLs became
+        # http://host:8010/api/static/... and 404 because static is mounted at /static.
+        if base.endswith("/api"):
+            base = base[:-4].rstrip("/")
+        return base
     except Exception:
         return ""
 
@@ -1220,6 +1227,14 @@ def _resolve_local_file(value: str | None = None, *, asset_id: str | None = None
 
     raw = str(value).strip()
 
+    # AVA_RESOLVE_API_STATIC_V203J:
+    # Support both canonical /static/... and compatibility /api/static/...
+    # for extracted frame URLs.
+    if raw.startswith("/api/static/"):
+        path = _settings_static_path() / raw[len("/api/static/") :]
+        if path.exists() and path.is_file():
+            return path
+
     if raw.startswith("/static/"):
         path = _settings_static_path() / raw[len("/static/") :]
         if path.exists() and path.is_file():
@@ -1227,6 +1242,11 @@ def _resolve_local_file(value: str | None = None, *, asset_id: str | None = None
 
     # AVA_LAST_FRAME_V4_RESOLVE_STATIC_URL
     parsed_url = urllib.parse.urlparse(raw)
+    if parsed_url.scheme in {"http", "https"} and parsed_url.path.startswith("/api/static/"):
+        path = _settings_static_path() / parsed_url.path[len("/api/static/") :]
+        if path.exists() and path.is_file():
+            return path
+
     if parsed_url.scheme in {"http", "https"} and parsed_url.path.startswith("/static/"):
         path = _settings_static_path() / parsed_url.path[len("/static/") :]
         if path.exists() and path.is_file():
@@ -1953,8 +1973,28 @@ def extract_last_frame(payload: ExtractLastFrameIn) -> dict[str, Any]:
         _run_ffmpeg(["-y", "-sseof", "-0.12", "-i", str(source_path), "-frames:v", "1", "-q:v", "2", str(out_path)])
     except HTTPException:
         _run_ffmpeg(["-y", "-sseof", "-1", "-i", str(source_path), "-frames:v", "1", "-q:v", "2", str(out_path)])
+    if not out_path.exists() or out_path.stat().st_size <= 0:
+        raise HTTPException(status_code=500, detail="extract_last_frame_output_missing_v203j")
+
     urls = _public_static_url(f"assets/board_frames/{out_name}")
-    return {"ok": True, "imageUrl": urls["url"], "image_url": urls["url"], "imageApiPath": urls["apiPath"], "image_api_path": urls["apiPath"], "imageName": out_name, "image_name": out_name, "sourcePath": str(source_path), "sourceSceneId": payload.source_scene_id or payload.sourceSceneId or ""}
+    # AVA_EXTRACT_LAST_FRAME_STATIC_PRIMARY_V203J:
+    # Return relative /static path as the primary image URL.
+    # This avoids accidental .../api/static/... URLs when public_base_url was configured with /api.
+    return {
+        "ok": True,
+        "imageUrl": urls["apiPath"],
+        "image_url": urls["apiPath"],
+        "imageApiPath": urls["apiPath"],
+        "image_api_path": urls["apiPath"],
+        "imageStaticUrl": urls["url"],
+        "image_static_url": urls["url"],
+        "staticPath": urls["staticPath"],
+        "static_path": urls["staticPath"],
+        "imageName": out_name,
+        "image_name": out_name,
+        "sourcePath": str(source_path),
+        "sourceSceneId": payload.source_scene_id or payload.sourceSceneId or "",
+    }
 
 
 @router.post("/clip/video/start")
@@ -1968,6 +2008,51 @@ def start_video(payload: VideoStartIn, user: dict = Depends(get_current_user)) -
     workflow_path = WORKFLOWS_DIR / workflow_key
     target_duration = _target_duration(payload)
     generation_duration = _generation_duration(route, target_duration)
+
+    # AVA_GENERATOR_STRICT_BACKEND_PREFLIGHT_V203K:
+    # Defense-in-depth for Generator/Board direct calls.
+    # Missing inputs must not create a job and must not upload anything to Comfy.
+    positive_prompt_preflight_v203k = (
+        payload.video_prompt or payload.videoPrompt or payload.positive_prompt or payload.positivePrompt or ""
+    )
+    start_ref_preflight_v203k = (
+        payload.start_image_url or payload.startImageUrl or payload.image_url or payload.imageUrl or
+        payload.start_image_data_url or payload.startImageDataUrl or payload.image_data_url or payload.imageDataUrl or ""
+    )
+    end_ref_preflight_v203k = (
+        payload.end_image_url or payload.endImageUrl or payload.end_image_data_url or payload.endImageDataUrl or ""
+    )
+    audio_ref_preflight_v203k = (
+        payload.audio_slice_url or payload.audioSliceUrl or payload.audio_data_url or payload.audioDataUrl or ""
+    )
+    preflight_missing_v203k: list[str] = []
+    if not str(positive_prompt_preflight_v203k or "").strip():
+        preflight_missing_v203k.append("prompt")
+    if (not _is_image_generation_route(route)) and (
+        route in {"i2v", "ia2v", "ia2v_lipsync", "ia2v_instrumental", "lip_sync", "i2v_sound", "i2v_text", "first_last", "first_last_sound"}
+        or route.startswith("first_last")
+    ) and not str(start_ref_preflight_v203k or "").strip():
+        preflight_missing_v203k.append("start_image")
+    if route.startswith("first_last") and not str(end_ref_preflight_v203k or "").strip():
+        preflight_missing_v203k.append("end_image")
+    if route.startswith("first_last"):
+        start_cmp_v203k = str(start_ref_preflight_v203k or "").strip()
+        end_cmp_v203k = str(end_ref_preflight_v203k or "").strip()
+        if start_cmp_v203k and end_cmp_v203k and start_cmp_v203k == end_cmp_v203k:
+            preflight_missing_v203k.append("different_end_image")
+    if route in {"ia2v", "ia2v_lipsync", "ia2v_instrumental", "lip_sync"} and not str(audio_ref_preflight_v203k or "").strip():
+        preflight_missing_v203k.append("audio_slice")
+    if preflight_missing_v203k:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "generator_preflight_missing_inputs_v203k",
+                "route": route,
+                "missing": preflight_missing_v203k,
+                "message": "Required generator inputs are missing; request was not submitted to Comfy.",
+            },
+        )
+
     credit_cost = _video_credit_cost_for_payload(route, payload)
     project_id_for_credit = _clean_project_id(payload.project_id) or _clean_project_id(payload.projectId)
     if project_id_for_credit:
@@ -2321,6 +2406,9 @@ def cancel_video_job(job_id: str, user: dict = Depends(get_current_user)) -> dic
     job["updatedAt"] = job["canceledAt"]
     job["cancelResult"] = cancel_result
     BOARD_VIDEO_JOBS[clean_job_id] = job
+    # AVA_CANCEL_PERSIST_V203L:
+    # Persist canceled state so frontend/status polling clears after backend restart too.
+    _board_video_job_store(clean_job_id, job)
     return {"ok": True, "jobId": clean_job_id, "job_id": clean_job_id, "status": "canceled", "cancelResult": cancel_result, **job}
 
 
@@ -2344,6 +2432,8 @@ def cancel_active_video_jobs(user: dict = Depends(get_current_user)) -> dict[str
         job["cancelRequested"] = True
         job["canceledAt"] = now_cancel
         job["updatedAt"] = now_cancel
+        # AVA_CANCEL_ACTIVE_PERSIST_V203L:
+        _board_video_job_store(jid, job)
         canceled_jobs.append(jid)
     return {"ok": True, "status": "canceled_active_generator_jobs", "canceledJobIds": canceled_jobs, "cancelResult": cancel_result}
 
@@ -2356,6 +2446,16 @@ def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[st
         return {"ok": False, "status": "not_found", "code": "BOARD_VIDEO_JOB_NOT_FOUND", "jobId": job_id}
 
     _ava_credit_ensure_job_owner(job, user)
+
+    # AVA_VIDEO_STATUS_TERMINAL_EARLY_V203L:
+    # Do not turn canceled/failed/blocked jobs back into running by probing Comfy history.
+    terminal_status_v203l = str(job.get("status") or job.get("video_status") or "").strip().lower()
+    if (
+        terminal_status_v203l.startswith("blocked")
+        or terminal_status_v203l in {"canceled", "cancelled", "cancel_requested", "failed", "error", "not_found", "output_download_failed", "output_finalize_failed", "completed_without_video_output"}
+    ):
+        _board_video_job_store(job_id, job)
+        return {"ok": False if terminal_status_v203l not in {"completed", "ready", "done"} else True, **job}
 
     should_force_orphan_v200h, orphan_reason_v200h = _board_video_should_force_orphan_v200h(job_id, job, was_in_memory=was_in_memory_v200h, source="status")
     if should_force_orphan_v200h:
@@ -3685,6 +3785,39 @@ def _board_batch_result_patch(data: dict[str, Any], job: dict[str, Any]) -> dict
         "videoReadyAt": _board_batch_now(),
         "server_batch_job_id": job.get("jobId") or job.get("job_id") or "",
         "serverBatchJobId": job.get("jobId") or job.get("job_id") or "",
+
+        # AVA_BOARD_NEW_VIDEO_CLEAR_STALE_REVIEW_V203C:
+        # A fresh completed video must not inherit an old Telegram/manual red "bad" mark.
+        # If this result came from bad-review regeneration, the runner below overwrites this
+        # to needs_review / "посмотри" after building the result patch.
+        "video_review_status": "",
+        "videoReviewStatus": "",
+        "review_status": "",
+        "reviewStatus": "",
+        "video_review_reason": "",
+        "videoReviewReason": "",
+        "review_reason": "",
+        "reviewReason": "",
+        "video_review_clear_reason": "new_video_result_clear_stale_review_v203c",
+        "videoReviewClearReason": "new_video_result_clear_stale_review_v203c",
+        "video_review_cleared_at": _board_batch_now(),
+        "videoReviewClearedAt": _board_batch_now(),
+        "video_review_regenerate_from_bad": False,
+        "videoReviewRegenerateFromBad": False,
+        "video_review_regenerate_reason": "",
+        "videoReviewRegenerateReason": "",
+        "bad_video_review": False,
+        "badVideoReview": False,
+        "video_review_bad": False,
+        "videoReviewBad": False,
+        "bad_video": False,
+        "badVideo": False,
+        "video_bad": False,
+        "videoBad": False,
+        "is_bad_video": False,
+        "isBadVideo": False,
+        "needs_review": False,
+        "needsReview": False,
     }
 
 
@@ -5052,6 +5185,38 @@ def _mmaudio_append_unique(base: str, extra: str) -> str:
     return (base_text + ", " if base_text else "") + ", ".join(parts)
 
 
+# AVA_MMAUDIO_RAW_MODE_HELPER_V203N:
+# RAW means node 92 gets exactly the user prompt and exactly the user negative prompt.
+# No hidden director prompt, no hidden negative expansion.
+def _mmaudio_raw_mode_requested_v203n(payload_data: dict[str, Any], *, raw_prompt: str = "") -> bool:
+    mode = str(
+        _payload_get(
+            payload_data,
+            "mmaudio_mode",
+            "mmaudioMode",
+            "mmaudio_preset",
+            "mmaudioPreset",
+            "preset",
+            "mode",
+            default="",
+        )
+        or ""
+    ).strip().lower()
+    if mode in {"director", "auto_director", "enhanced", "smart", "legacy", "server_director"}:
+        return False
+    if mode in {"raw", "exact", "plain", "foley", "short_foley", "clean_foley"}:
+        return True
+
+    raw_flag = _payload_get(payload_data, "mmaudio_raw", "mmaudioRaw", "raw_mmaudio", "rawMmaudio", "raw_mode", "rawMode", default=None)
+    if raw_flag is not None:
+        return str(raw_flag).strip().lower() not in {"0", "false", "no", "off"}
+
+    # Default RAW for short Foley prompts. This is the safe default for current workflow:
+    # emotion + 2-4 concrete sounds + no background.
+    prompt_text = str(raw_prompt or "").strip()
+    return len(prompt_text) <= 240
+
+
 def _mmaudio_director(payload_data: dict[str, Any], *, video_path: Path | None = None) -> dict[str, Any]:
     raw_prompt = str(
         _payload_get(
@@ -5076,6 +5241,30 @@ def _mmaudio_director(payload_data: dict[str, Any], *, video_path: Path | None =
         )
         or ""
     ).strip()
+
+    # AVA_MMAUDIO_RAW_DIRECTOR_RETURN_V203N:
+    # In RAW mode do not prepend director text and do not expand negative prompt.
+    # Node 92 receives exactly raw_prompt/raw_negative, cfg=3, steps=25.
+    if _mmaudio_raw_mode_requested_v203n(payload_data, raw_prompt=raw_prompt):
+        seed = _mmaudio_seed_from_payload(payload_data)
+        return {
+            "profile": "raw",
+            "mode": "raw",
+            "prompt": raw_prompt,
+            "negativePrompt": raw_negative,
+            "seed": seed,
+            "cfg": 3.0,
+            "steps": 25,
+            "rawPrompt": raw_prompt,
+            "rawNegativePrompt": raw_negative,
+            "detected": {
+                "rawMode": True,
+                "directorDisabled": True,
+                "negativeExpansionDisabled": True,
+                "node92Exact": True,
+                "shortPrompt": len(raw_prompt) <= 240,
+            },
+        }
 
     words = _mmaudio_words(raw_prompt)
     short_prompt = len(raw_prompt) <= 28
@@ -5340,6 +5529,8 @@ def _run_mmaudio_submit_job(job_id: str) -> None:
         job["mmaudioSteps"] = mmaudio_steps
         job["internalPrompt"] = prompt
         job["internalNegativePrompt"] = negative_prompt
+        job["mmaudioRawMode"] = bool(director.get("mode") == "raw" or director.get("profile") == "raw")
+        job["mmaudioRawModeV203N"] = job["mmaudioRawMode"]
 
         prompt_graph, patches = _inject_mmaudio_workflow(
             workflow,
@@ -5351,6 +5542,23 @@ def _run_mmaudio_submit_job(job_id: str) -> None:
             cfg=mmaudio_cfg,
             steps=mmaudio_steps,
         )
+
+        node92_inputs_v203n = {}
+        try:
+            node92_inputs_v203n = dict(((prompt_graph.get("92") or {}).get("inputs") or {}))
+        except Exception:
+            node92_inputs_v203n = {}
+        # AVA_MMAUDIO_NODE92_FINAL_LOG_V203N:
+        print("[MMAUDIO NODE 92 FINAL INPUTS V203N]", {
+            "jobId": job_id,
+            "rawMode": job.get("mmaudioRawModeV203N"),
+            "prompt": node92_inputs_v203n.get("prompt"),
+            "negative_prompt": node92_inputs_v203n.get("negative_prompt"),
+            "steps": node92_inputs_v203n.get("steps"),
+            "cfg": node92_inputs_v203n.get("cfg"),
+            "seed": node92_inputs_v203n.get("seed"),
+            "videoNode91": ((prompt_graph.get("91") or {}).get("inputs") or {}).get("video"),
+        }, flush=True)
 
         job["status"] = "submitting"
         job["uploadedMedia"] = {"video": uploaded_video}
@@ -5420,7 +5628,9 @@ def start_mmaudio(payload: dict[str, Any], user: dict = Depends(get_current_user
         "creditCharged": False,
         "creditChargeMode": "not_charged_until_result_success",
         "payload": payload_data,
-        "mmaudioDirectorVersion": "server_director_v1",
+        # AVA_MMAUDIO_JOB_RAW_MODE_VERSION_V203N:
+        # Endpoint default is RAW for short Foley prompts unless caller explicitly asks for director/enhanced mode.
+        "mmaudioDirectorVersion": "raw_v203n_default_short_foley",
     }
     _ava_credit_attach_job_user(job, user)
     BOARD_MMAUDIO_JOBS[job_id] = job

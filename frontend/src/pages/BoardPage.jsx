@@ -3275,26 +3275,148 @@ function sceneStatus(scene) {
     if (rawVideoStatusPriorityV132D2 === 'preparing' || rawVideoStatusPriorityV132D2 === 'submitting') return { label: 'отправляется', className: 'isRunning' }
     return { label: 'видео делается', className: 'isRunning' }
   }
-  // AVA_BOARD_REVIEW_BAD_READY_LABEL_SPLIT_V132E:
-  // Main card badge stays about video readiness. Review state is shown by the separate review badge.
-  const status = boardSceneVideoUiStatusV130F(scene)
-  const hasPrompt = Boolean(asText(scene?.video_prompt))
-  const rawImageStatusV144B = String(scene?.image_status || scene?.imageStatus || scene?.first_frame_status || scene?.firstFrameStatus || '').toLowerCase()
-  const imageAssetReadyV144B = rawImageStatusV144B.includes('asset_ready') || rawImageStatusV144B.includes('server_frame_ready') || rawImageStatusV144B === 'ready'
-  const imageUploadingV144B = !imageAssetReadyV144B && Boolean(
-    scene?.image_uploading_v129q || scene?.imageUploadingV129Q ||
-    rawImageStatusV144B.includes('upload') || rawImageStatusV144B.includes('local_pending') || rawImageStatusV144B.includes('local_preview')
-  )
-  const hasImage = Boolean(
-    sceneMediaFieldValue(scene, 'image', 'apiPath') || sceneMediaFieldValue(scene, 'first', 'apiPath') || sceneMediaFieldValue(scene, 'last', 'apiPath') ||
-    sceneMediaFieldValue(scene, 'image', 'url') || sceneMediaFieldValue(scene, 'first', 'url') || sceneMediaFieldValue(scene, 'last', 'url') ||
-    scene?.image_data_url || scene?.start_image_data_url || scene?.end_image_data_url ||
-    scene?.image_name || scene?.first_frame_name || scene?.last_frame_name
-  )
-  const hasCurrentVideo = boardSceneHasCurrentVideoResultV129P(scene)
-  const hasStaleVideo = boardSceneRawVideoRefsV129P(scene) && !boardVideoMatchesCurrentImageV129P(scene)
 
-  if (imageUploadingV144B) return { label: 'фото грузится', className: 'isRunning' }
+  // AVA_BOARD_PHOTO_UPLOAD_STATUS_V203I:
+  // upload/ready asset wins over stale image_delete_reason.
+  // image_name alone means local preview/upload, not ready photo.
+  const status = boardSceneVideoUiStatusV130F(scene)
+
+  const hasPrompt = Boolean(asText(firstTextValue(
+    scene?.video_prompt,
+    scene?.videoPrompt,
+    scene?.prompt,
+    scene?.positive_prompt,
+    scene?.positivePrompt,
+    scene?.image_prompt,
+    scene?.imagePrompt,
+    scene?.photo_prompt,
+    scene?.photoPrompt,
+    scene?.still_prompt,
+    scene?.stillPrompt,
+    scene?.generation_prompt,
+    scene?.generationPrompt,
+    scene?.final_prompt,
+    scene?.finalPrompt,
+    scene?.final_video_prompt,
+    scene?.finalVideoPrompt,
+    scene?.prompt_text,
+    scene?.promptText
+  )))
+
+  const rawImageStatusV203I = String(
+    scene?.image_status ||
+    scene?.imageStatus ||
+    scene?.first_frame_status ||
+    scene?.firstFrameStatus ||
+    scene?.photo_status ||
+    scene?.photoStatus ||
+    ''
+  ).toLowerCase()
+
+  const hasReadyImage = Boolean(
+    sceneMediaFieldValue(scene, 'image', 'apiPath') ||
+    sceneMediaFieldValue(scene, 'first', 'apiPath') ||
+    sceneMediaFieldValue(scene, 'last', 'apiPath') ||
+    sceneMediaFieldValue(scene, 'image', 'url') ||
+    sceneMediaFieldValue(scene, 'first', 'url') ||
+    sceneMediaFieldValue(scene, 'last', 'url') ||
+    scene?.image_api_path ||
+    scene?.imageApiPath ||
+    scene?.image_asset_id ||
+    scene?.imageAssetId ||
+    scene?.image_url ||
+    scene?.imageUrl ||
+    scene?.first_frame_api_path ||
+    scene?.firstFrameApiPath ||
+    scene?.first_frame_asset_id ||
+    scene?.firstFrameAssetId ||
+    scene?.first_frame_url ||
+    scene?.firstFrameUrl ||
+    scene?.first_image_api_path ||
+    scene?.firstImageApiPath ||
+    scene?.first_image_asset_id ||
+    scene?.firstImageAssetId ||
+    scene?.first_image_url ||
+    scene?.firstImageUrl ||
+    scene?.start_image_api_path ||
+    scene?.startImageApiPath ||
+    scene?.start_image_asset_id ||
+    scene?.startImageAssetId ||
+    scene?.start_image_url ||
+    scene?.startImageUrl ||
+    scene?.last_frame_api_path ||
+    scene?.lastFrameApiPath ||
+    scene?.last_frame_asset_id ||
+    scene?.lastFrameAssetId ||
+    scene?.last_frame_url ||
+    scene?.lastFrameUrl ||
+    scene?.last_image_api_path ||
+    scene?.lastImageApiPath ||
+    scene?.last_image_asset_id ||
+    scene?.lastImageAssetId ||
+    scene?.last_image_url ||
+    scene?.lastImageUrl ||
+    scene?.end_image_api_path ||
+    scene?.endImageApiPath ||
+    scene?.end_image_asset_id ||
+    scene?.endImageAssetId ||
+    scene?.end_image_url ||
+    scene?.endImageUrl ||
+    scene?.image_data_url ||
+    scene?.imageDataUrl ||
+    scene?.start_image_data_url ||
+    scene?.startImageDataUrl ||
+    scene?.end_image_data_url ||
+    scene?.endImageDataUrl ||
+    rawImageStatusV203I.includes('asset_ready') ||
+    rawImageStatusV203I.includes('server_frame_ready') ||
+    rawImageStatusV203I === 'ready'
+  )
+
+  const uploadIntentV203I = Boolean(
+    scene?.image_uploading_v129q ||
+    scene?.imageUploadingV129Q ||
+    scene?.image_uploading ||
+    scene?.imageUploading ||
+    scene?.photo_uploading ||
+    scene?.photoUploading ||
+    scene?.mediaMutationReplaceSave ||
+    scene?.forceReplaceSave ||
+    rawImageStatusV203I.includes('upload') ||
+    rawImageStatusV203I.includes('local_pending') ||
+    rawImageStatusV203I.includes('local_preview') ||
+    rawImageStatusV203I.includes('pending') ||
+    scene?.image_name ||
+    scene?.imageName ||
+    scene?.first_frame_name ||
+    scene?.firstFrameName ||
+    scene?.first_image_name ||
+    scene?.firstImageName ||
+    scene?.start_image_name ||
+    scene?.startImageName
+  )
+
+  const hasDeleteMarkerV203I = Boolean(
+    scene?.image_deleted_v129o ||
+    scene?.imageDeletedV129O ||
+    scene?.first_image_deleted_v129o ||
+    scene?.firstImageDeletedV129O ||
+    scene?.last_image_deleted_v129o ||
+    scene?.lastImageDeletedV129O ||
+    scene?.image_delete_reason_v129s ||
+    scene?.imageDeleteReasonV129S ||
+    scene?.image_delete_reason_v129t ||
+    scene?.imageDeleteReasonV129T ||
+    scene?.image_delete_reason_v129u ||
+    scene?.imageDeleteReasonV129U
+  )
+
+  // Delete marker only matters when there is neither upload nor ready asset.
+  const imageDeletedEffectiveV203I = hasDeleteMarkerV203I && !uploadIntentV203I && !hasReadyImage
+  const imageUploadActiveV203I = uploadIntentV203I && !hasReadyImage && !imageDeletedEffectiveV203I
+  const hasCurrentVideo = boardSceneHasCurrentVideoResultV129P(scene)
+
+  if (imageUploadActiveV203I) return { label: 'фото грузится', className: 'isRunning isImageUploading' }
   if (status === 'starting') return { label: 'отправляется', className: 'isRunning' }
   if (status === 'queued') return { label: 'в очереди', className: 'isRunning' }
   if (status === 'preparing' || status === 'submitting') return { label: 'отправляется', className: 'isRunning' }
@@ -3303,9 +3425,9 @@ function sceneStatus(scene) {
   if (reviewStatusPriorityV132D2 === 'bad') return { label: 'плохое', className: 'isBad' }
   if (reviewStatusPriorityV132D2 === 'needs_review') return { label: 'посмотри', className: 'isReview' }
   if (hasCurrentVideo) return { label: 'видео готово', className: 'isReady' }
-  if (hasImage && hasPrompt) return { label: 'промт+фото', className: 'isPrompt' }
-  if (hasPrompt) return { label: 'промт готов', className: 'isPrompt' }
-  if (hasImage) return { label: 'фото готово', className: 'isImage' }
+  if (hasReadyImage && hasPrompt) return { label: 'промт+фото', className: 'isPrompt' }
+  if (hasPrompt) return { label: 'промт', className: 'isPrompt' }
+  if (hasReadyImage) return { label: 'фото', className: 'isImage' }
   return { label: 'черновик', className: 'isDraft' }
 }
 
@@ -3478,6 +3600,13 @@ function boardVideoReviewPatch(status = '', reason = 'manual') {
       badVideoReview: false,
       video_review_bad: false,
       videoReviewBad: false,
+      // AVA_BOARD_CLEAR_BAD_ALIASES_V203C
+      bad_video: false,
+      badVideo: false,
+      video_bad: false,
+      videoBad: false,
+      is_bad_video: false,
+      isBadVideo: false,
     }
   }
   return {
@@ -9215,6 +9344,14 @@ function updateSelectedSceneDuration(nextValue) {
       firstImageDeletedV129O: false,
       last_image_deleted_v129o: false,
       lastImageDeletedV129O: false,
+      image_uploading_v129q: false,
+      imageUploadingV129Q: false,
+      image_uploading: false,
+      imageUploading: false,
+      photo_uploading: false,
+      photoUploading: false,
+      mediaMutationReplaceSave: false,
+      forceReplaceSave: false,
     }
 
     if (slot === 'last') {
@@ -9959,6 +10096,20 @@ function updateSelectedSceneDuration(nextValue) {
       imageName: '',
       image_status: '',
       imageStatus: '',
+      image_uploading_v129q: false,
+      imageUploadingV129Q: false,
+      image_uploading: false,
+      imageUploading: false,
+      photo_uploading: false,
+      photoUploading: false,
+      mediaMutationReplaceSave: false,
+      forceReplaceSave: false,
+      image_deleted_v129o: true,
+      imageDeletedV129O: true,
+      first_image_deleted_v129o: true,
+      firstImageDeletedV129O: true,
+      last_image_deleted_v129o: true,
+      lastImageDeletedV129O: true,
       image_data_url: '',
       imageDataUrl: '',
       mediaUrl: '',
@@ -11189,10 +11340,20 @@ async function markVideoPlanned(sceneOverride = null) {
     if (!selectedScene) return
     const sourceVideoApiPath = selectedScene.video_api_path || selectedScene.videoApiPath || ''
     const sourceVideo = sourceVideoApiPath ? '' : (selectedScene.video_url || selectedScene.videoUrl || '')
+    // AVA_BOARD_MMAUDIO_RAW_PREFLIGHT_V203N:
+    // Do not fall back to video_prompt; MMAudio RAW must receive the user sound prompt only.
+    const rawMmaudioPromptV203N = asText(selectedScene.mmaudio_prompt || selectedScene.mmaudioPrompt || selectedScene.sound_prompt || selectedScene.soundPrompt || '').trim()
+    const rawMmaudioNegativeV203N = asText(selectedScene.mmaudio_negative_prompt || selectedScene.mmaudioNegativePrompt || selectedScene.negative_sound_prompt || selectedScene.negativeSoundPrompt || '').trim()
     if (!sourceVideo && !sourceVideoApiPath) {
       updateScene(selectedScene.id, { mmaudio_status: 'error', mmaudio_error: 'Сначала нужно готовое видео' })
       setStatus('MMAudio: сначала нужно готовое видео')
       pushBoardToast({ type: 'warning', title: 'MMAudio недоступно', message: 'Сначала нужно готовое видео', sceneId: selectedScene.id })
+      return
+    }
+    if (!rawMmaudioPromptV203N) {
+      updateScene(selectedScene.id, { mmaudio_status: 'error', mmaudio_error: 'Введите sound prompt для MMAudio RAW' })
+      setStatus('MMAudio RAW: нет sound prompt')
+      pushBoardToast({ type: 'warning', title: 'MMAudio RAW недоступно', message: 'Введите sound prompt. Видео prompt больше не используется как звук.', sceneId: selectedScene.id })
       return
     }
 
@@ -11217,8 +11378,29 @@ async function markVideoPlanned(sceneOverride = null) {
           project_id: projectId || '',
           video_url: sourceVideo,
           video_api_path: sourceVideoApiPath,
-          prompt: selectedScene.mmaudio_prompt || selectedScene.sound_prompt || selectedScene.video_prompt || '',
-          negative_prompt: selectedScene.mmaudio_negative_prompt || 'music, soundtrack, narration, speech, human voice, distorted audio, clipping, harsh noise, unrelated sounds, repeated loop',
+          // AVA_BOARD_MMAUDIO_RAW_PAYLOAD_V203N:
+          // RAW mode patches node 92 exactly: prompt=user sound prompt, negative_prompt=user negative prompt.
+          mmaudio_mode: 'raw',
+          mmaudioMode: 'raw',
+          mmaudio_preset: 'raw',
+          mmaudioPreset: 'raw',
+          raw_mode: true,
+          rawMode: true,
+          prompt: rawMmaudioPromptV203N,
+          sound_prompt: rawMmaudioPromptV203N,
+          soundPrompt: rawMmaudioPromptV203N,
+          positive_prompt: rawMmaudioPromptV203N,
+          positivePrompt: rawMmaudioPromptV203N,
+          negative_prompt: rawMmaudioNegativeV203N,
+          negativePrompt: rawMmaudioNegativeV203N,
+          negative_sound_prompt: rawMmaudioNegativeV203N,
+          negativeSoundPrompt: rawMmaudioNegativeV203N,
+          mmaudio_steps: 25,
+          mmaudioSteps: 25,
+          steps: 25,
+          mmaudio_cfg: 3,
+          mmaudioCfg: 3,
+          cfg: 3,
           duration_sec: durationOf(selectedScene),
           workflow_key: selectedScene.mmaudio_workflow_key || 'mmaudio-sound-design.json',
         }),
@@ -11303,6 +11485,13 @@ async function importTimingJson(event) {
             badVideoReview: Boolean(safeStatus === 'bad'),
             video_review_bad: Boolean(safeStatus === 'bad'),
             videoReviewBad: Boolean(safeStatus === 'bad'),
+            // AVA_BOARD_IMMEDIATE_REVIEW_BAD_ALIASES_SET_V203C
+            bad_video: Boolean(safeStatus === 'bad'),
+            badVideo: Boolean(safeStatus === 'bad'),
+            video_bad: Boolean(safeStatus === 'bad'),
+            videoBad: Boolean(safeStatus === 'bad'),
+            is_bad_video: Boolean(safeStatus === 'bad'),
+            isBadVideo: Boolean(safeStatus === 'bad'),
           }
         : {
             video_review_status: '',
@@ -11327,6 +11516,13 @@ async function importTimingJson(event) {
             badVideoReview: false,
             video_review_bad: false,
             videoReviewBad: false,
+            // AVA_BOARD_IMMEDIATE_REVIEW_BAD_ALIASES_CLEAR_V203C
+            bad_video: false,
+            badVideo: false,
+            video_bad: false,
+            videoBad: false,
+            is_bad_video: false,
+            isBadVideo: false,
           }),
     }
 

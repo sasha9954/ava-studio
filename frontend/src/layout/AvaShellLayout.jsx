@@ -219,13 +219,30 @@ function avaJobVideoUrl(kind, data) {
 
 function avaJobIsError(status) {
   const normalized = String(status || '').toLowerCase()
-  return normalized.startsWith('blocked_') || ['error', 'failed', 'queued_no_prompt_id', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output'].includes(normalized)
+  // AVA_SHELL_CANCEL_TERMINAL_V203L:
+  // Canceled/cancel_requested jobs are terminal and must be removed from shell polling.
+  return normalized.startsWith('blocked_') || ['error', 'failed', 'queued_no_prompt_id', 'output_download_failed', 'output_finalize_failed', 'completed_without_video_output', 'canceled', 'cancelled', 'cancel_requested'].includes(normalized)
 }
 
 function avaJobIsStale(status, data = {}) {
   const normalized = String(status || '').toLowerCase()
   const code = String(data?.code || data?.error?.code || '').toUpperCase()
   return normalized === 'not_found' || code === 'BOARD_VIDEO_JOB_NOT_FOUND' || code === 'BOARD_MMAUDIO_JOB_NOT_FOUND'
+}
+
+// AVA_SHELL_STALE_GENERATOR_JOB_AGE_V203L:
+// Local active jobs can survive backend restart/F5 and then poll forever.
+function avaJobAgeMsV203L(job = {}) {
+  const stamps = [job?.updatedAt, job?.updated_at, job?.createdAt, job?.created_at, job?.startedAt, job?.started_at]
+    .map((value) => {
+      const raw = String(value || '').trim()
+      if (!raw) return null
+      const t = Date.parse(raw)
+      return Number.isFinite(t) ? t : null
+    })
+    .filter((value) => value !== null)
+  if (!stamps.length) return Number.POSITIVE_INFINITY
+  return Math.max(0, Date.now() - Math.min(...stamps))
 }
 
 
@@ -993,6 +1010,12 @@ export default function AvaShellLayout() {
       for (const job of jobs) {
         const key = job.key || job.jobId || job.statusEndpoint
         if (!key || !job.statusEndpoint) continue
+        // AVA_SHELL_DROP_STALE_GENERATOR_JOBS_V203L:
+        // Do not keep old Generator jobs polling forever from the shell.
+        if (avaShellJobIsGenerator(job) && avaJobAgeMsV203L(job) > 20 * 60 * 1000) {
+          changed = true
+          continue
+        }
         if (pollingJobsRef.current.has(key)) {
           nextJobs.push(job)
           continue

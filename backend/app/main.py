@@ -22,6 +22,12 @@ app.add_middleware(
 app.include_router(api_router)
 app.mount('/static', StaticFiles(directory=str(settings.static_path)), name='static')
 
+# AVA_STATIC_API_COMPAT_V203J:
+# Some frontend/static normalization paths can request /api/static/assets/...
+# while the canonical mount is /static/assets/...
+# Keep both working so extracted Board frames do not 404.
+app.mount('/api/static', StaticFiles(directory=str(settings.static_path)), name='api_static_compat_v203j')
+
 
 @app.get('/')
 def root():

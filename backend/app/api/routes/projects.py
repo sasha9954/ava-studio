@@ -2041,6 +2041,13 @@ def _ava_project_apply_review_event_direct_v136a(scene, event):
         scene["badVideoReview"] = False
         scene["video_review_bad"] = False
         scene["videoReviewBad"] = False
+        # AVA_PROJECT_REVIEW_BAD_ALIASES_CLEAR_V203C
+        scene["bad_video"] = False
+        scene["badVideo"] = False
+        scene["video_bad"] = False
+        scene["videoBad"] = False
+        scene["is_bad_video"] = False
+        scene["isBadVideo"] = False
 
     scene["project_review_direct_state_v136a"] = True
     scene["projectReviewDirectStateV136A"] = True
@@ -2674,6 +2681,13 @@ def _ava_project_review_memory_apply_event_v136e(scene, event):
             scene["badVideoReview"] = True
             scene["video_review_bad"] = True
             scene["videoReviewBad"] = True
+            # AVA_PROJECT_REVIEW_BAD_ALIASES_SET_V203C
+            scene["bad_video"] = True
+            scene["badVideo"] = True
+            scene["video_bad"] = True
+            scene["videoBad"] = True
+            scene["is_bad_video"] = True
+            scene["isBadVideo"] = True
             scene["video_review_regenerate_from_bad"] = True
             scene["videoReviewRegenerateFromBad"] = True
         return True
@@ -2721,6 +2735,27 @@ def _ava_project_apply_server_review_memory_v136e(source_data, current_data, fin
         event = memory.get(scene_id)
         if not event:
             continue
+        # AVA_PROJECT_CLEAR_BEATS_STALE_BAD_MEMORY_V203C:
+        # A newer UI clear or a new completed video clear must beat an older Telegram/server-memory bad mark.
+        event_status_v203c = str(event.get("status") or "").strip().lower()
+        if event_status_v203c == "bad":
+            final_scene_event_v203c = _ava_project_review_memory_event_v136e(scene)
+            if isinstance(final_scene_event_v203c, dict) and str(final_scene_event_v203c.get("kind") or "").strip().lower() == "clear":
+                clear_dt_v203c = final_scene_event_v203c.get("dt") or _ava_project_review_memory_parse_dt_v136e(final_scene_event_v203c.get("at"))
+                bad_dt_v203c = event.get("dt") or _ava_project_review_memory_parse_dt_v136e(event.get("at"))
+                clear_at_v203c = str(final_scene_event_v203c.get("at") or "")
+                bad_at_v203c = str(event.get("at") or "")
+                clear_wins_v203c = False
+                if clear_dt_v203c is not None and bad_dt_v203c is not None:
+                    clear_wins_v203c = clear_dt_v203c >= bad_dt_v203c
+                elif clear_at_v203c and bad_at_v203c:
+                    clear_wins_v203c = clear_at_v203c >= bad_at_v203c
+                else:
+                    clear_wins_v203c = True
+                if clear_wins_v203c:
+                    memory[scene_id] = final_scene_event_v203c
+                    continue
+
         before = _ava_project_review_status_v136d(scene) if "_ava_project_review_status_v136d" in globals() else ""
         # AVA_PROJECT_REGEN_NEEDS_REVIEW_BLOCKS_BAD_MEMORY_V200M:
         # A freshly regenerated bad video is intentionally changed to needs_review

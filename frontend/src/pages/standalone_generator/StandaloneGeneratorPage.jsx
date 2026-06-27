@@ -922,7 +922,9 @@ function statusLooksDone(status = '') {
 
 function statusLooksFailed(status = '') {
   const s = String(status || '').toLowerCase()
-  return ['failed', 'error', 'blocked', 'missing', 'not_found'].some((x) => s.includes(x))
+  // AVA_GENERATOR_STATUS_FAILED_CANCEL_V203L:
+  // Canceled/cancel_requested are terminal states. They must not keep the Generator locked.
+  return ['failed', 'error', 'blocked', 'missing', 'not_found', 'canceled', 'cancelled', 'cancel_requested', 'orphaned'].some((x) => s.includes(x))
 }
 
 function generatorJobStatusValue(job = {}) {
@@ -937,6 +939,30 @@ function generatorJobLooksActive(job = {}) {
   if (!status) return true
   return ['queued', 'pending', 'running', 'processing', 'submitted', 'started', 'in_progress', 'created'].some((item) => status.includes(item))
 }
+
+// AVA_GENERATOR_STALE_RESTORE_GUARD_V203L:
+// Project snapshot can contain an old running boardjob after backend/Comfy restart.
+// Do not auto-resume it forever.
+function generatorJobAgeMsV203L(job = {}) {
+  const stamps = [job?.updatedAt, job?.updated_at, job?.createdAt, job?.created_at, job?.startedAt, job?.started_at]
+    .map((value) => {
+      const raw = String(value || '').trim()
+      if (!raw) return null
+      const t = Date.parse(raw)
+      return Number.isFinite(t) ? t : null
+    })
+    .filter((value) => value !== null)
+  if (!stamps.length) return Number.POSITIVE_INFINITY
+  return Math.max(0, Date.now() - Math.min(...stamps))
+}
+
+function generatorJobIsStaleForResumeV203L(job = {}) {
+  const status = generatorJobStatusValue(job).toLowerCase()
+  if (statusLooksDone(status) || statusLooksFailed(status)) return true
+  // 20 minutes is enough for normal UI restore; older active snapshot jobs are usually ghosts.
+  return generatorJobAgeMsV203L(job) > 20 * 60 * 1000
+}
+
 
 function generatorMmaudioJobId(job = {}) {
   return String(job?.jobId || job?.job_id || job?.id || '')
@@ -1777,22 +1803,35 @@ export default function StandaloneGeneratorPage() {
   }, [generatedVideos])
   const [generatorSnapshotLoading, setGeneratorSnapshotLoading] = useState(() => Boolean(routeProjectId))
   const generatorPreviewObjectUrlsRef = useRef({})
+  // AVA_GENERATOR_ASSET_PREVIEW_SINGLE_FLIGHT_V203M:
+  // Same asset can be requested by main preview + latest-gallery warmup + listen/play rerenders.
+  // Keep one in-flight fetch and one stable blob URL per asset.
+  const generatorPreviewFetchesRef = useRef({})
   const [generatorAssetPreviewMap, setGeneratorAssetPreviewMap] = useState({})
   const generatorHistoryThumbObjectUrlsRef = useRef({})
+  const generatorHistoryThumbFetchesRef = useRef({})
   const [generatorHistoryThumbPreviewMap, setGeneratorHistoryThumbPreviewMap] = useState({})
 
   const ensureGeneratorHistoryThumbPreview = useCallback((value = '') => {
     const canonical = generatorCanonicalApiPath(value) || String(value || '').trim()
     if (!canonical || !isGeneratorAssetFileRef(canonical)) return
-    if (generatorHistoryThumbObjectUrlsRef.current[canonical]) return
+    if (generatorHistoryThumbObjectUrlsRef.current[canonical] || generatorHistoryThumbFetchesRef.current[canonical]) return
+    generatorHistoryThumbFetchesRef.current[canonical] = true
     fetchGeneratorAssetThumbBlobUrl(canonical)
       .then((objectUrl) => {
         if (!objectUrl) return
+        if (generatorHistoryThumbObjectUrlsRef.current[canonical]) {
+          try { URL.revokeObjectURL(objectUrl) } catch {}
+          return
+        }
         generatorHistoryThumbObjectUrlsRef.current[canonical] = objectUrl
-        setGeneratorHistoryThumbPreviewMap((old) => ({ ...old, [canonical]: objectUrl }))
+        setGeneratorHistoryThumbPreviewMap((old) => old[canonical] ? old : ({ ...old, [canonical]: objectUrl }))
       })
       .catch((error) => {
-        console.warn('[GENERATOR HISTORY THUMB FAILED V12B]', { ref: canonical, error: error?.message || error })
+        console.warn('[GENERATOR HISTORY THUMB FAILED V203M]', { ref: canonical, error: error?.message || error })
+      })
+      .finally(() => {
+        delete generatorHistoryThumbFetchesRef.current[canonical]
       })
   }, [])
 
@@ -1803,21 +1842,31 @@ export default function StandaloneGeneratorPage() {
       }
     })
     generatorHistoryThumbObjectUrlsRef.current = {}
+    generatorHistoryThumbFetchesRef.current = {}
   }, [])
 
 
   const ensureGeneratorAssetPreview = useCallback((value = '') => {
     const canonical = generatorCanonicalApiPath(value) || String(value || '').trim()
     if (!canonical || !isGeneratorAssetFileRef(canonical)) return
-    if (generatorPreviewObjectUrlsRef.current[canonical]) return
+    if (generatorPreviewObjectUrlsRef.current[canonical] || generatorPreviewFetchesRef.current[canonical]) return
+    generatorPreviewFetchesRef.current[canonical] = true
     fetchGeneratorAssetBlobUrl(canonical)
       .then((objectUrl) => {
         if (!objectUrl) return
+        if (generatorPreviewObjectUrlsRef.current[canonical]) {
+          // A parallel request already won. Do not replace video src and restart playback.
+          try { URL.revokeObjectURL(objectUrl) } catch {}
+          return
+        }
         generatorPreviewObjectUrlsRef.current[canonical] = objectUrl
-        setGeneratorAssetPreviewMap((old) => ({ ...old, [canonical]: objectUrl }))
+        setGeneratorAssetPreviewMap((old) => old[canonical] ? old : ({ ...old, [canonical]: objectUrl }))
       })
       .catch((error) => {
-        console.warn('[GENERATOR ASSET PREVIEW FAILED]', { ref: canonical, error: error?.message || error })
+        console.warn('[GENERATOR ASSET PREVIEW FAILED V203M]', { ref: canonical, error: error?.message || error })
+      })
+      .finally(() => {
+        delete generatorPreviewFetchesRef.current[canonical]
       })
   }, [])
 
@@ -1845,6 +1894,7 @@ export default function StandaloneGeneratorPage() {
       }
     })
     generatorPreviewObjectUrlsRef.current = {}
+    generatorPreviewFetchesRef.current = {}
   }, [])
 
   const visibleHistoryItems = useMemo(() => (generatedVideos || []).map(normalizeGeneratorGalleryItem).filter(Boolean), [generatedVideos])
@@ -1885,8 +1935,10 @@ export default function StandaloneGeneratorPage() {
   const [creditSummary, setCreditSummary] = useState(null)
   const [tariffError, setTariffError] = useState('')
   const [mmaudioOpen, setMmaudioOpen] = useState(false)
-  const [mmaudioPrompt, setMmaudioPrompt] = useState('Realistic sound design matching the motion and scene, natural ambience, no music unless needed.')
-  const [mmaudioNegativePrompt, setMmaudioNegativePrompt] = useState('clipping, distorted sound, harsh noise, random music, robotic artifacts, audio desync, low quality sound')
+  // AVA_MMAUDIO_RAW_DEFAULT_PROMPT_V203N:
+  // RAW mode: the field is sent exactly to node 92. Do not hide a default director prompt here.
+  const [mmaudioPrompt, setMmaudioPrompt] = useState('')
+  const [mmaudioNegativePrompt, setMmaudioNegativePrompt] = useState('')
   const [mmaudioBusy, setMmaudioBusy] = useState(false)
   const [mmaudioStatus, setMmaudioStatus] = useState('')
   const [mmaudioError, setMmaudioError] = useState('')
@@ -1896,6 +1948,7 @@ export default function StandaloneGeneratorPage() {
   const [cancelGenerationBusy, setCancelGenerationBusy] = useState(false)
   const pollingRef = useRef(null)
   const submitGenerationInFlightRef = useRef(false)
+  const cancelGenerationInFlightRef = useRef(false)
   const mmaudioPollingRef = useRef(null)
   const audioRef = useRef(null)
   const rememberedGalleryUrlsRef = useRef(new Set())
@@ -1911,6 +1964,19 @@ export default function StandaloneGeneratorPage() {
   const deletedGeneratorGalleryRefsRef = useRef(new Set())
   const deletedMmaudioJobIdsRef = useRef(new Set())
   const generatorPollingSnapshotThrottleRef = useRef({ video: 0, mmaudio: 0 })
+
+  // AVA_GENERATOR_UNMOUNT_CLEAR_INTERVALS_V203L:
+  // Leaving the Generator page must not leave page-local polling intervals alive.
+  useEffect(() => () => {
+    if (pollingRef.current) clearInterval(pollingRef.current)
+    if (mmaudioPollingRef.current) clearInterval(mmaudioPollingRef.current)
+    pollingRef.current = null
+    mmaudioPollingRef.current = null
+    activeGeneratorPollTokenRef.current = ''
+    activeMmaudioPollTokenRef.current = ''
+    submitGenerationInFlightRef.current = false
+    cancelGenerationInFlightRef.current = false
+  }, [])
   useEffect(() => {
     let cancelled = false
 
@@ -2010,7 +2076,28 @@ export default function StandaloneGeneratorPage() {
           setResultUrl('')
         }
         const restoredJob = compactGeneratorJob(snapshot.job)
-        if (generatorJobLooksActive(restoredJob)) {
+        const restoredJobIdV203L = String(restoredJob?.jobId || restoredJob?.job_id || '').replace(/^generator:/, '').trim()
+        if (generatorJobLooksActive(restoredJob) && generatorJobIsStaleForResumeV203L(restoredJob)) {
+          // AVA_GENERATOR_STALE_SNAPSHOT_CLEAR_V203L:
+          // Do not resurrect old running jobs from project snapshot.
+          completedGeneratorJobsRef.current.add(restoredJobIdV203L)
+          removeAvaGeneratorActiveJobsMatching({ jobIds: restoredJobIdV203L ? [restoredJobIdV203L] : [], projectId: routeProjectId })
+          pendingGeneratorResumeJobRef.current = null
+          setJob(null)
+          setBusy(false)
+          setStatusText('старый статус генерации очищен')
+          try {
+            await saveGeneratorProjectSnapshot(routeProjectId, {
+              ...snapshot,
+              job: null,
+              statusText: 'старый статус генерации очищен',
+              updatedAt: new Date().toISOString(),
+              staleClearedJobIdV203L: restoredJobIdV203L,
+            }, 'replace')
+          } catch (clearErrorV203L) {
+            console.warn('[GENERATOR STALE SNAPSHOT CLEAR FAILED V203L]', clearErrorV203L)
+          }
+        } else if (generatorJobLooksActive(restoredJob)) {
           setJob(restoredJob)
           setBusy(true)
           setStatusText(generatorJobStatusValue(restoredJob) || snapshot.statusText || 'running')
@@ -2019,6 +2106,13 @@ export default function StandaloneGeneratorPage() {
             if (cancelled) return
             const resumeJob = pendingGeneratorResumeJobRef.current
             if (!generatorJobLooksActive(resumeJob)) return
+            if (generatorJobIsStaleForResumeV203L(resumeJob)) {
+              pendingGeneratorResumeJobRef.current = null
+              setJob(null)
+              setBusy(false)
+              setStatusText('старый статус генерации очищен')
+              return
+            }
             const resumeJobId = String(resumeJob.jobId || resumeJob.job_id || '').replace(/^generator:/, '').trim()
             const resumeStatusBase = generatorStatusBaseFromJob(resumeJob, routeInfo?.statusBase)
             if (!resumeJobId || !resumeStatusBase) return
@@ -2281,9 +2375,11 @@ export default function StandaloneGeneratorPage() {
     // Do not download every protected video as a blob during page restore. That made
     // Generator look empty/slow on F5. Warm the latest/current result first; the feed
     // can lazily prepare previews as the user clicks or the browser streams direct URLs.
-    const warmRefs = [displayedResultUrl, latestGalleryItem?.url, latestGalleryItem?.apiPath, latestGalleryItem?.api_path]
-      .filter(Boolean)
-      .slice(0, 3)
+    const warmRefs = Array.from(new Set(
+      [displayedResultUrl, latestGalleryItem?.url, latestGalleryItem?.apiPath, latestGalleryItem?.api_path]
+        .map((ref) => generatorCanonicalApiPath(ref) || String(ref || '').trim())
+        .filter(Boolean)
+    )).slice(0, 2)
     warmRefs.forEach((ref) => {
       if (isGeneratorAssetFileRef(ref)) ensureGeneratorAssetPreview(ref)
     })
@@ -3317,10 +3413,18 @@ export default function StandaloneGeneratorPage() {
       tickInFlight = true
       tickCount += 1
       if (tickCount > 180) {
+        // AVA_GENERATOR_POLL_TIMEOUT_CLEAR_V203L:
+        // Timeout must unlock Generator and remove the stale job from local/global state.
         stopPollingRun()
+        activeGeneratorPollTokenRef.current = ''
+        completedGeneratorJobsRef.current.add(cleanJobId)
+        removeAvaGeneratorActiveJobsMatching({ jobIds: [cleanJobId], projectId: routeProjectId })
         setBusy(false)
         setJob(null)
-        setStatusText('polling остановлен по таймауту')
+        submitGenerationInFlightRef.current = false
+        const timeoutStatusV203L = 'polling остановлен по таймауту'
+        setStatusText(timeoutStatusV203L)
+        saveGeneratorSnapshot('job_poll_timeout_v203l', { job: null, statusText: timeoutStatusV203L, timedOutJobId: cleanJobId })
         tickInFlight = false
         return
       }
@@ -3425,13 +3529,29 @@ export default function StandaloneGeneratorPage() {
         }
 
         if (isFailedPoll) {
+          // AVA_GENERATOR_POLL_FAILED_CLEAR_V203L:
+          // Failed/blocked/canceled status is terminal and must unlock Generator.
           stopPollingRun()
+          activeGeneratorPollTokenRef.current = ''
+          completedGeneratorJobsRef.current.add(cleanJobId)
+          removeAvaGeneratorActiveJobsMatching({ jobIds: [cleanJobId], projectId: routeProjectId })
           setBusy(false)
           setJob(null)
+          submitGenerationInFlightRef.current = false
+          saveGeneratorSnapshot('job_failed_v203l', { job: null, statusText: polledStatus || 'failed', failedJobId: cleanJobId, resultData: data })
         }
       } catch (exc) {
-        setError(String(exc?.message || exc))
+        // AVA_GENERATOR_POLL_ERROR_CLEAR_V203L:
+        // Poll errors must not leave the local UI locked forever.
+        const pollErrorV203L = String(exc?.message || exc)
+        setError(pollErrorV203L)
+        setStatusText('polling остановлен после ошибки')
         setBusy(false)
+        setJob(null)
+        submitGenerationInFlightRef.current = false
+        activeGeneratorPollTokenRef.current = ''
+        removeAvaGeneratorActiveJobsMatching({ jobIds: [cleanJobId], projectId: routeProjectId })
+        saveGeneratorSnapshot('job_poll_error_v203l', { job: null, statusText: 'polling остановлен после ошибки', pollError: pollErrorV203L, failedJobId: cleanJobId })
         stopPollingRun()
       } finally {
         tickInFlight = false
@@ -3601,6 +3721,12 @@ export default function StandaloneGeneratorPage() {
       setMmaudioError('Сначала нужно получить видео без звука через i2v или first-last.')
       return
     }
+    // AVA_MMAUDIO_RAW_PREFLIGHT_V203N:
+    // In RAW mode an empty prompt would send an empty node 92 prompt, so do not submit.
+    if (!String(mmaudioPrompt || '').trim()) {
+      setMmaudioError('Введите короткий RAW prompt для MMAudio. Например: испуг, дыхание, ключи, без фона')
+      return
+    }
     setMmaudioBusy(true)
     setMmaudioStatus('отправляю видео в MMAudio...')
     try {
@@ -3615,6 +3741,20 @@ export default function StandaloneGeneratorPage() {
         creditCostHint: mmaudioCreditCost,
         client_mmaudio_credit_cost: mmaudioCreditCost,
         route: 'mmaudio',
+        // AVA_MMAUDIO_RAW_PAYLOAD_V203N:
+        // Backend must patch node 92 exactly with these user fields.
+        mmaudio_mode: 'raw',
+        mmaudioMode: 'raw',
+        mmaudio_preset: 'raw',
+        mmaudioPreset: 'raw',
+        raw_mode: true,
+        rawMode: true,
+        mmaudio_steps: 25,
+        mmaudioSteps: 25,
+        steps: 25,
+        mmaudio_cfg: 3,
+        mmaudioCfg: 3,
+        cfg: 3,
         video_url: resultUrl,
         videoUrl: resultUrl,
         input_video_url: resultUrl,
@@ -3741,24 +3881,53 @@ export default function StandaloneGeneratorPage() {
     setMmaudioError('')
     setRawResponse(null)
 
-    if (routeInfo.needsStart && !startFile && !startPersistedDataUrl && !startPreview) {
-      setError('Нужно загрузить стартовое изображение.')
-      return
+    // AVA_GENERATOR_STRICT_PREFLIGHT_V203K:
+    // Nothing is sent to backend/Comfy if required inputs are missing.
+    // Also reset submitGenerationInFlightRef on every preflight block.
+    const generatorPreflightProblemsV203K = []
+    const cleanPromptV203K = String(prompt || '').trim()
+
+    const startRefV203K = String(startPersistedDataUrl || startPreview || '').trim()
+    const endRefV203K = String(endPersistedDataUrl || endPreview || '').trim()
+    const audioRefV203K = String(audioPersistedDataUrl || audioPreviewUrl || '').trim()
+
+    const hasStartInputV203K = Boolean(startFile || startRefV203K)
+    const hasEndInputV203K = Boolean(endFile || endRefV203K)
+    const hasAudioInputV203K = Boolean(audioFile || audioRefV203K)
+
+    const normalizeInputRefV203K = (value) => String(value || '')
+      .trim()
+      .replace(/^blob:.+$/i, 'blob:')
+      .replace(/^data:[^,]+,.+$/i, 'data:')
+      .replace(/[?#].*$/, '')
+
+    if (startImageUploadBusy || startPreviewIsLoading) generatorPreflightProblemsV203K.push('стартовое фото ещё грузится')
+    if (endImageUploadBusy) generatorPreflightProblemsV203K.push('последний кадр ещё грузится')
+    if (audioUploadBusy) generatorPreflightProblemsV203K.push('аудио ещё грузится')
+    if (!cleanPromptV203K) generatorPreflightProblemsV203K.push('нет prompt')
+    if (routeInfo.needsStart && !hasStartInputV203K) generatorPreflightProblemsV203K.push('нет стартового фото')
+    if (routeInfo.needsEnd && !hasEndInputV203K) generatorPreflightProblemsV203K.push('нет последнего кадра')
+    if (routeInfo.needsEnd && hasStartInputV203K && hasEndInputV203K) {
+      const startSameV203K = normalizeInputRefV203K(startRefV203K || startFile?.name)
+      const endSameV203K = normalizeInputRefV203K(endRefV203K || endFile?.name)
+      if (startSameV203K && endSameV203K && startSameV203K === endSameV203K) {
+        generatorPreflightProblemsV203K.push('для first-last нужны два разных кадра')
+      }
     }
-    if (routeInfo.needsEnd && !endFile && !endPersistedDataUrl) {
-      setError('Для first-last нужен последний кадр.')
-      return
-    }
-    if (routeInfo.needsAudio && !audioFile && !audioPersistedDataUrl) {
-      setError('Для ia2v / lip-sync нужно аудио.')
-      return
-    }
-    if (routeInfo.value === 'ia2v' && audioDurationSec > 15.05) {
-      setError(`Для lip-sync аудио должно быть не длиннее 15 сек. Сейчас: ${audioDurationSec.toFixed(2)} сек.`)
-      return
+    if (routeInfo.needsAudio && !hasAudioInputV203K) generatorPreflightProblemsV203K.push('нет аудио')
+    if (routeInfo.needsAudio && routeInfo.maxAudioDuration && audioDurationSec > Number(routeInfo.maxAudioDuration) + 0.05) {
+      generatorPreflightProblemsV203K.push(`аудио длиннее ${routeInfo.maxAudioDuration} сек: сейчас ${audioDurationSec.toFixed(2)} сек`)
     }
     if (routeInfo.maxDuration && Number(durationSec) > routeInfo.maxDuration) {
-      setError(`Для режима ${routeInfo.label} максимум ${routeInfo.maxDuration} сек.`)
+      generatorPreflightProblemsV203K.push(`для режима ${routeInfo.label} максимум ${routeInfo.maxDuration} сек`)
+    }
+
+    if (generatorPreflightProblemsV203K.length) {
+      const messageV203K = `Не отправлено: ${generatorPreflightProblemsV203K.join(', ')}`
+      setError(messageV203K)
+      setStatusText(messageV203K)
+      setBusy(false)
+      submitGenerationInFlightRef.current = false
       return
     }
 
@@ -3986,49 +4155,59 @@ export default function StandaloneGeneratorPage() {
       setError(String(exc?.message || exc))
       setBusy(false)
     }
-  }, [audioDurationSec, audioFile, audioPersistedDataUrl, audioPreviewUrl, aspectInfo.value, currentCreditCost, renderSize.height, renderSize.width, endFile, endPersistedDataUrl, endPreview, generationDurationSec, negativePrompt, pollStatus, prompt, route, routeInfo, startFile, startPersistedDataUrl, startPreview, targetDurationSec, generatorPagePath, routeProjectId, saveGeneratorSnapshot, saveCompletedGeneratorResultNow, busy, job])
+  }, [audioDurationSec, audioFile, audioPersistedDataUrl, audioPreviewUrl, aspectInfo.value, currentCreditCost, renderSize.height, renderSize.width, endFile, endPersistedDataUrl, endPreview, generationDurationSec, negativePrompt, pollStatus, prompt, route, routeInfo, startFile, startPersistedDataUrl, startPreview, startImageUploadBusy, startPreviewIsLoading, endImageUploadBusy, audioUploadBusy, targetDurationSec, generatorPagePath, routeProjectId, saveGeneratorSnapshot, saveCompletedGeneratorResultNow, busy, job])
 
   const cancelGeneration = useCallback(async () => {
+    // AVA_GENERATOR_FORCE_LOCAL_CANCEL_V203L:
+    // Cancel must always unlock the Generator locally, even if backend/Comfy does not confirm.
     const activeJob = compactGeneratorJob(job || rawResponse || {})
     const cleanJobId = String(activeJob?.jobId || activeJob?.job_id || activeJob?.id || '').replace(/^generator:/, '').trim()
 
     if (cancelGenerationInFlightRef.current) return
-    if (!cleanJobId) {
-      setStatusText('отмена невозможна: нет активного job id')
-      setError('Генерация уже могла быть отправлена, но UI ещё не получил job id. Дождись появления job id или прерви очередь в ComfyUI.')
-      return
-    }
-
     cancelGenerationInFlightRef.current = true
     setGeneratorCanceling(true)
+    setCancelGenerationBusy(true)
     setError('')
-    setStatusText('отменяю генерацию на сервере...')
+    setStatusText(cleanJobId ? 'отменяю генерацию на сервере...' : 'сбрасываю зависший статус генерации...')
+
+    let cancelDataV203L = null
+    let cancelErrorV203L = ''
 
     try {
-      const data = await fetchJson(`/clip/video/cancel/${encodeURIComponent(cleanJobId)}`, { method: 'POST' })
-      setRawResponse(data)
+      if (cleanJobId) {
+        cancelDataV203L = await fetchJson(`/clip/video/cancel/${encodeURIComponent(cleanJobId)}`, { method: 'POST' })
+      } else {
+        cancelDataV203L = await fetchJson('/clip/video/cancel-active', { method: 'POST' })
+      }
+    } catch (exc) {
+      cancelErrorV203L = String(exc?.message || exc)
+      if (cleanJobId) {
+        try {
+          cancelDataV203L = await fetchJson('/clip/video/cancel-active', { method: 'POST' })
+        } catch (fallbackErrorV203L) {
+          cancelErrorV203L = `${cancelErrorV203L}; cancel-active: ${String(fallbackErrorV203L?.message || fallbackErrorV203L)}`
+        }
+      }
+    } finally {
       if (pollingRef.current) clearInterval(pollingRef.current)
       pollingRef.current = null
       activeGeneratorPollTokenRef.current = ''
       pendingGeneratorResumeJobRef.current = null
-      completedGeneratorJobsRef.current.add(cleanJobId)
-      removeAvaGeneratorActiveJobsMatching({ jobIds: [cleanJobId], projectId: routeProjectId })
+      submitGenerationInFlightRef.current = false
+      if (cleanJobId) completedGeneratorJobsRef.current.add(cleanJobId)
+      removeAvaGeneratorActiveJobsMatching({ jobIds: cleanJobId ? [cleanJobId] : [], projectId: routeProjectId })
       setJob(null)
       setBusy(false)
-      const queueDeleted = Boolean(data?.comfy?.queueDeleteOk)
-      const interrupted = Boolean(data?.comfy?.interruptOk)
-      const status = queueDeleted || interrupted
-        ? 'отменено на сервере / очередь Comfy очищена'
-        : 'job помечен отменённым, но Comfy не подтвердил остановку'
-      setStatusText(status)
-      saveGeneratorSnapshot('job_canceled', { job: null, statusText: status, canceledJobId: cleanJobId, cancelResult: data })
-    } catch (exc) {
-      const msg = String(exc?.message || exc)
-      setError(`Отмена не подтверждена сервером: ${msg}`)
-      setStatusText('отмена не подтверждена — Comfy может продолжать генерацию')
-    } finally {
+      setRawResponse(cancelDataV203L || { ok: false, status: 'local_cleared_v203l', error: cancelErrorV203L })
+      const statusV203L = cancelErrorV203L
+        ? 'локальный статус сброшен, сервер отмену не подтвердил'
+        : 'отменено / локальный статус сброшен'
+      if (cancelErrorV203L) setError(`Серверная отмена не подтверждена: ${cancelErrorV203L}`)
+      setStatusText(statusV203L)
+      saveGeneratorSnapshot('job_canceled_local_clear_v203l', { job: null, statusText: statusV203L, canceledJobId: cleanJobId, cancelResult: cancelDataV203L, cancelError: cancelErrorV203L })
       cancelGenerationInFlightRef.current = false
       setGeneratorCanceling(false)
+      setCancelGenerationBusy(false)
     }
   }, [job, rawResponse, routeProjectId, saveGeneratorSnapshot])
 
@@ -4110,7 +4289,7 @@ export default function StandaloneGeneratorPage() {
   const durationMax = routeInfo.maxDuration || 1
 
   const generatorActionLocked = Boolean(busy || generatorJobLooksActive(job) || submitGenerationInFlightRef.current)
-  const generatorCanCancel = Boolean(generatorActionLocked && (job?.jobId || job?.job_id || rawResponse?.jobId || rawResponse?.job_id || rawResponse?.id))
+  const generatorCanCancel = Boolean(generatorActionLocked)
 
   return (
     <main className="avaGeneratorPage">
@@ -4304,9 +4483,9 @@ export default function StandaloneGeneratorPage() {
                 {frameExtractBusy ? '⏳ Кадр...' : '↳ Кадр из ленты'}
               </button>
             ) : null}
-            {(busy || job?.jobId || job?.job_id) ? (
+            {generatorCanCancel ? (
               <button className="avaGeneratorSecondary" onClick={cancelGeneration} disabled={cancelGenerationBusy}>
-                {cancelGenerationBusy ? 'Отменяю...' : 'Отменить генерацию'}
+                {cancelGenerationBusy ? 'Отменяю...' : 'Отменить / сбросить статус'}
               </button>
             ) : null}
             <button className="avaGeneratorGhost" onClick={clearDraft}>Очистить</button>
