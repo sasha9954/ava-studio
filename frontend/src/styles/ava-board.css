@@ -7802,3 +7802,185 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* V204D1: hide old Board MMAudio UI.
+   MMAudio is now scene-based in Audio Studio only. */
+.avaBoardMmaudioPanel,
+.avaBoardMmaudioToggle,
+.avaBoardMmaudioBox,
+.avaBoardMmaudioActions,
+.avaBoardMmaudioError {
+  display: none !important;
+}
+
+
+/* V204D2: custom Board to Audio Studio modal */
+.avaBoardAudioStudioConfirmOverlayV204D2 {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 45% 20%, rgba(139, 92, 246, .22), transparent 34%),
+    radial-gradient(circle at 65% 72%, rgba(34, 211, 238, .13), transparent 32%),
+    rgba(2, 6, 18, .76);
+  backdrop-filter: blur(12px);
+}
+
+.avaBoardAudioStudioConfirmCardV204D2 {
+  position: relative;
+  width: min(620px, calc(100vw - 34px));
+  overflow: hidden;
+  border-radius: 28px;
+  padding: 26px;
+  border: 1px solid rgba(139, 92, 246, .36);
+  background:
+    linear-gradient(145deg, rgba(14, 22, 48, .98), rgba(7, 11, 26, .98)),
+    radial-gradient(circle at 0% 0%, rgba(139, 92, 246, .22), transparent 38%);
+  color: #eff6ff;
+  box-shadow: 0 34px 110px rgba(0, 0, 0, .58), inset 0 1px 0 rgba(255, 255, 255, .07);
+}
+
+.avaBoardAudioStudioConfirmGlowV204D2 {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgba(124, 245, 255, .11), transparent);
+  transform: translateX(-100%);
+}
+
+.avaBoardAudioStudioConfirmCardV204D2.isBusy .avaBoardAudioStudioConfirmGlowV204D2 {
+  animation: avaBoardAudioStudioSweepV204D2 1.35s ease-in-out infinite;
+}
+
+.avaBoardAudioStudioConfirmIconV204D2 {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  border: 1px solid rgba(125, 249, 255, .28);
+  background:
+    radial-gradient(circle at 35% 25%, rgba(125, 249, 255, .22), transparent 48%),
+    rgba(139, 92, 246, .13);
+  color: #bdfcff;
+  box-shadow: 0 18px 42px rgba(34, 211, 238, .14);
+}
+
+.avaBoardAudioStudioConfirmTextV204D2 h3 {
+  margin: 14px 0 8px;
+  font-size: 27px;
+  line-height: 1.05;
+  font-weight: 950;
+  letter-spacing: -.03em;
+}
+
+.avaBoardAudioStudioConfirmTextV204D2 p {
+  margin: 0;
+  color: rgba(225, 236, 255, .8);
+  line-height: 1.5;
+}
+
+.avaBoardAudioStudioConfirmTextV204D2 small {
+  display: block;
+  margin-top: 12px;
+  color: rgba(183, 203, 232, .72);
+}
+
+.avaBoardAudioStudioConfirmTextV204D2 b {
+  display: block;
+  margin-top: 12px;
+  color: #ffd1d1;
+  font-size: 13px;
+}
+
+.avaBoardAudioStudioConfirmStepsV204D2 {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.avaBoardAudioStudioConfirmStepsV204D2 span {
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  background: rgba(255, 255, 255, .045);
+  color: rgba(213, 227, 248, .75);
+  font-size: 12px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.avaBoardAudioStudioConfirmStepsV204D2 span.isActive {
+  border-color: rgba(34, 211, 238, .36);
+  background: rgba(34, 211, 238, .1);
+  color: #dffcff;
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, .08) inset;
+}
+
+.avaBoardAudioStudioConfirmActionsV204D2 {
+  margin-top: 22px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.avaBoardAudioStudioConfirmActionsV204D2 button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: rgba(255, 255, 255, .06);
+  color: #eff7ff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.avaBoardAudioStudioConfirmActionsV204D2 button.isPrimary {
+  border-color: rgba(34, 211, 238, .36);
+  background: linear-gradient(135deg, rgba(34, 211, 238, .72), rgba(139, 92, 246, .6));
+  color: #ffffff;
+  box-shadow: 0 16px 38px rgba(34, 211, 238, .15);
+}
+
+.avaBoardAudioStudioConfirmActionsV204D2 button:disabled {
+  opacity: .62;
+  cursor: wait;
+}
+
+.avaBoardAudioStudioSpinnerV204D2 {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, .32);
+  border-top-color: #ffffff;
+  animation: avaBoardAudioStudioSpinV204D2 .78s linear infinite;
+}
+
+@keyframes avaBoardAudioStudioSpinV204D2 {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes avaBoardAudioStudioSweepV204D2 {
+  0% { transform: translateX(-100%); opacity: .25; }
+  45% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: .25; }
+}
+
+@media (max-width: 720px) {
+  .avaBoardAudioStudioConfirmStepsV204D2 {
+    grid-template-columns: 1fr;
+  }
+}

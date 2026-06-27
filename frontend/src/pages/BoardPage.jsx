@@ -1,3 +1,5 @@
+/* AVA_BOARD_AUDIO_STUDIO_CONFIRM_MODAL_V204D2: custom Board -> Audio Studio confirm/progress modal. */
+/* AVA_BOARD_AUDIO_STUDIO_CONFIRM_PARSE_V204D1A: safe confirm string for Board -> Audio Studio. */
 /* AVA_BOARD_TRIM_COMPACT_LAYOUT_V201E: compact media actions + trim before duration slider. */
 /* AVA_BOARD_TRIM_COMPACT_TIMEPICKER_V201D: compact video player time picker for Assembly trim IN/OUT. */
 /* AVA_BOARD_IMAGE_CACHE_AUTOSLICE_V200W: clear cached image spinner and auto-cut audio slice before manual ia2v start. */
@@ -91,6 +93,7 @@ const AVA_BOARD_SEEN_COMPLETED_JOBS_KEY = 'ava:board:seen-completed-jobs:v1'
 const AVA_OPEN_BOARD_SCENE_KEY = 'ava:open-board-scene:v1'
 const AVA_BOARD_STALE_BATCH_UNBLOCK_VERSION = 'v150a' // AVA_BOARD_STALE_BATCH_UNBLOCK_V150A
 const AVA_TIMING_TO_BOARD_CONSUMED_PREFIX_V146 = 'ava:timing-to-board-consumed:v146:'
+const BOARD_MMAUDIO_UI_DISABLED_V204D1 = true // V204D1: Board MMAudio UI moved to Audio Studio
 
 function readAvaGlobalJobs() {
   try {
@@ -6295,6 +6298,9 @@ function sceneVideoActionState(scene) {
   const [badRegenRuntimeStatus, setBadRegenRuntimeStatus] = useState({})
   const [mmaudioOpen, setMmaudioOpen] = useState(false)
   const [audioStudioOpeningV204B, setAudioStudioOpeningV204B] = useState(false)
+  const [audioStudioConfirmOpenV204D2, setAudioStudioConfirmOpenV204D2] = useState(false)
+  const [audioStudioConfirmBusyV204D2, setAudioStudioConfirmBusyV204D2] = useState(false)
+  const [audioStudioConfirmErrorV204D2, setAudioStudioConfirmErrorV204D2] = useState('')
   const audioRef = useRef(null)
   const manualLipSyncAudioInputRefV129A = useRef(null)
   const importRef = useRef(null)
@@ -8199,21 +8205,20 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
 
 
 
-  async function openAudioStudioFromBoardV204A(event) {
+  function openAudioStudioFromBoardV204A(event) {
     stopBoardActionEvent(event)
-    if (audioStudioOpeningV204B) return
-    const ok = window.confirm(
-      'Перейти из Доски в Audio Studio?
+    if (audioStudioOpeningV204B || audioStudioConfirmBusyV204D2) return
+    setAudioStudioConfirmErrorV204D2('')
+    setAudioStudioConfirmOpenV204D2(true)
+    setStatus('Подтверди переход в Audio Studio.')
+  }
 
-Это очистит текущие данные Audio Studio для этого проекта: старые MMAudio-варианты, применённые варианты и импортированные prompt-поля.
-
-После перехода Audio Studio будет заново собрана из текущих сцен Доски.'
-    )
-    if (!ok) {
-      setStatus('Переход в Audio Studio отменён')
-      return
-    }
+  async function confirmOpenAudioStudioFromBoardV204D2(event) {
+    stopBoardActionEvent(event)
+    if (audioStudioOpeningV204B || audioStudioConfirmBusyV204D2) return
+    setAudioStudioConfirmBusyV204D2(true)
     setAudioStudioOpeningV204B(true)
+    setAudioStudioConfirmErrorV204D2('')
     setStatus('Открываю Audio Studio… очищаю старую Audio Studio и переношу сцены Доски')
     try {
       const currentBoard = {
@@ -8230,7 +8235,7 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
         fromPath,
         toPath,
         projectId: projectId || '',
-        source: 'board_to_audio_studio_reset_v204b5',
+        source: 'board_to_audio_studio_reset_v204d2',
       })
       rememberWorkflowEntry(entry)
       navigate(toPath, {
@@ -8244,8 +8249,12 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
         },
       })
     } catch (error) {
+      const message = `Не удалось открыть Audio Studio: ${error?.message || error}`
       setAudioStudioOpeningV204B(false)
-      setStatus(`Не удалось открыть Audio Studio: ${error?.message || error}`)
+      setAudioStudioConfirmErrorV204D2(message)
+      setStatus(message)
+    } finally {
+      setAudioStudioConfirmBusyV204D2(false)
     }
   }
 
@@ -11391,6 +11400,17 @@ async function markVideoPlanned(sceneOverride = null) {
 
   async function startMmaudioForSelectedScene() {
     if (!selectedScene) return
+    if (BOARD_MMAUDIO_UI_DISABLED_V204D1) {
+      setStatus('MMAudio в Доске отключён. Используй Audio Studio: В Audio Studio → Генерить → Применить.')
+      pushBoardToast({
+        type: 'info',
+        title: 'MMAudio перенесён',
+        message: 'Генерация звука теперь только в Audio Studio, чтобы не путать варианты и монтажку.',
+        sceneId: selectedScene.id,
+        dedupeKey: `board:mmaudio_disabled_v204d1:${selectedScene.id}`,
+      })
+      return
+    }
     const sourceVideoApiPath = selectedScene.video_api_path || selectedScene.videoApiPath || ''
     const sourceVideo = sourceVideoApiPath ? '' : (selectedScene.video_url || selectedScene.videoUrl || '')
     // AVA_BOARD_MMAUDIO_RAW_PREFLIGHT_V203N:
@@ -11814,7 +11834,7 @@ async function importTimingJson(event) {
                 </>
               ) : (
                 <>
-                  <p>Текущая монтажка будет заменена данными из Доски: сцены, цвета блоков, тайминги, готовые видео, MMAudio и исходное audio из Timing.</p>
+                  <p>Текущая монтажка будет заменена данными из Доски: сцены, цвета блоков, тайминги, готовые видео и исходное audio из Timing.</p>
                   {needsVideoReviewScenes.length ? <span>Есть видео со статусом “посмотри”: {needsVideoReviewScenes.map((scene) => scene.id || scene.scene_id).join(', ')}. Можно перейти, если они уже устраивают.</span> : <span>Если хочешь сохранить старую сборку из Генератора — нажми “Отмена”.</span>}
                 </>
               )}
@@ -11829,6 +11849,49 @@ async function importTimingJson(event) {
           </div>
         </div>
       )}
+
+      {audioStudioConfirmOpenV204D2 ? (
+        <div
+          className="avaBoardAudioStudioConfirmOverlayV204D2"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Переход в Audio Studio"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !audioStudioConfirmBusyV204D2) setAudioStudioConfirmOpenV204D2(false)
+          }}
+        >
+          <div className={`avaBoardAudioStudioConfirmCardV204D2 ${audioStudioConfirmBusyV204D2 ? 'isBusy' : ''}`} onMouseDown={(event) => event.stopPropagation()}>
+            <div className="avaBoardAudioStudioConfirmGlowV204D2" />
+            <div className="avaBoardAudioStudioConfirmIconV204D2">
+              {audioStudioConfirmBusyV204D2 ? <span className="avaBoardAudioStudioSpinnerV204D2" /> : <AudioLines size={26} />}
+            </div>
+            <div className="avaBoardAudioStudioConfirmTextV204D2">
+              <p className="avaEyebrow">Ava Audio Studio</p>
+              <h3>{audioStudioConfirmBusyV204D2 ? 'Переносим сцены в Audio Studio…' : 'Перейти из Доски в Audio Studio?'}</h3>
+              <p>
+                Это очистит текущие данные Audio Studio для этого проекта: старые MMAudio-варианты,
+                применённые варианты и импортированные prompt-поля.
+              </p>
+              <div className="avaBoardAudioStudioConfirmStepsV204D2">
+                <span className={audioStudioConfirmBusyV204D2 ? 'isActive' : ''}>1 · сохраняем Доску</span>
+                <span className={audioStudioConfirmBusyV204D2 ? 'isActive' : ''}>2 · очищаем Audio Studio</span>
+                <span className={audioStudioConfirmBusyV204D2 ? 'isActive' : ''}>3 · собираем сцены заново</span>
+              </div>
+              <small>Сцен к переносу: {boardScenes.length}. Доска останется источником, Audio Studio пересоберётся из текущих карточек.</small>
+              {audioStudioConfirmErrorV204D2 ? <b>{audioStudioConfirmErrorV204D2}</b> : null}
+            </div>
+            <div className="avaBoardAudioStudioConfirmActionsV204D2">
+              <button type="button" onClick={() => setAudioStudioConfirmOpenV204D2(false)} disabled={audioStudioConfirmBusyV204D2}>
+                Отмена
+              </button>
+              <button type="button" className="isPrimary" onClick={confirmOpenAudioStudioFromBoardV204D2} disabled={audioStudioConfirmBusyV204D2 || !boardScenes.length}>
+                {audioStudioConfirmBusyV204D2 ? <span className="avaBoardAudioStudioSpinnerV204D2" /> : <AudioLines size={15} />}
+                {audioStudioConfirmBusyV204D2 ? 'Открываю…' : 'Да, открыть Audio Studio'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <section className="avaBoardHeader">
         <div>
@@ -11871,7 +11934,7 @@ async function importTimingJson(event) {
             onClick={openAudioStudioFromBoardV204A}
             disabled={audioStudioOpeningV204B}
             aria-busy={audioStudioOpeningV204B}
-            title="Перенести сцены Доски в Audio Studio для MMAudio по сценам"
+            title="Перенести сцены Доски в Audio Studio для звука по сценам"
           >
             {audioStudioOpeningV204B ? <span className="avaBoardAudioStudioSpinnerV204B" aria-hidden="true" /> : <AudioLines size={15} />}
             {audioStudioOpeningV204B ? 'Открываю…' : 'В Audio Studio'}
@@ -12818,7 +12881,7 @@ async function importTimingJson(event) {
               </div>
 
                 {/* Stage 76 — MMAudio prompt drawer */}
-                {['i2v', 'first_last'].includes(selectedScene.route) && (() => {
+                {!BOARD_MMAUDIO_UI_DISABLED_V204D1 && ['i2v', 'first_last'].includes(selectedScene.route) && (() => {
                   const mmaudioStatus = String(selectedScene.mmaudio_status || selectedScene.mmaudioStatus || '').toLowerCase()
                   const mmaudioBusy = ['starting', 'queued', 'preparing', 'running'].includes(mmaudioStatus)
                   const mmaudioReady = mmaudioStatus === 'ready' || Boolean(selectedScene.mmaudio_video_url || selectedScene.mmaudioVideoUrl)
