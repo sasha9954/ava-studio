@@ -22,7 +22,7 @@ import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, normalizeAssetFileUrl, 
 import './AudioStudioPage.css'
 
 const STAGE = 'audio_studio'
-const VERSION = 'V204B9'
+const VERSION = 'V204C3'
 const DEFAULT_NEGATIVE = 'музыка, речь, голоса, гул, hiss, шум'
 
 function cleanId(value = '') {
@@ -229,6 +229,148 @@ function sceneOriginalSourceVideoV204B7(scene = {}) {
 function sourceVideoForMmaudioV204B7(scene = {}) {
   const original = sceneOriginalSourceVideoV204B7(scene)
   return firstText(original.apiPath, original.url, scene.sourceVideo?.apiPath, scene.sourceVideo?.url)
+}
+
+
+
+function variantRawMediaRefV204C3(variant = {}) {
+  return mediaRefObjectV204B7({
+    apiPath: firstText(
+      variant.rawApiPath,
+      variant.raw_api_path,
+      variant.originalApiPath,
+      variant.original_api_path,
+      variant.sourceApiPath,
+      variant.source_api_path,
+      variant.apiPath,
+      variant.api_path,
+    ),
+    url: firstText(
+      variant.rawUrl,
+      variant.raw_url,
+      variant.originalUrl,
+      variant.original_url,
+      variant.sourceUrl,
+      variant.source_url,
+      variant.url,
+      variant.videoUrl,
+      variant.video_url,
+    ),
+    assetId: firstText(
+      variant.rawAssetId,
+      variant.raw_asset_id,
+      variant.originalAssetId,
+      variant.original_asset_id,
+      variant.assetId,
+      variant.asset_id,
+    ),
+    name: firstText(variant.name, variant.videoName, variant.video_name, 'mmaudio_raw.mp4'),
+  }, 'mmaudio_raw.mp4')
+}
+
+function variantAppliedMediaRefV204C3(variant = {}) {
+  const appliedVideo = variant.appliedVideo || variant.applied_video || null
+  return mediaRefObjectV204B7({
+    apiPath: firstText(
+      appliedVideo?.apiPath,
+      appliedVideo?.api_path,
+      variant.appliedApiPath,
+      variant.applied_api_path,
+      variant.bakedApiPath,
+      variant.baked_api_path,
+      variant.volumeBakedApiPath,
+      variant.volume_baked_api_path,
+      variant.apiPath,
+      variant.api_path,
+    ),
+    url: firstText(
+      appliedVideo?.url,
+      variant.appliedUrl,
+      variant.applied_url,
+      variant.bakedUrl,
+      variant.baked_url,
+      variant.volumeBakedUrl,
+      variant.volume_baked_url,
+      variant.url,
+      variant.videoUrl,
+      variant.video_url,
+    ),
+    assetId: firstText(
+      appliedVideo?.assetId,
+      appliedVideo?.asset_id,
+      variant.appliedAssetId,
+      variant.applied_asset_id,
+      variant.bakedAssetId,
+      variant.baked_asset_id,
+      variant.assetId,
+      variant.asset_id,
+    ),
+    name: firstText(appliedVideo?.name, variant.appliedName, variant.name, 'mmaudio_applied.mp4'),
+  }, 'mmaudio_applied.mp4')
+}
+
+async function bakeMmaudioVariantVolumeV204C3({ variant = {}, scene = {}, volume = 100, projectId = '' } = {}) {
+  const rawMedia = variantRawMediaRefV204C3(variant)
+  const percent = Math.max(0, Math.min(150, Number(volume) || 0))
+  if (!rawMedia.apiPath && !rawMedia.url && !rawMedia.assetId) {
+    throw new Error('У выбранного MMAudio-варианта нет raw video asset для применения громкости.')
+  }
+
+  if (Math.abs(percent - 100) < 0.01) {
+    return {
+      ...rawMedia,
+      volumeBaked: false,
+      volumeBakedPercent: 100,
+      rawUrl: rawMedia.url || '',
+      rawApiPath: rawMedia.apiPath || '',
+      rawAssetId: rawMedia.assetId || '',
+    }
+  }
+
+  const data = await apiRequest('/clip/mmaudio/apply-volume', {
+    method: 'POST',
+    body: JSON.stringify({
+      source: 'audio_studio_apply_volume_v204c3',
+      project_id: projectId || '',
+      projectId: projectId || '',
+      scene_id: firstText(scene.id, scene.sceneId, scene.scene_id),
+      sceneId: firstText(scene.id, scene.sceneId, scene.scene_id),
+      volume_percent: percent,
+      volumePercent: percent,
+      video_api_path: rawMedia.apiPath || '',
+      videoApiPath: rawMedia.apiPath || '',
+      video_url: rawMedia.apiPath ? '' : (rawMedia.url || ''),
+      videoUrl: rawMedia.apiPath ? '' : (rawMedia.url || ''),
+      asset_id: rawMedia.assetId || '',
+      assetId: rawMedia.assetId || '',
+    }),
+  })
+
+  const ref = normalizeRef(firstText(
+    data.video_api_path,
+    data.videoApiPath,
+    data.asset_api_path,
+    data.assetApiPath,
+    data.video_url,
+    data.videoUrl,
+    data.url,
+  ))
+
+  if (!ref.apiPath && !ref.url) {
+    throw new Error('Backend не вернул volume-adjusted video asset.')
+  }
+
+  return {
+    url: ref.url,
+    apiPath: ref.apiPath,
+    assetId: ref.assetId || firstText(data.asset_id, data.assetId),
+    name: firstText(data.video_name, data.videoName, data.name, `mmaudio_volume_${percent}.mp4`),
+    volumeBaked: true,
+    volumeBakedPercent: percent,
+    rawUrl: rawMedia.url || '',
+    rawApiPath: rawMedia.apiPath || '',
+    rawAssetId: rawMedia.assetId || '',
+  }
 }
 
 
@@ -1289,6 +1431,9 @@ export default function AudioStudioPage() {
           url: ref.url,
           apiPath: ref.apiPath,
           assetId: ref.assetId,
+          rawUrl: ref.url,
+          rawApiPath: ref.apiPath,
+          rawAssetId: ref.assetId,
           prompt: startedVariantSeed.prompt || '',
           negativePrompt: startedVariantSeed.negativePrompt || '',
           volume: startedVariantSeed.volume ?? 100,
@@ -1439,7 +1584,8 @@ export default function AudioStudioPage() {
   }, [patchScene, pollMmaudioJob, projectId, selectedScene])
 
   const syncAppliedToBoard = useCallback(async (scene, variant) => {
-    const ref = normalizeRef(firstText(variant.apiPath, variant.url))
+    const appliedMediaV204C3 = variantAppliedMediaRefV204C3(variant)
+    const ref = normalizeRef(firstText(appliedMediaV204C3.apiPath, appliedMediaV204C3.url, variant.apiPath, variant.url))
     if (!ref.apiPath && !ref.url) return
     try {
       const boardData = workspaceMode ? await loadWorkspaceStage('board') : await loadStage(projectId, 'board')
@@ -1537,10 +1683,30 @@ export default function AudioStudioPage() {
     setError('')
     setStatus('Применяю MMAudio вариант…')
     try {
-      const volume = Number(selectedScene.mmaudioVolume ?? selectedVariant.volume ?? 100)
-      const appliedMedia = variantMediaRefV204B7({ ...selectedVariant, ...selectedRef })
+      const volume = Math.max(0, Math.min(150, Number(selectedScene.mmaudioVolume ?? selectedVariant.volume ?? 100) || 0))
+      setStatus(volume === 100 ? 'Применяю MMAudio вариант…' : `Применяю MMAudio вариант и запекаю громкость ${volume}%…`)
+      const rawMedia = variantRawMediaRefV204C3({ ...selectedVariant, ...selectedRef })
+      const appliedMedia = await bakeMmaudioVariantVolumeV204C3({
+        variant: { ...selectedVariant, ...selectedRef },
+        scene: selectedScene,
+        volume,
+        projectId,
+      })
       const originalMedia = sceneOriginalSourceVideoV204B7(selectedScene)
-      const nextVariant = { ...selectedVariant, ...appliedMedia, volume, applied: true }
+      const nextVariant = {
+        ...selectedVariant,
+        rawUrl: firstText(selectedVariant.rawUrl, rawMedia.url),
+        rawApiPath: firstText(selectedVariant.rawApiPath, rawMedia.apiPath),
+        rawAssetId: firstText(selectedVariant.rawAssetId, rawMedia.assetId),
+        appliedVideo: appliedMedia,
+        appliedUrl: appliedMedia.url || appliedMedia.apiPath || '',
+        appliedApiPath: appliedMedia.apiPath || '',
+        appliedAssetId: appliedMedia.assetId || '',
+        volume,
+        volumeBaked: Boolean(appliedMedia.volumeBaked),
+        volumeBakedPercent: appliedMedia.volumeBakedPercent ?? volume,
+        applied: true,
+      }
 
       const next = sanitizeAudioSnapshot({
         ...snapshotRef.current,
@@ -1579,13 +1745,13 @@ export default function AudioStudioPage() {
       // Save Audio Studio first so F5 keeps the applied card and the updated left/source preview.
       await saveSnapshot(next, 'apply_variant_visible_v204b7')
       await syncAppliedToBoard({ ...selectedScene, sourceVideo: appliedMedia, originalSourceVideo: originalMedia }, nextVariant)
-      setStatus('MMAudio вариант применён: левое видео обновлено, Доска записана для монтажки')
+      setStatus(volume === 100 ? 'MMAudio вариант применён: левое видео обновлено, Доска записана для монтажки' : `MMAudio вариант применён: громкость ${volume}% запечена в видео, Доска записана для монтажки`)
     } catch (err) {
       setError(`Не удалось применить вариант: ${err?.message || err}`)
     } finally {
       setApplyingVariantId('')
     }
-  }, [saveSnapshot, selectedScene, selectedVariant, syncAppliedToBoard])
+  }, [projectId, saveSnapshot, selectedScene, selectedVariant, syncAppliedToBoard])
 
   const deleteVariant = useCallback(async (variantId) => {
     if (!selectedScene || !variantId) return
@@ -1697,7 +1863,22 @@ export default function AudioStudioPage() {
           <button type="button" className="isImportV204B2" onClick={() => importInputRefV204B2.current?.click()}><UploadCloud size={16} /> Импорт</button>
           <button type="button" className="isExportV204B2" onClick={exportAudioStudioJsonV204B2}><Download size={16} /> Экспорт</button>
           <button type="button" className="isDangerV204B5" onClick={clearAllAudioStudioV204B5}><Trash2 size={16} /> Очистить всё</button>
-          <button type="button" className="isPrimary" onClick={() => navigate(assemblyPath)}><Film size={16} /> В монтажку</button>
+          <button
+              type="button"
+              className="isPrimary"
+              onClick={() => navigate(assemblyPath, {
+                state: {
+                  source: 'audio_studio_to_assembly_v204c4',
+                  fromAudioStudio: true,
+                  forceBoard: true,
+                  forceReplace: true,
+                  requestedAt: nowIso(),
+                },
+              })}
+              title="Перейти в монтажку и принудительно подтянуть свежую Доску с применёнными MMAudio-видео"
+            >
+              <Film size={16} /> В монтажку
+            </button>
         </div>
       </header>
 

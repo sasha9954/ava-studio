@@ -1171,7 +1171,8 @@ export default function BoardAssemblyPage() {
     setWatermarkPosition(watermark.position ?? 'top_right')
     setWatermarkOpacity(clampNumber(watermark.opacityPercent ?? watermark.opacity ?? 35, 0, 100, 35))
     setWatermarkSize(clampNumber(watermark.size, 10, 80, 28))
-    setWatermarkMotion(watermark.motion || 'corners')
+    const restoredWatermarkMotion = String(watermark.motion || 'corners')
+    setWatermarkMotion(['static', 'corners', 'slow_orbit'].includes(restoredWatermarkMotion) ? restoredWatermarkMotion : 'corners')
     setFinalVideoUrl(assemblyFinalUrlFromSnapshot(raw))
     setFinalDirty(Boolean(raw.finalDirty))
     const nextJob = raw.assemblyJob || raw.job || null
@@ -1422,7 +1423,28 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       String(locationEntryV200N?.from || '').trim() === 'board'
     )
     const fromCurrentBoardNavigationV200N = rawFromCurrentBoardNavigationV200N && !isBoardAssemblyWorkflowEntryConsumedV200Z(locationEntryV200N)
-    const shouldImportBoard = forceBoard || fromCurrentBoardNavigationV200N
+    // V204C4: Audio Studio -> Assembly must import the current Board, not restore an old montage job.
+    const locationForceBoardV204C4 = Boolean(
+      location?.state?.forceBoard ||
+      location?.state?.forceReplace ||
+      location?.state?.fromAudioStudio ||
+      String(location?.state?.source || '').includes('audio_studio_to_assembly')
+    )
+    const audioStudioForceTokenV204C4 = [
+      'audio_to_assembly_v204c4',
+      String(projectId || 'workspace'),
+      String(location?.state?.requestedAt || ''),
+      String(location?.state?.source || ''),
+    ].join(':')
+    let audioStudioForceConsumedV204C4 = false
+    try {
+      audioStudioForceConsumedV204C4 = Boolean(
+        audioStudioForceTokenV204C4 &&
+        window.sessionStorage.getItem(`ava:assembly-force-board:${audioStudioForceTokenV204C4}`) === '1'
+      )
+    } catch {}
+    const fromAudioStudioForceV204C4 = locationForceBoardV204C4 && !audioStudioForceConsumedV204C4
+    const shouldImportBoard = forceBoard || fromCurrentBoardNavigationV200N || fromAudioStudioForceV204C4
     const localUiSettingsV197F = readAssemblyLocalUiSettingsV197F(settingsStorageKey)
 
     try {
@@ -1477,10 +1499,11 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           }
           const finalUrl = assemblyFinalUrlFromSnapshot(assemblyData)
           const restoredFinalDirtyV200Z = Boolean(assemblyData.finalDirty ?? false)
+          const restoredJobV204C4 = finalUrl ? null : (assemblyData.assemblyJob || assemblyData.job || null)
           setFinalVideoUrl(finalUrl)
           setFinalDirty(restoredFinalDirtyV200Z)
-          setAssemblyJob(assemblyData.assemblyJob || assemblyData.job || null)
-          setAssemblyRunning(Boolean((assemblyData.assemblyJob || assemblyData.job)?.jobId || (assemblyData.assemblyJob || assemblyData.job)?.job_id) && !finalUrl)
+          setAssemblyJob(restoredJobV204C4)
+          setAssemblyRunning(Boolean(restoredJobV204C4?.jobId || restoredJobV204C4?.job_id) && !finalUrl)
           console.log('[BOARD ASSEMBLY FINAL RESTORED V200Z]', { finalUrl, finalDirty: restoredFinalDirtyV200Z, source: assemblyData.source || '' })
           setStatus(`Монтаж восстановлен из project snapshot: сцен ${assemblyScenes.length || assemblyItems.length}`)
           setLoading(false)
@@ -1517,6 +1540,12 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       setWatermarkMotion('corners')
       await persistBoardImportToAssemblyV11(nextBoard, shouldImportBoard ? 'board_to_assembly_imported_v11' : 'board_fallback_imported_v11')
       if (fromCurrentBoardNavigationV200N) markBoardAssemblyWorkflowEntryConsumedV200Z(locationEntryV200N)
+      if (fromAudioStudioForceV204C4) {
+        try {
+          window.sessionStorage.setItem(`ava:assembly-force-board:${audioStudioForceTokenV204C4}`, '1')
+          window.history.replaceState({ ...(window.history.state || {}), usr: { source: 'assembly_loaded_from_audio_studio_v204c4' } }, '', location.pathname)
+        } catch {}
+      }
       clearWorkflowEntry('board_assembly')
       setStatus(nextBoard.scenes?.length ? `Доска: сцен ${nextBoard.scenes.length}` : 'Board пустой')
     } catch (error) {
@@ -1874,8 +1903,16 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           return
         }
 
+        if (['done', 'ready', 'complete', 'completed', 'success', 'succeeded', 'finished'].includes(String(nextStatus).toLowerCase())) {
+          setAssemblyRunning(false)
+          setAssemblyJob(null)
+          setStatus(`Assembly job завершён без нового video url: ${nextStatus}. Нажми “Собрать preview”, чтобы запустить свежую сборку.`)
+          return
+        }
+
         if (['error', 'failed'].includes(String(nextStatus).toLowerCase())) {
           setAssemblyRunning(false)
+          setAssemblyJob(null)
           setStatus(`Ошибка сборки: ${data?.error || data?.detail || nextStatus}`)
           return
         }
@@ -1884,6 +1921,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           window.setTimeout(tick, 2500)
         } else {
           setAssemblyRunning(false)
+          setAssemblyJob(null)
           setStatus('Сборка слишком долго не отвечает: poll_timeout')
         }
       } catch (error) {
@@ -1891,6 +1929,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           window.setTimeout(tick, 4000)
         } else {
           setAssemblyRunning(false)
+          setAssemblyJob(null)
           setStatus(`Ошибка проверки сборки: ${error?.message || 'assembly_poll_failed'}`)
         }
       }
@@ -2058,7 +2097,14 @@ function clearBoardAssemblyWorkflowEntryV200O() {
                 loadBoardSnapshot({ forceBoard: true })
               }}
             ><RefreshCcw size={15} /> Обновить из Board</button>
-          <button type="button" disabled><Wand2 size={15} /> Собрать preview</button>
+          <button
+              type="button"
+              onClick={startAssembly}
+              disabled={assemblyRunning || !stats.canAssemble}
+              title={assemblyRunning ? 'Сборка уже идёт' : stats.canAssemble ? 'Собрать новый preview из текущих сцен' : 'Нет готовых сцен для сборки'}
+            >
+              <Wand2 size={15} /> {assemblyRunning ? 'Собираем…' : 'Собрать preview'}
+            </button>
         </div>
       </section>
 
@@ -2453,13 +2499,32 @@ function clearBoardAssemblyWorkflowEntryV200O() {
               </div>
             </div>
 
-                <label className="avaAssemblyField">
+                <div className="avaAssemblyField">
                   <span>Движение</span>
-                  <select value={watermarkMotion} onChange={(event) => { setWatermarkEnabled(true); setWatermarkMotion(event.target.value) }}>
-                    <option value="static">Статично</option>
-                    <option value="corners">Блуждать по углам</option>
-                  </select>
-                </label>
+                  <div className="avaAssemblyMotionPresetGrid">
+                    <button
+                      type="button"
+                      className={`avaAssemblyMotionPresetButton ${watermarkMotion === 'static' ? 'isActive' : ''}`}
+                      onClick={() => { setWatermarkEnabled(true); setWatermarkMotion('static') }}
+                    >
+                      Статично
+                    </button>
+                    <button
+                      type="button"
+                      className={`avaAssemblyMotionPresetButton ${watermarkMotion === 'slow_orbit' ? 'isActive' : ''}`}
+                      onClick={() => { setWatermarkEnabled(true); setWatermarkMotion('slow_orbit') }}
+                    >
+                      Slow круг
+                    </button>
+                    <button
+                      type="button"
+                      className={`avaAssemblyMotionPresetButton ${watermarkMotion === 'corners' ? 'isActive' : ''}`}
+                      onClick={() => { setWatermarkEnabled(true); setWatermarkMotion('corners') }}
+                    >
+                      По углам
+                    </button>
+                  </div>
+                </div>
 
                 <div className="avaAssemblyWatermarkSliders">
                   <label>
