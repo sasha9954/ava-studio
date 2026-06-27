@@ -484,6 +484,58 @@ function nextMmaudioVariantLabelV204B4(scene = {}) {
   return `v${realMmaudioVariantCountV204B4(scene) + 1}`
 }
 
+function mmaudioVariantOrderNumberV204C5(variant = {}, fallback = 9999) {
+  const direct = Number(variant.variantIndex ?? variant.variant_index ?? variant.attempt ?? variant.number)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const label = cleanId(variant.label)
+  const match = label.match(/^v\s*(\d+)/i)
+  if (match) {
+    const parsed = Number(match[1])
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return fallback
+}
+
+function normalizeMmaudioVariantLabelsV204C5(input = []) {
+  let counter = 0
+  return asArray(input).map((variant) => {
+    if (!isRealMmaudioVariantV204B6(variant)) return variant
+    counter += 1
+    const label = /^v\s*\d+/i.test(cleanId(variant.label)) ? `v${counter}` : (variant.label || `v${counter}`)
+    return {
+      ...variant,
+      label,
+      variantIndex: counter,
+      variant_index: counter,
+      timelineOrder: counter,
+      timeline_order: counter,
+    }
+  })
+}
+
+function sortAudioVariantsV204C5(input = []) {
+  const indexed = asArray(input).map((variant, index) => ({ variant, index }))
+  indexed.sort((left, right) => {
+    const a = left.variant || {}
+    const b = right.variant || {}
+    const aSource = Boolean(a.sourceBaseline || a.kind === 'source_video' || a.fromBoardBaseline)
+    const bSource = Boolean(b.sourceBaseline || b.kind === 'source_video' || b.fromBoardBaseline)
+    if (aSource !== bSource) return aSource ? -1 : 1
+
+    const aReal = isRealMmaudioVariantV204B6(a)
+    const bReal = isRealMmaudioVariantV204B6(b)
+    if (aReal && bReal) {
+      const byNumber = mmaudioVariantOrderNumberV204C5(a, left.index + 1) - mmaudioVariantOrderNumberV204C5(b, right.index + 1)
+      if (byNumber) return byNumber
+      const aTime = Date.parse(a.createdAt || a.created_at || '') || 0
+      const bTime = Date.parse(b.createdAt || b.created_at || '') || 0
+      if (aTime !== bTime) return aTime - bTime
+    }
+    return left.index - right.index
+  })
+  return normalizeMmaudioVariantLabelsV204C5(indexed.map((item) => item.variant))
+}
+
 function sanitizeAudioScene(scene = {}) {
   const sourceVideo = scene.sourceVideo || {}
   const boardSourceVariant = boardSourceVariantForSceneV204B4(scene)
@@ -491,10 +543,10 @@ function sanitizeAudioScene(scene = {}) {
     .filter(isRealMmaudioVariantV204B6)
     .map((variant) => ({ ...variant, sourceBaseline: false, applied: false }))
 
-  const variants = uniqueVariantsV204B4([
+  const variants = sortAudioVariantsV204C5(uniqueVariantsV204B4([
     boardSourceVariant,
     ...realVariants,
-  ].filter(Boolean))
+  ].filter(Boolean)))
 
   const variantIds = new Set(variants.map((variant) => cleanId(variant.id)).filter(Boolean))
   let appliedVariantId = variantIds.has(cleanId(scene.appliedVariantId)) ? cleanId(scene.appliedVariantId) : ''
@@ -1008,7 +1060,7 @@ function applyAudioStudioImportedJson(current = {}, imported = {}, projectId = '
     const hasVolume = importedScene.mmaudioVolume !== undefined && importedScene.mmaudioVolume !== null && importedScene.mmaudioVolume !== ''
     const volume = hasVolume ? Math.max(0, Math.min(150, Number(importedScene.mmaudioVolume) || 0)) : scene.mmaudioVolume
     const importedVariants = Array.isArray(importedScene.variants) ? importedScene.variants : null
-    const variants = replaceVariants && importedVariants ? importedVariants : asArray(scene.variants)
+    const variants = sortAudioVariantsV204C5(replaceVariants && importedVariants ? importedVariants : asArray(scene.variants))
     const nextAppliedId = replaceVariants ? (importedScene.appliedVariantId || scene.appliedVariantId || '') : scene.appliedVariantId
     const nextSelectedId = replaceVariants ? (importedScene.selectedVariantId || nextAppliedId || variants[0]?.id || '') : scene.selectedVariantId
 
@@ -1455,7 +1507,7 @@ export default function AudioStudioPage() {
               jobStatus: '',
               selectedVariantId: variantId,
               mmaudioVolume: variant.volume,
-              variants: uniqueVariantsV204B4([variant, ...asArray(scene.variants)]).slice(0, 48),
+              variants: sortAudioVariantsV204C5(uniqueVariantsV204B4([...asArray(scene.variants), variant])).slice(0, 48),
             }
           }),
         }
@@ -1759,7 +1811,7 @@ export default function AudioStudioPage() {
       ...snapshotRef.current,
       scenes: asArray(snapshotRef.current.scenes).map((scene) => {
         if (cleanId(scene.id) !== cleanId(selectedScene.id)) return scene
-        const variants = asArray(scene.variants).filter((variant) => cleanId(variant.id) !== cleanId(variantId))
+        const variants = sortAudioVariantsV204C5(asArray(scene.variants).filter((variant) => cleanId(variant.id) !== cleanId(variantId)))
         const selectedGone = cleanId(scene.selectedVariantId) === cleanId(variantId)
         const appliedGone = cleanId(scene.appliedVariantId) === cleanId(variantId)
         return {
