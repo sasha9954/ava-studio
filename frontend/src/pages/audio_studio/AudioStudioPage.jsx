@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   AudioLines,
   CheckCircle2,
+  Download,
   Film,
   Headphones,
   Play,
@@ -21,7 +22,7 @@ import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, normalizeAssetFileUrl, 
 import './AudioStudioPage.css'
 
 const STAGE = 'audio_studio'
-const VERSION = 'V204A3'
+const VERSION = 'V204B8'
 const DEFAULT_NEGATIVE = 'музыка, речь, голоса, гул, hiss, шум'
 
 function cleanId(value = '') {
@@ -154,6 +155,24 @@ function sceneColor(scene = {}, index = 0, board = {}) {
 
 function boardSourceVideoRef(scene = {}) {
   return firstText(
+    // Prefer the original video preserved by Audio Studio/MMAudio apply.
+    // Do not accidentally use an already-applied MMAudio result as the next source video.
+    scene.mmaudio_source_video_api_path,
+    scene.mmaudioSourceVideoApiPath,
+    scene.mmaudio_source_video_url,
+    scene.mmaudioSourceVideoUrl,
+    scene.original_video_api_path,
+    scene.originalVideoApiPath,
+    scene.original_video_url,
+    scene.originalVideoUrl,
+    scene.source_video_api_path,
+    scene.sourceVideoApiPath,
+    scene.source_video_url,
+    scene.sourceVideoUrl,
+    scene.input_video_api_path,
+    scene.inputVideoApiPath,
+    scene.input_video_url,
+    scene.inputVideoUrl,
     scene.video_api_path,
     scene.videoApiPath,
     scene.video_url,
@@ -162,12 +181,6 @@ function boardSourceVideoRef(scene = {}) {
     scene.outputVideoApiPath,
     scene.result_video_api_path,
     scene.resultVideoApiPath,
-    scene.mmaudio_source_video_api_path,
-    scene.mmaudioSourceVideoApiPath,
-    scene.mmaudio_video_api_path,
-    scene.mmaudioVideoApiPath,
-    scene.mmaudio_video_url,
-    scene.mmaudioVideoUrl,
   )
 }
 
@@ -178,6 +191,200 @@ function boardAppliedMmaudioRef(scene = {}) {
     scene.mmaudio_video_url,
     scene.mmaudioVideoUrl,
   )
+}
+
+function mediaRefObjectV204B7(refLike = {}, fallbackName = '') {
+  const ref = normalizeRef(firstText(refLike.apiPath, refLike.api_path, refLike.url, refLike.videoUrl, refLike.video_url))
+  return {
+    url: ref.url || firstText(refLike.url, refLike.videoUrl, refLike.video_url, refLike.apiPath, refLike.api_path),
+    apiPath: ref.apiPath || firstText(refLike.apiPath, refLike.api_path),
+    assetId: ref.assetId || firstText(refLike.assetId, refLike.asset_id),
+    name: firstText(refLike.name, refLike.videoName, refLike.video_name, refLike.label, fallbackName),
+  }
+}
+
+function variantMediaRefV204B7(variant = {}) {
+  return mediaRefObjectV204B7(variant, 'mmaudio_applied.mp4')
+}
+
+function sceneOriginalSourceVideoV204B7(scene = {}) {
+  const originalObj = scene.originalSourceVideo || scene.mmaudioOriginalSourceVideo || scene.mmaudioSourceVideo || scene.sourceOriginalVideo || null
+  const original = firstText(
+    originalObj?.apiPath,
+    originalObj?.url,
+    scene.original_source_video_api_path,
+    scene.originalSourceVideoApiPath,
+    scene.original_source_video_url,
+    scene.originalSourceVideoUrl,
+    scene.mmaudio_source_video_api_path,
+    scene.mmaudioSourceVideoApiPath,
+    scene.mmaudio_source_video_url,
+    scene.mmaudioSourceVideoUrl,
+    scene.sourceVideo?.apiPath,
+    scene.sourceVideo?.url,
+  )
+  return mediaRefObjectV204B7(originalObj || { apiPath: original, url: original }, 'original_scene_video')
+}
+
+function sourceVideoForMmaudioV204B7(scene = {}) {
+  const original = sceneOriginalSourceVideoV204B7(scene)
+  return firstText(original.apiPath, original.url, scene.sourceVideo?.apiPath, scene.sourceVideo?.url)
+}
+
+
+
+function mediaCompareKey(refLike = {}) {
+  const ref = normalizeRef(firstText(
+    refLike.apiPath,
+    refLike.api_path,
+    refLike.assetApiPath,
+    refLike.asset_api_path,
+    refLike.url,
+    refLike.videoUrl,
+    refLike.video_url,
+  ))
+  return {
+    assetId: cleanId(ref.assetId || refLike.assetId || refLike.asset_id),
+    apiPath: cleanId(ref.apiPath || refLike.apiPath || refLike.api_path).replace(/^\/api/i, ''),
+    url: cleanId(ref.url || refLike.url),
+  }
+}
+
+function sameMediaRef(left = {}, right = {}) {
+  const a = mediaCompareKey(left)
+  const b = mediaCompareKey(right)
+  if (a.assetId && b.assetId && a.assetId === b.assetId) return true
+  if (a.apiPath && b.apiPath && a.apiPath === b.apiPath) return true
+  if (a.url && b.url && a.url === b.url) return true
+  return false
+}
+
+function isBoardBaselineVariant(scene = {}, variant = {}) {
+  if (!variant?.fromBoard) return false
+  if (!scene?.sourceVideo) return false
+  return sameMediaRef(scene.sourceVideo, variant)
+}
+
+function boardSourceVariantForSceneV204B4(scene = {}) {
+  // V204B8: the baseline card must represent the true original Board scene,
+  // not the currently applied MMAudio video shown in the left/source preview.
+  const originalRef = (typeof sceneOriginalSourceVideoV204B7 === 'function') ? sceneOriginalSourceVideoV204B7(scene) : null
+  const sourceVideo = firstText(originalRef?.apiPath, originalRef?.url)
+    ? originalRef
+    : (scene.sourceVideo || {})
+  if (!sourceVideo?.apiPath && !sourceVideo?.url) return null
+  const sceneId = firstText(scene.id, scene.sceneId, scene.scene_id, 'scene') || 'scene'
+  const sourceRef = normalizeRef(firstText(sourceVideo.apiPath, sourceVideo.url))
+  return {
+    id: `board_source_${sceneId}`,
+    kind: 'source_video',
+    label: 'из Доски',
+    url: sourceRef.url || sourceVideo.url || sourceVideo.apiPath || '',
+    apiPath: sourceRef.apiPath || sourceVideo.apiPath || '',
+    assetId: sourceRef.assetId || sourceVideo.assetId || '',
+    prompt: scene.prompt || '',
+    negativePrompt: scene.negativePrompt || DEFAULT_NEGATIVE,
+    volume: 100,
+    createdAt: scene.importedAt || scene.updatedAt || nowIso(),
+    fromBoard: true,
+    sourceBaseline: true,
+    applied: false,
+  }
+}
+
+function variantDedupeKeyV204B4(variant = {}) {
+  if (variant?.sourceBaseline || variant?.kind === 'source_video' || variant?.fromBoardBaseline) {
+    return `source-baseline:${cleanId(variant.id) || 'board_source'}`
+  }
+  const id = cleanId(variant.id)
+  if (id) return `id:${id}`
+  const ref = mediaCompareKey(variant)
+  if (ref.assetId) return `asset:${ref.assetId}`
+  if (ref.apiPath) return `api:${ref.apiPath}`
+  if (ref.url) return `url:${ref.url}`
+  return `random:${Math.random()}`
+}
+
+function uniqueVariantsV204B4(input = []) {
+  const seen = new Set()
+  const out = []
+  asArray(input).forEach((variant) => {
+    if (!variant || typeof variant !== 'object') return
+    const key = variantDedupeKeyV204B4(variant)
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(variant)
+  })
+  return out
+}
+
+function isFakeAppliedFromBoardV204B6(variant = {}) {
+  if (!variant || typeof variant !== 'object') return false
+  if (variant.sourceBaseline || variant.kind === 'source_video') return false
+  const label = cleanId(variant.label).toLowerCase()
+  // These cards were generated by old V204B4/B5 Board import, not by a new Audio Studio generation.
+  // They made the UI show "applied" even when the user did not explicitly apply a fresh variant.
+  return Boolean(variant.fromBoard && !variant.jobId && !variant.rawMode && (label.includes('board') || label.includes('доск')))
+}
+
+function isRealMmaudioVariantV204B6(variant = {}) {
+  if (!variant || typeof variant !== 'object') return false
+  if (variant.sourceBaseline || variant.kind === 'source_video') return false
+  if (isFakeAppliedFromBoardV204B6(variant)) return false
+  return variant.kind === 'mmaudio_video' || Boolean(variant.jobId || variant.rawMode || variant.assetId || variant.apiPath || variant.url)
+}
+
+function realMmaudioVariantCountV204B4(scene = {}) {
+  return asArray(scene.variants).filter(isRealMmaudioVariantV204B6).length
+}
+
+function nextMmaudioVariantLabelV204B4(scene = {}) {
+  return `v${realMmaudioVariantCountV204B4(scene) + 1}`
+}
+
+function sanitizeAudioScene(scene = {}) {
+  const sourceVideo = scene.sourceVideo || {}
+  const boardSourceVariant = boardSourceVariantForSceneV204B4(scene)
+  const realVariants = asArray(scene.variants)
+    .filter(isRealMmaudioVariantV204B6)
+    .map((variant) => ({ ...variant, sourceBaseline: false, applied: false }))
+
+  const variants = uniqueVariantsV204B4([
+    boardSourceVariant,
+    ...realVariants,
+  ].filter(Boolean))
+
+  const variantIds = new Set(variants.map((variant) => cleanId(variant.id)).filter(Boolean))
+  let appliedVariantId = variantIds.has(cleanId(scene.appliedVariantId)) ? cleanId(scene.appliedVariantId) : ''
+  const appliedVariant = variants.find((variant) => cleanId(variant.id) === appliedVariantId)
+  if (!appliedVariant || appliedVariant?.sourceBaseline || appliedVariant?.kind === 'source_video' || isFakeAppliedFromBoardV204B6(appliedVariant)) {
+    appliedVariantId = ''
+  }
+
+  let selectedVariantId = variantIds.has(cleanId(scene.selectedVariantId)) ? cleanId(scene.selectedVariantId) : ''
+  if (!selectedVariantId || isFakeAppliedFromBoardV204B6(variants.find((variant) => cleanId(variant.id) === selectedVariantId))) {
+    selectedVariantId = appliedVariantId || variants.find(isRealMmaudioVariantV204B6)?.id || boardSourceVariant?.id || ''
+  }
+
+  const normalizedVariants = variants.map((variant) => ({
+    ...variant,
+    applied: Boolean(appliedVariantId && cleanId(variant.id) === cleanId(appliedVariantId)),
+  }))
+  const hasSource = Boolean(sourceVideo?.apiPath || sourceVideo?.url)
+  return {
+    ...scene,
+    variants: normalizedVariants,
+    selectedVariantId,
+    appliedVariantId,
+    status: appliedVariantId ? 'applied' : (normalizedVariants.some(isRealMmaudioVariantV204B6) ? 'variants' : (hasSource ? 'ready' : 'no_video')),
+  }
+}
+
+function sanitizeAudioSnapshot(snapshot = {}) {
+  return {
+    ...snapshot,
+    scenes: asArray(snapshot.scenes).map(sanitizeAudioScene),
+  }
 }
 
 function durationOf(scene = {}) {
@@ -253,26 +460,27 @@ function buildAudioScenesFromBoard(board = {}) {
     const dur = durationOf(scene)
     const endSec = toNumber(scene.end_sec ?? scene.end, startSec + dur)
     const sourceRef = normalizeRef(boardSourceVideoRef(scene))
-    const appliedRefRaw = boardAppliedMmaudioRef(scene)
-    const appliedRef = normalizeRef(appliedRefRaw)
-    const importedAppliedVariantId = appliedRefRaw ? `board_mmaudio_${sceneId}` : ''
     const prompt = firstText(scene.mmaudio_prompt, scene.mmaudioPrompt, scene.sound_prompt, scene.soundPrompt)
     const negativePrompt = firstText(scene.mmaudio_negative_prompt, scene.mmaudioNegativePrompt, scene.negative_sound_prompt, scene.negativeSoundPrompt, DEFAULT_NEGATIVE)
     const volume = toNumber(scene.mmaudio_volume ?? scene.mmaudioVolume ?? scene.audio_studio_mmaudio_volume ?? scene.audioStudioMmaudioVolume, 100)
-    const variants = importedAppliedVariantId ? [{
-      id: importedAppliedVariantId,
-      kind: 'mmaudio_video',
-      label: 'из Board',
-      url: appliedRef.url,
-      apiPath: appliedRef.apiPath,
-      assetId: appliedRef.assetId,
-      prompt,
-      negativePrompt,
-      volume,
-      createdAt: firstText(scene.mmaudio_updated_at, scene.mmaudioUpdatedAt, scene.updatedAt) || nowIso(),
-      fromBoard: true,
-      applied: true,
-    }] : []
+    const variants = []
+    if (sourceRef.apiPath || sourceRef.url) {
+      variants.push({
+        id: `board_source_${sceneId}`,
+        kind: 'source_video',
+        label: 'из Доски',
+        url: sourceRef.url,
+        apiPath: sourceRef.apiPath,
+        assetId: sourceRef.assetId,
+        prompt,
+        negativePrompt,
+        volume: 100,
+        createdAt: firstText(scene.updatedAt, scene.updated_at) || nowIso(),
+        fromBoard: true,
+        sourceBaseline: true,
+        applied: false,
+      })
+    }
     return {
       id: sceneId,
       sceneId,
@@ -281,7 +489,7 @@ function buildAudioScenesFromBoard(board = {}) {
       color: sceneColor(scene, index, board),
       blockId: firstText(scene.blockId, scene.block_id, scene.semanticBlockId, scene.semantic_block_id),
       blockTitle: firstText(scene.blockTitle, scene.block_title, scene.semanticBlockTitle, scene.semantic_block_title),
-      status: sourceRef.apiPath || sourceRef.url ? (variants.length ? 'applied' : 'ready') : 'no_video',
+      status: sourceRef.apiPath || sourceRef.url ? 'ready' : 'no_video',
       startSec,
       endSec,
       durationSec: dur || Math.max(0, endSec - startSec),
@@ -295,8 +503,8 @@ function buildAudioScenesFromBoard(board = {}) {
       prompt,
       negativePrompt,
       mmaudioVolume: volume,
-      selectedVariantId: importedAppliedVariantId,
-      appliedVariantId: importedAppliedVariantId,
+      selectedVariantId: variants[0]?.id || '',
+      appliedVariantId: '',
       variants,
       boardRaw: scene,
     }
@@ -356,7 +564,7 @@ function sceneStatusLabel(scene = {}) {
   if (!scene.sourceVideo?.apiPath && !scene.sourceVideo?.url) return 'нет видео'
   if (scene.jobId) return 'генерация'
   if (scene.appliedVariantId) return 'мма'
-  if (asArray(scene.variants).length) return 'есть варианты'
+  if (asArray(scene.variants).some((variant) => !variant?.sourceBaseline && variant.kind !== 'source_video')) return 'есть варианты'
   return 'готово'
 }
 
@@ -470,6 +678,177 @@ function VariantCard({ variant, active, applied, onSelect, onDelete }) {
   )
 }
 
+
+function audioJsonFileStamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+}
+
+function sceneImportKey(scene = {}, index = 0) {
+  return firstText(scene.id, scene.sceneId, scene.scene_id, scene.segId, scene.seg_id, scene.key, `index_${index}`)
+}
+
+function normalizeImportedSceneItem(item, index = 0) {
+  if (typeof item === 'string') {
+    return { index, prompt: item }
+  }
+  if (!item || typeof item !== 'object') return null
+  return {
+    ...item,
+    id: firstText(item.id, item.sceneId, item.scene_id, item.segId, item.seg_id, item.key),
+    sceneId: firstText(item.sceneId, item.scene_id, item.id, item.segId, item.seg_id, item.key),
+    index: Number.isFinite(Number(item.index ?? item.sceneIndex ?? item.scene_index ?? item.order))
+      ? Number(item.index ?? item.sceneIndex ?? item.scene_index ?? item.order)
+      : index,
+    prompt: firstText(item.prompt, item.mmaudio_prompt, item.mmaudioPrompt, item.sound_prompt, item.soundPrompt, item.foley_prompt, item.foleyPrompt),
+    negativePrompt: firstText(item.negativePrompt, item.negative_prompt, item.mmaudio_negative_prompt, item.mmaudioNegativePrompt, item.negative_sound_prompt, item.negativeSoundPrompt),
+    mmaudioVolume: item.mmaudioVolume ?? item.mmaudio_volume ?? item.volume ?? item.mmaudioGain ?? item.mmaudio_gain,
+    variants: Array.isArray(item.variants) ? item.variants : null,
+  }
+}
+
+function extractImportedScenes(payload = {}) {
+  if (Array.isArray(payload)) return payload.map(normalizeImportedSceneItem).filter(Boolean)
+  if (!payload || typeof payload !== 'object') return []
+  const direct = payload.scenes || payload.audioScenes || payload.scenePrompts || payload.prompts || payload.mmaudioPrompts
+  if (Array.isArray(direct)) return direct.map(normalizeImportedSceneItem).filter(Boolean)
+
+  const keyed = payload.byScene || payload.scenesById || payload.promptsByScene || payload.prompts_by_scene
+  if (keyed && typeof keyed === 'object' && !Array.isArray(keyed)) {
+    return Object.entries(keyed).map(([key, value], index) => {
+      if (typeof value === 'string') return normalizeImportedSceneItem({ id: key, sceneId: key, prompt: value, index }, index)
+      if (value && typeof value === 'object') return normalizeImportedSceneItem({ id: key, sceneId: key, ...value, index }, index)
+      return null
+    }).filter(Boolean)
+  }
+  return []
+}
+
+function buildAudioStudioExportPayload(snapshot = {}, projectId = '') {
+  return {
+    schema: 'ava_audio_studio_import_export_v1',
+    version: VERSION,
+    stage: STAGE,
+    projectId: projectId || '',
+    exportedAt: nowIso(),
+    note: 'Full Audio Studio page JSON. For prompt-only import use schema ava_audio_studio_prompt_plan_v1 with scenes[].prompt.',
+    selectedSceneId: snapshot.selectedSceneId || '',
+    scenes: asArray(snapshot.scenes).map((scene, index) => ({
+      id: scene.id || scene.sceneId || `seg_${String(index + 1).padStart(2, '0')}`,
+      sceneId: scene.sceneId || scene.id || `seg_${String(index + 1).padStart(2, '0')}`,
+      index: Number.isFinite(Number(scene.index)) ? Number(scene.index) : index,
+      title: scene.title || `Сцена ${index + 1}`,
+      color: scene.color || '',
+      startSec: Number(scene.startSec || 0),
+      endSec: Number(scene.endSec || 0),
+      durationSec: Number(scene.durationSec || 0),
+      route: scene.route || '',
+      prompt: scene.prompt || '',
+      negativePrompt: scene.negativePrompt || DEFAULT_NEGATIVE,
+      mmaudioVolume: Number(scene.mmaudioVolume ?? 100),
+      selectedVariantId: scene.selectedVariantId || '',
+      appliedVariantId: scene.appliedVariantId || '',
+      sourceVideo: scene.sourceVideo || {},
+      variants: asArray(scene.variants),
+    })),
+  }
+}
+
+function applyAudioStudioImportedJson(current = {}, imported = {}, projectId = '') {
+  const importedScenes = extractImportedScenes(imported)
+  const importedSchema = cleanId(imported?.schema).toLowerCase()
+  const importMode = cleanId(imported?.importMode || imported?.mode).toLowerCase()
+  const replaceVariants = importedSchema.includes('import_export')
+    || importedSchema.includes('scene_snapshot')
+    || importMode.includes('full')
+    || Boolean(imported?.replaceVariants)
+  const replaceSceneMeta = replaceVariants || Boolean(imported?.replaceSceneMeta)
+
+  if (!importedScenes.length && Array.isArray(imported?.scenes) && !asArray(current.scenes).length) {
+    return {
+      snapshot: {
+        ...current,
+        ...imported,
+        version: VERSION,
+        stage: STAGE,
+        projectId: projectId || imported.projectId || '',
+        updatedAt: nowIso(),
+      },
+      stats: { matched: 0, imported: asArray(imported.scenes).length, mode: 'full_empty_restore' },
+    }
+  }
+
+  const byId = new Map()
+  const byIndex = new Map()
+  importedScenes.forEach((item, index) => {
+    const normalized = normalizeImportedSceneItem(item, index)
+    if (!normalized) return
+    const id = cleanId(normalized.id || normalized.sceneId)
+    if (id) byId.set(id, normalized)
+    if (Number.isFinite(Number(normalized.index))) byIndex.set(Number(normalized.index), normalized)
+  })
+
+  let matched = 0
+  const scenes = asArray(current.scenes).map((scene, index) => {
+    const keys = [scene.id, scene.sceneId, scene.scene_id, scene.segId, scene.seg_id].map(cleanId).filter(Boolean)
+    let importedScene = null
+    for (const key of keys) {
+      if (byId.has(key)) {
+        importedScene = byId.get(key)
+        break
+      }
+    }
+    if (!importedScene) importedScene = byIndex.get(Number(scene.index ?? index))
+    if (!importedScene) return scene
+    matched += 1
+
+    const hasPrompt = Object.prototype.hasOwnProperty.call(importedScene, 'prompt') && cleanId(importedScene.prompt)
+    const hasNegative = Object.prototype.hasOwnProperty.call(importedScene, 'negativePrompt') && cleanId(importedScene.negativePrompt)
+    const hasVolume = importedScene.mmaudioVolume !== undefined && importedScene.mmaudioVolume !== null && importedScene.mmaudioVolume !== ''
+    const volume = hasVolume ? Math.max(0, Math.min(150, Number(importedScene.mmaudioVolume) || 0)) : scene.mmaudioVolume
+    const importedVariants = Array.isArray(importedScene.variants) ? importedScene.variants : null
+    const variants = replaceVariants && importedVariants ? importedVariants : asArray(scene.variants)
+    const nextAppliedId = replaceVariants ? (importedScene.appliedVariantId || scene.appliedVariantId || '') : scene.appliedVariantId
+    const nextSelectedId = replaceVariants ? (importedScene.selectedVariantId || nextAppliedId || variants[0]?.id || '') : scene.selectedVariantId
+
+    return {
+      ...scene,
+      ...(replaceSceneMeta ? {
+        title: importedScene.title || scene.title,
+        color: importedScene.color || scene.color,
+        startSec: importedScene.startSec ?? scene.startSec,
+        endSec: importedScene.endSec ?? scene.endSec,
+        durationSec: importedScene.durationSec ?? scene.durationSec,
+        route: importedScene.route || scene.route,
+        sourceVideo: importedScene.sourceVideo || scene.sourceVideo,
+      } : {}),
+      prompt: hasPrompt ? importedScene.prompt : scene.prompt,
+      negativePrompt: hasNegative ? importedScene.negativePrompt : scene.negativePrompt,
+      mmaudioVolume: volume,
+      variants,
+      selectedVariantId: nextSelectedId,
+      appliedVariantId: nextAppliedId,
+      status: nextAppliedId ? 'applied' : (variants.length ? 'variants' : scene.status),
+      importedAt: nowIso(),
+    }
+  })
+
+  return {
+    snapshot: {
+      ...current,
+      selectedSceneId: imported.selectedSceneId || current.selectedSceneId || scenes[0]?.id || '',
+      stableAudio: imported.stableAudio && replaceVariants ? imported.stableAudio : current.stableAudio,
+      queue: imported.queue && replaceVariants ? imported.queue : current.queue,
+      scenes,
+      version: VERSION,
+      stage: STAGE,
+      projectId: projectId || current.projectId || imported.projectId || '',
+      updatedAt: nowIso(),
+      lastImportAt: nowIso(),
+    },
+    stats: { matched, imported: importedScenes.length, mode: replaceVariants ? 'full' : 'prompts' },
+  }
+}
+
 export default function AudioStudioPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -496,11 +875,14 @@ export default function AudioStudioPage() {
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [generatingSceneId, setGeneratingSceneId] = useState('')
+  const [applyingVariantId, setApplyingVariantId] = useState('')
   const [uploading, setUploading] = useState(false)
   const pollRef = useRef(null)
   const snapshotRef = useRef(snapshot)
+  const initialLoadDoneRefV204B = useRef(false)
   const didLoadRef = useRef(false)
   const autosaveTimerRef = useRef(null)
+  const importInputRefV204B2 = useRef(null)
   const projectApiRef = useRef({ loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage })
 
   useEffect(() => { snapshotRef.current = snapshot }, [snapshot])
@@ -524,8 +906,9 @@ export default function AudioStudioPage() {
   }, [selectedScene])
 
   const saveSnapshot = useCallback(async (nextSnapshot, reason = 'save') => {
+    const cleanSnapshot = sanitizeAudioSnapshot(nextSnapshot)
     const payload = {
-      ...nextSnapshot,
+      ...cleanSnapshot,
       version: VERSION,
       stage: STAGE,
       updatedAt: nowIso(),
@@ -567,7 +950,7 @@ export default function AudioStudioPage() {
     if (loading || !didLoadRef.current) return undefined
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     autosaveTimerRef.current = setTimeout(() => {
-      persistSnapshotSilently(snapshotRef.current, 'autosave_v204a3')
+      persistSnapshotSilently(sanitizeAudioSnapshot(snapshotRef.current), 'autosave_v204b8')
     }, 850)
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
@@ -599,12 +982,24 @@ export default function AudioStudioPage() {
     let alive = true
     async function load() {
       didLoadRef.current = false
-      setLoading(true)
+      if (!initialLoadDoneRefV204B.current) setLoading(true)
       setLoadMessage('Открываю Audio Studio…')
       setError('')
       try {
         const stateBoard = location.state?.board && typeof location.state.board === 'object' ? location.state.board : null
-        const forceImport = Boolean(location.state?.forceImportFromBoard || stateBoard)
+        const requestedForceImportV204B7 = Boolean(location.state?.forceImportFromBoard || stateBoard)
+        const importTokenV204B7 = firstText(
+          location.state?.workflowEntry?.id,
+          location.state?.workflowEntry?.createdAt,
+          stateBoard?.updatedAt,
+          stateBoard?.source,
+          location.state?.source,
+          'board_import'
+        )
+        const consumedKeyV204B7 = `ava_audio_studio_import_consumed_${projectId || 'workspace'}_${importTokenV204B7}`
+        let importAlreadyConsumedV204B7 = false
+        try { importAlreadyConsumedV204B7 = sessionStorage.getItem(consumedKeyV204B7) === '1' } catch {}
+        const forceImport = requestedForceImportV204B7 && !importAlreadyConsumedV204B7
         setLoadMessage(forceImport ? 'Переношу сцены из Доски…' : 'Читаю snapshot Audio Studio…')
         const audioData = await withUiTimeout(
           workspaceMode ? projectApiRef.current.loadWorkspaceStage(STAGE) : projectApiRef.current.loadStage(projectId, STAGE),
@@ -618,36 +1013,49 @@ export default function AudioStudioPage() {
         let shouldPersist = false
 
         if (forceImport && stateBoard) {
-          next = mergeAudioWithFreshBoard(next, stateBoard, projectId)
+          next = buildAudioSnapshotFromBoard(stateBoard, { projectId, source: 'board_reset_import_v204b8' })
+          next.boardImportToken = importTokenV204B7
+          next.boardImportConsumedAt = nowIso()
           shouldPersist = true
-          setStatus(`Сцены перенесены из Доски: ${asArray(next.scenes).length}`)
+          try { sessionStorage.setItem(consumedKeyV204B7, '1') } catch {}
+          try {
+            navigate(location.pathname, {
+              replace: true,
+              state: { workflowEntry: location.state?.workflowEntry || null, source: 'audio_studio_loaded' },
+            })
+          } catch {}
+          setStatus(`Audio Studio очищена и заново перенесена из Доски: ${asArray(next.scenes).length} сцен`)
+        } else if (asArray(next.scenes).length) {
+          // V204B8: on regular open/F5, Audio Studio snapshot is the source of truth.
+          // Do not auto-merge with Board here: Board may still contain old/current scene refs and
+          // that was wiping generated variants/applied state after F5.
+          setLoadMessage('Восстанавливаю сохранённую Audio Studio…')
+          setStatus(`Audio Studio восстановлена из snapshot: ${asArray(next.scenes).length} сцен`)
+          shouldPersist = false
         } else {
-          setLoadMessage(asArray(next.scenes).length ? 'Сверяю цвета и статусы сцен с Доской…' : 'Audio Studio пустая — беру сцены из Доски…')
+          setLoadMessage('Audio Studio пустая — беру сцены из Доски…')
           const boardData = await withUiTimeout(
             workspaceMode ? projectApiRef.current.loadWorkspaceStage('board') : projectApiRef.current.loadStage(projectId, 'board'),
             12000,
             'load board snapshot',
           ).catch((err) => {
-            console.warn('[AUDIO STUDIO LOAD BOARD V204A3]', err)
+            console.warn('[AUDIO STUDIO LOAD BOARD V204B8]', err)
             return {}
           })
           if (asArray(boardData?.scenes).length) {
-            next = asArray(next.scenes).length
-              ? mergeAudioWithFreshBoard(next, boardData, projectId)
-              : buildAudioSnapshotFromBoard(boardData, { projectId, source: 'board_auto_import_v204a3' })
+            next = buildAudioSnapshotFromBoard(boardData, { projectId, source: 'board_auto_import_empty_audio_v204b8' })
             shouldPersist = true
-            setStatus(asArray(audioData?.scenes).length
-              ? `Цвета и статусы сцен обновлены из Доски: ${asArray(next.scenes).length}`
-              : `Авто-импорт из Доски: ${asArray(next.scenes).length} сцен`)
+            setStatus(`Авто-импорт из Доски: ${asArray(next.scenes).length} сцен`)
           }
         }
 
+        next = sanitizeAudioSnapshot(next)
         if (!next.version) next.version = VERSION
         if (!next.stage) next.stage = STAGE
         if (!next.selectedSceneId && asArray(next.scenes).length) next.selectedSceneId = next.scenes[0].id
         if (shouldPersist) {
           setLoadMessage('Сохраняю Audio Studio, чтобы F5 держал сцены…')
-          await persistSnapshotSilently(next, forceImport ? 'board_import_persist_v204a3' : 'board_auto_import_persist_v204a3')
+          await persistSnapshotSilently(sanitizeAudioSnapshot(next), forceImport ? 'board_import_persist_v204b8' : 'board_auto_import_empty_audio_v204b8')
         }
         if (alive) {
           setSnapshot(next)
@@ -676,6 +1084,12 @@ export default function AudioStudioPage() {
   }, [])
 
   const refreshFromBoard = useCallback(async () => {
+    const ok = window.confirm([
+        'Обновить Audio Studio из Доски?',
+        '',
+        'Это очистит текущие prompt-поля, MMAudio-варианты и applied-выбор Audio Studio, а затем заново перенесёт сцены из текущей Доски.'
+      ].join('\\n'))
+    if (!ok) return
     setError('')
     try {
       const boardData = workspaceMode ? await loadWorkspaceStage('board') : await loadStage(projectId, 'board')
@@ -683,13 +1097,37 @@ export default function AudioStudioPage() {
         setStatus('В Доске нет сцен для переноса')
         return
       }
-      const next = mergeAudioWithFreshBoard(snapshotRef.current, boardData, projectId)
-      await saveSnapshot(next, 'refresh_from_board_v204a')
-      setStatus(`Обновлено из Доски: ${asArray(next.scenes).length} сцен`)
+      const next = buildAudioSnapshotFromBoard(boardData, { projectId, source: 'board_manual_reset_import_v204b5' })
+      await saveSnapshot(next, 'refresh_from_board_reset_v204b5')
+      setStatus(`Audio Studio очищена и заново перенесена из Доски: ${asArray(next.scenes).length} сцен`)
     } catch (err) {
       setError(`Не удалось обновить из Доски: ${err?.message || err}`)
     }
   }, [loadStage, loadWorkspaceStage, projectId, saveSnapshot, workspaceMode])
+
+
+  const clearAllAudioStudioV204B5 = useCallback(async () => {
+    const ok = window.confirm([
+        'Очистить всю Audio Studio?',
+        '',
+        'Будут удалены все сцены, prompt-поля, MMAudio-варианты, applied-выбор и локальная история этой страницы. Доска не изменится.'
+      ].join('\\n'))
+    if (!ok) return
+    const next = {
+      version: VERSION,
+      schema: 'ava_audio_studio_scene_snapshot_v1',
+      stage: STAGE,
+      source: 'manual_clear_v204b5',
+      projectId: projectId || '',
+      selectedSceneId: '',
+      scenes: [],
+      stableAudio: { enabled: false, status: 'soon' },
+      queue: { enabled: false, items: [] },
+      updatedAt: nowIso(),
+    }
+    await saveSnapshot(next, 'clear_all_audio_studio_v204b5')
+    setStatus('Audio Studio очищена')
+  }, [projectId, saveSnapshot])
 
   const uploadSceneVideo = useCallback(async (file) => {
     if (!file || !selectedScene) return
@@ -748,6 +1186,7 @@ export default function AudioStudioPage() {
         const data = await apiRequest(`/clip/mmaudio/status/${cleanJobId}`)
         const polledStatus = firstText(data.status, data.audio_status, data.video_status, 'running')
         const output = pickMmaudioOutputUrl(data)
+        if (output) console.info('[AUDIO STUDIO MMAUDIO RESULT ATTACH V204B1]', { sceneId, mode: 'poll', output })
         const done = statusLooksDone(polledStatus) || Boolean(output)
         const failed = statusLooksFailed(polledStatus)
         patchScene(sceneId, (scene) => ({ ...scene, status: done ? 'variants' : polledStatus, jobStatus: polledStatus }))
@@ -766,7 +1205,7 @@ export default function AudioStudioPage() {
         const variant = {
           id: variantId,
           kind: 'mmaudio_video',
-          label: `v${asArray(snapshotRef.current.scenes.find((s) => cleanId(s.id) === cleanId(sceneId))?.variants).length + 1}`,
+          label: nextMmaudioVariantLabelV204B4(snapshotRef.current.scenes.find((s) => cleanId(s.id) === cleanId(sceneId))),
           url: ref.url,
           apiPath: ref.apiPath,
           assetId: ref.assetId,
@@ -791,7 +1230,7 @@ export default function AudioStudioPage() {
               jobStatus: '',
               selectedVariantId: variantId,
               mmaudioVolume: variant.volume,
-              variants: [variant, ...asArray(scene.variants)].slice(0, 24),
+              variants: uniqueVariantsV204B4([variant, ...asArray(scene.variants)]).slice(0, 48),
             }
           }),
         }
@@ -814,7 +1253,7 @@ export default function AudioStudioPage() {
   const submitMmaudio = useCallback(async () => {
     if (!selectedScene) return
     const sceneId = selectedScene.id
-    const sourceVideo = firstText(selectedScene.sourceVideo?.apiPath, selectedScene.sourceVideo?.url)
+    const sourceVideo = sourceVideoForMmaudioV204B7(selectedScene)
     const prompt = cleanId(selectedScene.prompt)
     const negativePrompt = cleanId(selectedScene.negativePrompt || DEFAULT_NEGATIVE)
     if (!sourceVideo) {
@@ -874,6 +1313,7 @@ export default function AudioStudioPage() {
       })
       const jobId = firstText(data.jobId, data.job_id, data.id)
       const output = pickMmaudioOutputUrl(data)
+      if (output) console.info('[AUDIO STUDIO MMAUDIO RESULT ATTACH V204B1]', { sceneId, mode: 'direct', output })
       patchScene(sceneId, (scene) => ({ ...scene, jobId, jobStatus: firstText(data.status, 'queued'), status: firstText(data.status, 'queued') }))
       if (output && !jobId) {
         const ref = normalizeRef(output)
@@ -881,7 +1321,7 @@ export default function AudioStudioPage() {
         const variant = {
           id: variantId,
           kind: 'mmaudio_video',
-          label: `v${asArray(selectedScene.variants).length + 1}`,
+          label: nextMmaudioVariantLabelV204B4(selectedScene),
           url: ref.url,
           apiPath: ref.apiPath,
           assetId: ref.assetId,
@@ -897,7 +1337,7 @@ export default function AudioStudioPage() {
         const next = {
           ...snapshotRef.current,
           scenes: asArray(snapshotRef.current.scenes).map((scene) => cleanId(scene.id) === cleanId(sceneId)
-            ? { ...scene, status: 'variants', jobId: '', jobStatus: '', selectedVariantId: variantId, variants: [variant, ...asArray(scene.variants)].slice(0, 24) }
+            ? { ...scene, status: 'variants', jobId: '', jobStatus: '', selectedVariantId: variantId, mmaudioVolume: variant.volume, variants: uniqueVariantsV204B4([variant, ...asArray(scene.variants)]).slice(0, 48) }
             : scene),
         }
         await saveSnapshot(next, 'mmaudio_completed_direct_v204a')
@@ -920,38 +1360,77 @@ export default function AudioStudioPage() {
 
   const syncAppliedToBoard = useCallback(async (scene, variant) => {
     const ref = normalizeRef(firstText(variant.apiPath, variant.url))
-    if (!scene?.id || !ref.apiPath && !ref.url) return
+    if (!ref.apiPath && !ref.url) return
     try {
       const boardData = workspaceMode ? await loadWorkspaceStage('board') : await loadStage(projectId, 'board')
       const scenes = asArray(boardData.scenes).map((boardScene) => {
         const boardSceneId = firstText(boardScene.scene_id, boardScene.sceneId, boardScene.id)
         if (cleanId(boardSceneId) !== cleanId(scene.id)) return boardScene
+
+        const originalRef = normalizeRef(boardSourceVideoRef(boardScene))
+        const originalUrl = firstText(originalRef.url, originalRef.apiPath)
+        const appliedUrl = ref.url || ref.apiPath
+        const appliedVolume = Number(variant.volume ?? scene.mmaudioVolume ?? 100)
+        const appliedAt = nowIso()
+
         return {
           ...boardScene,
-          mmaudio_video_url: ref.url || ref.apiPath,
-          mmaudioVideoUrl: ref.url || ref.apiPath,
-          mmaudio_video_api_path: ref.apiPath,
-          mmaudioVideoApiPath: ref.apiPath,
-          mmaudio_video_asset_id: ref.assetId,
-          mmaudioVideoAssetId: ref.assetId,
+
+          // Preserve the true original scene video before making the applied MMAudio result visible in Board.
+          // Future Audio Studio imports use this first, so MMAudio is not stacked on top of old MMAudio.
+          mmaudio_source_video_url: originalUrl,
+          mmaudioSourceVideoUrl: originalUrl,
+          mmaudio_source_video_api_path: originalRef.apiPath || '',
+          mmaudioSourceVideoApiPath: originalRef.apiPath || '',
+          mmaudio_source_video_asset_id: originalRef.assetId || '',
+          mmaudioSourceVideoAssetId: originalRef.assetId || '',
+
+          // Make the applied result visible to Board/Assembly as the current scene video.
+          video_url: appliedUrl,
+          videoUrl: appliedUrl,
+          video_api_path: ref.apiPath || '',
+          videoApiPath: ref.apiPath || '',
+          output_video_url: appliedUrl,
+          outputVideoUrl: appliedUrl,
+          output_video_api_path: ref.apiPath || '',
+          outputVideoApiPath: ref.apiPath || '',
+          result_video_url: appliedUrl,
+          resultVideoUrl: appliedUrl,
+          result_video_api_path: ref.apiPath || '',
+          resultVideoApiPath: ref.apiPath || '',
+
+          // Dedicated MMAudio fields for Assembly and status badges.
+          mmaudio_video_url: appliedUrl,
+          mmaudioVideoUrl: appliedUrl,
+          mmaudio_video_api_path: ref.apiPath || '',
+          mmaudioVideoApiPath: ref.apiPath || '',
+          mmaudio_video_asset_id: ref.assetId || '',
+          mmaudioVideoAssetId: ref.assetId || '',
           has_sound: true,
           hasSound: true,
+          has_mmaudio: true,
+          hasMmaudio: true,
+          mmaudio_status: 'applied',
+          mmaudioStatus: 'applied',
+          audio_studio_status: 'mmaudio_applied',
+          audioStudioStatus: 'mmaudio_applied',
           mmaudio_prompt: variant.prompt || scene.prompt || '',
           mmaudioPrompt: variant.prompt || scene.prompt || '',
           mmaudio_negative_prompt: variant.negativePrompt || scene.negativePrompt || '',
           mmaudioNegativePrompt: variant.negativePrompt || scene.negativePrompt || '',
-          mmaudio_volume: Number(variant.volume ?? scene.mmaudioVolume ?? 100),
-          mmaudioVolume: Number(variant.volume ?? scene.mmaudioVolume ?? 100),
+          mmaudio_volume: appliedVolume,
+          mmaudioVolume: appliedVolume,
           audio_studio_applied_variant_id: variant.id,
           audioStudioAppliedVariantId: variant.id,
-          audio_studio_updated_at: nowIso(),
-          audioStudioUpdatedAt: nowIso(),
+          audio_studio_updated_at: appliedAt,
+          audioStudioUpdatedAt: appliedAt,
+          updatedAt: appliedAt,
         }
       })
       const nextBoard = { ...boardData, scenes, selectedSceneId: boardData.selectedSceneId || scene.id, updatedAt: nowIso() }
       if (workspaceMode) await saveWorkspaceStage('board', nextBoard)
       else await saveStage(projectId, 'board', nextBoard, 'safe_merge')
-      setStatus('Вариант применён и записан в Доску для монтажки')
+      setStatus('Вариант применён: видео сцены обновлено в Доске и готово для монтажки')
     } catch (err) {
       setStatus(`Вариант применён в Audio Studio, но Доска не обновилась: ${err?.message || err}`)
     }
@@ -962,26 +1441,70 @@ export default function AudioStudioPage() {
       setStatus('Сначала выбери вариант в нижней ленте')
       return
     }
-    const volume = Number(selectedScene.mmaudioVolume ?? selectedVariant.volume ?? 100)
-    const nextVariant = { ...selectedVariant, volume, applied: true }
-    const next = {
-      ...snapshotRef.current,
-      scenes: asArray(snapshotRef.current.scenes).map((scene) => {
-        if (cleanId(scene.id) !== cleanId(selectedScene.id)) return scene
-        return {
-          ...scene,
-          status: 'applied',
-          appliedVariantId: selectedVariant.id,
-          selectedVariantId: selectedVariant.id,
-          mmaudioVolume: volume,
-          variants: asArray(scene.variants).map((variant) => cleanId(variant.id) === cleanId(selectedVariant.id)
-            ? nextVariant
-            : { ...variant, applied: false }),
-        }
-      }),
+    if (selectedVariant?.sourceBaseline || selectedVariant?.kind === 'source_video') {
+      setStatus('Это исходник из Доски. Сгенерируй MMAudio и применяй уже MMAudio-вариант.')
+      return
     }
-    await saveSnapshot(next, 'apply_variant_v204a')
-    await syncAppliedToBoard(selectedScene, nextVariant)
+
+    const applyId = selectedVariant.id
+    const selectedRef = normalizeRef(firstText(selectedVariant.apiPath, selectedVariant.url))
+    if (!selectedRef.apiPath && !selectedRef.url) {
+      setError('У выбранного MMAudio-варианта нет video asset. Применить нечего.')
+      return
+    }
+
+    setApplyingVariantId(applyId)
+    setError('')
+    setStatus('Применяю MMAudio вариант…')
+    try {
+      const volume = Number(selectedScene.mmaudioVolume ?? selectedVariant.volume ?? 100)
+      const appliedMedia = variantMediaRefV204B7({ ...selectedVariant, ...selectedRef })
+      const originalMedia = sceneOriginalSourceVideoV204B7(selectedScene)
+      const nextVariant = { ...selectedVariant, ...appliedMedia, volume, applied: true }
+
+      const next = sanitizeAudioSnapshot({
+        ...snapshotRef.current,
+        scenes: asArray(snapshotRef.current.scenes).map((scene) => {
+          if (cleanId(scene.id) !== cleanId(selectedScene.id)) return scene
+          const sceneOriginal = sceneOriginalSourceVideoV204B7(scene)
+          const preservedOriginal = firstText(sceneOriginal.apiPath, sceneOriginal.url) ? sceneOriginal : originalMedia
+          return {
+            ...scene,
+            status: 'applied',
+            appliedVariantId: selectedVariant.id,
+            selectedVariantId: selectedVariant.id,
+            mmaudioVolume: volume,
+
+            // Important UX: after Apply, the left/source preview becomes the applied MMAudio video immediately.
+            // The true original is preserved below and used for future generations.
+            sourceVideo: appliedMedia,
+            currentVideo: appliedMedia,
+            mmaudioAppliedVideo: appliedMedia,
+            originalSourceVideo: preservedOriginal,
+            mmaudioOriginalSourceVideo: preservedOriginal,
+            mmaudio_source_video_api_path: preservedOriginal.apiPath || '',
+            mmaudioSourceVideoApiPath: preservedOriginal.apiPath || '',
+            mmaudio_source_video_url: preservedOriginal.url || preservedOriginal.apiPath || '',
+            mmaudioSourceVideoUrl: preservedOriginal.url || preservedOriginal.apiPath || '',
+            mmaudio_source_video_asset_id: preservedOriginal.assetId || '',
+            mmaudioSourceVideoAssetId: preservedOriginal.assetId || '',
+
+            variants: uniqueVariantsV204B4(asArray(scene.variants).map((variant) => cleanId(variant.id) === cleanId(selectedVariant.id)
+              ? nextVariant
+              : { ...variant, applied: false })),
+          }
+        }),
+      })
+
+      // Save Audio Studio first so F5 keeps the applied card and the updated left/source preview.
+      await saveSnapshot(next, 'apply_variant_visible_v204b7')
+      await syncAppliedToBoard({ ...selectedScene, sourceVideo: appliedMedia, originalSourceVideo: originalMedia }, nextVariant)
+      setStatus('MMAudio вариант применён: левое видео обновлено, Доска записана для монтажки')
+    } catch (err) {
+      setError(`Не удалось применить вариант: ${err?.message || err}`)
+    } finally {
+      setApplyingVariantId('')
+    }
   }, [saveSnapshot, selectedScene, selectedVariant, syncAppliedToBoard])
 
   const deleteVariant = useCallback(async (variantId) => {
@@ -1019,10 +1542,46 @@ export default function AudioStudioPage() {
 
   const saveNow = useCallback(() => saveSnapshot(snapshotRef.current, 'manual_save_v204a'), [saveSnapshot])
 
+  const exportAudioStudioJsonV204B2 = useCallback(() => {
+    try {
+      const payload = buildAudioStudioExportPayload(sanitizeAudioSnapshot(snapshotRef.current), projectId)
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `ava_audio_studio_${projectId || 'workspace'}_${audioJsonFileStamp()}.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 500)
+      setStatus('Экспорт JSON готов — файл скачан')
+    } catch (err) {
+      setError(`Не удалось экспортировать JSON: ${err?.message || err}`)
+    }
+  }, [projectId])
+
+  const importAudioStudioJsonV204B2 = useCallback(async (file) => {
+    if (!file) return
+    setError('')
+    try {
+      const text = await file.text()
+      const imported = JSON.parse(text)
+      const { snapshot: next, stats } = applyAudioStudioImportedJson(snapshotRef.current, imported, projectId)
+      await saveSnapshot(sanitizeAudioSnapshot(next), 'import_json_v204b3')
+      setStatus(`Импорт JSON: обновлено сцен ${stats.matched} из ${stats.imported} · режим ${stats.mode}`)
+    } catch (err) {
+      setError(`Не удалось импортировать JSON: ${err?.message || err}`)
+    } finally {
+      if (importInputRefV204B2.current) importInputRefV204B2.current.value = ''
+    }
+  }, [projectId, saveSnapshot])
+
   const sourceVideoRef = firstText(selectedScene?.sourceVideo?.apiPath, selectedScene?.sourceVideo?.url)
   const selectedResultRef = selectedVariant ? variantRef(selectedVariant) : ''
   const activeVolume = Number(selectedScene?.mmaudioVolume ?? selectedVariant?.volume ?? 100)
+  const selectedIsApplied = Boolean(selectedVariant && appliedVariant && cleanId(selectedVariant.id) === cleanId(appliedVariant.id))
   const isGeneratingSelected = generatingSceneId && cleanId(generatingSceneId) === cleanId(selectedScene?.id)
+  const isApplyingSelected = Boolean(applyingVariantId && cleanId(applyingVariantId) === cleanId(selectedVariant?.id))
 
   if (loading) {
     return (
@@ -1048,7 +1607,16 @@ export default function AudioStudioPage() {
         <div className="avaAudioHeroActions">
           <button type="button" onClick={() => navigate(boardPath)}><ArrowLeft size={16} /> В Доску</button>
           <button type="button" onClick={refreshFromBoard}><RefreshCcw size={16} /> Обновить из Доски</button>
-          <button type="button" onClick={saveNow} disabled={saving}><Save size={16} /> {saving ? 'Сохраняю…' : 'Сохранить'}</button>
+          <input
+            ref={importInputRefV204B2}
+            type="file"
+            accept="application/json,.json"
+            className="avaAudioJsonInputV204B2"
+            onChange={(event) => importAudioStudioJsonV204B2(event.target.files?.[0])}
+          />
+          <button type="button" className="isImportV204B2" onClick={() => importInputRefV204B2.current?.click()}><UploadCloud size={16} /> Импорт</button>
+          <button type="button" className="isExportV204B2" onClick={exportAudioStudioJsonV204B2}><Download size={16} /> Экспорт</button>
+          <button type="button" className="isDangerV204B5" onClick={clearAllAudioStudioV204B5}><Trash2 size={16} /> Очистить всё</button>
           <button type="button" className="isPrimary" onClick={() => navigate(assemblyPath)}><Film size={16} /> В монтажку</button>
         </div>
       </header>
@@ -1114,7 +1682,7 @@ export default function AudioStudioPage() {
               <button type="button" className="isPrimary" onClick={submitMmaudio} disabled={Boolean(generatingSceneId) || !selectedScene}>
                 <WandSparkles size={16} /> {isGeneratingSelected ? 'Генерится…' : 'Генерить'}
               </button>
-              <button type="button" onClick={applySelectedVariant} disabled={!selectedVariant}><CheckCircle2 size={16} /> Применить</button>
+              <button type="button" onClick={applySelectedVariant} disabled={!selectedVariant || selectedVariant?.sourceBaseline || selectedVariant?.kind === 'source_video' || Boolean(applyingVariantId)}>{isApplyingSelected ? <span className="avaAudioApplySpinnerV204B3" /> : <CheckCircle2 size={16} />} {isApplyingSelected ? 'Применяю…' : 'Применить'}</button>
               <button type="button" onClick={() => {
                 const video = document.querySelector('.avaAudioResultVideo')
                 if (video?.play) video.play()
@@ -1126,7 +1694,7 @@ export default function AudioStudioPage() {
           <section className="avaAudioPanel avaAudioResultPanel">
             <div className="avaAudioPanelTitle">
               <span><Headphones size={17} /> Готовый результат</span>
-              <small>{appliedVariant ? 'применён вариант' : selectedVariant ? 'просмотр варианта' : 'нет варианта'}</small>
+              <small>{selectedIsApplied ? 'применён вариант' : selectedVariant ? 'просмотр варианта' : 'нет варианта'}</small>
             </div>
             <PreviewVideo source={selectedResultRef} title="MMAudio результат" className="avaAudioMainVideo avaAudioResultVideo" volume={activeVolume / 100} />
             <label className="avaAudioVolume">
