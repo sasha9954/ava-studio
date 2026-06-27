@@ -80,6 +80,16 @@ const cards = [
     tone: 'generator',
     preview: 'generator',
   },
+  {
+    stage: 'audio_studio',
+    title: 'Аудио студия',
+    icon: AudioLines,
+    text: 'MMAudio RAW по сценам: варианты, громкость результата и применение лучшего звука для монтажки.',
+    route: 'audio-studio',
+    status: 'MMAudio RAW',
+    tone: 'audio',
+    preview: 'audioStudio',
+  },
 ]
 
 const heroScenes = [
@@ -123,6 +133,10 @@ function formatMetric(stage, summary) {
 
   if (stage === 'generator') {
     return `Jobs ${data.jobs_count} · готово ${data.completed_count}`
+  }
+
+  if (stage === 'audio_studio') {
+    return `Сцен ${data.scenes_count || 0} · применено ${data.applied_count || 0} · вариантов ${data.variants_count || 0}`
   }
 
   return ''
@@ -242,6 +256,30 @@ function GeneratorPreview() {
   )
 }
 
+
+function AudioStudioPreview() {
+  const bars = [26, 64, 38, 82, 51, 72, 44, 90, 36, 68, 54, 78, 42, 86, 58, 34, 74, 49, 88, 40, 66, 52]
+  return (
+    <div className="avaDashAudioStudioPreview" aria-hidden="true">
+      <div className="avaDashAudioStudioScenes">
+        <span className="is-active">сцена1</span>
+        <span>сцена2</span>
+        <span>сцена3</span>
+        <span>сцена4</span>
+      </div>
+      <div className="avaDashAudioStudioFlow">
+        <i className="is-video">video</i>
+        <strong>RAW Foley</strong>
+        <i className="is-ready">ready</i>
+      </div>
+      <div className="avaDashAudioStudioWave">
+        {bars.map((height, index) => <b key={`${height}-${index}`} style={{ '--h': `${height}%` }} />)}
+      </div>
+      <div className="avaDashAudioStudioVariants"><em /><em /><em /><em /><em /></div>
+    </div>
+  )
+}
+
 function ModulePreview({ type }) {
   if (type === 'waveform') return <WaveformPreview />
   if (type === 'podcast') return <PodcastPreview />
@@ -249,6 +287,7 @@ function ModulePreview({ type }) {
   if (type === 'assembly') return <AssemblyPreview />
   if (type === 'node') return <NodePreview />
   if (type === 'generator') return <GeneratorPreview />
+  if (type === 'audioStudio') return <AudioStudioPreview />
   return null
 }
 

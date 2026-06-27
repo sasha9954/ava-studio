@@ -9,7 +9,7 @@ from app.core.storage import store
 
 router = APIRouter(prefix='/jobs', tags=['jobs'])
 
-STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator'}
+STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator', 'audio_studio'}
 
 
 class JobCreateRequest(BaseModel):

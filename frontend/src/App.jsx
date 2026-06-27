@@ -20,6 +20,7 @@ const BoardAssemblyPage = lazy(() => import('./pages/BoardAssemblyPage.jsx'))
 const PodcastAudioComposerPage = lazy(() => import('./pages/podcast_audio/PodcastAudioComposerPage.jsx'))
 const VideoMatchBoardPage = lazy(() => import('./pages/video_match_board/VideoMatchBoardPage.jsx'))
 const StandaloneGeneratorPage = lazy(() => import('./pages/standalone_generator/StandaloneGeneratorPage.jsx'))
+const AudioStudioPage = lazy(() => import('./pages/audio_studio/AudioStudioPage.jsx'))
 
 function Protected({ children }) {
   const { token, booting } = useAuth()
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="workspace/video-node" element={<VideoMatchBoardPage />} />
         <Route path="workspace/video-match-board" element={<VideoMatchBoardPage />} />
         <Route path="workspace/generator" element={<StandaloneGeneratorPage />} />
+        <Route path="workspace/audio-studio" element={<AudioStudioPage />} />
         <Route path="projects/:projectId/timing" element={<ManualTimingPage />} />
         <Route path="projects/:projectId/podcast" element={<PodcastAudioComposerPage />} />
         <Route path="projects/:projectId/board" element={<BoardPage />} />
@@ -66,6 +68,7 @@ export default function App() {
         <Route path="projects/:projectId/video-node" element={<VideoMatchBoardPage />} />
         <Route path="projects/:projectId/video-match-board" element={<VideoMatchBoardPage />} />
         <Route path="projects/:projectId/generator" element={<StandaloneGeneratorPage />} />
+        <Route path="projects/:projectId/audio-studio" element={<AudioStudioPage />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="credits" element={<CreditsPage />} />
         <Route path="settings" element={<SettingsPage />} />

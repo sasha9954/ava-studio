@@ -28,7 +28,7 @@ from copy import deepcopy
 
 router = APIRouter(prefix='/projects', tags=['projects'])
 
-STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator'}
+STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator', 'audio_studio'}
 PROJECT_THEME_COUNT = 8
 
 
@@ -128,6 +128,7 @@ def build_project_summary(snapshots: dict) -> dict:
     video_node = (snapshots.get('video_node') or {}).get('data') or {}
     video_node_project = video_node_snapshot_project(video_node)
     generator = (snapshots.get('generator') or {}).get('data') or {}
+    audio_studio = (snapshots.get('audio_studio') or {}).get('data') or {}
 
     board_scenes_count = count_items(board, ['board_scenes', 'scenes'])
     board_images_count = count_items(board, ['images', 'image_urls', 'generated_images'])
@@ -161,6 +162,11 @@ def build_project_summary(snapshots: dict) -> dict:
         'generator': {
             'jobs_count': count_items(generator, ['jobs', 'generations']),
             'completed_count': count_items(generator, ['completed', 'completed_jobs', 'videos']),
+        },
+        'audio_studio': {
+            'scenes_count': count_items(audio_studio, ['scenes']),
+            'variants_count': sum(len((scene or {}).get('variants') or []) for scene in (audio_studio.get('scenes') or []) if isinstance(scene, dict)) if isinstance(audio_studio, dict) else 0,
+            'applied_count': sum(1 for scene in (audio_studio.get('scenes') or []) if isinstance(scene, dict) and bool(scene.get('appliedVariantId') or scene.get('applied_variant_id'))),
         },
     }
 

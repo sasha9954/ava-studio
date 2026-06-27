@@ -8196,6 +8196,41 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
   }
 
 
+
+
+  async function openAudioStudioFromBoardV204A(event) {
+    stopBoardActionEvent(event)
+    try {
+      const currentBoard = {
+        ...board,
+        source: workspaceMode ? (board.source || 'board') : (board.source === 'standalone_board' ? 'project_board' : (board.source || 'project_board')),
+        updatedAt: new Date().toISOString(),
+      }
+      await saveBoard(currentBoard, true)
+      const toPath = projectId ? `/app/projects/${projectId}/audio-studio` : '/app/workspace/audio-studio'
+      const fromPath = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+      const entry = makeWorkflowEntry({
+        from: 'board',
+        to: 'audio_studio',
+        fromPath,
+        toPath,
+        projectId: projectId || '',
+        source: 'board_to_audio_studio_v204a',
+      })
+      rememberWorkflowEntry(entry)
+      navigate(toPath, {
+        state: {
+          workflowEntry: entry,
+          source: 'board',
+          board: currentBoard,
+          forceImportFromBoard: true,
+        },
+      })
+    } catch (error) {
+      setStatus(`Не удалось открыть Audio Studio: ${error?.message || error}`)
+    }
+  }
+
   async function confirmTimingToBoardImportV14B() {
     if (timingToBoardImporting) return
     setTimingToBoardImporting(true)
@@ -11809,6 +11844,16 @@ async function importTimingJson(event) {
             }}
           >
             <RefreshCcw size={15} /> Обновить с тайминга
+          </button>
+
+
+          <button
+            type="button"
+            className="avaBoardHeaderLink avaBoardActionMontage"
+            onClick={openAudioStudioFromBoardV204A}
+            title="Перенести сцены Доски в Audio Studio для MMAudio по сценам"
+          >
+            <AudioLines size={15} /> В Audio Studio
           </button>
 
           <button
