@@ -48,6 +48,11 @@ const AUDIO_MODES = [
     text: 'Фоновая музыка становится основной дорожкой, а звук сцен подмешивается сверху. Без оригинального audio.',
   },
   {
+    value: 'original_plus_music',
+    title: 'Оригинал + музыка',
+    text: 'Оригинальное/master audio + фоновая музыка. Звук сцен выключен полностью.',
+  },
+  {
     value: 'original_plus_music_scene',
     title: 'Оригинал + музыка + звук сцен',
     text: 'Для документалок и историй: master audio + фоновая музыка + scene ambience.',
@@ -501,12 +506,24 @@ function sceneVideoAssetApiPath(scene, preferMmaudio = true) {
 
 function sceneHasSound(scene) {
   return Boolean(
+    scene?.hasSound ||
+    scene?.has_sound ||
+    scene?.hasMmaudio ||
+    scene?.has_mmaudio ||
     scene?.mmaudio_video_api_path ||
     scene?.mmaudioVideoApiPath ||
     scene?.mmaudio_video_url ||
     scene?.mmaudioVideoUrl ||
+    scene?.mmaudio_result?.video_api_path ||
+    scene?.mmaudioResult?.videoApiPath ||
+    scene?.mmaudio_status === 'ready' ||
+    scene?.mmaudioStatus === 'ready' ||
     scene?.audio_slice_url ||
+    scene?.audioSliceUrl ||
+    scene?.audio_slice_api_path ||
+    scene?.audioSliceApiPath ||
     scene?.sound_prompt ||
+    scene?.soundPrompt ||
     scene?.route === 'i2v_sound' ||
     scene?.route === 'first_last_sound'
   )
@@ -600,7 +617,18 @@ function buildSceneItems(board, preferMmaudio = true) {
     const videoStatusEndpoint = pickSceneVideoStatusEndpoint(scene, preferMmaudio)
     const videoUrl = sceneVideoUrl(scene, preferMmaudio)
     const hasBaseVideo = Boolean(scene?.video_api_path || scene?.videoApiPath || scene?.video_url || scene?.videoUrl)
-    const hasMmaudio = Boolean(scene?.mmaudio_video_api_path || scene?.mmaudioVideoApiPath || scene?.mmaudio_video_url || scene?.mmaudioVideoUrl)
+    const hasMmaudio = Boolean(
+      scene?.hasMmaudio ||
+      scene?.has_mmaudio ||
+      scene?.mmaudio_video_api_path ||
+      scene?.mmaudioVideoApiPath ||
+      scene?.mmaudio_video_url ||
+      scene?.mmaudioVideoUrl ||
+      scene?.mmaudio_result?.video_api_path ||
+      scene?.mmaudioResult?.videoApiPath ||
+      scene?.mmaudio_status === 'ready' ||
+      scene?.mmaudioStatus === 'ready'
+    )
     const hasVideo = Boolean(videoUrl)
     const hasSound = sceneHasSound(scene)
     const trimV201A = assemblyVideoTrimForSceneV201A(board || {}, scene || {})
@@ -856,6 +884,7 @@ export default function BoardAssemblyPage() {
   }, [settingsStorageKey])
 
   const boardRoute = projectId ? `/app/projects/${projectId}/board` : '/app/workspace/board'
+  const audioStudioRoute = projectId ? `/app/projects/${projectId}/audio-studio` : '/app/workspace/audio-studio'
   const sceneItems = useMemo(() => buildSceneItems(board || {}, preferMmaudio), [board, preferMmaudio])
   const selectedItem = sceneItems.find((item) => item.id === selectedSceneId) || sceneItems[0] || null
   const selectedItemVideoAssetApiPath = selectedItem?.videoAssetApiPath || ''
@@ -1161,13 +1190,13 @@ export default function BoardAssemblyPage() {
         : `Нет видео у ${stats.missing} сцен — они будут собраны как пустые участки / black frame.`)
     }
     if (stats.total > 0 && stats.ready === 0 && !stats.hasOriginalAudio) list.push('Нет master audio и нет готовых video-сцен для сборки.')
-    if (!generatorAssemblyBoard && !stats.hasOriginalAudio && ['original_only', 'original_plus_scene', 'original_plus_music_scene'].includes(audioMode)) {
+    if (!generatorAssemblyBoard && !stats.hasOriginalAudio && ['original_only', 'original_plus_scene', 'original_plus_music_scene', 'original_plus_music'].includes(audioMode)) {
       list.push('В Board не найдено оригинальное audio. Для этого режима понадобится master audio.')
     }
     if (['scene_only', 'music_plus_scene'].includes(audioMode) && stats.withSound === 0) {
       list.push('В сценах не найден звук. Используй MMAudio или i2v sound на нужных сценах.')
     }
-    if (['music_plus_scene', 'original_plus_music_scene'].includes(audioMode) && !musicFile) {
+    if (['music_plus_scene', 'original_plus_music_scene', 'original_plus_music'].includes(audioMode) && !musicFile) {
       list.push('Фоновая музыка пока не загружена. Можно собрать без неё или загрузить MP3/WAV.')
     }
     return list
@@ -2021,6 +2050,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           <p>Сборка готовых сцен из Board в финальный ролик. Длительность сцен не подгоняем здесь — это делается в Доске при генерации.</p>
         </div>
         <div className="avaAssemblyHeaderActions">
+          <Link className="isAudioStudioBackV204C1" to={audioStudioRoute}><Music size={15} /> Назад в Audio Studio</Link>
           <button
               type="button"
               onClick={() => {

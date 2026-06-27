@@ -7672,3 +7672,90 @@
     transform: rotate(360deg);
   }
 }
+
+/* V204B1: Board -> Audio Studio transition button */
+.avaBoardHeaderActions .avaBoardActionAudioStudioV204B {
+  min-width: 158px !important;
+  color: #f7fbff !important;
+  border-color: rgba(177, 117, 255, 0.62) !important;
+  background:
+    radial-gradient(circle at 16% 14%, rgba(255, 255, 255, 0.28), transparent 24%),
+    radial-gradient(circle at 86% 18%, rgba(64, 231, 255, 0.30), transparent 30%),
+    linear-gradient(135deg, rgba(111, 50, 255, 0.98) 0%, rgba(60, 106, 255, 0.94) 48%, rgba(18, 213, 197, 0.92) 100%) !important;
+  box-shadow:
+    0 18px 42px rgba(96, 80, 255, 0.26),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    inset 0 1px 0 rgba(255, 255, 255, 0.24) !important;
+  font-weight: 1000 !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionAudioStudioV204B::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  transform: translateX(-140%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.avaBoardHeaderActions .avaBoardActionAudioStudioV204B:hover {
+  transform: translateY(-2px) scale(1.015) !important;
+  filter: brightness(1.07) !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionAudioStudioV204B.isOpening,
+.avaBoardHeaderActions .avaBoardActionAudioStudioV204B:disabled {
+  cursor: wait !important;
+  opacity: 0.98 !important;
+  filter: saturate(1.1) brightness(1.04) !important;
+}
+
+.avaBoardHeaderActions .avaBoardActionAudioStudioV204B.isOpening::after {
+  opacity: 1;
+  animation: avaBoardAudioStudioSweepV204B 1.05s ease-in-out infinite;
+}
+
+.avaBoardAudioStudioSpinnerV204B {
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.38);
+  border-top-color: #ffffff;
+  box-shadow: 0 0 14px rgba(128, 238, 255, 0.38);
+  animation: avaBoardAudioStudioSpinV204B 0.72s linear infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes avaBoardAudioStudioSpinV204B {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes avaBoardAudioStudioSweepV204B {
+  0% { transform: translateX(-140%); }
+  100% { transform: translateX(140%); }
+}
+
+@media (max-width: 1320px) {
+  .avaBoardHeaderActions .avaBoardActionAudioStudioV204B {
+    min-width: 138px !important;
+  }
+}
+
+
+
+/* V204C1: clear return path from Assembly to Audio Studio */
+.avaAssemblyHeaderActions .isAudioStudioBackV204C1 {
+  border-color: rgba(76, 201, 240, .34);
+  background: linear-gradient(135deg, rgba(76, 201, 240, .18), rgba(139, 92, 246, .16));
+  color: #dff8ff;
+  box-shadow: 0 10px 28px rgba(76, 201, 240, .10);
+}
+
+.avaAssemblyHeaderActions .isAudioStudioBackV204C1:hover {
+  border-color: rgba(103, 232, 249, .52);
+  background: linear-gradient(135deg, rgba(76, 201, 240, .25), rgba(139, 92, 246, .22));
+}

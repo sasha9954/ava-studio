@@ -6141,7 +6141,7 @@ def _assembly_scene_audio_volume_for_item(item: dict[str, Any], audio_mode: str,
     mode = str(audio_mode or "").lower()
     data = item or {}
 
-    if mode == "original_only":
+    if mode in {"original_only", "original_plus_music"}:
         return 0.0
 
     explicit_mute = _assembly_bool(
@@ -7925,8 +7925,8 @@ def _run_board_assembly_job(job_id: str) -> None:
         music_payload = payload.get("music") if isinstance(payload.get("music"), dict) else {}
         music_loop = bool(music_payload.get("loop", True))
         music_fade_out = bool(music_payload.get("fade_out", True))
-        wants_original_audio = audio_mode in {"original_only", "original_plus_scene", "original_plus_music_scene"}
-        wants_music_audio = audio_mode in {"music_plus_scene", "original_plus_music_scene"}
+        wants_original_audio = audio_mode in {"original_only", "original_plus_scene", "original_plus_music_scene", "original_plus_music"}
+        wants_music_audio = audio_mode in {"music_plus_scene", "original_plus_music_scene", "original_plus_music"}
         transition_debug_v134e = _assembly_transition_debug_v134e(payload, audio_mode, original_audio_path, job_id)
 
         output_lock_v200p = _assembly_output_format_lock_v200p(payload, raw_items, 1280, 720)
@@ -8182,9 +8182,9 @@ def _run_board_assembly_job(job_id: str) -> None:
         target_dir.mkdir(parents=True, exist_ok=True)
         scene_concat_path = work_dir / f"{job_id}_scene_concat.mp4"
         if wants_original_audio and original_audio_path and wants_music_audio and music_audio_path:
-            suffix = "original_music_scene"
+            suffix = "original_music" if audio_mode == "original_plus_music" else "original_music_scene"
         elif wants_music_audio and music_audio_path:
-            suffix = "music_scene"
+            suffix = "music_only" if audio_mode == "original_plus_music" else "music_scene"
         elif wants_original_audio and original_audio_path:
             suffix = "original_audio"
         else:
@@ -8481,8 +8481,8 @@ def _run_board_assembly_job(job_id: str) -> None:
             "status": "completed",
             "assembly_status": "ready",
             "audioMode": audio_mode,
-            "supportedAudioMode": "music_original_scene_mix" if ((wants_original_audio and original_audio_path) or (wants_music_audio and music_audio_path)) else "scene_audio_concat_draft",
-            "draftNote": "Music/original/scene audio mixed in." if ((wants_original_audio and original_audio_path) or (wants_music_audio and music_audio_path)) else "No original/music audio found; using scene audio from generated videos.",
+            "supportedAudioMode": "original_music_no_scene_audio" if audio_mode == "original_plus_music" else ("music_original_scene_mix" if ((wants_original_audio and original_audio_path) or (wants_music_audio and music_audio_path)) else "scene_audio_concat_draft"),
+            "draftNote": "Original/music mixed; scene audio muted." if audio_mode == "original_plus_music" else ("Music/original/scene audio mixed in." if ((wants_original_audio and original_audio_path) or (wants_music_audio and music_audio_path)) else "No original/music audio found; using scene audio from generated videos."),
             "originalAudioFound": bool(original_audio_path),
             "musicAudioFound": bool(music_audio_path),
             "sceneVolume": scene_volume,
