@@ -22,7 +22,7 @@ import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, normalizeAssetFileUrl, 
 import './AudioStudioPage.css'
 
 const STAGE = 'audio_studio'
-const VERSION = 'V204C3'
+const VERSION = 'V204C8B'
 const DEFAULT_NEGATIVE = 'музыка, речь, голоса, гул, hiss, шум'
 
 function cleanId(value = '') {
@@ -782,6 +782,55 @@ function buildAudioSnapshotFromBoard(board = {}, { projectId = '', source = 'boa
   }
 }
 
+function manualSceneColorV204C8(index = 0, seed = '') {
+  const palette = [
+    '#22D3EE', // cyan
+    '#A855F7', // violet
+    '#F97316', // orange
+    '#10B981', // emerald
+    '#F43F5E', // rose
+    '#3B82F6', // blue
+    '#EAB308', // yellow
+    '#EC4899', // pink
+    '#14B8A6', // teal
+    '#8B5CF6', // purple
+    '#84CC16', // lime
+    '#EF4444', // red
+  ]
+  const hue = Math.abs(Math.round(stableHueFromText(seed || `manual:${index}`, index)))
+  const idx = (hue + (Number(index || 0) * 7)) % palette.length
+  return palette[idx]
+}
+
+function buildManualAudioSceneV204C6(index = 0) {
+  const number = Number(index || 0) + 1
+  const id = `manual_${String(number).padStart(2, '0')}_${Date.now().toString(36)}`
+  return {
+    id,
+    sceneId: id,
+    index,
+    title: `Сцена ${number}`,
+    color: manualSceneColorV204C8(index, id),
+    blockId: '',
+    blockTitle: 'Audio Studio',
+    status: 'no_video',
+    startSec: 0,
+    endSec: 6,
+    durationSec: 6,
+    route: 'audio_studio_manual',
+    sourceVideo: { url: '', apiPath: '', assetId: '', name: '' },
+    prompt: '',
+    negativePrompt: DEFAULT_NEGATIVE,
+    mmaudioVolume: 100,
+    selectedVariantId: '',
+    appliedVariantId: '',
+    variants: [],
+    manualScene: true,
+    createdInAudioStudio: true,
+    createdAt: nowIso(),
+  }
+}
+
 function mergeAudioWithFreshBoard(audio = {}, board = {}, projectId = '') {
   const fresh = buildAudioSnapshotFromBoard(board, { projectId, source: 'board_refresh_merge_v204a' })
   const oldScenes = new Map(asArray(audio.scenes).map((scene) => [cleanId(scene.id || scene.sceneId), scene]))
@@ -812,6 +861,38 @@ function mergeAudioWithFreshBoard(audio = {}, board = {}, projectId = '') {
     selectedSceneId: audio.selectedSceneId || fresh.selectedSceneId || scenes[0]?.id || '',
     updatedAt: nowIso(),
   }
+}
+
+function isManualAudioSceneV204C7(scene = {}) {
+  const route = cleanId(scene.route).toLowerCase()
+  const id = cleanId(scene.id || scene.sceneId).toLowerCase()
+  return Boolean(
+    scene.manualScene ||
+    scene.createdInAudioStudio ||
+    route === 'audio_studio_manual' ||
+    id.startsWith('manual_')
+  )
+}
+
+function isBoardAudioSceneV204C7(scene = {}) {
+  const route = cleanId(scene.route).toLowerCase()
+  return Boolean(
+    scene.boardRaw ||
+    scene.fromBoard ||
+    scene.importedFrom === 'board' ||
+    scene.source === 'board' ||
+    (route && route !== 'audio_studio_manual' && !isManualAudioSceneV204C7(scene))
+  )
+}
+
+function canUseManualSceneControlsV204C7(snapshot = {}) {
+  const scenes = asArray(snapshot.scenes)
+  if (!scenes.length) return true
+  const importedFrom = cleanId(snapshot.importedFrom).toLowerCase()
+  const source = cleanId(snapshot.source).toLowerCase()
+  if (importedFrom === 'board' || source.includes('board_import') || source.includes('board_refresh')) return false
+  if (scenes.some(isBoardAudioSceneV204C7)) return false
+  return scenes.every(isManualAudioSceneV204C7)
 }
 
 function sceneStatusLabel(scene = {}) {
@@ -1131,6 +1212,8 @@ export default function AudioStudioPage() {
   const [generatingSceneId, setGeneratingSceneId] = useState('')
   const [applyingVariantId, setApplyingVariantId] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [clearConfirmOpenV204C8, setClearConfirmOpenV204C8] = useState(false)
+  const [clearingAllV204C8, setClearingAllV204C8] = useState(false)
   const pollRef = useRef(null)
   const snapshotRef = useRef(snapshot)
   const initialLoadDoneRefV204B = useRef(false)
@@ -1158,6 +1241,8 @@ export default function AudioStudioPage() {
     if (!selectedScene) return null
     return asArray(selectedScene.variants).find((variant) => cleanId(variant.id) === cleanId(selectedScene.appliedVariantId)) || null
   }, [selectedScene])
+
+  const manualSceneControlsVisibleV204C7 = useMemo(() => canUseManualSceneControlsV204C7(snapshot), [snapshot])
 
   const saveSnapshot = useCallback(async (nextSnapshot, reason = 'save') => {
     const cleanSnapshot = sanitizeAudioSnapshot(nextSnapshot)
@@ -1379,29 +1464,93 @@ export default function AudioStudioPage() {
   }, [loadStage, loadWorkspaceStage, projectId, saveSnapshot, workspaceMode])
 
 
-  const clearAllAudioStudioV204B5 = useCallback(async () => {
-    const ok = window.confirm([
-        'Очистить всю Audio Studio?',
-        '',
-        'Будут удалены все сцены, prompt-поля, MMAudio-варианты, applied-выбор и локальная история этой страницы. Доска не изменится.'
-      ].join('\\n'))
-    if (!ok) return
-    forgetAudioSnapshotSafeBackupV204B9(projectId || 'workspace')
-    const next = {
-      version: VERSION,
-      schema: 'ava_audio_studio_scene_snapshot_v1',
-      stage: STAGE,
-      source: 'manual_clear_v204b5',
-      projectId: projectId || '',
-      selectedSceneId: '',
-      scenes: [],
-      stableAudio: { enabled: false, status: 'soon' },
-      queue: { enabled: false, items: [] },
-      updatedAt: nowIso(),
+  const performClearAllAudioStudioV204C8 = useCallback(async () => {
+    setClearingAllV204C8(true)
+    setError('')
+    try {
+      forgetAudioSnapshotSafeBackupV204B9(projectId || 'workspace')
+      const next = {
+        version: VERSION,
+        schema: 'ava_audio_studio_scene_snapshot_v1',
+        stage: STAGE,
+        source: 'manual_clear_v204c8',
+        projectId: projectId || '',
+        selectedSceneId: '',
+        scenes: [],
+        stableAudio: { enabled: false, status: 'soon' },
+        queue: { enabled: false, items: [] },
+        updatedAt: nowIso(),
+      }
+      await saveSnapshot(next, 'clear_all_audio_studio_v204c8')
+      setStatus('Audio Studio очищена')
+      setClearConfirmOpenV204C8(false)
+    } catch (err) {
+      setError(`Не удалось очистить Audio Studio: ${err?.message || err}`)
+    } finally {
+      setClearingAllV204C8(false)
     }
-    await saveSnapshot(next, 'clear_all_audio_studio_v204b5')
-    setStatus('Audio Studio очищена')
   }, [projectId, saveSnapshot])
+
+  const clearAllAudioStudioV204B5 = useCallback(() => {
+    setError('')
+    setClearConfirmOpenV204C8(true)
+  }, [])
+
+  const addManualSceneV204C6 = useCallback(async () => {
+    if (typeof canUseManualSceneControlsV204C7 === 'function' && !canUseManualSceneControlsV204C7(snapshotRef.current || {})) {
+      setError('Ручные сцены доступны только в пустой/ручной Audio Studio. Если пришёл из Доски — сначала нажми “Очистить всё”.')
+      return
+    }
+    setError('')
+    try {
+      const current = sanitizeAudioSnapshot(snapshotRef.current || {})
+      const scenes = asArray(current.scenes)
+      const scene = buildManualAudioSceneV204C6(scenes.length)
+      const next = sanitizeAudioSnapshot({
+        ...current,
+        source: 'manual_scene_added_v204c8a',
+        projectId: projectId || current.projectId || '',
+        scenes: [...scenes, scene],
+        selectedSceneId: scene.id,
+        updatedAt: nowIso(),
+      })
+      await saveSnapshot(next, 'manual_scene_added_v204c8a')
+      setStatus(`Добавлена ${scene.title}. Загрузи видео слева и генерируй MMAudio.`)
+    } catch (err) {
+      setError(`Не удалось добавить сцену: ${err?.message || err}`)
+    }
+  }, [projectId, saveSnapshot])
+
+  const deleteSelectedSceneV204C6 = useCallback(async () => {
+    if (!selectedScene) return
+    if (typeof canUseManualSceneControlsV204C7 === 'function' && !canUseManualSceneControlsV204C7(snapshotRef.current || {})) {
+      setError('Удаление сцен вручную скрыто для импорта из Доски, чтобы не смешать Board и ручные сцены.')
+      return
+    }
+    setError('')
+    try {
+      const current = sanitizeAudioSnapshot(snapshotRef.current || {})
+      const scenes = asArray(current.scenes)
+      const selectedId = cleanId(selectedScene.id)
+      const selectedIndex = Math.max(0, scenes.findIndex((scene) => cleanId(scene.id) === selectedId))
+      const remaining = scenes.filter((scene) => cleanId(scene.id) !== selectedId).map((scene, index) => ({
+        ...scene,
+        index,
+      }))
+      const nextSelected = remaining[Math.min(selectedIndex, Math.max(0, remaining.length - 1))]?.id || ''
+      const next = sanitizeAudioSnapshot({
+        ...current,
+        source: 'manual_scene_deleted_v204c8a',
+        scenes: remaining,
+        selectedSceneId: nextSelected,
+        updatedAt: nowIso(),
+      })
+      await saveSnapshot(next, 'manual_scene_deleted_v204c8a')
+      setStatus(`Сцена удалена. Осталось сцен: ${remaining.length}`)
+    } catch (err) {
+      setError(`Не удалось удалить сцену: ${err?.message || err}`)
+    }
+  }, [saveSnapshot, selectedScene])
 
   const uploadSceneVideo = useCallback(async (file) => {
     if (!file || !selectedScene) return
@@ -1896,6 +2045,39 @@ export default function AudioStudioPage() {
 
   return (
     <div className="avaAudioStudioPage">
+      {clearConfirmOpenV204C8 ? (
+        <div className="avaAudioModalBackdropV204C8" role="presentation">
+          <section className="avaAudioConfirmModalV204C8" role="dialog" aria-modal="true" aria-labelledby="avaAudioClearTitleV204C8">
+            <button
+              type="button"
+              className="avaAudioModalCloseV204C8"
+              onClick={() => setClearConfirmOpenV204C8(false)}
+              disabled={clearingAllV204C8}
+              title="Отмена"
+            >
+              <X size={16} />
+            </button>
+            <div className="avaAudioModalIconV204C8"><Trash2 size={22} /></div>
+            <h2 id="avaAudioClearTitleV204C8">Очистить Audio Studio?</h2>
+            <p>
+              Будут удалены все сцены, prompt-поля, MMAudio-варианты, applied-выбор и локальная история этой страницы.
+              Доска не изменится.
+            </p>
+            <div className="avaAudioModalNoticeV204C8">
+              После очистки включится ручной режим: можно добавить свою сцену, загрузить видео и отправить результат в монтажку.
+            </div>
+            <div className="avaAudioModalActionsV204C8">
+              <button type="button" onClick={() => setClearConfirmOpenV204C8(false)} disabled={clearingAllV204C8}>
+                Отмена
+              </button>
+              <button type="button" className="isDanger" onClick={performClearAllAudioStudioV204C8} disabled={clearingAllV204C8}>
+                {clearingAllV204C8 ? <span className="avaAudioModalSpinnerV204C8" /> : <Trash2 size={15} />}
+                {clearingAllV204C8 ? 'Очищаю…' : 'Да, очистить всё'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <header className="avaAudioHero">
         <div>
           <p className="avaAudioEyebrow"><Sparkles size={15} /> Ava Audio Studio · {VERSION}</p>
@@ -1937,6 +2119,19 @@ export default function AudioStudioPage() {
       {error ? <div className="avaAudioAlert isError"><X size={16} /> {error}</div> : null}
       {status ? <div className="avaAudioAlert"><CheckCircle2 size={16} /> {status}</div> : null}
 
+      {manualSceneControlsVisibleV204C7 ? (
+        <section className="avaAudioManualSceneBarV204C7">
+          <div>
+            <strong>Ручные сцены</strong>
+            <span>Для самостоятельного видео: добавь сцену, загрузи ролик, сделай MMAudio и отправь в монтажку.</span>
+          </div>
+          <div className="avaAudioManualSceneActionsV204C7">
+            <button type="button" className="isSceneAddV204C6" onClick={addManualSceneV204C6}>+ сцена</button>
+            <button type="button" className="isSceneRemoveV204C6" onClick={deleteSelectedSceneV204C6} disabled={!selectedScene}>− сцена</button>
+          </div>
+        </section>
+      ) : null}
+
       <SceneStrip scenes={snapshot.scenes} selectedSceneId={selectedScene?.id} onSelect={(sceneId) => setSnapshot((current) => {
         const next = { ...current, selectedSceneId: sceneId, updatedAt: nowIso() }
         snapshotRef.current = next
@@ -1948,7 +2143,10 @@ export default function AudioStudioPage() {
           <Headphones size={42} />
           <h2>Пока нет сцен</h2>
           <p>Открой Доску и нажми “В Audio Studio”, либо обнови импорт из сохранённой Доски.</p>
-          <button type="button" onClick={refreshFromBoard}><RefreshCcw size={16} /> Взять сцены из Доски</button>
+          <div className="avaAudioEmptyActionsV204C6">
+            <button type="button" onClick={refreshFromBoard}><RefreshCcw size={16} /> Взять сцены из Доски</button>
+            <button type="button" className="isSceneAddV204C6" onClick={addManualSceneV204C6}>+ сцена</button>
+          </div>
         </section>
       ) : (
         <main className="avaAudioWorkbench">
