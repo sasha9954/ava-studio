@@ -5720,6 +5720,167 @@ def mmaudio_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[
     return {"ok": True, **job}
 
 
+@router.post("/clip/mmaudio/apply-volume")
+def apply_mmaudio_volume(payload: dict[str, Any], user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    # V204C3: bake the chosen Audio Studio MMAudio volume into a new video asset.
+    # This turns a per-scene correction like 30% into the new baseline for Assembly.
+    payload_data = dict(payload or {})
+    project_id = _clean_project_id(_payload_get(payload_data, "project_id", "projectId", default=""))
+    if project_id:
+        ensure_project_access(project_id, user)
+
+    scene_id = str(_payload_get(payload_data, "scene_id", "sceneId", default="") or "").strip()
+    source_api_path = str(_payload_get(payload_data, "video_api_path", "videoApiPath", "source_video_api_path", "sourceVideoApiPath", default="") or "").strip()
+    source_url = str(_payload_get(payload_data, "video_url", "videoUrl", "source_video_url", "sourceVideoUrl", default="") or "").strip()
+    source_asset_id = str(_payload_get(payload_data, "asset_id", "assetId", "video_asset_id", "videoAssetId", default="") or "").strip()
+
+    try:
+        volume_percent = float(_payload_get(payload_data, "volume_percent", "volumePercent", "mmaudio_volume", "mmaudioVolume", default=100) or 100)
+    except Exception:
+        volume_percent = 100.0
+    volume_percent = max(0.0, min(150.0, volume_percent))
+
+    source_ref = source_api_path or source_url
+    if not source_ref and not source_asset_id:
+        raise HTTPException(status_code=400, detail="Missing MMAudio video asset for volume apply")
+
+    source_path = _resolve_local_file(source_ref, asset_id=source_asset_id or None)
+    if not source_path.exists() or not source_path.is_file():
+        raise HTTPException(status_code=404, detail="MMAudio source video not found")
+
+    source_asset_id = source_asset_id or (_asset_id_from_text(source_ref) or "")
+
+    if abs(volume_percent - 100.0) < 0.01:
+        api_path = f"/assets/{source_asset_id}/file" if source_asset_id else source_api_path
+        return {
+            "ok": True,
+            "videoApiPath": api_path,
+            "video_api_path": api_path,
+            "videoUrl": api_path or source_url,
+            "video_url": api_path or source_url,
+            "assetId": source_asset_id,
+            "asset_id": source_asset_id,
+            "volumeBaked": False,
+            "volume_baked": False,
+            "volumePercent": 100,
+            "volume_percent": 100,
+            "sourceVideoPath": str(source_path),
+        }
+
+    target_dir = _settings_static_path() / "assets" / "board_videos"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    safe_scene = _safe_name(scene_id or "scene", "scene")
+    safe_stem = _safe_name(source_path.stem, "mmaudio")
+    volume_tag = str(int(round(volume_percent))).replace("-", "0")
+    out_path = target_dir / f"{safe_stem}_{safe_scene}_mmaudio_vol_{volume_tag}p_{uuid4().hex[:8]}.mp4"
+
+    gain = volume_percent / 100.0
+    has_audio = False
+    try:
+        probe = _ffprobe_json([
+            "-v", "error",
+            "-select_streams", "a",
+            "-show_entries", "stream=index",
+            "-of", "json",
+            str(source_path),
+        ])
+        has_audio = bool(probe.get("streams"))
+    except Exception:
+        has_audio = True
+
+    try:
+        if has_audio:
+            _run_ffmpeg([
+                "-y",
+                "-i", str(source_path),
+                "-map", "0:v:0?",
+                "-map", "0:a:0?",
+                "-c:v", "copy",
+                "-af", f"volume={gain:.6f}",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+        else:
+            _run_ffmpeg(["-y", "-i", str(source_path), "-c", "copy", str(out_path)])
+    except HTTPException:
+        if has_audio:
+            _run_ffmpeg([
+                "-y",
+                "-i", str(source_path),
+                "-map", "0:v:0?",
+                "-map", "0:a:0?",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "18",
+                "-af", f"volume={gain:.6f}",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+        else:
+            raise
+
+    job_ref = {
+        "jobId": f"mmaudio_volume_{uuid4().hex[:10]}",
+        "sceneId": scene_id,
+        "scene_id": scene_id,
+        "projectId": project_id,
+        "project_id": project_id,
+        "userId": user.get("id"),
+        "user_id": user.get("id"),
+    }
+    asset_ref = _register_board_output_asset(
+        out_path,
+        job=job_ref,
+        kind="video",
+        stage="board_videos",
+        original_name=out_path.name,
+    )
+
+    asset_id = asset_ref.get("asset_id") or asset_ref.get("assetId")
+    api_path = asset_ref.get("asset_api_path") or asset_ref.get("assetApiPath")
+    asset_url = asset_ref.get("asset_url") or asset_ref.get("assetUrl") or api_path
+
+    if not api_path:
+        urls = _public_static_url(f"assets/board_videos/{out_path.name}")
+        api_path = urls.get("apiPath") or urls.get("url")
+        asset_url = urls.get("url") or api_path
+
+    print("[MMAUDIO APPLY VOLUME BAKED V204C3]", {
+        "sceneId": scene_id,
+        "source": str(source_path),
+        "out": str(out_path),
+        "volumePercent": volume_percent,
+        "assetId": asset_id,
+        "apiPath": api_path,
+    }, flush=True)
+
+    return {
+        "ok": True,
+        "videoApiPath": api_path,
+        "video_api_path": api_path,
+        "videoUrl": api_path or asset_url,
+        "video_url": api_path or asset_url,
+        "assetApiPath": api_path,
+        "asset_api_path": api_path,
+        "assetId": asset_id,
+        "asset_id": asset_id,
+        "videoName": out_path.name,
+        "video_name": out_path.name,
+        "volumeBaked": True,
+        "volume_baked": True,
+        "volumePercent": volume_percent,
+        "volume_percent": volume_percent,
+        "gain": gain,
+        "sourceVideoPath": str(source_path),
+        "localPath": str(out_path),
+    }
+
+
+
 # ---------------------------------------------------------------------
 # Board Assembly / Video Montage — FFmpeg draft.
 # Stage 6.5 supports the safest first mode: scene video concat with scene audio.
@@ -10167,6 +10328,14 @@ def _ava_stage613_dynamic_drawtext_position() -> tuple[str, str]:
     return x, y
 
 
+def _ava_stage613_slow_orbit_drawtext_position() -> tuple[str, str]:
+    # One gentle full circle every 28 seconds.
+    # Keep the text safely inside frame bounds and much calmer than the corner-jump mode.
+    x = "(w-tw)/2 + (w*0.18)*sin(2*PI*t/28)"
+    y = "(h-th)/2 + (h*0.12)*cos(2*PI*t/28)"
+    return x, y
+
+
 def _apply_assembly_watermark(src_path, out_path, watermark):
     text_raw = str((watermark or {}).get("text") or "").strip()
     preset = globals().get("AVA_BOARD_ASSEMBLY_PRESET", "superfast")
@@ -10190,7 +10359,9 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
     opacity = max(0.03, min(1.0, _assembly_float((watermark or {}).get("opacity"), 0.35)))
     motion = str((watermark or {}).get("motion") or "static").lower()
     position = str((watermark or {}).get("position") or "top_right")
-    if motion == "corners":
+    if motion in {"slow", "slow_orbit", "orbit"}:
+        x, y = _ava_stage613_slow_orbit_drawtext_position()
+    elif motion == "corners":
         x, y = _ava_stage613_dynamic_drawtext_position()
     else:
         x, y = _ava_stage613_static_drawtext_position(position)

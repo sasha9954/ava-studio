@@ -7759,3 +7759,46 @@
   border-color: rgba(103, 232, 249, .52);
   background: linear-gradient(135deg, rgba(76, 201, 240, .25), rgba(139, 92, 246, .22));
 }
+
+
+/* V204C2: watermark movement presets */
+.avaAssemblyMotionPresetGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.avaAssemblyMotionPresetButton {
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(69, 216, 255, .18);
+  background: rgba(8, 14, 30, .74);
+  color: #d8e7ff;
+  padding: 9px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.avaAssemblyMotionPresetButton:hover {
+  border-color: rgba(111, 230, 255, .34);
+  background: rgba(18, 27, 52, .92);
+  color: #f2f7ff;
+  transform: translateY(-1px);
+}
+
+.avaAssemblyMotionPresetButton.isActive {
+  border-color: rgba(111, 230, 255, .58);
+  background: linear-gradient(135deg, rgba(76, 201, 240, .24), rgba(87, 109, 255, .32));
+  color: #f7fbff;
+  box-shadow: 0 10px 24px rgba(76, 201, 240, .14), inset 0 0 0 1px rgba(255,255,255,.05);
+}
+
+@media (max-width: 620px) {
+  .avaAssemblyMotionPresetGrid {
+    grid-template-columns: 1fr;
+  }
+}
