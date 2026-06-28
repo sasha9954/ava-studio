@@ -6338,6 +6338,162 @@ def _assembly_scene_audio_volume_for_item(item: dict[str, Any], audio_mode: str,
     return max(0.0, float(scene_volume))
 
 
+# AVA_ASSEMBLY_STAU_LAYER_V204H3: mix applied Stable Audio block beds from Audio Studio.
+def _assembly_stau_applied_audio_v204h3(block: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(block, dict):
+        return {}
+    stable_audio = block.get("stableAudio") if isinstance(block.get("stableAudio"), dict) else block.get("stable_audio") if isinstance(block.get("stable_audio"), dict) else {}
+    for candidate in (
+        block.get("appliedStableAudio"),
+        block.get("applied_stable_audio"),
+        stable_audio.get("appliedAudio") if isinstance(stable_audio, dict) else None,
+        stable_audio.get("applied_audio") if isinstance(stable_audio, dict) else None,
+        stable_audio.get("assembly") if isinstance(stable_audio, dict) else None,
+    ):
+        if isinstance(candidate, dict):
+            return candidate
+    if "stable_audio" in str(block.get("kind") or ""):
+        return block
+    return {}
+
+
+def _assembly_stau_ref_v204h3(block: dict[str, Any], applied: dict[str, Any]) -> str:
+    for source in (applied, block):
+        if not isinstance(source, dict):
+            continue
+        for key in ("ref", "apiPath", "api_path", "assetApiPath", "asset_api_path", "audioApiPath", "audio_api_path", "url", "audioUrl", "audio_url"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _assembly_stau_layers_v204h3(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    stau_payload = payload.get("stau") if isinstance(payload.get("stau"), dict) else {}
+    volumes = payload.get("volumes") if isinstance(payload.get("volumes"), dict) else {}
+    enabled = any(_assembly_bool(value) for value in (
+        stau_payload.get("enabled"),
+        payload.get("stau_enabled"),
+        payload.get("stauEnabled"),
+    ))
+    raw_blocks = (
+        stau_payload.get("blocks")
+        or payload.get("stable_audio_blocks")
+        or payload.get("stableAudioBlocks")
+        or payload.get("applied_stable_audio_blocks")
+        or payload.get("appliedStableAudioBlocks")
+        or []
+    )
+    if not enabled or not isinstance(raw_blocks, list):
+        return []
+    raw_global_percent = stau_payload.get("volume_percent") or stau_payload.get("volumePercent") or 30
+    try:
+        percent_volume = float(raw_global_percent) / 100.0
+    except Exception:
+        percent_volume = 0.3
+    global_volume = _assembly_float(volumes.get("stau") or stau_payload.get("volume") or percent_volume, 0.3)
+    layers: list[dict[str, Any]] = []
+    for index, block in enumerate(raw_blocks):
+        if not isinstance(block, dict):
+            continue
+        applied = _assembly_stau_applied_audio_v204h3(block)
+        ref = _assembly_stau_ref_v204h3(block, applied)
+        if not ref:
+            continue
+        try:
+            audio_path = _resolve_local_file(ref)
+        except Exception as exc:
+            print("[ASSEMBLY STAU SKIP V204H3]", {"reason": "resolve_failed", "ref": ref, "error": str(exc)}, flush=True)
+            continue
+        start_sec = _assembly_float(applied.get("startSec") or applied.get("start_sec") or block.get("startSec") or block.get("start_sec"), 0.0)
+        end_sec = _assembly_float(applied.get("endSec") or applied.get("end_sec") or block.get("endSec") or block.get("end_sec"), 0.0)
+        duration_sec = _assembly_float(
+            applied.get("durationSec")
+            or applied.get("duration_sec")
+            or applied.get("exactDurationSec")
+            or applied.get("exact_duration_sec")
+            or block.get("durationSec")
+            or block.get("duration_sec"),
+            max(0.0, end_sec - start_sec),
+        )
+        if duration_sec <= 0:
+            duration_sec = _ffprobe_duration(audio_path)
+        if duration_sec <= 0:
+            continue
+        block_id = str(applied.get("blockId") or applied.get("block_id") or block.get("id") or block.get("blockId") or f"stau_{index + 1}")
+        layers.append({
+            "index": index,
+            "blockId": block_id,
+            "ref": ref,
+            "path": audio_path,
+            "startSec": max(0.0, start_sec),
+            "durationSec": max(0.05, duration_sec),
+            "volume": max(0.0, float(global_volume)),
+            "sceneIds": applied.get("sceneIds") or applied.get("scene_ids") or block.get("sceneIds") or block.get("scene_ids") or [],
+        })
+    return layers
+
+
+def _assembly_apply_stau_layers_v204h3(video_path: Path, target_path: Path, layers: list[dict[str, Any]], *, timeline_duration: float, job_id: str) -> dict[str, Any]:
+    if not layers:
+        return {"applied": False, "reason": "no_layers"}
+    base_duration = _ffprobe_duration(video_path) or timeline_duration or 0.0
+    if base_duration <= 0:
+        return {"applied": False, "reason": "no_base_duration"}
+
+    args = ["-y", "-i", str(video_path)]
+    safe_layers: list[dict[str, Any]] = []
+    for layer in layers:
+        path = layer.get("path")
+        if not isinstance(path, Path) or not path.exists():
+            continue
+        safe_layers.append(layer)
+        args.extend(["-i", str(path)])
+    if not safe_layers:
+        return {"applied": False, "reason": "no_existing_layer_files"}
+
+    filters = ["[0:a]anull[basea]"]
+    labels = ["[basea]"]
+    for input_offset, layer in enumerate(safe_layers, start=1):
+        start_sec = max(0.0, float(layer.get("startSec") or 0.0))
+        duration_sec = max(0.05, float(layer.get("durationSec") or 0.05))
+        volume = max(0.0, float(layer.get("volume") or 0.0))
+        delay_ms = int(round(start_sec * 1000.0))
+        label = f"stau{input_offset}a"
+        filters.append(
+            f"[{input_offset}:a]atrim=0:{duration_sec:.3f},asetpts=PTS-STARTPTS,volume={volume:.4f},"
+            f"adelay={delay_ms}:all=1,apad,atrim=0:{base_duration:.3f}[{label}]"
+        )
+        labels.append(f"[{label}]")
+
+    filter_complex = ";".join(filters) + ";" + "".join(labels) + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0[aout]"
+    _run_ffmpeg([
+        *args,
+        "-filter_complex", filter_complex,
+        "-map", "0:v:0",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        str(target_path),
+    ])
+    return {
+        "applied": True,
+        "layerCount": len(safe_layers),
+        "layers": [
+            {
+                "blockId": str(layer.get("blockId") or ""),
+                "startSec": float(layer.get("startSec") or 0.0),
+                "durationSec": float(layer.get("durationSec") or 0.0),
+                "volume": float(layer.get("volume") or 0.0),
+                "sceneIds": layer.get("sceneIds") or [],
+            }
+            for layer in safe_layers
+        ],
+    }
+
+
 # AVA_BOARD_ASSEMBLY_SAFE_XFADE_V134D:
 # Optional post-concat visual xfade. It never changes the stable plain concat path first.
 # Flow: build normal scene_concat_path -> if transitions enabled and allowed, try visual xfade into temp -> replace concat.
@@ -8100,6 +8256,8 @@ def _run_board_assembly_job(job_id: str) -> None:
         scene_volume = _assembly_float(volumes.get("scene"), 1.0)
         original_volume = _assembly_float(volumes.get("original"), 1.0)
         music_volume = _assembly_float(volumes.get("music"), 1.0)
+        stau_layers_v204h3 = _assembly_stau_layers_v204h3(payload)
+        stau_volume_v204h3 = _assembly_float(volumes.get("stau"), 0.3)
         original_audio_path = _assembly_original_audio_path(payload)
         if not original_audio_path:
             original_audio_path = _assembly_project_original_audio_path_v200r(payload, job_id=job_id)
@@ -8595,6 +8753,24 @@ def _run_board_assembly_job(job_id: str) -> None:
         else:
             shutil.copy2(scene_concat_path, out_path)
 
+        stau_mix_result_v204h3 = {"applied": False, "reason": "disabled_or_no_layers"}
+        if stau_layers_v204h3:
+            stau_out_path_v204h3 = work_dir / f"{job_id}_with_stau_v204h3.mp4"
+            try:
+                stau_mix_result_v204h3 = _assembly_apply_stau_layers_v204h3(
+                    out_path,
+                    stau_out_path_v204h3,
+                    stau_layers_v204h3,
+                    timeline_duration=scene_concat_duration or target_timeline_duration,
+                    job_id=job_id,
+                )
+                if stau_mix_result_v204h3.get("applied") and stau_out_path_v204h3.exists() and stau_out_path_v204h3.stat().st_size > 0:
+                    shutil.copy2(stau_out_path_v204h3, out_path)
+                print("[BOARD ASSEMBLY STAU MIX V204H3]", {"job_id": job_id, **stau_mix_result_v204h3}, flush=True)
+            except Exception as exc:
+                stau_mix_result_v204h3 = {"applied": False, "reason": f"stau_mix_failed: {exc}"}
+                raise HTTPException(status_code=500, detail={"code": "stau_mix_failed_v204h3", "message": str(exc)})
+
         # Stage 6.9J force watermark burn-in before public URL
         watermark_payload = payload.get("watermark") if isinstance(payload.get("watermark"), dict) else {}
         watermark_text = str(watermark_payload.get("text") or "").strip()
@@ -8670,6 +8846,9 @@ def _run_board_assembly_job(job_id: str) -> None:
             "sceneVolume": scene_volume,
             "originalVolume": original_volume,
             "musicVolume": music_volume,
+            "stauVolume": stau_volume_v204h3,
+            "stauLayerCount": len(stau_layers_v204h3),
+            "stauMixV204H3": locals().get("stau_mix_result_v204h3") or {},
             "watermarkRequested": watermark_requested,
             "watermarkApplied": watermark_applied,
             "watermarkError": watermark_error,

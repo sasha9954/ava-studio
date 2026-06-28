@@ -144,6 +144,10 @@ function normalizeAssemblyLocalUiSettingsV197F(raw = {}) {
     sceneVolume: clampNumber(raw.sceneVolume, 0, 150, 25),
     hasMusicVolumeV200N: Object.prototype.hasOwnProperty.call(raw, 'musicVolume'),
     musicVolume: clampNumber(raw.musicVolume, 0, 150, 15),
+    hasStauEnabledV204H3: Object.prototype.hasOwnProperty.call(raw, 'stauEnabledV204H3') || Object.prototype.hasOwnProperty.call(raw, 'stauEnabled'),
+    stauEnabledV204H3: raw.stauEnabledV204H3 ?? raw.stauEnabled ?? true,
+    hasStauVolumeV204H3: Object.prototype.hasOwnProperty.call(raw, 'stauVolumeV204H3') || Object.prototype.hasOwnProperty.call(raw, 'stauVolume'),
+    stauVolumeV204H3: clampNumber(raw.stauVolumeV204H3 ?? raw.stauVolume, 0, 150, 30),
   }
 }
 
@@ -551,6 +555,209 @@ function normalizeBoard(raw = {}) {
   }
 }
 
+
+// AVA_ASSEMBLY_STAU_LAYER_V204H3: Stable Audio block beds from Audio Studio.
+function firstAssemblyTextV204H3(...values) {
+  for (const value of values) {
+    const text = String(value ?? '').trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function assemblyStauAppliedAudioV204H3(block = {}) {
+  const stableAudio = block?.stableAudio || block?.stable_audio || {}
+  return block?.appliedStableAudio
+    || block?.applied_stable_audio
+    || stableAudio?.appliedAudio
+    || stableAudio?.applied_audio
+    || stableAudio?.assembly
+    || (String(block?.kind || '').includes('stable_audio') ? block : null)
+    || null
+}
+
+function normalizeAssemblyStauBlockV204H3(raw = {}, index = 0) {
+  if (!raw || typeof raw !== 'object') return null
+  const applied = assemblyStauAppliedAudioV204H3(raw) || {}
+  const stableAudio = raw?.stableAudio || raw?.stable_audio || {}
+  const ref = firstAssemblyTextV204H3(
+    applied.ref,
+    applied.apiPath,
+    applied.api_path,
+    applied.assetApiPath,
+    applied.asset_api_path,
+    applied.audioApiPath,
+    applied.audio_api_path,
+    applied.url,
+    raw.ref,
+    raw.apiPath,
+    raw.api_path,
+    raw.assetApiPath,
+    raw.asset_api_path,
+    raw.audioApiPath,
+    raw.audio_api_path,
+    raw.url,
+  )
+  if (!ref) return null
+  const sceneIds = asArray(applied.sceneIds || applied.scene_ids || raw.sceneIds || raw.scene_ids)
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+  const startSec = toNumber(applied.startSec ?? applied.start_sec ?? raw.startSec ?? raw.start_sec, 0)
+  const endSec = toNumber(applied.endSec ?? applied.end_sec ?? raw.endSec ?? raw.end_sec, 0)
+  const durationSec = toNumber(
+    applied.durationSec ?? applied.duration_sec ?? applied.exactDurationSec ?? applied.exact_duration_sec ?? raw.durationSec ?? raw.duration_sec,
+    endSec > startSec ? endSec - startSec : 0,
+  )
+  const volume = clampNumber(
+    applied.volumePercent ?? applied.volume_percent ?? applied.volume ?? stableAudio.appliedVolume ?? stableAudio.applied_volume ?? raw.volume,
+    0,
+    150,
+    30,
+  )
+  const blockId = firstAssemblyTextV204H3(applied.blockId, applied.block_id, raw.id, raw.blockId, raw.block_id, `stau_block_${index + 1}`)
+  const variantId = firstAssemblyTextV204H3(applied.variantId, applied.variant_id, raw.appliedStableAudioVariantId, raw.applied_stable_audio_variant_id, stableAudio.appliedVariantId, stableAudio.applied_variant_id)
+  const normalizedApplied = {
+    ...applied,
+    kind: applied.kind || 'stable_audio_block_bed',
+    blockId,
+    block_id: blockId,
+    variantId,
+    variant_id: variantId,
+    ref,
+    apiPath: firstAssemblyTextV204H3(applied.apiPath, applied.api_path, applied.assetApiPath, applied.asset_api_path, ref),
+    url: firstAssemblyTextV204H3(applied.url, ref),
+    assetId: firstAssemblyTextV204H3(applied.assetId, applied.asset_id, raw.assetId, raw.asset_id),
+    volume,
+    volumePercent: volume,
+    sceneIds,
+    scene_ids: sceneIds,
+    startSec,
+    start_sec: startSec,
+    endSec: endSec || startSec + durationSec,
+    end_sec: endSec || startSec + durationSec,
+    durationSec,
+    duration_sec: durationSec,
+    assemblyReady: true,
+    assembly_ready: true,
+    sendToAssembly: true,
+    send_to_assembly: true,
+  }
+  return {
+    ...raw,
+    id: blockId,
+    blockId,
+    block_id: blockId,
+    sceneIds,
+    scene_ids: sceneIds,
+    startSec,
+    start_sec: startSec,
+    endSec: endSec || startSec + durationSec,
+    end_sec: endSec || startSec + durationSec,
+    durationSec,
+    duration_sec: durationSec,
+    volume,
+    appliedStableAudio: normalizedApplied,
+    applied_stable_audio: normalizedApplied,
+    assemblyReady: true,
+    assembly_ready: true,
+  }
+}
+
+function extractAssemblyStauBlocksV204H3(raw = {}) {
+  const data = raw?.data && typeof raw.data === 'object' ? raw.data : (raw || {})
+  const candidates = [
+    ...asArray(data.appliedStableAudioBlocks),
+    ...asArray(data.applied_stable_audio_blocks),
+    ...asArray(data.stauBlocks),
+    ...asArray(data.stau_blocks),
+    ...asArray(data.stableAudioBlocks),
+    ...asArray(data.stable_audio_blocks),
+    ...asArray(data.stableBlocks).filter((block) => assemblyStauAppliedAudioV204H3(block)),
+    ...asArray(data.board?.appliedStableAudioBlocks),
+    ...asArray(data.board?.stableBlocks).filter((block) => assemblyStauAppliedAudioV204H3(block)),
+    ...asArray(data.boardSnapshot?.appliedStableAudioBlocks),
+    ...asArray(data.boardSnapshot?.stableBlocks).filter((block) => assemblyStauAppliedAudioV204H3(block)),
+  ]
+  const seen = new Set()
+  return candidates
+    .map((block, index) => normalizeAssemblyStauBlockV204H3(block, index))
+    .filter(Boolean)
+    .filter((block) => {
+      const applied = block.appliedStableAudio || block.applied_stable_audio || {}
+      const key = [block.id || block.blockId || '', applied.variantId || applied.variant_id || '', applied.ref || applied.apiPath || '', asArray(block.sceneIds || block.scene_ids).join('|')].join('::')
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+function mergeAudioStudioStauIntoBoardV204H3(board = {}, audioStudioRaw = {}) {
+  const audioStudio = audioStudioRaw?.data && typeof audioStudioRaw.data === 'object' ? audioStudioRaw.data : (audioStudioRaw || {})
+  const blocks = extractAssemblyStauBlocksV204H3(audioStudio)
+  return {
+    ...(board || {}),
+    stableAudio: audioStudio.stableAudio || board?.stableAudio || { enabled: Boolean(blocks.length) },
+    stableBlocks: blocks,
+    appliedStableAudioBlocks: blocks,
+    stauBlocks: blocks,
+    stau_blocks: blocks,
+    audioStudioStableImportedV204H3: Boolean(blocks.length),
+    audioStudioStableImportedAtV204H3: new Date().toISOString(),
+  }
+}
+
+function assemblyStauDefaultVolumeV204H3(blocks = [], fallback = 30) {
+  const first = asArray(blocks)[0] || {}
+  const applied = first.appliedStableAudio || first.applied_stable_audio || {}
+  return clampNumber(applied.volumePercent ?? applied.volume ?? first.volume, 0, 150, fallback)
+}
+
+
+// AVA_ASSEMBLY_SHOW_STAU_BLOCKS_V204H4: visual block grouping in Assembly.
+function assemblyStauSceneIdsV204H4(block = {}) {
+  const applied = block?.appliedStableAudio || block?.applied_stable_audio || block?.stableAudio?.appliedAudio || block?.stable_audio?.applied_audio || {}
+  return asArray(applied.sceneIds || applied.scene_ids || block.sceneIds || block.scene_ids)
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+}
+
+function assemblyStauBlockHueV204H4(block = {}, fallback = 185) {
+  const rawColor = String(block?.color || block?.blockColor || block?.block_color || block?.stableColor || '').trim()
+  const hslMatch = rawColor.match(/hsla?\(\s*([0-9.]+)/i)
+  if (hslMatch) return clampNumber(Number(hslMatch[1]), 0, 360, fallback)
+  const rawHue = block?.hue ?? block?.blockHue ?? block?.block_hue ?? ''
+  if (rawHue !== '') return clampNumber(Number(rawHue), 0, 360, fallback)
+  return fallback
+}
+
+function assemblyStauBlockTitleV204H4(block = {}, index = 0) {
+  return firstAssemblyTextV204H3(block?.title, block?.name, block?.label, `STAU ${index + 1}`)
+}
+
+function assemblyStauVisualBlocksV204H4(blocks = []) {
+  return asArray(blocks).map((block, index) => {
+    const sceneIds = assemblyStauSceneIdsV204H4(block)
+    const hue = assemblyStauBlockHueV204H4(block, (185 + index * 34) % 360)
+    return {
+      ...block,
+      visualIndexV204H4: index + 1,
+      visualTitleV204H4: assemblyStauBlockTitleV204H4(block, index),
+      visualHueV204H4: hue,
+      visualSceneIdsV204H4: sceneIds,
+    }
+  }).filter((block) => block.visualSceneIdsV204H4.length)
+}
+
+function assemblyStauBlockBySceneIdV204H4(blocks = []) {
+  const map = new Map()
+  assemblyStauVisualBlocksV204H4(blocks).forEach((block) => {
+    block.visualSceneIdsV204H4.forEach((sceneId) => {
+      if (!map.has(sceneId)) map.set(sceneId, block)
+    })
+  })
+  return map
+}
+
 function assemblySnapshotScenes(raw = {}) {
   return asArray(raw.scenes).length ? asArray(raw.scenes)
     : asArray(raw.boardScenes).length ? asArray(raw.boardScenes)
@@ -585,6 +792,9 @@ function boardFromAssemblySnapshot(raw = {}) {
     importedFrom: raw.importedFrom || sourceBoard.importedFrom || raw.source || '',
     scenes,
     audio,
+    stableBlocks: extractAssemblyStauBlocksV204H3(raw),
+    appliedStableAudioBlocks: extractAssemblyStauBlocksV204H3(raw),
+    stauBlocks: extractAssemblyStauBlocksV204H3(raw),
     selectedSceneId: raw.selectedSceneId || sourceBoard.selectedSceneId || scenes[0]?.id || scenes[0]?.scene_id || '',
   })
 }
@@ -840,6 +1050,8 @@ export default function BoardAssemblyPage() {
   const [originalVolume, setOriginalVolume] = useState(100)
   const [sceneVolume, setSceneVolume] = useState(25)
   const [musicVolume, setMusicVolume] = useState(15)
+  const [stauEnabledV204H3, setStauEnabledV204H3] = useState(true)
+  const [stauVolumeV204H3, setStauVolumeV204H3] = useState(30)
   const [musicFile, setMusicFile] = useState(null)
   const [musicAsset, setMusicAsset] = useState(null)
   const [musicPreviewUrl, setMusicPreviewUrl] = useState('')
@@ -874,6 +1086,8 @@ export default function BoardAssemblyPage() {
     if (savedSettings.hasOriginalVolumeV200N) setOriginalVolume(savedSettings.originalVolume)
     if (savedSettings.hasSceneVolumeV200N) setSceneVolume(savedSettings.sceneVolume)
     if (savedSettings.hasMusicVolumeV200N) setMusicVolume(savedSettings.musicVolume)
+    if (savedSettings.hasStauEnabledV204H3) setStauEnabledV204H3(Boolean(savedSettings.stauEnabledV204H3))
+    if (savedSettings.hasStauVolumeV204H3) setStauVolumeV204H3(savedSettings.stauVolumeV204H3)
     setSmoothTransitionsEnabledV134B(false)
     setSmoothTransitionDurationSecV134B(0.5)
     setSmoothTransitionsTimingEnabledV134G(Boolean(savedSettings.smoothTransitionsTimingEnabledV134G))
@@ -888,6 +1102,21 @@ export default function BoardAssemblyPage() {
   const sceneItems = useMemo(() => buildSceneItems(board || {}, preferMmaudio), [board, preferMmaudio])
   const selectedItem = sceneItems.find((item) => item.id === selectedSceneId) || sceneItems[0] || null
   const selectedItemVideoAssetApiPath = selectedItem?.videoAssetApiPath || ''
+  const stauBlocksV204H3 = useMemo(() => extractAssemblyStauBlocksV204H3(board || {}), [board])
+  const stauVisualBlocksV204H4 = useMemo(() => assemblyStauVisualBlocksV204H4(stauBlocksV204H3), [stauBlocksV204H3])
+  const stauBlockBySceneIdV204H4 = useMemo(() => assemblyStauBlockBySceneIdV204H4(stauBlocksV204H3), [stauBlocksV204H3])
+  const stauLayerActiveV204H3 = Boolean(stauEnabledV204H3 && stauBlocksV204H3.length)
+  // AVA_ASSEMBLY_AUDIO_SOURCE_GUARD_V204H5: hide dangerous Board refresh for Audio Studio montage.
+  const assemblyFromAudioStudioV204H5 = Boolean(
+    location?.state?.fromAudioStudio ||
+    String(location?.state?.source || '').includes('audio_studio') ||
+    board?.audioStudioStableImportedV204H3 ||
+    board?.audioStudioStableImportedAtV204H3 ||
+    asArray(board?.appliedStableAudioBlocks).length ||
+    asArray(board?.applied_stable_audio_blocks).length ||
+    asArray(board?.stauBlocks).length ||
+    asArray(board?.stau_blocks).length
+  )
   const assemblyOutputSpec = useMemo(() => {
     const projectFormatV200O = assemblyFormatTokenV195F(
       routeProjectRecordV200O?.format ||
@@ -1015,9 +1244,11 @@ export default function BoardAssemblyPage() {
     const duration = sceneItems.reduce((maxEnd, item) => Math.max(maxEnd, item.end || item.start + item.duration || 0), 0)
     const originalAudio = boardOriginalAudio(board || {})
     const hasOriginalAudio = Boolean(originalAudio.url || originalAudio.assetId)
+    const stauCount = stauBlocksV204H3.length
+    const stauEnabled = Boolean(stauEnabledV204H3 && stauCount)
     const canAssemble = total > 0 && (ready > 0 || hasOriginalAudio)
-    return { total, ready, withSound, missing, duration, hasOriginalAudio, canAssemble }
-  }, [sceneItems, board])
+    return { total, ready, withSound, missing, duration, hasOriginalAudio, canAssemble, stauCount, stauEnabled }
+  }, [sceneItems, board, stauBlocksV204H3, stauEnabledV204H3])
 
   const smoothTransitionDurationSafeV134B = Number(clampNumber(smoothTransitionDurationSecV134B, 0.1, 3, 0.5).toFixed(1))
   const smoothTransitionsAllowedV134B = Boolean(!stats.hasOriginalAudio && ['scene_only', 'music_plus_scene'].includes(audioMode))
@@ -1070,6 +1301,9 @@ export default function BoardAssemblyPage() {
       }))
     const finalUrl = normalizePlayableVideoUrl(overrides.finalVideoUrl ?? finalVideoUrl)
     const activeJob = overrides.assemblyJob !== undefined ? overrides.assemblyJob : assemblyJob
+    const snapshotStauBlocksV204H3 = overrides.appliedStableAudioBlocks || overrides.stableBlocks || stauBlocksV204H3
+    const snapshotStauEnabledV204H3 = overrides.stauEnabledV204H3 ?? overrides.stauEnabled ?? stauEnabledV204H3
+    const snapshotStauVolumeV204H3 = overrides.stauVolumeV204H3 ?? overrides.stauVolume ?? stauVolumeV204H3
     return {
       stage: 'board_assembly',
       schema: 'ava_board_assembly_snapshot_v8',
@@ -1108,6 +1342,20 @@ export default function BoardAssemblyPage() {
       musicAsset: overrides.musicAsset ?? musicAsset,
       musicLoop: overrides.musicLoop ?? musicLoop,
       musicFadeOut: overrides.musicFadeOut ?? musicFadeOut,
+      stauEnabledV204H3: Boolean(snapshotStauEnabledV204H3),
+      stauEnabled: Boolean(snapshotStauEnabledV204H3),
+      stauVolumeV204H3: snapshotStauVolumeV204H3,
+      stauVolume: snapshotStauVolumeV204H3,
+      stableBlocks: snapshotStauBlocksV204H3,
+      appliedStableAudioBlocks: snapshotStauBlocksV204H3,
+      stauBlocks: snapshotStauBlocksV204H3,
+      stau: {
+        enabled: Boolean(snapshotStauEnabledV204H3 && asArray(snapshotStauBlocksV204H3).length),
+        volumePercent: snapshotStauVolumeV204H3,
+        volume: snapshotStauVolumeV204H3 / 100,
+        blocks: snapshotStauBlocksV204H3,
+        blockCount: asArray(snapshotStauBlocksV204H3).length,
+      },
       outputFormat: assemblyOutputSpec.outputFormat,
       output_format: assemblyOutputSpec.outputFormat,
       aspectRatio: assemblyOutputSpec.aspectRatio,
@@ -1161,6 +1409,9 @@ export default function BoardAssemblyPage() {
     setOriginalVolume(clampNumber(raw.originalVolume, 0, 150, isGeneratorAssemblyBoard(nextBoard) ? 0 : 100))
     setSceneVolume(clampNumber(raw.sceneVolume, 0, 150, isGeneratorAssemblyBoard(nextBoard) ? 100 : 25))
     setMusicVolume(clampNumber(raw.musicVolume, 0, 150, 15))
+    const restoredStauBlocksV204H3 = extractAssemblyStauBlocksV204H3(raw)
+    setStauEnabledV204H3(Boolean(raw.stauEnabledV204H3 ?? raw.stauEnabled ?? raw.stau?.enabled ?? restoredStauBlocksV204H3.length))
+    setStauVolumeV204H3(clampNumber(raw.stauVolumeV204H3 ?? raw.stauVolume ?? raw.stau?.volumePercent ?? (Number(raw.stau?.volume) * 100), 0, 150, assemblyStauDefaultVolumeV204H3(restoredStauBlocksV204H3, 30)))
     setMusicAsset(raw.musicAsset || null)
     setMusicFile(null)
     setMusicLoop(raw.musicLoop ?? true)
@@ -1200,8 +1451,11 @@ export default function BoardAssemblyPage() {
     if (['music_plus_scene', 'original_plus_music_scene', 'original_plus_music'].includes(audioMode) && !musicFile) {
       list.push('Фоновая музыка пока не загружена. Можно собрать без неё или загрузить MP3/WAV.')
     }
+    if (stauEnabledV204H3 && !stauBlocksV204H3.length) {
+      list.push('STAU включён, но применённых Stable Audio блоков нет. Применить блоки нужно в Audio Studio.')
+    }
     return list
-  }, [stats, audioMode, musicFile, board, smoothTransitionsEnabledV134B, smoothTransitionsAllowedV134B])
+  }, [stats, audioMode, musicFile, board, smoothTransitionsEnabledV134B, smoothTransitionsAllowedV134B, stauEnabledV204H3, stauBlocksV204H3])
 
   // AVA_ASSEMBLY_FORCE_BOARD_IMPORT_V11:
   // Board → Montage must import the *current* Board snapshot as source-of-truth.
@@ -1302,6 +1556,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     const nextItems = buildSceneItems({ ...nextBoard, scenes: nextScenes }, true)
     const selectedId = nextScenes?.[0]?.id || nextScenes?.[0]?.scene_id || nextItems?.[0]?.id || ''
     const audio = nextBoard?.audio || nextBoard?.sourceAudio || nextBoard?.timingAudio || nextBoard?.originalAudio || null
+    const nextStauBlocksV204H3 = extractAssemblyStauBlocksV204H3(nextBoard || {})
     return {
       stage: 'board_assembly',
       source: sourceLabel,
@@ -1322,6 +1577,20 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       audioMode: nextBoard?.audioMode || 'original_plus_scene',
       preferMmaudio: true,
       skipMissing: false,
+      stauEnabledV204H3: Boolean(stauEnabledV204H3 && nextStauBlocksV204H3.length),
+      stauEnabled: Boolean(stauEnabledV204H3 && nextStauBlocksV204H3.length),
+      stauVolumeV204H3,
+      stauVolume: stauVolumeV204H3,
+      stableBlocks: nextStauBlocksV204H3,
+      appliedStableAudioBlocks: nextStauBlocksV204H3,
+      stauBlocks: nextStauBlocksV204H3,
+      stau: {
+        enabled: Boolean(stauEnabledV204H3 && nextStauBlocksV204H3.length),
+        volumePercent: stauVolumeV204H3,
+        volume: stauVolumeV204H3 / 100,
+        blocks: nextStauBlocksV204H3,
+        blockCount: nextStauBlocksV204H3.length,
+      },
       smoothTransitionsEnabledV134B,
       smoothTransitionDurationSecV134B: smoothTransitionDurationSafeV134B,
       smoothTransitionsAllowedV134B,
@@ -1397,6 +1666,20 @@ function clearBoardAssemblyWorkflowEntryV200O() {
 
   async function loadBoardSnapshot(options = {}) {
     const forceBoard = Boolean(options.forceBoard)
+    const currentAudioStudioAssemblyV204H5 = Boolean(
+      board?.audioStudioStableImportedV204H3 ||
+      board?.audioStudioStableImportedAtV204H3 ||
+      asArray(board?.appliedStableAudioBlocks).length ||
+      asArray(board?.applied_stable_audio_blocks).length ||
+      asArray(board?.stauBlocks).length ||
+      asArray(board?.stau_blocks).length ||
+      location?.state?.fromAudioStudio ||
+      String(location?.state?.source || '').includes('audio_studio')
+    )
+    if (forceBoard && currentAudioStudioAssemblyV204H5 && !options.allowAudioStudioBoardRefreshV204H5) {
+      setStatus('Монтаж пришёл из Audio Studio. Обновление из Board скрыто, чтобы не потерять STAU-блоки.')
+      return
+    }
     setLoading(true)
     assemblyF5HydrateGuardRefV200N.current = true
     setStatus(forceBoard ? 'Обновляем монтаж из текущей Доски…' : 'Загружаем монтаж…')
@@ -1485,6 +1768,14 @@ function clearBoardAssemblyWorkflowEntryV200O() {
             150,
             localUiSettingsV197F.hasMusicVolumeV200N ? localUiSettingsV197F.musicVolume : 15,
           ))
+          const restoredStauBlocksV204H3 = extractAssemblyStauBlocksV204H3(assemblyData)
+          setStauEnabledV204H3(Boolean(assemblyData.stauEnabledV204H3 ?? assemblyData.stauEnabled ?? assemblyData.stau?.enabled ?? restoredStauBlocksV204H3.length))
+          setStauVolumeV204H3(clampNumber(
+            assemblyData.stauVolumeV204H3 ?? assemblyData.stauVolume ?? assemblyData.stau?.volumePercent ?? (Number(assemblyData.stau?.volume) * 100),
+            0,
+            150,
+            localUiSettingsV197F.hasStauVolumeV204H3 ? localUiSettingsV197F.stauVolumeV204H3 : assemblyStauDefaultVolumeV204H3(restoredStauBlocksV204H3, 30),
+          ))
           setMusicLoop(assemblyData.musicLoop ?? assemblyData.music?.loop ?? true)
           setMusicFadeOut(assemblyData.musicFadeOut ?? assemblyData.music?.fade_out ?? true)
           setMusicAsset(assemblyData.musicAsset || null)
@@ -1515,7 +1806,22 @@ function clearBoardAssemblyWorkflowEntryV200O() {
         ? await loadWorkspaceStage('board')
         : await loadStage(projectId, 'board')
 
-      const nextBoard = normalizeBoard(data)
+      let nextBoard = normalizeBoard(data)
+      if (fromAudioStudioForceV204C4) {
+        try {
+          const audioStudioRawV204H3 = workspaceMode ? await loadWorkspaceStage('audio_studio') : await loadStage(projectId, 'audio_studio')
+          nextBoard = mergeAudioStudioStauIntoBoardV204H3(nextBoard, audioStudioRawV204H3)
+          const importedBlocksV204H3 = extractAssemblyStauBlocksV204H3(nextBoard)
+          setStauEnabledV204H3(Boolean(importedBlocksV204H3.length))
+          setStauVolumeV204H3(localUiSettingsV197F.hasStauVolumeV204H3 ? localUiSettingsV197F.stauVolumeV204H3 : assemblyStauDefaultVolumeV204H3(importedBlocksV204H3, 30))
+          console.log('[AVA ASSEMBLY IMPORT STAU FROM AUDIO STUDIO V204H3]', { blocks: importedBlocksV204H3.length })
+        } catch (error) {
+          console.warn('[AVA ASSEMBLY IMPORT STAU FROM AUDIO STUDIO FAILED V204H3]', error?.message || error)
+          setStauEnabledV204H3(false)
+        }
+      } else {
+        setStauEnabledV204H3(false)
+      }
       setBoard(nextBoard)
       const firstSceneId = nextBoard.scenes?.[0]?.id || nextBoard.scenes?.[0]?.scene_id || ''
       setSelectedSceneId(firstSceneId)
@@ -1547,7 +1853,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
         } catch {}
       }
       clearWorkflowEntry('board_assembly')
-      setStatus(nextBoard.scenes?.length ? `Доска: сцен ${nextBoard.scenes.length}` : 'Board пустой')
+      setStatus(nextBoard.scenes?.length ? `Доска: сцен ${nextBoard.scenes.length}${extractAssemblyStauBlocksV204H3(nextBoard).length ? ` · STAU блоков ${extractAssemblyStauBlocksV204H3(nextBoard).length}` : ''}` : 'Board пустой')
     } catch (error) {
       setStatus(`Не удалось загрузить монтаж/Board: ${error?.message || 'unknown_error'}`)
       setBoard({ scenes: [] })
@@ -1576,6 +1882,9 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     originalVolume,
     sceneVolume,
     musicVolume,
+    stauEnabledV204H3,
+    stauVolumeV204H3,
+    stauBlocksV204H3,
     musicAsset,
     musicLoop,
     musicFadeOut,
@@ -1599,6 +1908,8 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       originalVolume,
       sceneVolume,
       musicVolume,
+      stauEnabledV204H3,
+      stauVolumeV204H3,
     })
   }, [
     settingsHydrated,
@@ -1610,6 +1921,8 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     originalVolume,
     sceneVolume,
     musicVolume,
+    stauEnabledV204H3,
+    stauVolumeV204H3,
   ])
 
 
@@ -1635,6 +1948,9 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     originalVolume,
     sceneVolume,
     musicVolume,
+    stauEnabledV204H3,
+    stauVolumeV204H3,
+    stauBlocksV204H3,
     musicAsset,
     musicLoop,
     musicFadeOut,
@@ -1811,6 +2127,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     const lockedAssemblyFitModeV200O = assemblyOutputSpec.outputFitMode || assemblyOutputSpec.fitMode || (lockedAssemblyFormatV200O === '9:16' ? 'cover' : 'contain')
     const lockedAssemblyFormatV200N = assemblyOutputSpec.outputFormat || assemblyOutputSpec.aspectRatio || assemblyOutputSpec.format || '16:9'
     const lockedAssemblyFitModeV200N = assemblyOutputSpec.fitMode || (lockedAssemblyFormatV200N === '9:16' ? 'cover' : 'contain')
+    const activeStauBlocksV204H3 = stauEnabledV204H3 ? stauBlocksV204H3 : []
 
     return {
       project_id: projectId || '',
@@ -1838,7 +2155,22 @@ function clearBoardAssemblyWorkflowEntryV200O() {
         original: originalVolume / 100,
         scene: sceneVolume / 100,
         music: musicVolume / 100,
+        stau: stauVolumeV204H3 / 100,
       },
+      stau: {
+        enabled: Boolean(stauEnabledV204H3 && activeStauBlocksV204H3.length),
+        volume: stauVolumeV204H3 / 100,
+        volume_percent: stauVolumeV204H3,
+        volumePercent: stauVolumeV204H3,
+        blocks: activeStauBlocksV204H3,
+        block_count: activeStauBlocksV204H3.length,
+        blockCount: activeStauBlocksV204H3.length,
+        source: 'audio_studio_applied_stable_blocks_v204h3',
+      },
+      stable_audio_blocks: activeStauBlocksV204H3,
+      stableAudioBlocks: activeStauBlocksV204H3,
+      applied_stable_audio_blocks: activeStauBlocksV204H3,
+      appliedStableAudioBlocks: activeStauBlocksV204H3,
       music: {
         name: musicAsset?.audio_name || musicFile?.name || '',
         loop: musicLoop,
@@ -1956,6 +2288,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
         videoItems: payload.items.filter((item) => item.video_url || item.video_api_path).length,
         placeholderItems: payload.items.filter((item) => item.placeholder || item.missing_video).length,
         smoothTransitions: payload.transitions,
+        stau: { enabled: Boolean(payload.stau?.enabled), blocks: payload.stau?.block_count || 0, volume: payload.volumes?.stau },
         transitionPayloadDebugV134E: '[ASSEMBLY TRANSITIONS PAYLOAD V134E]',
         output: `${payload.output_format || payload.aspect_ratio || '16:9'} · ${payload.width}×${payload.height}`,
         firstItems: payload.items.slice(0, 8).map((item) => ({
@@ -2090,13 +2423,20 @@ function clearBoardAssemblyWorkflowEntryV200O() {
         </div>
         <div className="avaAssemblyHeaderActions">
           <Link className="isAudioStudioBackV204C1" to={audioStudioRoute}><Music size={15} /> Назад в Audio Studio</Link>
-          <button
+          {!assemblyFromAudioStudioV204H5 && (
+            <button
               type="button"
               onClick={() => {
                 clearBoardAssemblyClearedMarker()
                 loadBoardSnapshot({ forceBoard: true })
               }}
             ><RefreshCcw size={15} /> Обновить из Board</button>
+          )}
+          {assemblyFromAudioStudioV204H5 && (
+            <span className="avaAssemblyAudioStudioSourceBadgeV204H5" title="Монтаж открыт из Audio Studio. Обновление из Board скрыто, чтобы не потерять STAU-блоки.">
+              <Music size={14} /> из Audio Studio · STAU safe
+            </span>
+          )}
           <button
               type="button"
               onClick={startAssembly}
@@ -2114,6 +2454,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
         <span>Звук: <strong>{stats.withSound}</strong></span>
         <span>Дл: <strong>{formatTime(stats.duration)}</strong></span>
         <span>Audio: <strong>{stats.hasOriginalAudio ? 'есть' : 'нет'}</strong></span>
+        <span>STAU: <strong>{stats.stauCount ? (stats.stauEnabled ? `${stats.stauCount} on` : `${stats.stauCount} off`) : 'нет'}</strong></span>
         <span>Итог: <strong>{assemblyOutputSpec.label}</strong></span>
         {status && <span className="avaBoardStatusText">{status}</span>}
         <span className="avaBoardStatusText">Водн.: {watermarkEnabled && String(watermarkText || '').trim() ? 'ON' : 'off'}</span>
@@ -2130,24 +2471,30 @@ function clearBoardAssemblyWorkflowEntryV200O() {
             <span>{skipMissing ? 'без пустых' : 'все сцены'}</span>
           </div>
 
+          {/* AVA_ASSEMBLY_STAU_SCENE_COLOR_ONLY_V204H6: STAU block is shown by coloring the scene cards, no extra strip. */}
           <div className="avaAssemblySceneList">
-            {sceneItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`avaAssemblySceneItem ${selectedItem?.id === item.id ? 'isActive' : ''} ${item.hasVideo ? 'isReady' : 'isMissing'} ${item.blockLabel ? 'hasBlock' : ''}`}
-                style={{ '--scene-hue': item.hue }}
-                onClick={() => setSelectedSceneId(item.id)}
-                aria-pressed={selectedItem?.id === item.id}
-                title={selectedItem?.id === item.id ? `${item.title} — выбрана` : `Выбрать ${item.title}`}
-              >
-                <strong>{item.title}</strong>
-                <span>{formatTime(item.start)} → {formatTime(item.end || item.start + item.duration)}</span>
-                <small>{item.route} · {item.hasVideo ? 'video' : 'нет видео'}{item.hasMmaudio ? ' · MMAudio' : item.hasSound ? ' · sound' : ''}</small>
-                {item.blockLabel && <em className="avaAssemblyBlockBadge">{item.blockLabel}</em>}
-                {selectedItem?.id === item.id && <em className="avaAssemblySelectedBadge">выбрано</em>}
-              </button>
-            ))}
+            {sceneItems.map((item) => {
+              const stauBlockV204H4 = stauBlockBySceneIdV204H4.get(String(item.id || '').trim())
+              const hasStauBlockV204H4 = Boolean(stauBlockV204H4)
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`avaAssemblySceneItem ${selectedItem?.id === item.id ? 'isActive' : ''} ${item.hasVideo ? 'isReady' : 'isMissing'} ${item.blockLabel ? 'hasBlock' : ''} ${hasStauBlockV204H4 ? 'hasStauBlockV204H4' : ''}`}
+                  style={{ '--scene-hue': stauBlockV204H4?.visualHueV204H4 ?? item.hue, '--stau-block-hue': stauBlockV204H4?.visualHueV204H4 ?? item.hue }}
+                  onClick={() => setSelectedSceneId(item.id)}
+                  aria-pressed={selectedItem?.id === item.id}
+                  title={hasStauBlockV204H4 ? `${item.title} — ${stauBlockV204H4.visualTitleV204H4}` : (selectedItem?.id === item.id ? `${item.title} — выбрана` : `Выбрать ${item.title}`)}
+                >
+                  <strong>{item.title}</strong>
+                  <span>{formatTime(item.start)} → {formatTime(item.end || item.start + item.duration)}</span>
+                  <small>{item.route} · {item.hasVideo ? 'video' : 'нет видео'}{item.hasMmaudio ? ' · MMAudio' : item.hasSound ? ' · sound' : ''}</small>
+                  {item.blockLabel && <em className="avaAssemblyBlockBadge">{item.blockLabel}</em>}
+                  {hasStauBlockV204H4 && <em className="avaAssemblyStauBadgeV204H4">STAU {stauBlockV204H4.visualIndexV204H4}: {stauBlockV204H4.visualTitleV204H4}</em>}
+                  {selectedItem?.id === item.id && <em className="avaAssemblySelectedBadge">выбрано</em>}
+                </button>
+              )
+            })}
             {!sceneItems.length && <div className="avaInfoBox">Сцен нет. Вернись в Board или Manual Timing.</div>}
           </div>
         </div>
@@ -2304,6 +2651,10 @@ function clearBoardAssemblyWorkflowEntryV200O() {
                 <span><Music size={14} /> Музыка: {musicVolume}%</span>
                 <input type="range" min="0" max="150" value={musicVolume} onChange={(event) => setMusicVolume(Number(event.target.value))} />
               </label>
+              <label className={!stauBlocksV204H3.length ? 'isDisabledV204H3' : ''}>
+                <span><Music size={14} /> STAU: {stauVolumeV204H3}%</span>
+                <input type="range" min="0" max="150" value={stauVolumeV204H3} onChange={(event) => setStauVolumeV204H3(Number(event.target.value))} disabled={!stauBlocksV204H3.length} />
+              </label>
             </div>
           </div>
 
@@ -2334,6 +2685,11 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           <label className="avaAssemblyCheck">
             <input type="checkbox" checked={preferMmaudio} onChange={(event) => setPreferMmaudio(event.target.checked)} />
             Использовать MMAudio-версию, если есть
+          </label>
+
+          <label className="avaAssemblyCheck avaAssemblyStauToggleV204H3">
+            <input type="checkbox" checked={stauEnabledV204H3} disabled={!stauBlocksV204H3.length} onChange={(event) => setStauEnabledV204H3(event.target.checked)} />
+            STAU слой из Audio Studio {stauBlocksV204H3.length ? `· блоков ${stauBlocksV204H3.length}` : '· нет применённых блоков'}
           </label>
 
           <label className="avaAssemblyCheck">

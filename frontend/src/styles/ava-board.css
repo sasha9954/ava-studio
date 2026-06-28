@@ -1812,10 +1812,23 @@
 
 .avaAssemblyVolumeBox.isInline {
   margin-top: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: start;
-  gap: 14px;
+  gap: 12px;
 }
+
+/* ASSEMBLY_STAU_LAYER_V204H3_START */
+.avaAssemblyVolumeBox.isInline label.isDisabledV204H3 {
+  opacity: .55;
+}
+
+.avaAssemblyStauToggleV204H3 {
+  border: 1px solid rgba(168,85,247,.24);
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: rgba(168,85,247,.08);
+}
+/* ASSEMBLY_STAU_LAYER_V204H3_END */
 
 .avaAssemblyVolumeBox.isInline label {
   min-width: 0;
@@ -7984,3 +7997,107 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ASSEMBLY_SHOW_STAU_BLOCKS_V204H4_START */
+.avaAssemblyStauBlockStripV204H4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.avaAssemblyStauBlockPillV204H4 {
+  border: 1px solid hsla(var(--stau-block-hue, 185), 86%, 62%, .42);
+  border-radius: 14px;
+  padding: 9px 10px;
+  background: linear-gradient(135deg, hsla(var(--stau-block-hue, 185), 82%, 48%, .18), rgba(255,255,255,.045));
+  box-shadow: inset 4px 0 0 hsla(var(--stau-block-hue, 185), 90%, 58%, .9);
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.avaAssemblyStauBlockPillV204H4.isOff { opacity: .62; filter: grayscale(.25); }
+.avaAssemblyStauBlockPillV204H4 strong { color: #eaffff; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.avaAssemblyStauBlockPillV204H4 span { color: #f5f8ff; font-size: 12px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avaAssemblyStauBlockPillV204H4 small { color: rgba(220,232,255,.72); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avaAssemblySceneItem.hasStauBlockV204H4 {
+  border-color: hsla(var(--stau-block-hue, 185), 88%, 64%, .72) !important;
+  background: linear-gradient(135deg, hsla(var(--stau-block-hue, 185), 82%, 48%, .16), rgba(255,255,255,.045)) !important;
+  box-shadow: inset 4px 0 0 hsla(var(--stau-block-hue, 185), 92%, 58%, .92), 0 0 0 1px hsla(var(--stau-block-hue, 185), 86%, 68%, .18) !important;
+}
+.avaAssemblySceneItem.hasStauBlockV204H4.isActive {
+  border-color: hsla(var(--stau-block-hue, 185), 94%, 72%, .92) !important;
+  box-shadow: inset 4px 0 0 hsla(var(--stau-block-hue, 185), 95%, 62%, .95), 0 0 0 1px hsla(var(--stau-block-hue, 185), 88%, 72%, .38), 0 14px 34px hsla(var(--stau-block-hue, 185), 80%, 42%, .16) !important;
+}
+.avaAssemblyStauBadgeV204H4 {
+  justify-self: start;
+  max-width: 100%;
+  border: 1px solid hsla(var(--stau-block-hue, 185), 82%, 66%, .42);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: hsla(var(--stau-block-hue, 185), 80%, 44%, .20);
+  color: #eaffff;
+  font-size: 10px;
+  line-height: 1.1;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* ASSEMBLY_SHOW_STAU_BLOCKS_V204H4_END */
+
+/* ASSEMBLY_AUDIO_SOURCE_GUARD_V204H5_START */
+.avaAssemblyAudioStudioSourceBadgeV204H5 {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(103, 232, 249, .32);
+  background: linear-gradient(135deg, rgba(34, 211, 238, .16), rgba(139, 92, 246, .12));
+  color: #dffcff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+/* ASSEMBLY_AUDIO_SOURCE_GUARD_V204H5_END */
+
+/* ASSEMBLY_STAU_SCENE_COLOR_ONLY_V204H6_START */
+/* Audio Studio STAU blocks are visualized by scene-card color, not by a separate block row. */
+.avaAssemblyStauBlockStripV204H4 {
+  display: none !important;
+}
+
+.avaAssemblySceneItem.hasStauBlockV204H4 {
+  border-color: hsla(var(--stau-block-hue, 185), 92%, 64%, .78) !important;
+  background:
+    linear-gradient(135deg, hsla(var(--stau-block-hue, 185), 84%, 45%, .24), rgba(255,255,255,.045)) !important;
+  box-shadow:
+    inset 4px 0 0 hsla(var(--stau-block-hue, 185), 94%, 58%, .96),
+    0 0 0 1px hsla(var(--stau-block-hue, 185), 88%, 68%, .24) !important;
+}
+
+.avaAssemblySceneItem.hasStauBlockV204H4::before {
+  background:
+    linear-gradient(90deg, hsla(var(--stau-block-hue, 185), 86%, 54%, .30), transparent 62%),
+    radial-gradient(circle at 0% 50%, hsla(var(--stau-block-hue, 185), 90%, 62%, .28), transparent 42%) !important;
+}
+
+.avaAssemblySceneItem.hasStauBlockV204H4.isActive {
+  border-color: hsla(var(--stau-block-hue, 185), 96%, 72%, .96) !important;
+  background:
+    linear-gradient(135deg, hsla(var(--stau-block-hue, 185), 88%, 46%, .34), rgba(255,255,255,.06)) !important;
+  box-shadow:
+    inset 4px 0 0 hsla(var(--stau-block-hue, 185), 96%, 62%, 1),
+    0 0 0 1px hsla(var(--stau-block-hue, 185), 90%, 74%, .44),
+    0 14px 34px hsla(var(--stau-block-hue, 185), 82%, 42%, .18) !important;
+}
+
+.avaAssemblySceneItem.hasStauBlockV204H4 .avaAssemblyStauBadgeV204H4 {
+  border-color: hsla(var(--stau-block-hue, 185), 86%, 68%, .52) !important;
+  background: hsla(var(--stau-block-hue, 185), 82%, 42%, .28) !important;
+}
+/* ASSEMBLY_STAU_SCENE_COLOR_ONLY_V204H6_END */
+
