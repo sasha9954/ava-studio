@@ -1304,3 +1304,548 @@
 .avaAudioTimingReadyButtonV204E10:not(.isReady):not(.isLoading) {
   color: rgba(148, 163, 184, .64) !important;
 }
+
+/* V204F1_STABLE_AUDIO_SWITCHER_SHELL */
+.avaAudioModeSwitch button:not(:disabled) {
+  cursor: pointer;
+}
+
+.avaAudioScenePill.isStableBlockV204F1 {
+  border-color: color-mix(in srgb, var(--scene-color) 88%, #ffffff 10%);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--scene-color) 26%, transparent),
+    0 16px 42px color-mix(in srgb, var(--scene-color) 18%, transparent),
+    inset 0 4px 0 color-mix(in srgb, var(--scene-color) 88%, white 8%);
+}
+
+.avaAudioWorkbench.isStableAudioV204F1 {
+  grid-template-columns: minmax(260px, .78fr) minmax(380px, 1.05fr) minmax(300px, .92fr);
+}
+
+.avaAudioStableBlocksPanelV204F1,
+.avaAudioStablePromptPanelV204F1,
+.avaAudioStablePreviewPanelV204F1 {
+  min-height: 500px;
+}
+
+.avaAudioStableBlockSummaryV204F1 {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(125, 211, 252, .16);
+  background: rgba(15, 23, 42, .5);
+  margin-bottom: 12px;
+}
+
+.avaAudioStableBlockSummaryV204F1 strong {
+  font-size: 15px;
+  color: rgba(241, 245, 249, .96);
+}
+
+.avaAudioStableBlockSummaryV204F1 span,
+.avaAudioStableBlockHintV204F1,
+.avaAudioStablePreviewNoteV204F1 {
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(203, 213, 225, .72);
+}
+
+.avaAudioStableBlockHintV204F1,
+.avaAudioStablePreviewNoteV204F1,
+.avaAudioStableVariantPlaceholderV204F1 {
+  padding: 12px 13px;
+  border-radius: 16px;
+  border: 1px dashed rgba(148, 163, 184, .24);
+  background: rgba(2, 6, 23, .34);
+}
+
+.avaAudioStableBlockSceneListV204F1 {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.avaAudioStableBlockSceneButtonV204F1 {
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border-radius: 15px;
+  border: 1px solid color-mix(in srgb, var(--scene-color) 28%, rgba(255,255,255,.08));
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--scene-color) 18%, transparent), transparent 48%),
+    rgba(3, 8, 20, .45);
+  color: rgba(241, 245, 249, .92);
+}
+
+.avaAudioStableBlockSceneButtonV204F1.isActive {
+  border-color: color-mix(in srgb, var(--scene-color) 82%, white 10%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--scene-color) 18%, transparent);
+}
+
+.avaAudioStableBlockSceneButtonV204F1 strong {
+  font-size: 13px;
+}
+
+.avaAudioStableBlockSceneButtonV204F1 small {
+  color: rgba(203, 213, 225, .68);
+  font-size: 11px;
+}
+
+.avaAudioStableComingV204F1 {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(167, 139, 250, .18);
+  background:
+    radial-gradient(circle at 12% 10%, rgba(167, 139, 250, .18), transparent 42%),
+    rgba(15, 23, 42, .5);
+  margin-bottom: 14px;
+}
+
+.avaAudioStableComingV204F1 strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.avaAudioStableComingV204F1 span {
+  display: block;
+  color: rgba(203, 213, 225, .74);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.avaAudioStablePromptPanelV204F1 textarea:disabled {
+  opacity: .72;
+  cursor: not-allowed;
+}
+
+.avaAudioStableControlsGridV204F1 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.avaAudioStableControlsGridV204F1 div {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  border-radius: 15px;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(2, 6, 23, .32);
+}
+
+.avaAudioStableControlsGridV204F1 span {
+  color: rgba(148, 163, 184, .78);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.avaAudioStableControlsGridV204F1 b {
+  color: rgba(241, 245, 249, .94);
+  font-size: 13px;
+}
+
+.avaAudioStableVariantsRailV204F1 {
+  margin-top: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(130, 165, 255, .14);
+  background: linear-gradient(180deg, rgba(16, 25, 51, .7), rgba(7, 12, 27, .9));
+  padding: 14px;
+}
+
+.avaAudioStableVariantPlaceholderV204F1 {
+  color: rgba(203, 213, 225, .72);
+  font-size: 13px;
+}
+
+@media (max-width: 1180px) {
+  .avaAudioWorkbench.isStableAudioV204F1 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* V204F2_STABLE_BLOCK_VISUAL_CTRL_SELECT */
+.avaAudioStableManualActionsV204F2 {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 12px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, .14);
+  background: rgba(2, 6, 23, .24);
+}
+
+.avaAudioStableManualActionsV204F2 span {
+  color: rgba(203, 213, 225, .72);
+  font-size: 12px;
+  font-weight: 750;
+  margin-right: auto;
+}
+
+.avaAudioStableManualActionsV204F2 button {
+  border: 1px solid rgba(148, 163, 184, .18);
+  background: rgba(15, 23, 42, .65);
+  color: rgba(241, 245, 249, .86);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.avaAudioStableManualActionsV204F2 button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+
+/* V204F5_STABLE_BLOCK_MAKE_BUTTON */
+.avaAudioStableManualActionsV204F2 button.isPrimaryV204F5 {
+  border-color: rgba(45, 212, 191, .42);
+  background: linear-gradient(135deg, rgba(20, 184, 166, .28), rgba(59, 130, 246, .22));
+  color: #d8fff7;
+  box-shadow: 0 10px 24px rgba(45, 212, 191, .08);
+}
+
+.avaAudioStableManualActionsV204F2 button.isPrimaryV204F5:not(:disabled):hover {
+  border-color: rgba(94, 234, 212, .62);
+  background: linear-gradient(135deg, rgba(20, 184, 166, .38), rgba(59, 130, 246, .28));
+}
+
+.avaAudioStableBlockSceneButtonV204F1 {
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+}
+
+.avaAudioStableBlockSceneThumbV204F2 {
+  position: relative;
+  display: block;
+  width: 88px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--scene-color) 26%, rgba(255,255,255,.08));
+  background: rgba(2, 6, 23, .72);
+}
+
+.avaAudioStableBlockSceneVideoV204F2,
+.avaAudioStableBlockSceneThumbV204F2 .avaAudioPreviewEmpty {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: 12px;
+  object-fit: cover;
+  background: rgba(2, 6, 23, .7);
+  color: rgba(203, 213, 225, .58);
+  font-size: 10px;
+}
+
+.avaAudioStableBlockSceneMetaV204F2 {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.avaAudioStableBlockSceneMetaV204F2 strong,
+.avaAudioStableBlockSceneMetaV204F2 small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* V204F3_STABLE_BLOCK_TITLE_COLOR */
+.avaAudioStablePillIndexV204F3 {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--scene-color) 74%, white 10%);
+  background: color-mix(in srgb, var(--scene-color) 20%, rgba(2, 6, 23, .92));
+  color: rgba(255,255,255,.94);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--scene-color) 18%, transparent);
+}
+
+.avaAudioScenePill.isStableBlockV204F1 strong {
+  padding-left: 22px;
+}
+
+.avaAudioStableBlockSummaryV204F1 {
+  border-color: color-mix(in srgb, var(--stable-block-color, #62d8ff) 34%, rgba(255,255,255,.12));
+  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--stable-block-color, #62d8ff) 78%, white 4%);
+}
+
+.avaAudioStableBlockTitleFieldV204F3 {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.avaAudioStableBlockTitleFieldV204F3 span {
+  color: rgba(148, 163, 184, .82);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.avaAudioStableBlockTitleFieldV204F3 input {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--stable-block-color, #62d8ff) 26%, rgba(148, 163, 184, .18));
+  border-radius: 12px;
+  background: rgba(2, 6, 23, .42);
+  color: rgba(241, 245, 249, .94);
+  padding: 9px 11px;
+  font-size: 13px;
+  font-weight: 800;
+  outline: none;
+}
+
+.avaAudioStableBlockTitleFieldV204F3 input:focus {
+  border-color: color-mix(in srgb, var(--stable-block-color, #62d8ff) 74%, white 6%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--stable-block-color, #62d8ff) 18%, transparent);
+}
+
+.avaAudioStableBlockColorNoteV204F3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  color: rgba(203, 213, 225, .68);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.avaAudioStableBlockColorNoteV204F3 i {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--stable-block-color, #62d8ff);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--stable-block-color, #62d8ff) 52%, transparent);
+}
+
+.avaAudioStableBlockSceneThumbV204F2 {
+  overflow: hidden;
+}
+
+.avaAudioStableBlockSceneIndexV204F3 {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 3;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--scene-color) 74%, white 10%);
+  background: color-mix(in srgb, var(--scene-color) 22%, rgba(2, 6, 23, .92));
+  color: white;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--scene-color) 18%, transparent);
+}
+
+
+
+/* V204F6_STABLE_BLOCK_CREATE_DISASSEMBLE */
+.avaAudioAlertsSlotV204F6 {
+  min-height: 56px;
+  margin-top: 14px;
+}
+
+.avaAudioAlertsSlotV204F6 .avaAudioAlert {
+  margin: 0;
+  min-height: 42px;
+  max-height: 42px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.avaAudioScenePill.isSavedStableBlockV204F6:not(.isStableBlockV204F1) {
+  border-color: color-mix(in srgb, var(--scene-color) 62%, rgba(255,255,255,.12));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--scene-color) 18%, transparent),
+    inset 0 4px 0 color-mix(in srgb, var(--scene-color) 72%, white 6%);
+}
+
+.avaAudioStableManualActionsV204F2 button.isDangerV204F6 {
+  color: #ffd1d8;
+  border-color: rgba(255, 95, 126, .3);
+  background: rgba(255, 95, 126, .08);
+}
+
+.avaAudioStableManualActionsV204F2 button.isDangerV204F6:hover:not(:disabled) {
+  border-color: rgba(255, 95, 126, .55);
+  background: rgba(255, 95, 126, .14);
+}
+
+
+/* V204F7_STABLE_AUDIO_CONTROLS_SHELL */
+.avaAudioStableFieldV204F7 textarea {
+  min-height: 86px;
+}
+
+.avaAudioStableModeRowV204F7 {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, .28);
+}
+
+.avaAudioStableModeRowV204F7 > span,
+.avaAudioStableModeRowV204F7 small {
+  color: rgba(226, 232, 240, .62);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.avaAudioStableModeRowV204F7 > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.avaAudioStableModeRowV204F7 button {
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: rgba(226, 232, 240, .72);
+  background: rgba(15, 23, 42, .52);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.avaAudioStableModeRowV204F7 button.isActive {
+  color: #fff;
+  border-color: rgba(125, 211, 252, .5);
+  background: linear-gradient(135deg, rgba(14, 165, 233, .28), rgba(139, 92, 246, .32));
+  box-shadow: 0 0 0 1px rgba(125, 211, 252, .14) inset;
+}
+
+.avaAudioStableControlsGridV204F1.isEditableV204F7 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.avaAudioStableControlsGridV204F1.isEditableV204F7 label {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, .12);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, .24);
+}
+
+.avaAudioStableControlsGridV204F1.isEditableV204F7 input[type="range"] {
+  width: 100%;
+  accent-color: #67e8f9;
+}
+
+.avaAudioStableControlsGridV204F1.isEditableV204F7 input[type="number"] {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, .7);
+}
+
+.avaAudioStableActionRowV204F7 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.avaAudioStableActionRowV204F7 button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 13px;
+  padding: 10px 13px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, .62);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.avaAudioStableActionRowV204F7 button.isPrimary {
+  border-color: rgba(34, 211, 238, .36);
+  background: linear-gradient(135deg, rgba(14, 165, 233, .28), rgba(139, 92, 246, .28));
+}
+
+.avaAudioStableActionRowV204F7 button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+
+/* V204F8_STABLE_AUDIO_SIMPLE_GENERATE_UI */
+.avaAudioStableModeRowV204F7.isSimpleV204F8 {
+  padding: 10px 12px;
+}
+
+.avaAudioStableModeRowV204F7.isSimpleV204F8 > div {
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+}
+
+.avaAudioStableSimpleNoteV204F8 {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(125, 211, 252, .18);
+  border-radius: 14px;
+  color: rgba(226, 232, 240, .68);
+  background: rgba(2, 6, 23, .22);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.avaAudioStableSimpleNoteV204F8 strong {
+  color: rgba(226, 232, 240, .86);
+}
+
+.avaAudioStableActionRowV204F7.isSimpleV204F8 {
+  padding-top: 2px;
+}
+
+.avaAudioStableActionRowV204F7.isSimpleV204F8 button {
+  min-height: 42px;
+}
+
+
+/* V204F9_STABLE_BLOCK_NUMBERS_APPLY */
+.avaAudioScenePill.isSavedStableBlockV204F6 .avaAudioStablePillIndexV204F3,
+.avaAudioStableBlockSceneButtonV204F1 .avaAudioStableBlockSceneIndexV204F3 {
+  letter-spacing: 0;
+}
+
+.avaAudioStableActionRowV204F7.isSimpleV204F8 {
+  grid-template-columns: repeat(3, minmax(0, auto));
+}

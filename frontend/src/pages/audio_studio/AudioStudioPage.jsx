@@ -804,6 +804,62 @@ function durationOf(scene = {}) {
   return Math.max(0, end - start)
 }
 
+function stableBlockSceneIdsV204F4(block = {}) {
+  const raw = block?.sceneIds ?? block?.scene_ids ?? block?.scenes ?? []
+  return asArray(raw).map((item) => cleanId(
+    typeof item === 'string'
+      ? item
+      : (item?.id || item?.sceneId || item?.scene_id)
+  )).filter(Boolean)
+}
+
+function stableBlockTimelineFromScenesV204F4(scenes = []) {
+  const list = asArray(scenes)
+  if (!list.length) return { startSec: 0, endSec: 0, durationSec: 0, requestDurationSec: 0 }
+  const starts = list.map((scene) => toNumber(scene.startSec ?? scene.start_sec ?? scene.start, 0))
+  const ends = list.map((scene) => {
+    const start = toNumber(scene.startSec ?? scene.start_sec ?? scene.start, 0)
+    const end = toNumber(scene.endSec ?? scene.end_sec ?? scene.end, 0)
+    const duration = toNumber(scene.durationSec ?? scene.duration_sec, 0)
+    return end > start ? end : start + duration
+  })
+  const startSec = Math.min(...starts)
+  const endSec = Math.max(...ends)
+  const durationSec = Math.max(0, endSec - startSec)
+  return {
+    startSec,
+    endSec,
+    durationSec,
+    requestDurationSec: durationSec > 0 ? Math.ceil(durationSec + 1) : 0,
+  }
+}
+
+// V204F7_STABLE_AUDIO_CONTROLS_SHELL
+const STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7 = 'vocals, lyrics, speech, dialogue, singing, gunshots, bullets, explosions, glass breaking, debris sounds, footsteps, sirens, city traffic, silence, sudden ending, short cutoff, distortion'
+
+function stableAudioModeApiValueV204F7(value = 'Music') {
+  const clean = cleanId(value).toLowerCase()
+  if (clean === 'instrument' || clean === 'instrumental') return 'Instrument'
+  return 'Music'
+}
+
+function stableAudioModeUiLabelV204F7(value = 'Music') {
+  return stableAudioModeApiValueV204F7(value) === 'Instrument' ? 'Instrumental' : 'Music'
+}
+
+function stableAudioVolumeV204F7(value, fallback = 16) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
+function stableAudioFadeV204F7(value, fallback = 0.35) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(0, Math.min(5, Math.round(n * 100) / 100))
+}
+
+
 function compactLabel(text = '', fallback = '') {
   const clean = cleanId(text || fallback)
   return clean.length > 42 ? `${clean.slice(0, 39)}…` : clean
@@ -1137,6 +1193,18 @@ function variantRef(variant = {}) {
   return firstText(variant.apiPath, variant.url)
 }
 
+function audioStudioSceneVideoRefV204F2(scene = {}) {
+  return firstText(
+    scene?.sourceVideo?.apiPath,
+    scene?.sourceVideo?.url,
+    scene?.video?.apiPath,
+    scene?.video?.url,
+    scene?.apiPath,
+    scene?.url,
+    scene?.boardRaw ? boardSourceVideoRef(scene.boardRaw) : '',
+  )
+}
+
 function PreviewVideo({ source = '', title = '', className = '', volume = 1, controls = true }) {
   const [blobUrl, setBlobUrl] = useState('')
   const [error, setError] = useState('')
@@ -1255,19 +1323,43 @@ function PreviewAudio({ source = '', title = 'Аудио тайминга', clas
   )
 }
 
-function SceneStrip({ scenes, selectedSceneId, onSelect }) {
+function SceneStrip({ scenes, selectedSceneId, onSelect, stableMode = false, stableBlockSceneIds = [], stableBlockColor = '', stableBlocks = [] }) {
+  const stableBlockIdList = asArray(stableBlockSceneIds).map(cleanId).filter(Boolean)
+  const stableBlockIds = new Set(stableBlockIdList)
+  const stableBlockOrder = new Map(stableBlockIdList.map((sceneId, index) => [sceneId, index + 1]))
+  // V204F9_STABLE_BLOCK_NUMBERS_APPLY
+  const savedStableSceneByIdV204F6 = new Map()
+  if (stableMode) {
+    asArray(stableBlocks).forEach((block, blockIndex) => {
+      const blockNumber = blockIndex + 1
+      stableBlockSceneIdsV204F4(block).forEach((sceneId, sceneIndex) => {
+        const id = cleanId(sceneId)
+        if (id && !savedStableSceneByIdV204F6.has(id)) {
+          savedStableSceneByIdV204F6.set(id, { block, blockNumber, sceneIndex: sceneIndex + 1 })
+        }
+      })
+    })
+  }
   return (
     <div className="avaAudioSceneStrip" aria-label="Сцены Audio Studio">
       {asArray(scenes).map((scene, index) => {
-        const active = cleanId(scene.id) === cleanId(selectedSceneId)
+        const sceneId = cleanId(scene.id || scene.sceneId)
+        const active = sceneId === cleanId(selectedSceneId)
+        const inStableBlock = stableMode && stableBlockIds.has(sceneId)
+        const savedStableInfoV204F6 = stableMode ? savedStableSceneByIdV204F6.get(sceneId) : null
+        const stableIndex = savedStableInfoV204F6?.blockNumber || stableBlockOrder.get(sceneId)
+        const sceneStableColorV204F6 = inStableBlock && stableBlockColor
+          ? stableBlockColor
+          : (savedStableInfoV204F6?.block?.color || scene.color || '#62d8ff')
         return (
           <button
             key={scene.id || index}
             type="button"
-            className={`avaAudioScenePill ${active ? 'isActive' : ''} ${scene.appliedVariantId ? 'isApplied' : ''}`}
-            style={{ '--scene-color': scene.color || '#62d8ff' }}
-            onClick={() => onSelect(scene.id)}
+            className={`avaAudioScenePill ${active ? 'isActive' : ''} ${scene.appliedVariantId ? 'isApplied' : ''} ${savedStableInfoV204F6 ? 'isSavedStableBlockV204F6' : ''} ${inStableBlock ? 'isStableBlockV204F1' : ''}`}
+            style={{ '--scene-color': sceneStableColorV204F6 }}
+            onClick={(event) => onSelect(scene.id || scene.sceneId, event)}
           >
+            {stableMode && stableIndex ? <em className="avaAudioStablePillIndexV204F3">{stableIndex}</em> : null}
             <strong>{scene.title || `сцена${index + 1}`}</strong>
             <span>{sceneStatusLabel(scene)}</span>
           </button>
@@ -1515,6 +1607,16 @@ export default function AudioStudioPage() {
   const [clearingAllV204C8, setClearingAllV204C8] = useState(false)
   const [refreshBoardConfirmOpenV204D3, setRefreshBoardConfirmOpenV204D3] = useState(false)
   const [refreshingFromBoardV204D3, setRefreshingFromBoardV204D3] = useState(false)
+  const [audioStudioModeV204F1, setAudioStudioModeV204F1] = useState('mmaudio')
+  const [stableManualSelectionV204F2, setStableManualSelectionV204F2] = useState([])
+  const [stableDraftBlockTitleV204F3, setStableDraftBlockTitleV204F3] = useState('')
+  const [activeStableBlockIdV204F4, setActiveStableBlockIdV204F4] = useState('')
+  const [stableDraftPromptV204F7, setStableDraftPromptV204F7] = useState('')
+  const [stableDraftNegativePromptV204F7, setStableDraftNegativePromptV204F7] = useState(STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7)
+  const [stableDraftModeV204F7, setStableDraftModeV204F7] = useState('Music')
+  const [stableDraftVolumeV204F7, setStableDraftVolumeV204F7] = useState(16)
+  const [stableDraftFadeInSecV204F7, setStableDraftFadeInSecV204F7] = useState(0.35)
+  const [stableDraftFadeOutSecV204F7, setStableDraftFadeOutSecV204F7] = useState(0.8)
   const pollRef = useRef(null)
   const snapshotRef = useRef(snapshot)
   const initialLoadDoneRefV204B = useRef(false)
@@ -2416,6 +2518,450 @@ export default function AudioStudioPage() {
   const selectedTimingAudioReadyV204E10 = Boolean(selectedTimingAudioRefV204E10)
   const selectedTimingAudioPreparingV204E10 = Boolean(selectedScene && cleanId(timingAudioPreparingSceneIdV204E10) === cleanId(selectedScene.id || selectedScene.sceneId))
 
+  const stableBlocksV204F4 = useMemo(() => asArray(snapshot.stableBlocks), [snapshot.stableBlocks])
+
+  const stableSceneBlockByIdV204F4 = useMemo(() => {
+    const map = new Map()
+    stableBlocksV204F4.forEach((block) => {
+      stableBlockSceneIdsV204F4(block).forEach((sceneId) => {
+        if (sceneId && !map.has(sceneId)) map.set(sceneId, block)
+      })
+    })
+    return map
+  }, [stableBlocksV204F4])
+
+  const selectedSavedStableBlockV204F4 = useMemo(() => {
+    const activeId = cleanId(activeStableBlockIdV204F4)
+    if (activeId) {
+      const active = stableBlocksV204F4.find((block) => cleanId(block.id) === activeId)
+      if (active) return active
+    }
+    const selectedId = cleanId(selectedScene?.id || selectedScene?.sceneId)
+    return selectedId ? (stableSceneBlockByIdV204F4.get(selectedId) || null) : null
+  }, [activeStableBlockIdV204F4, selectedScene, stableBlocksV204F4, stableSceneBlockByIdV204F4])
+
+  const selectedStableBlockNumberV204F9 = useMemo(() => {
+    const id = cleanId(selectedSavedStableBlockV204F4?.id)
+    if (!id) return 0
+    const index = stableBlocksV204F4.findIndex((block) => cleanId(block.id) === id)
+    return index >= 0 ? index + 1 : 0
+  }, [selectedSavedStableBlockV204F4, stableBlocksV204F4])
+
+  const selectedStableBlockScenesV204F1 = useMemo(() => {
+    const scenes = asArray(snapshot.scenes)
+    const byId = new Map(scenes.map((scene) => [cleanId(scene.id || scene.sceneId), scene]))
+    const manualIds = asArray(stableManualSelectionV204F2).map(cleanId).filter(Boolean)
+    if (audioStudioModeV204F1 === 'stable' && manualIds.length) {
+      const manualScenes = manualIds.map((sceneId) => byId.get(sceneId)).filter(Boolean)
+      if (manualScenes.length) return manualScenes
+    }
+    const savedIds = stableBlockSceneIdsV204F4(selectedSavedStableBlockV204F4)
+    if (audioStudioModeV204F1 === 'stable' && savedIds.length) {
+      const savedScenes = savedIds.map((sceneId) => byId.get(sceneId)).filter(Boolean)
+      if (savedScenes.length) return savedScenes
+    }
+    if (!selectedScene) return []
+    const selectedId = cleanId(selectedScene.id || selectedScene.sceneId)
+    const selectedBlockId = cleanId(selectedScene.blockId || selectedScene.block_id || selectedScene.semanticBlockId || selectedScene.semantic_block_id)
+    const selectedColor = cleanId(selectedScene.color)
+    const matched = scenes.filter((scene) => {
+      const sceneId = cleanId(scene.id || scene.sceneId)
+      if (sceneId === selectedId) return true
+      const blockId = cleanId(scene.blockId || scene.block_id || scene.semanticBlockId || scene.semantic_block_id)
+      if (selectedBlockId && blockId && blockId === selectedBlockId) return true
+      if (!selectedBlockId && selectedColor && cleanId(scene.color) === selectedColor) return true
+      return false
+    })
+    return matched.length ? matched : [selectedScene]
+  }, [audioStudioModeV204F1, snapshot.scenes, selectedScene, selectedSavedStableBlockV204F4, stableManualSelectionV204F2])
+
+  const selectedStableBlockSceneIdsV204F1 = useMemo(() => (
+    selectedStableBlockScenesV204F1.map((scene) => cleanId(scene.id || scene.sceneId)).filter(Boolean)
+  ), [selectedStableBlockScenesV204F1])
+
+  const selectedStableBlockDurationV204F1 = useMemo(() => {
+    const scenes = selectedStableBlockScenesV204F1
+    if (!scenes.length) return 0
+    const starts = scenes.map((scene) => toNumber(scene.startSec ?? scene.start_sec ?? scene.start, 0))
+    const ends = scenes.map((scene) => {
+      const start = toNumber(scene.startSec ?? scene.start_sec ?? scene.start, 0)
+      const end = toNumber(scene.endSec ?? scene.end_sec ?? scene.end, 0)
+      const duration = toNumber(scene.durationSec ?? scene.duration_sec, 0)
+      return end > start ? end : start + duration
+    })
+    return Math.max(0, Math.max(...ends) - Math.min(...starts))
+  }, [selectedStableBlockScenesV204F1])
+
+  const selectedStableBlockRequestDurationV204F1 = selectedStableBlockDurationV204F1 > 0
+    ? Math.ceil(selectedStableBlockDurationV204F1 + 1)
+    : 0
+
+  const selectedStableBlockTitleV204F1 = firstText(
+    selectedSavedStableBlockV204F4?.title,
+    stableManualSelectionV204F2.length ? 'Ручной Stable-блок' : '',
+    selectedScene?.blockTitle,
+    selectedScene?.block_title,
+    selectedScene?.semanticBlockTitle,
+    selectedScene?.semantic_block_title,
+    selectedStableBlockScenesV204F1.length > 1 ? `Блок ${selectedStableBlockScenesV204F1[0]?.title || selectedStableBlockScenesV204F1[0]?.id || ''}` : selectedScene?.title,
+    'Stable Audio block'
+  )
+
+  const selectedStableBlockColorV204F3 = firstText(
+    selectedSavedStableBlockV204F4?.color,
+    selectedStableBlockScenesV204F1[0]?.color,
+    selectedStableBlockScenesV204F1[0]?.blockColor,
+    selectedStableBlockScenesV204F1[0]?.block_color,
+    selectedScene?.color,
+    '#62d8ff'
+  )
+
+  const stableDisplayBlockTitleV204F3 = firstText(stableDraftBlockTitleV204F3, selectedStableBlockTitleV204F1)
+
+  // V204F3_STABLE_BLOCK_TITLE_COLOR
+  // V204F4_STABLE_BLOCKS_AUTOSAVE
+  const stableSavedBlockActiveV204F4 = audioStudioModeV204F1 === 'stable' && Boolean(selectedSavedStableBlockV204F4?.id)
+  const stableManualSelectionActiveV204F2 = audioStudioModeV204F1 === 'stable' && asArray(stableManualSelectionV204F2).length > 0
+
+  const buildStableBlockSnapshotV204F4 = useCallback((baseSnapshot = {}, sceneIds = [], preferredBlockId = '', titleValue = '', selectedSceneId = '') => {
+    const cleanSnapshot = sanitizeAudioSnapshot(baseSnapshot)
+    const scenes = asArray(cleanSnapshot.scenes)
+    const idSet = new Set(asArray(sceneIds).map(cleanId).filter(Boolean))
+    const blockScenes = scenes.filter((scene) => idSet.has(cleanId(scene.id || scene.sceneId)))
+    if (!blockScenes.length) {
+      return {
+        snapshot: { ...cleanSnapshot, selectedSceneId: selectedSceneId || cleanSnapshot.selectedSceneId, updatedAt: nowIso() },
+        block: null,
+      }
+    }
+
+    const orderedSceneIds = blockScenes.map((scene) => cleanId(scene.id || scene.sceneId)).filter(Boolean)
+    const preferredId = cleanId(preferredBlockId)
+    const existingBlocks = asArray(cleanSnapshot.stableBlocks)
+    const existingBlock = existingBlocks.find((block) => cleanId(block.id) === preferredId)
+      || existingBlocks.find((block) => stableBlockSceneIdsV204F4(block).some((sceneId) => idSet.has(sceneId)))
+      || null
+    const blockId = cleanId(existingBlock?.id || preferredId || `stable_block_${orderedSceneIds[0] || Date.now()}`)
+    const firstScene = blockScenes[0] || {}
+    const timeline = stableBlockTimelineFromScenesV204F4(blockScenes)
+    const blockColor = firstText(firstScene.color, existingBlock?.color, firstScene.blockColor, firstScene.block_color, '#62d8ff')
+    const blockTitle = firstText(
+      titleValue,
+      existingBlock?.title,
+      blockScenes.length > 1 ? `Блок ${firstScene.title || firstScene.id || orderedSceneIds[0] || ''}` : (firstScene.title || firstScene.id),
+      'Stable Audio block'
+    )
+    const existingStableAudioV204F7 = existingBlock?.stableAudio || {}
+    const draftModeForBlockV204F7 = stableAudioModeApiValueV204F7(stableDraftModeV204F7 || existingStableAudioV204F7.mode || existingBlock?.mode || 'Music')
+    const draftVolumeForBlockV204F7 = stableAudioVolumeV204F7(stableDraftVolumeV204F7, existingStableAudioV204F7.volume ?? 16)
+    const draftFadeInForBlockV204F7 = stableAudioFadeV204F7(stableDraftFadeInSecV204F7, existingStableAudioV204F7.fadeInSec ?? 0.35)
+    const draftFadeOutForBlockV204F7 = stableAudioFadeV204F7(stableDraftFadeOutSecV204F7, existingStableAudioV204F7.fadeOutSec ?? 0.8)
+
+    const updatedBlock = {
+      ...existingBlock,
+      id: blockId,
+      title: blockTitle,
+      color: blockColor,
+      source: 'manual_ctrl_click_v204f4',
+      sceneIds: orderedSceneIds,
+      startSec: timeline.startSec,
+      endSec: timeline.endSec,
+      durationSec: timeline.durationSec,
+      requestDurationSec: timeline.requestDurationSec,
+      mode: draftModeForBlockV204F7,
+      prompt: firstText(stableDraftPromptV204F7, existingStableAudioV204F7.prompt, existingBlock?.prompt),
+      negativePrompt: firstText(stableDraftNegativePromptV204F7, existingStableAudioV204F7.negativePrompt, existingBlock?.negativePrompt, STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7),
+      volume: draftVolumeForBlockV204F7,
+      fadeInSec: draftFadeInForBlockV204F7,
+      fadeOutSec: draftFadeOutForBlockV204F7,
+      stableAudio: {
+        enabled: true,
+        ...existingStableAudioV204F7,
+        mode: draftModeForBlockV204F7,
+        prompt: firstText(stableDraftPromptV204F7, existingStableAudioV204F7.prompt, existingBlock?.prompt),
+        negativePrompt: firstText(stableDraftNegativePromptV204F7, existingStableAudioV204F7.negativePrompt, existingBlock?.negativePrompt, STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7),
+        volume: draftVolumeForBlockV204F7,
+        fadeInSec: draftFadeInForBlockV204F7,
+        fadeOutSec: draftFadeOutForBlockV204F7,
+        exactDurationSec: timeline.durationSec,
+        requestDurationSec: timeline.requestDurationSec,
+        variants: asArray(existingStableAudioV204F7.variants),
+      },
+      updatedAt: nowIso(),
+    }
+
+    const otherBlocks = existingBlocks.map((block) => {
+      if (cleanId(block.id) === blockId) return null
+      const remainingIds = stableBlockSceneIdsV204F4(block).filter((sceneId) => !idSet.has(sceneId))
+      if (!remainingIds.length) return null
+      if (remainingIds.length === stableBlockSceneIdsV204F4(block).length) return block
+      const remainingSet = new Set(remainingIds)
+      const remainingScenes = scenes.filter((scene) => remainingSet.has(cleanId(scene.id || scene.sceneId)))
+      const remainingTimeline = stableBlockTimelineFromScenesV204F4(remainingScenes)
+      return {
+        ...block,
+        sceneIds: remainingIds,
+        startSec: remainingTimeline.startSec,
+        endSec: remainingTimeline.endSec,
+        durationSec: remainingTimeline.durationSec,
+        requestDurationSec: remainingTimeline.requestDurationSec,
+        updatedAt: nowIso(),
+      }
+    }).filter(Boolean)
+
+    const next = {
+      ...cleanSnapshot,
+      selectedSceneId: selectedSceneId || cleanSnapshot.selectedSceneId || orderedSceneIds[0],
+      stableBlocks: [...otherBlocks, updatedBlock],
+      stableAudio: {
+        ...(cleanSnapshot.stableAudio || {}),
+        enabled: true,
+      },
+      updatedAt: nowIso(),
+    }
+    return { snapshot: next, block: updatedBlock }
+  }, [stableDraftFadeInSecV204F7, stableDraftFadeOutSecV204F7, stableDraftModeV204F7, stableDraftNegativePromptV204F7, stableDraftPromptV204F7, stableDraftVolumeV204F7])
+
+  const commitStableManualBlockV204F4 = useCallback((sceneIds = [], preferredBlockId = '', titleValue = '', selectedSceneId = '') => {
+    const { snapshot: next, block } = buildStableBlockSnapshotV204F4(snapshotRef.current || {}, sceneIds, preferredBlockId, titleValue, selectedSceneId)
+    if (!block) return null
+    snapshotRef.current = next
+    setSnapshot(next)
+    persistSnapshotSilently(next, 'stable_block_saved_v204f4')
+    setActiveStableBlockIdV204F4(block.id)
+    setStableManualSelectionV204F2([])
+    setStableDraftBlockTitleV204F3(block.title || '')
+    return block
+  }, [buildStableBlockSnapshotV204F4, persistSnapshotSilently])
+
+  const updateStableBlockTitleV204F4 = useCallback((value) => {
+    setStableDraftBlockTitleV204F3(value)
+  }, [])
+
+  const handleSceneStripSelectV204F2 = useCallback((sceneId, event) => {
+    const cleanSceneId = cleanId(sceneId)
+    const isStableMultiClick = audioStudioModeV204F1 === 'stable' && (event?.ctrlKey || event?.metaKey)
+    if (isStableMultiClick && cleanSceneId) {
+      const currentIds = asArray(stableManualSelectionV204F2).map(cleanId).filter(Boolean)
+      const savedIds = stableBlockSceneIdsV204F4(selectedSavedStableBlockV204F4)
+      const seedIds = currentIds.length ? currentIds : savedIds
+      const exists = seedIds.includes(cleanSceneId)
+      const nextIds = exists ? seedIds.filter((id) => id !== cleanSceneId) : [...seedIds, cleanSceneId]
+      if (!nextIds.length) {
+        setActiveStableBlockIdV204F4('')
+        setStableManualSelectionV204F2([])
+        setStatus('Stable Audio: ручной выбор пустой')
+      } else {
+        setActiveStableBlockIdV204F4(activeStableBlockIdV204F4 || selectedSavedStableBlockV204F4?.id || '')
+        setStableManualSelectionV204F2(nextIds)
+        setStatus(`Stable Audio: выбрано ${nextIds.length} сцен. Нажми “Сделать блок”, чтобы закрепить.`)
+      }
+      setSnapshot((current) => {
+        const next = { ...current, selectedSceneId: cleanSceneId, updatedAt: nowIso() }
+        snapshotRef.current = next
+        return next
+      })
+      return
+    }
+
+    if (audioStudioModeV204F1 === 'stable' && cleanSceneId) {
+      const savedBlock = stableSceneBlockByIdV204F4.get(cleanSceneId)
+      if (savedBlock) {
+        setActiveStableBlockIdV204F4(savedBlock.id || '')
+        setStableManualSelectionV204F2([])
+        setStableDraftBlockTitleV204F3(savedBlock.title || '')
+        setStatus(`Stable Audio: выбран блок “${savedBlock.title || savedBlock.id || ''}”`)
+      } else {
+        setActiveStableBlockIdV204F4('')
+        if (asArray(stableManualSelectionV204F2).length) setStableManualSelectionV204F2([])
+        setStableDraftBlockTitleV204F3('')
+      }
+    }
+
+    setSnapshot((current) => {
+      const next = { ...current, selectedSceneId: cleanSceneId, updatedAt: nowIso() }
+      snapshotRef.current = next
+      return next
+    })
+  }, [activeStableBlockIdV204F4, audioStudioModeV204F1, selectedSavedStableBlockV204F4, stableManualSelectionV204F2, stableSceneBlockByIdV204F4])
+
+  const clearStableManualSelectionV204F2 = useCallback(() => {
+    setActiveStableBlockIdV204F4('')
+    setStableManualSelectionV204F2([])
+    setStableDraftBlockTitleV204F3('')
+    setStatus('Stable Audio: ручной выбор блока сброшен. Сохранённые блоки не удалены.')
+  }, [])
+
+  // V204F5_STABLE_BLOCK_MAKE_BUTTON
+  const saveStableDraftBlockV204F5 = useCallback(() => {
+    const ids = Array.from(new Set(asArray(selectedStableBlockSceneIdsV204F1).map(cleanId).filter(Boolean)))
+    if (!ids.length) {
+      setError('Нет сцен для Stable-блока.')
+      return
+    }
+    const preferredBlockId = activeStableBlockIdV204F4 || selectedSavedStableBlockV204F4?.id || `stable_block_${ids[0]}`
+    const titleValue = firstText(stableDraftBlockTitleV204F3, selectedStableBlockTitleV204F1, `Stable-блок ${ids[0]}`)
+    const block = commitStableManualBlockV204F4(ids, preferredBlockId, titleValue, ids[0])
+    if (!block) {
+      setError('Не удалось закрепить Stable-блок.')
+      return
+    }
+    setStatus(`Stable Audio: блок “${block.title || block.id}” сохранён (${stableBlockSceneIdsV204F4(block).length} сцен)`)
+  }, [activeStableBlockIdV204F4, commitStableManualBlockV204F4, selectedSavedStableBlockV204F4, selectedStableBlockSceneIdsV204F1, selectedStableBlockTitleV204F1, stableDraftBlockTitleV204F3])
+
+  // V204F6_STABLE_BLOCK_CREATE_DISASSEMBLE
+  const disassembleStableBlockV204F6 = useCallback(() => {
+    const block = selectedSavedStableBlockV204F4
+    const blockId = cleanId(block?.id)
+    if (!blockId) {
+      clearStableManualSelectionV204F2()
+      return
+    }
+    const current = sanitizeAudioSnapshot(snapshotRef.current || {})
+    const removedIds = stableBlockSceneIdsV204F4(block)
+    const next = {
+      ...current,
+      stableBlocks: asArray(current.stableBlocks).filter((item) => cleanId(item.id) !== blockId),
+      updatedAt: nowIso(),
+    }
+    snapshotRef.current = next
+    setSnapshot(next)
+    persistSnapshotSilently(next, 'stable_block_disassembled_v204f6')
+    setActiveStableBlockIdV204F4('')
+    setStableManualSelectionV204F2([])
+    setStableDraftBlockTitleV204F3('')
+    setStatus(`Stable Audio: блок разобран, сцены снова отдельно (${removedIds.length})`)
+  }, [clearStableManualSelectionV204F2, persistSnapshotSilently, selectedSavedStableBlockV204F4])
+
+  // V204F7_STABLE_AUDIO_CONTROLS_SHELL
+  const selectedStableBlockIdV204F7 = cleanId(selectedSavedStableBlockV204F4?.id)
+
+  useEffect(() => {
+    const block = selectedSavedStableBlockV204F4 || null
+    const stableAudio = block?.stableAudio || {}
+    setStableDraftPromptV204F7(firstText(stableAudio.prompt, block?.prompt, ''))
+    setStableDraftNegativePromptV204F7(firstText(stableAudio.negativePrompt, block?.negativePrompt, STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7))
+    setStableDraftModeV204F7(stableAudioModeApiValueV204F7(stableAudio.mode || block?.mode || 'Music'))
+    setStableDraftVolumeV204F7(stableAudioVolumeV204F7(stableAudio.volume ?? block?.volume ?? 16))
+    setStableDraftFadeInSecV204F7(stableAudioFadeV204F7(stableAudio.fadeInSec ?? block?.fadeInSec ?? 0.35))
+    setStableDraftFadeOutSecV204F7(stableAudioFadeV204F7(stableAudio.fadeOutSec ?? block?.fadeOutSec ?? 0.8))
+  }, [selectedStableBlockIdV204F7])
+
+  const patchStableBlockSettingsV204F7 = useCallback((patch = {}, reason = 'stable_audio_settings_v204f7') => {
+    const blockId = cleanId(selectedSavedStableBlockV204F4?.id)
+    if (!blockId) return
+    const current = sanitizeAudioSnapshot(snapshotRef.current || {})
+    const nextBlocks = asArray(current.stableBlocks).map((block) => {
+      if (cleanId(block.id) !== blockId) return block
+      const stableAudio = {
+        enabled: true,
+        ...(block.stableAudio || {}),
+        ...patch,
+        mode: stableAudioModeApiValueV204F7(patch.mode || block.stableAudio?.mode || block.mode || 'Music'),
+        volume: stableAudioVolumeV204F7(patch.volume ?? block.stableAudio?.volume ?? block.volume ?? 16),
+        fadeInSec: stableAudioFadeV204F7(patch.fadeInSec ?? block.stableAudio?.fadeInSec ?? block.fadeInSec ?? 0.35),
+        fadeOutSec: stableAudioFadeV204F7(patch.fadeOutSec ?? block.stableAudio?.fadeOutSec ?? block.fadeOutSec ?? 0.8),
+        exactDurationSec: toNumber(block.durationSec, selectedStableBlockDurationV204F1),
+        requestDurationSec: toNumber(block.requestDurationSec, selectedStableBlockRequestDurationV204F1),
+        updatedAt: nowIso(),
+      }
+      return {
+        ...block,
+        ...patch,
+        mode: stableAudio.mode,
+        prompt: stableAudio.prompt,
+        negativePrompt: stableAudio.negativePrompt,
+        volume: stableAudio.volume,
+        fadeInSec: stableAudio.fadeInSec,
+        fadeOutSec: stableAudio.fadeOutSec,
+        stableAudio,
+        updatedAt: nowIso(),
+      }
+    })
+    const next = { ...current, stableBlocks: nextBlocks, updatedAt: nowIso() }
+    snapshotRef.current = next
+    setSnapshot(next)
+    persistSnapshotSilently(next, reason)
+  }, [persistSnapshotSilently, selectedSavedStableBlockV204F4, selectedStableBlockDurationV204F1, selectedStableBlockRequestDurationV204F1])
+
+  const updateStablePromptV204F7 = useCallback((value) => {
+    setStableDraftPromptV204F7(value)
+    patchStableBlockSettingsV204F7({ prompt: value }, 'stable_audio_prompt_v204f7')
+  }, [patchStableBlockSettingsV204F7])
+
+  const updateStableNegativePromptV204F7 = useCallback((value) => {
+    setStableDraftNegativePromptV204F7(value)
+    patchStableBlockSettingsV204F7({ negativePrompt: value }, 'stable_audio_negative_v204f7')
+  }, [patchStableBlockSettingsV204F7])
+
+  const updateStableModeV204F7 = useCallback((value) => {
+    const mode = stableAudioModeApiValueV204F7(value)
+    setStableDraftModeV204F7(mode)
+    patchStableBlockSettingsV204F7({ mode }, 'stable_audio_mode_v204f7')
+  }, [patchStableBlockSettingsV204F7])
+
+  const updateStableVolumeV204F7 = useCallback((value) => {
+    const volume = stableAudioVolumeV204F7(value, 16)
+    setStableDraftVolumeV204F7(volume)
+    patchStableBlockSettingsV204F7({ volume }, 'stable_audio_volume_v204f7')
+  }, [patchStableBlockSettingsV204F7])
+
+  const updateStableFadeInV204F7 = useCallback((value) => {
+    const fadeInSec = stableAudioFadeV204F7(value, 0.35)
+    setStableDraftFadeInSecV204F7(fadeInSec)
+    patchStableBlockSettingsV204F7({ fadeInSec }, 'stable_audio_fade_in_v204f7')
+  }, [patchStableBlockSettingsV204F7])
+
+  const updateStableFadeOutV204F7 = useCallback((value) => {
+    const fadeOutSec = stableAudioFadeV204F7(value, 0.8)
+    setStableDraftFadeOutSecV204F7(fadeOutSec)
+    patchStableBlockSettingsV204F7({ fadeOutSec }, 'stable_audio_fade_out_v204f7')
+  }, [patchStableBlockSettingsV204F7])
+
+  // V204F8_STABLE_AUDIO_SIMPLE_GENERATE_UI
+  const buildStableAudioRequestPayloadV204F7 = useCallback(() => ({
+    blockId: selectedSavedStableBlockV204F4?.id || '',
+    title: stableDisplayBlockTitleV204F3,
+    sceneIds: selectedStableBlockSceneIdsV204F1,
+    startSec: toNumber(selectedSavedStableBlockV204F4?.startSec, 0),
+    endSec: toNumber(selectedSavedStableBlockV204F4?.endSec, selectedStableBlockDurationV204F1),
+    durationSec: selectedStableBlockDurationV204F1,
+    requestDurationSec: selectedStableBlockRequestDurationV204F1,
+    mode: stableAudioModeApiValueV204F7(stableDraftModeV204F7),
+    modeLabel: stableAudioModeUiLabelV204F7(stableDraftModeV204F7),
+    prompt: stableDraftPromptV204F7,
+    negativePrompt: stableDraftNegativePromptV204F7,
+  }), [selectedSavedStableBlockV204F4, selectedStableBlockDurationV204F1, selectedStableBlockRequestDurationV204F1, selectedStableBlockSceneIdsV204F1, stableDisplayBlockTitleV204F3, stableDraftModeV204F7, stableDraftNegativePromptV204F7, stableDraftPromptV204F7])
+
+  const submitStableAudioBlockV204F7 = useCallback(() => {
+    if (!selectedSavedStableBlockV204F4?.id) {
+      setError('Сначала выбери сцены и нажми “Создать блок”.')
+      return
+    }
+    if (!cleanId(stableDraftPromptV204F7)) {
+      setError('Stable prompt пустой.')
+      return
+    }
+    const payload = buildStableAudioRequestPayloadV204F7()
+    console.info('[AUDIO STUDIO STABLE AUDIO REQUEST V204F7]', payload)
+    setStatus(`Stable Audio: запрос готов (${payload.modeLabel} → Comfy ${payload.mode}, ${payload.requestDurationSec} сек). Следующий патч подключит backend генерацию.`)
+  }, [buildStableAudioRequestPayloadV204F7, selectedSavedStableBlockV204F4, stableDraftPromptV204F7])
+
+  const previewStableAudioBlockV204F7 = useCallback(() => {
+    if (!selectedStableBlockSceneIdsV204F1.length) {
+      setError('Нет сцен для preview блока.')
+      return
+    }
+    const payload = buildStableAudioRequestPayloadV204F7()
+    console.info('[AUDIO STUDIO STABLE BLOCK PREVIEW V204F7]', payload)
+    setStatus(`Preview блока подготовлен: ${selectedStableBlockSceneIdsV204F1.length} сцен · Timing + MMAudio${cleanId(stableDraftPromptV204F7) ? ' + STAU' : ' без STAU'}. Backend-сборка MP4 будет следующим отдельным патчем.`)
+  }, [buildStableAudioRequestPayloadV204F7, selectedStableBlockSceneIdsV204F1, stableDraftPromptV204F7])
+
+  const applyStableAudioBlockV204F7 = useCallback(() => {
+    setStatus('Stable Audio: применять пока нечего — сначала нужна генерация варианта. Кнопка готова под следующий backend-патч.')
+  }, [])
+
+  // V204F2_STABLE_BLOCK_VISUAL_CTRL_SELECT
   const timingAudioRefForMixV204E9 = firstText(
     selectedScene?.sourceAudio?.apiPath,
     selectedScene?.sourceAudio?.url,
@@ -2889,8 +3435,9 @@ export default function AudioStudioPage() {
         </div>
       </header>
 
-      {error ? <div className="avaAudioAlert isError"><X size={16} /> {error}</div> : null}
-      {status ? <div className="avaAudioAlert"><CheckCircle2 size={16} /> {status}</div> : null}
+      <div className="avaAudioAlertsSlotV204F6" aria-live="polite">
+        {error ? <div className="avaAudioAlert isError"><X size={16} /> {error}</div> : (status ? <div className="avaAudioAlert"><CheckCircle2 size={16} /> {status}</div> : null)}
+      </div>
 
       {manualSceneControlsVisibleV204C7 ? (
         <section className="avaAudioManualSceneBarV204C7">
@@ -2905,11 +3452,15 @@ export default function AudioStudioPage() {
         </section>
       ) : null}
 
-      <SceneStrip scenes={snapshot.scenes} selectedSceneId={selectedScene?.id} onSelect={(sceneId) => setSnapshot((current) => {
-        const next = { ...current, selectedSceneId: sceneId, updatedAt: nowIso() }
-        snapshotRef.current = next
-        return next
-      })} />
+      <SceneStrip
+        scenes={snapshot.scenes}
+        selectedSceneId={selectedScene?.id || selectedScene?.sceneId}
+        stableMode={audioStudioModeV204F1 === 'stable'}
+        stableBlockSceneIds={selectedStableBlockSceneIdsV204F1}
+        stableBlockColor={selectedStableBlockColorV204F3}
+        stableBlocks={stableBlocksV204F4}
+        onSelect={handleSceneStripSelectV204F2}
+      />
 
       {!asArray(snapshot.scenes).length ? (
         <section className="avaAudioEmptyState">
@@ -2922,90 +3473,237 @@ export default function AudioStudioPage() {
           </div>
         </section>
       ) : (
-        <main className="avaAudioWorkbench">
-          <section className="avaAudioPanel avaAudioVideoPanel">
-            <div className="avaAudioPanelTitle">
-              <span><Film size={17} /> Исходное видео</span>
-              <small>{selectedScene?.durationSec ? `${Number(selectedScene.durationSec).toFixed(1)} сек` : 'duration —'}</small>
-            </div>
-            <PreviewVideo source={sourceVideoRef} title="Исходная сцена" className="avaAudioMainVideo" />
-            <div className="avaAudioPanelActions">
-              <label className="avaAudioUploadButton">
-                <UploadCloud size={15} /> {uploading ? 'Загружаю…' : 'Загрузить видео'}
-                <input type="file" accept="video/*" disabled={uploading} onChange={(event) => uploadSceneVideo(event.target.files?.[0])} />
-              </label>
-            </div>
-          </section>
+        <main className={`avaAudioWorkbench ${audioStudioModeV204F1 === 'stable' ? 'isStableAudioV204F1' : ''}`}>
+          {audioStudioModeV204F1 === 'mmaudio' ? (
+            <>
+              <section className="avaAudioPanel avaAudioVideoPanel">
+                <div className="avaAudioPanelTitle">
+                  <span><Film size={17} /> Исходное видео</span>
+                  <small>{selectedScene?.durationSec ? `${Number(selectedScene.durationSec).toFixed(1)} сек` : 'duration —'}</small>
+                </div>
+                <PreviewVideo source={sourceVideoRef} title="Исходная сцена" className="avaAudioMainVideo" />
+                <div className="avaAudioPanelActions">
+                  <label className="avaAudioUploadButton">
+                    <UploadCloud size={15} /> {uploading ? 'Загружаю…' : 'Загрузить видео'}
+                    <input type="file" accept="video/*" disabled={uploading} onChange={(event) => uploadSceneVideo(event.target.files?.[0])} />
+                  </label>
+                </div>
+              </section>
 
-          <section className="avaAudioPanel avaAudioPromptPanel">
-            <div className="avaAudioModeSwitch">
-              <button type="button" className="isActive"><AudioLines size={15} /> MMAudio RAW</button>
-              <button type="button" disabled>Stable Audio скоро</button>
-            </div>
+              <section className="avaAudioPanel avaAudioPromptPanel">
+                <div className="avaAudioModeSwitch">
+                  <button type="button" className="isActive" onClick={() => setAudioStudioModeV204F1('mmaudio')}><AudioLines size={15} /> MMAudio RAW</button>
+                  <button type="button" onClick={() => setAudioStudioModeV204F1('stable')}><Sparkles size={15} /> Stable Audio</button>
+                </div>
 
-            <label className="avaAudioField">
-              <span>Prompt</span>
-              <textarea
-                value={selectedScene?.prompt || ''}
-                placeholder="испуг, дыхание, ключи, шорох куртки, без фона"
-                onChange={(event) => updateSelectedField('prompt', event.target.value)}
-              />
-            </label>
-            <label className="avaAudioField">
-              <span>Negative prompt</span>
-              <textarea
-                value={selectedScene?.negativePrompt || DEFAULT_NEGATIVE}
-                placeholder={DEFAULT_NEGATIVE}
-                onChange={(event) => updateSelectedField('negativePrompt', event.target.value)}
-              />
-            </label>
-            <div className="avaAudioHint">
-              Формула RAW Foley: <b>эмоция + 2–4 реальных звука + “без фона”</b>. Не писать ambience / room tone / background.
-            </div>
-            <div className="avaAudioPromptActions">
-              <button type="button" className="isPrimary" onClick={submitMmaudio} disabled={Boolean(generatingSceneId) || !selectedScene}>
-                <WandSparkles size={16} /> {isGeneratingSelected ? 'Генерится…' : 'Генерить'}
-              </button>
-              <button type="button" onClick={applySelectedVariant} disabled={!selectedVariant || selectedVariant?.sourceBaseline || selectedVariant?.kind === 'source_video' || Boolean(applyingVariantId)}>{isApplyingSelected ? <span className="avaAudioApplySpinnerV204B3" /> : <CheckCircle2 size={16} />} {isApplyingSelected ? 'Применяю…' : 'Применить'}</button>
-              <button
-                type="button"
-                className={`avaAudioTimingReadyButtonV204E10 ${selectedTimingAudioReadyV204E10 ? 'isReady' : ''} ${selectedTimingAudioPreparingV204E10 ? 'isLoading' : ''}`}
-                onClick={prepareSelectedTimingAudioV204E10}
-                disabled={!selectedScene || selectedTimingAudioReadyV204E10 || selectedTimingAudioPreparingV204E10}
-                title={selectedTimingAudioReadyV204E10 ? 'Аудио сцены уже привязано и сохранено' : 'Аудио сцены не привязано. Нажми, чтобы подготовить его заранее.'}
-              >
-                {selectedTimingAudioReadyV204E10 ? <CheckCircle2 size={14} /> : <AudioLines size={14} />}
-                {selectedTimingAudioPreparingV204E10 ? 'готовлю аудио…' : selectedTimingAudioReadyV204E10 ? 'аудио сцены' : 'нет аудио'}
-              </button>
+                <label className="avaAudioField">
+                  <span>Prompt</span>
+                  <textarea
+                    value={selectedScene?.prompt || ''}
+                    placeholder="испуг, дыхание, ключи, шорох куртки, без фона"
+                    onChange={(event) => updateSelectedField('prompt', event.target.value)}
+                  />
+                </label>
+                <label className="avaAudioField">
+                  <span>Negative prompt</span>
+                  <textarea
+                    value={selectedScene?.negativePrompt || DEFAULT_NEGATIVE}
+                    placeholder={DEFAULT_NEGATIVE}
+                    onChange={(event) => updateSelectedField('negativePrompt', event.target.value)}
+                  />
+                </label>
+                <div className="avaAudioHint">
+                  Формула RAW Foley: <b>эмоция + 2–4 реальных звука + “без фона”</b>. Не писать ambience / room tone / background.
+                </div>
+                <div className="avaAudioPromptActions">
+                  <button type="button" className="isPrimary" onClick={submitMmaudio} disabled={Boolean(generatingSceneId) || !selectedScene}>
+                    <WandSparkles size={16} /> {isGeneratingSelected ? 'Генерится…' : 'Генерить'}
+                  </button>
+                  <button type="button" onClick={applySelectedVariant} disabled={!selectedVariant || selectedVariant?.sourceBaseline || selectedVariant?.kind === 'source_video' || Boolean(applyingVariantId)}>{isApplyingSelected ? <span className="avaAudioApplySpinnerV204B3" /> : <CheckCircle2 size={16} />} {isApplyingSelected ? 'Применяю…' : 'Применить'}</button>
+                  <button
+                    type="button"
+                    className={`avaAudioTimingReadyButtonV204E10 ${selectedTimingAudioReadyV204E10 ? 'isReady' : ''} ${selectedTimingAudioPreparingV204E10 ? 'isLoading' : ''}`}
+                    onClick={prepareSelectedTimingAudioV204E10}
+                    disabled={!selectedScene || selectedTimingAudioReadyV204E10 || selectedTimingAudioPreparingV204E10}
+                    title={selectedTimingAudioReadyV204E10 ? 'Аудио сцены уже привязано и сохранено' : 'Аудио сцены не привязано. Нажми, чтобы подготовить его заранее.'}
+                  >
+                    {selectedTimingAudioReadyV204E10 ? <CheckCircle2 size={14} /> : <AudioLines size={14} />}
+                    {selectedTimingAudioPreparingV204E10 ? 'готовлю аудио…' : selectedTimingAudioReadyV204E10 ? 'аудио сцены' : 'нет аудио'}
+                  </button>
 
-              <button
-                type="button"
-                onClick={previewTimingAudioMmaudioMixV204E10}
-                disabled={!selectedResultRef || selectedTimingAudioPreparingV204E10}
-                title="Одновременно проиграть аудио сцены из тайминга и выбранный MMAudio-вариант с текущей громкостью"
-              >
-                <Play size={16} /> {mixPreviewPlayingV204E7 ? 'Стоп микс' : 'Прослушать микс'}
-              </button>
-            </div>
-            {selectedScene?.jobStatus ? <p className="avaAudioJobStatus">{selectedScene.jobStatus}</p> : null}
-          </section>
+                  <button
+                    type="button"
+                    onClick={previewTimingAudioMmaudioMixV204E10}
+                    disabled={!selectedResultRef || selectedTimingAudioPreparingV204E10}
+                    title="Одновременно проиграть аудио сцены из тайминга и выбранный MMAudio-вариант с текущей громкостью"
+                  >
+                    <Play size={16} /> {timingAudioMixPlayingV204E10 ? 'Стоп микс' : 'Прослушать микс'}
+                  </button>
+                </div>
+                {selectedScene?.jobStatus ? <p className="avaAudioJobStatus">{selectedScene.jobStatus}</p> : null}
+              </section>
 
-          <section className="avaAudioPanel avaAudioResultPanel">
-            <div className="avaAudioPanelTitle">
-              <span><Headphones size={17} /> Готовый результат</span>
-              <small>{selectedIsApplied ? 'применён вариант' : selectedVariant ? 'просмотр варианта' : 'нет варианта'}</small>
-            </div>
-            <PreviewVideo source={selectedResultRef} title="MMAudio результат" className="avaAudioMainVideo avaAudioResultVideo" volume={clampMediaVolumeV204E10A(activeVolume / 100, 1)} />
-            <label className="avaAudioVolume">
-              <span><Volume2 size={15} /> Громкость MMAudio <b>{activeVolume}%</b></span>
-              <input type="range" min="0" max="150" value={activeVolume} onChange={(event) => updateSelectedVolume(event.target.value)} />
-            </label>
-            <p className="avaAudioVolumeNote">Прослушивание: кнопка при необходимости нарезает аудио тайминга сцены, запускает его на 100% и следом запускает правый MMAudio с этой громкостью. При “Применить” громкость MMAudio запекается для монтажки.</p>
-          </section>
+              <section className="avaAudioPanel avaAudioResultPanel">
+                <div className="avaAudioPanelTitle">
+                  <span><Headphones size={17} /> Готовый результат</span>
+                  <small>{selectedIsApplied ? 'применён вариант' : selectedVariant ? 'просмотр варианта' : 'нет варианта'}</small>
+                </div>
+                <PreviewVideo source={selectedResultRef} title="MMAudio результат" className="avaAudioMainVideo avaAudioResultVideo" volume={clampMediaVolumeV204E10A(activeVolume / 100, 1)} />
+                <label className="avaAudioVolume">
+                  <span><Volume2 size={15} /> Громкость MMAudio <b>{activeVolume}%</b></span>
+                  <input type="range" min="0" max="150" value={activeVolume} onChange={(event) => updateSelectedVolume(event.target.value)} />
+                </label>
+                <p className="avaAudioVolumeNote">Прослушивание: кнопка при необходимости нарезает аудио тайминга сцены, запускает его на 100% и следом запускает правый MMAudio с этой громкостью. При “Применить” громкость MMAudio запекается для монтажки.</p>
+              </section>
+            </>
+          ) : (
+            <>
+              <section className="avaAudioPanel avaAudioStableBlocksPanelV204F1">
+                <div className="avaAudioPanelTitle">
+                  <span><AudioLines size={17} /> Stable-блок</span>
+                  <small>{selectedStableBlockScenesV204F1.length} сцен</small>
+                </div>
+                <div className="avaAudioStableBlockSummaryV204F1" style={{ '--stable-block-color': selectedStableBlockColorV204F3 }}>
+                  <strong>{stableDisplayBlockTitleV204F3}</strong>
+                  <span>{selectedStableBlockDurationV204F1 ? `${selectedStableBlockDurationV204F1.toFixed(2)} сек · запрос ${selectedStableBlockRequestDurationV204F1} сек` : 'тайминг блока —'}</span>
+                  <label className="avaAudioStableBlockTitleFieldV204F3">
+                    <span>Название блока</span>
+                    <input
+                      type="text"
+                      value={stableDraftBlockTitleV204F3}
+                      placeholder={selectedStableBlockTitleV204F1}
+                      onChange={(event) => updateStableBlockTitleV204F4(event.target.value)}
+                    />
+                  </label>
+                  <div className="avaAudioStableBlockColorNoteV204F3">
+                    <i /> <span>цвет блока автоматически взят от первой сцены</span>
+                  </div>
+                </div>
+                <div className="avaAudioStableBlockHintV204F1">
+                  {stableSavedBlockActiveV204F4
+                    ? 'Сохранённый Stable-блок выбран. Ctrl+click меняет состав, “Обновить блок” закрепляет, “Разобрать” возвращает сцены отдельно.'
+                    : (stableManualSelectionActiveV204F2
+                      ? 'Ручной выбор готов. Нажми “Создать блок”, чтобы сохранить название, общий цвет, сцены и точный тайминг.'
+                      : 'Клик по сцене показывает её блок. Ctrl+click собирает новый Stable-блок как в Timing: выбрал сцены → назвал → создал.') }
+                </div>
+                <div className="avaAudioStableManualActionsV204F2">
+                  <span>{stableSavedBlockActiveV204F4 ? `блок: ${stableBlockSceneIdsV204F4(selectedSavedStableBlockV204F4).length} сцен` : (stableManualSelectionActiveV204F2 ? `выбрано: ${stableManualSelectionV204F2.length} сцен` : 'Ctrl+click — выбрать сцены')}</span>
+                  <button
+                    type="button"
+                    className="isPrimaryV204F5"
+                    onClick={saveStableDraftBlockV204F5}
+                    disabled={!selectedStableBlockSceneIdsV204F1.length}
+                    title="Сохранить текущие сцены как Stable-блок в snapshot"
+                  >
+                    {stableSavedBlockActiveV204F4 ? 'Обновить блок' : 'Создать блок'}
+                  </button>
+                  <button
+                    type="button"
+                    className={stableSavedBlockActiveV204F4 ? 'isDangerV204F6' : ''}
+                    onClick={stableSavedBlockActiveV204F4 ? disassembleStableBlockV204F6 : clearStableManualSelectionV204F2}
+                    disabled={!stableManualSelectionActiveV204F2 && !stableSavedBlockActiveV204F4}
+                    title={stableSavedBlockActiveV204F4 ? 'Удалить Stable-блок: сцены останутся, но больше не будут привязаны к этому STAU-блоку' : 'Отменить ручной выбор'}
+                  >
+                    {stableSavedBlockActiveV204F4 ? 'Разобрать' : 'Отмена'}
+                  </button>
+                </div>
+                <div className="avaAudioStableBlockSceneListV204F1">
+                  {selectedStableBlockScenesV204F1.map((scene, index) => {
+                    const sceneVideoRefV204F2 = audioStudioSceneVideoRefV204F2(scene)
+                    return (
+                      <button
+                        key={scene.id || scene.sceneId || index}
+                        type="button"
+                        className={`avaAudioStableBlockSceneButtonV204F1 ${cleanId(scene.id || scene.sceneId) === cleanId(selectedScene?.id || selectedScene?.sceneId) ? 'isActive' : ''}`}
+                        style={{ '--scene-color': selectedStableBlockColorV204F3 }}
+                        onClick={() => setSnapshot((current) => {
+                          const next = { ...current, selectedSceneId: scene.id || scene.sceneId, updatedAt: nowIso() }
+                          snapshotRef.current = next
+                          return next
+                        })}
+                      >
+                        <span className="avaAudioStableBlockSceneThumbV204F2">
+                          <em className="avaAudioStableBlockSceneIndexV204F3">{selectedStableBlockNumberV204F9 || index + 1}</em>
+                          <PreviewVideo source={sceneVideoRefV204F2} title={scene.title || scene.id || `seg_${index + 1}`} controls={false} className="avaAudioStableBlockSceneVideoV204F2" />
+                        </span>
+                        <span className="avaAudioStableBlockSceneMetaV204F2">
+                          <strong>{scene.title || scene.id || `seg_${index + 1}`}</strong>
+                          <small>{toNumber(scene.durationSec ?? scene.duration_sec, durationOf(scene)).toFixed(1)} сек · {scene.appliedVariantId ? 'MMAudio применён' : 'без applied MMAudio'}</small>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="avaAudioPanel avaAudioStablePromptPanelV204F1">
+                <div className="avaAudioModeSwitch">
+                  <button type="button" onClick={() => setAudioStudioModeV204F1('mmaudio')}><AudioLines size={15} /> MMAudio RAW</button>
+                  <button type="button" className="isActive" onClick={() => setAudioStudioModeV204F1('stable')}><Sparkles size={15} /> Stable Audio</button>
+                </div>
+                <div className="avaAudioStableComingV204F1">
+                  <Sparkles size={22} />
+                  <div>
+                    <strong>Stable Audio Blocks</strong>
+                    <span>Music / Instrumental на весь блок. В Comfy отправляем Music или Instrument, длительность = блок + 1 сек, потом trim/fade до точного тайминга.</span>
+                  </div>
+                </div>
+                <label className="avaAudioField avaAudioStableFieldV204F7">
+                  <span>Stable prompt</span>
+                  <textarea
+                    value={stableDraftPromptV204F7}
+                    placeholder={`${selectedStableBlockRequestDurationV204F1 || 13}-second continuous instrumental action tension bed, dark cinematic pulse, no vocals, no lyrics`}
+                    onChange={(event) => updateStablePromptV204F7(event.target.value)}
+                  />
+                </label>
+                <label className="avaAudioField avaAudioStableFieldV204F7">
+                  <span>Stable negative</span>
+                  <textarea
+                    value={stableDraftNegativePromptV204F7}
+                    placeholder={STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7}
+                    onChange={(event) => updateStableNegativePromptV204F7(event.target.value)}
+                  />
+                </label>
+                <div className="avaAudioStableModeRowV204F7 isSimpleV204F8">
+                  <span>Модель для генерации</span>
+                  <div>
+                    <button type="button" className={stableAudioModeApiValueV204F7(stableDraftModeV204F7) === 'Music' ? 'isActive' : ''} onClick={() => updateStableModeV204F7('Music')}>Music</button>
+                    <button type="button" className={stableAudioModeApiValueV204F7(stableDraftModeV204F7) === 'Instrument' ? 'isActive' : ''} onClick={() => updateStableModeV204F7('Instrument')}>Instrumental</button>
+                  </div>
+                </div>
+                <div className="avaAudioStableSimpleNoteV204F8">
+                  <strong>Длина считается автоматически.</strong>
+                  <span>{selectedStableBlockDurationV204F1 ? `Блок ${selectedStableBlockDurationV204F1.toFixed(2)} сек → в Stable Audio уйдёт ${selectedStableBlockRequestDurationV204F1 || '—'} сек, после генерации система подрежет аудио обратно под тайминг блока.` : 'Сначала создай или выбери Stable-блок.'}</span>
+                </div>
+                <div className="avaAudioStableActionRowV204F7 isSimpleV204F8">
+                  <button type="button" className="isPrimary" onClick={submitStableAudioBlockV204F7} disabled={!stableSavedBlockActiveV204F4 || !cleanId(stableDraftPromptV204F7)}>
+                    <WandSparkles size={16} /> Сгенерировать Stable
+                  </button>
+                  <button type="button" onClick={previewStableAudioBlockV204F7} disabled={!selectedStableBlockSceneIdsV204F1.length}>
+                    <Play size={16} /> Прослушать блок
+                  </button>
+                  <button type="button" onClick={applyStableAudioBlockV204F7} disabled={!stableSavedBlockActiveV204F4} title="После генерации здесь будет применяться выбранный Stable Audio вариант к блоку">
+                    <CheckCircle2 size={16} /> Применить
+                  </button>
+                </div>
+              </section>
+
+              <section className="avaAudioPanel avaAudioStablePreviewPanelV204F1">
+                <div className="avaAudioPanelTitle">
+                  <span><Film size={17} /> Preview блока</span>
+                  <small>Timing + MMAudio + STAU</small>
+                </div>
+                <PreviewVideo source={sourceVideoRef} title="Preview выбранной сцены блока" className="avaAudioMainVideo" />
+                <div className="avaAudioStablePreviewNoteV204F1">
+                  Кнопка “Прослушать блок” должна собрать backend-preview: все сцены блока + Timing audio + applied MMAudio + выбранный Stable Audio. Сейчас справа остаётся быстрый просмотр выбранной сцены, следующий backend-патч заменит его на собранный MP4 всего блока.
+                </div>
+              </section>
+            </>
+          )}
         </main>
       )}
 
-      {selectedScene ? (
+      {selectedScene && audioStudioModeV204F1 === 'mmaudio' ? (
         <section className="avaAudioVariantsRail">
           <div className="avaAudioRailTitle">
             <h3>Варианты сцены</h3>
@@ -3024,6 +3722,18 @@ export default function AudioStudioPage() {
             )) : (
               <div className="avaAudioNoVariants">Пока нет вариантов. Сгенерируй MMAudio для этой сцены.</div>
             )}
+          </div>
+        </section>
+      ) : null}
+
+      {selectedScene && audioStudioModeV204F1 === 'stable' ? (
+        <section className="avaAudioStableVariantsRailV204F1">
+          <div className="avaAudioRailTitle">
+            <h3>Stable Audio варианты блока</h3>
+            <span>появятся после генерации Stable Audio</span>
+          </div>
+          <div className="avaAudioStableVariantPlaceholderV204F1">
+            После backend-генерации здесь появятся варианты v1/v2/v3: audio player, громкость уже у результата, preview блока и применение. Центральная панель остаётся простой: prompt + Music/Instrumental + генерация + “Прослушать блок” + “Применить”.
           </div>
         </section>
       ) : null}
