@@ -1,3 +1,5 @@
+# V204G13_STAU_VOLUME_DRAFT_APPLY_PREVIEW
+# V204G12B_STAU_VOLUME100_DRAG_SAVE
 # AVA_BOARD_MASTER_AUDIO_MANUAL_SLICE_V199I: manual slice uses project master/mixed audio fallback, rejects vocal-ASR stems.
 # AVA_BOARD_MASTER_AUDIO_FORCE_RECUT_V199G: audio routes always recut from master/mixed song audio; never from vocal-ASR stem.
 # AVA_BOARD_MASTER_AUDIO_FORCE_RECUT_V199F: never reuse old per-scene audio slices for lip-sync/instrumental; recut from master mixed song audio only.
@@ -43,6 +45,25 @@ from app.core.config import get_settings
 from app.core.storage import store
 from app.core.snapshot_media import media_refs_summary, preserve_media_refs
 from app.api.routes.telegram import telegram_board_batch_started, telegram_board_scene_ready, telegram_board_batch_finished, telegram_assembly_render_completed
+import math
+
+# V204G20_RESCUE_DEFAULTS_BACKEND_NAMEERROR: safe volume default aliases
+DEFAULT_STAU_VOLUME_PERCENT_V204G15 = 30
+
+# V204G20_RESCUE_DEFAULTS_BACKEND_NAMEERROR: safe volume default aliases
+DEFAULT_STAU_VOLUME_PERCENT_V204G15 = 30
+
+# V204G20_RESCUE_DEFAULTS_BACKEND_NAMEERROR: safe volume default aliases
+DEFAULT_STAU_VOLUME_PERCENT_V204G15 = 30
+
+# V204G20_RESCUE_DEFAULTS_BACKEND_NAMEERROR: safe volume default aliases
+DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G18 = 7
+
+# V204G20_RESCUE_DEFAULTS_BACKEND_NAMEERROR: safe volume default aliases
+DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G15 = 7
+
+# V204G20_RESCUE_DEFAULTS_BACKEND_NAMEERROR: safe volume default aliases
+DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14 = 7
 
 
 router = APIRouter(tags=["ltx-board"])
@@ -10416,7 +10437,19 @@ class AudioStudioStablePreviewIn(BaseModel):
     durationSec: float | None = None
     include_stable_audio: bool | None = False
     includeStableAudio: bool | None = False
+    stableAudio: dict[str, Any] | None = None
+    stable_audio: dict[str, Any] | None = None
     source: str | None = None
+
+
+def _audio_studio_float_v204g12b(value: Any, fallback: float = 100.0) -> float:
+    try:
+        n = float(value)
+    except Exception:
+        return fallback
+    if not math.isfinite(n):
+        return fallback
+    return max(0.0, min(100.0, n))
 
 
 def _audio_studio_first_text_v204g1(*values: Any) -> str:
@@ -10606,6 +10639,341 @@ def _audio_studio_make_preview_clip_v204g1(
     ])
 
 
+
+
+# ---------------------------------------------------------------------
+DEFAULT_STAU_VOLUME_PERCENT_V204G15 = 30
+
+# V204G6_STABLE_AUDIO_GENERATE_VARIANTS
+# Audio Studio / Stable Audio: generate a block-bed audio variant from
+# Stable_Audio_3_Medium_CLEAN.json. UI sends only prompt + Music/Instrument;
+# backend calculates duration = exact block duration + 1s, then trims/pads back
+# to exact block timing and registers the final MP3 as an Audio Studio asset.
+# ---------------------------------------------------------------------
+class AudioStudioStableGenerateIn(BaseModel):
+    project_id: str | None = None
+    projectId: str | None = None
+    block_id: str | None = None
+    blockId: str | None = None
+    title: str | None = None
+    prompt: str | None = None
+    mode: str | None = "Music"
+    duration_sec: float | None = None
+    durationSec: float | None = None
+    request_duration_sec: float | None = None
+    requestDurationSec: float | None = None
+    scene_ids: list[Any] | None = None
+    sceneIds: list[Any] | None = None
+    block: dict[str, Any] | None = None
+    workflow_key: str | None = None
+    workflowKey: str | None = None
+
+
+def _stable_audio_comfy_url_v204g6() -> str:
+    return _clean_comfy_url(
+        _env("COMFY_STABLE_AUDIO_BASE_URL")
+        or _env("STABLE_AUDIO_COMFY_BASE_URL")
+        or _env("STABLE_AUDIO_3_COMFY_BASE_URL")
+        or _env("COMFY_LAB_BASE_URL")
+        or _env("COMFY_LAB_URL")
+        or _env("MMAUDIO_COMFY_BASE_URL")
+        or _env("COMFY_MMAUDIO_BASE_URL")
+        or _env("COMFY_BASE_URL")
+        or _env("COMFY_URL")
+    )
+
+
+def _stable_audio_mode_api_v204g6(value: Any) -> tuple[str, int]:
+    text = str(value or "Music").strip().lower()
+    if text in {"instrument", "instrumental", "инструмент", "инструментал"}:
+        return "Instrument", 1
+    return "Music", 0
+
+
+def _stable_audio_patch_workflow_v204g6(workflow: dict[str, Any], *, prompt: str, mode: str, request_duration_sec: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    patched = copy.deepcopy(workflow)
+    mode_choice, mode_index = _stable_audio_mode_api_v204g6(mode)
+    patches: list[dict[str, Any]] = []
+
+    def patch(node_id: str, key: str, value: Any, reason: str) -> None:
+        node = patched.get(node_id)
+        if not isinstance(node, dict):
+            return
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict) or key not in inputs:
+            return
+        inputs[key] = value
+        patches.append({"nodeId": node_id, "input": key, "reason": reason, "valuePreview": str(value)[:160]})
+
+    patch("52:31", "value", prompt, "stable_audio_user_prompt_52_31")
+    patch("52:36", "value", float(request_duration_sec), "stable_audio_duration_plus1_52_36")
+    patch("52:43", "choice", mode_choice, "stable_audio_mode_choice_52_43")
+    patch("52:43", "index", int(mode_index), "stable_audio_mode_index_52_43")
+    patch("52:35", "value", True, "stable_audio_enable_reprompt_52_35")
+    patch("52:7", "text", "", "stable_audio_negative_empty_52_7")
+    patch("52:3", "seed", random.randint(1, 999999999999999), "stable_audio_random_seed_52_3")
+    patch("19", "filename_prefix", f"audio/stable_audio_3_{uuid4().hex[:8]}", "stable_audio_output_prefix_19")
+    return patched, patches
+
+
+def _stable_audio_is_audio_output_v204g6(output: dict[str, Any]) -> bool:
+    filename = str(output.get("filename") or "").lower()
+    group = str(output.get("group") or "").lower()
+    return filename.endswith((".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac")) or "audio" in group
+
+
+def _stable_audio_wait_for_output_v204g6(base_url: str, prompt_id: str, *, timeout_sec: int = 900) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    started = datetime.utcnow().timestamp()
+    last_outputs: list[dict[str, Any]] = []
+    while datetime.utcnow().timestamp() - started < timeout_sec:
+        history = _history(base_url, prompt_id)
+        outputs = _extract_comfy_outputs(base_url, history) if isinstance(history, dict) else []
+        last_outputs = outputs
+        audio_outputs = [item for item in outputs if _stable_audio_is_audio_output_v204g6(item)]
+        if audio_outputs:
+            return audio_outputs[-1], outputs
+        __import__('time').sleep(2.0)
+    raise HTTPException(status_code=504, detail={"code": "stable_audio_timeout_v204g6", "promptId": prompt_id, "outputs": last_outputs[-8:]})
+
+
+def _stable_audio_download_output_v204g6(base_url: str, output: dict[str, Any], out_path: Path) -> None:
+    filename = output.get("filename") or "stable_audio_3.mp3"
+    subfolder = output.get("subfolder", "")
+    ftype = output.get("type", "output")
+    query = urllib.parse.urlencode({"filename": filename, "subfolder": subfolder, "type": ftype})
+    url = f"{base_url.rstrip()}/view?{query}"
+    try:
+        with urllib.request.urlopen(url, timeout=240) as response:
+            out_path.write_bytes(response.read())
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Cannot download Stable Audio output: {exc}") from exc
+
+
+def _stable_audio_fit_to_block_v204g6(source_path: Path, out_path: Path, *, exact_duration_sec: float) -> dict[str, Any]:
+    exact = max(0.1, float(exact_duration_sec or 0.0))
+    fade_out = min(0.65, max(0.08, exact * 0.12))
+    fade_out_start = max(0.0, exact - fade_out)
+    # apad + atrim means: if Stable returns too short, extend with silence; if long, cut.
+    af = (
+        f"aresample=48000,"
+        f"afade=t=in:st=0:d={min(0.08, exact / 4):.4f},"
+        f"apad,atrim=0:{exact:.6f},asetpts=PTS-STARTPTS,"
+        f"afade=t=out:st={fade_out_start:.6f}:d={fade_out:.6f}"
+    )
+    _run_ffmpeg([
+        "-y",
+        "-i", str(source_path),
+        "-vn",
+        "-af", af,
+        "-t", f"{exact:.3f}",
+        "-ac", "2",
+        "-ar", "48000",
+        "-codec:a", "libmp3lame",
+        "-b:a", "192k",
+        str(out_path),
+    ])
+    raw_duration = _ffprobe_duration(source_path) or 0.0
+    final_duration = _ffprobe_duration(out_path) or exact
+    return {"rawDurationSec": round(float(raw_duration), 3), "finalDurationSec": round(float(final_duration), 3)}
+
+
+def _audio_studio_stable_audio_payload_v204g6(payload: AudioStudioStablePreviewIn) -> dict[str, Any]:
+    value = payload.stableAudio if isinstance(getattr(payload, "stableAudio", None), dict) else getattr(payload, "stable_audio", None)
+    if not isinstance(value, dict):
+        return {}
+    ref = _audio_studio_first_text_v204g1(
+        _audio_studio_nested_ref_v204g1(value),
+        value.get("assetApiPath"), value.get("asset_api_path"), value.get("apiPath"), value.get("api_path"),
+        value.get("audioApiPath"), value.get("audio_api_path"), value.get("url"), value.get("assetUrl"), value.get("asset_url"),
+        value.get("audioUrl"), value.get("audio_url"),
+    )
+    if not ref:
+        return {}
+
+    def num(raw: Any, default: float) -> float:
+        try:
+            val = float(raw)
+            if val == val:
+                return val
+        except Exception:
+            pass
+        return default
+
+    return {
+        "ref": ref,
+        "volume": max(0.0, min(100.0, num(value.get("volume"), DEFAULT_STAU_VOLUME_PERCENT_V204G15))),
+        "fadeInSec": max(0.0, min(10.0, num(value.get("fadeInSec", value.get("fade_in_sec")), 0.2))),
+        "fadeOutSec": max(0.0, min(10.0, num(value.get("fadeOutSec", value.get("fade_out_sec")), 0.5))),
+    }
+
+
+def _audio_studio_mix_stable_audio_bed_v204g6(*, preview_path: Path, stable_audio_path: Path, out_path: Path, duration_sec: float, volume_percent: float, fade_in_sec: float = 0.2, fade_out_sec: float = 0.5) -> None:
+    duration = max(0.08, float(duration_sec or 0.0))
+    volume = max(0.0, min(1.5, float(volume_percent or 0.0) / 100.0))
+    fade_in = max(0.0, min(float(fade_in_sec or 0.0), duration / 2.0))
+    fade_out = max(0.0, min(float(fade_out_sec or 0.0), duration / 2.0))
+    fade_out_start = max(0.0, duration - fade_out)
+    stable_chain = f"[1:a]aresample=48000,apad,atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,volume={volume:.6f}"
+    if fade_in > 0.001:
+        stable_chain += f",afade=t=in:st=0:d={fade_in:.6f}"
+    if fade_out > 0.001:
+        stable_chain += f",afade=t=out:st={fade_out_start:.6f}:d={fade_out:.6f}"
+    stable_chain += "[stau]"
+    filter_complex = ";".join([
+        f"[0:a]aresample=48000,atrim=0:{duration:.6f},asetpts=PTS-STARTPTS[basea]",
+        stable_chain,
+        "[basea][stau]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]",
+    ])
+    _run_ffmpeg([
+        "-y", "-i", str(preview_path), "-i", str(stable_audio_path),
+        "-filter_complex", filter_complex,
+        "-map", "0:v:0", "-map", "[a]",
+        "-t", f"{duration:.3f}",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+        str(out_path),
+    ])
+
+
+@router.post("/audio-studio/stable-audio/generate")
+def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerateIn, user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    project_id = _clean_project_id(payload.project_id or payload.projectId)
+    if project_id:
+        ensure_project_access(project_id, user)
+
+    prompt = str(payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Stable Audio prompt is empty")
+
+    exact_duration = payload.duration_sec if payload.duration_sec is not None else payload.durationSec
+    try:
+        exact_duration_f = max(0.25, float(exact_duration or 0.0))
+    except Exception:
+        exact_duration_f = 0.0
+    if exact_duration_f <= 0.0:
+        block = payload.block if isinstance(payload.block, dict) else {}
+        try:
+            exact_duration_f = max(0.25, float(block.get("durationSec") or block.get("duration_sec") or 0.0))
+        except Exception:
+            exact_duration_f = 0.0
+    if exact_duration_f <= 0.0:
+        raise HTTPException(status_code=400, detail="Stable Audio block duration is invalid")
+
+    request_duration_raw = payload.request_duration_sec if payload.request_duration_sec is not None else payload.requestDurationSec
+    try:
+        request_duration_f = float(request_duration_raw or 0.0)
+    except Exception:
+        request_duration_f = 0.0
+    if request_duration_f <= exact_duration_f:
+        request_duration_f = exact_duration_f + 1.0
+    request_duration_i = int(__import__('math').ceil(max(1.0, request_duration_f)))
+
+    base_url = _stable_audio_comfy_url_v204g6()
+    if not base_url:
+        raise HTTPException(status_code=500, detail="Stable Audio Comfy URL is not configured")
+
+    workflow_key = str(payload.workflow_key or payload.workflowKey or "Stable_Audio_3_Medium_CLEAN.json")
+    workflow_path = WORKFLOWS_DIR / workflow_key
+    if not workflow_path.exists():
+        raise HTTPException(status_code=404, detail=f"Stable Audio workflow not found: {workflow_path}")
+    workflow = _load_workflow(workflow_key)
+    mode_choice, mode_index = _stable_audio_mode_api_v204g6(payload.mode)
+    prompt_graph, patches = _stable_audio_patch_workflow_v204g6(
+        workflow,
+        prompt=prompt,
+        mode=mode_choice,
+        request_duration_sec=request_duration_i,
+    )
+
+    block_id = _audio_studio_first_text_v204g1(payload.block_id, payload.blockId, "stable_block")
+    block_title = _safe_name(payload.title or block_id or "stable_audio_block", "stable_audio_block")
+    job_id = f"stable_audio_{uuid4().hex[:14]}"
+    submit_data = _submit_prompt(base_url, prompt_graph)
+    prompt_id = submit_data.get("prompt_id") or submit_data.get("promptId")
+    if not prompt_id:
+        raise HTTPException(status_code=502, detail={"code": "stable_audio_no_prompt_id_v204g6", "submit": submit_data})
+
+    with tempfile.TemporaryDirectory(prefix="ava_stable_audio_v204g6_") as tmp_raw:
+        tmp_dir = Path(tmp_raw)
+        output, outputs = _stable_audio_wait_for_output_v204g6(base_url, str(prompt_id), timeout_sec=900)
+        raw_suffix = Path(str(output.get("filename") or "stable_audio_3.mp3")).suffix or ".mp3"
+        raw_path = tmp_dir / f"raw{raw_suffix}"
+        final_path = tmp_dir / f"{block_title}_{uuid4().hex[:8]}_stau.mp3"
+        _stable_audio_download_output_v204g6(base_url, output, raw_path)
+        fit_info = _stable_audio_fit_to_block_v204g6(raw_path, final_path, exact_duration_sec=exact_duration_f)
+        public = _register_board_output_asset(
+            final_path,
+            job={
+                "jobId": job_id,
+                "projectId": project_id,
+                "userId": user.get("id"),
+                "sceneId": block_id or block_title,
+            },
+            kind="audio",
+            stage="audio_studio",
+            original_name=f"{block_title}_stable_audio.mp3",
+        )
+
+    if not public:
+        raise HTTPException(status_code=500, detail="stable_audio_asset_register_failed_v204g6")
+
+    variant_id = f"stau_{uuid4().hex[:10]}"
+    variant = {
+        "id": variant_id,
+        "variantId": variant_id,
+        "label": "STAU",
+        "kind": "stable_audio",
+        "mode": mode_choice,
+        "modeLabel": "Instrumental" if mode_choice == "Instrument" else "Music",
+        "prompt": prompt,
+        "volume": DEFAULT_STAU_VOLUME_PERCENT_V204G15,
+        "fadeInSec": 0.2,
+        "fadeOutSec": 0.5,
+        "exactDurationSec": round(float(exact_duration_f), 3),
+        "requestDurationSec": request_duration_i,
+        "rawDurationSec": fit_info.get("rawDurationSec"),
+        "finalDurationSec": fit_info.get("finalDurationSec"),
+        "assetApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        "asset_api_path": public.get("asset_api_path") or public.get("assetApiPath"),
+        "audioApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        "audio_api_path": public.get("asset_api_path") or public.get("assetApiPath"),
+        "assetUrl": public.get("asset_url") or public.get("assetUrl"),
+        "asset_url": public.get("asset_url") or public.get("assetUrl"),
+        "audioUrl": public.get("asset_url") or public.get("assetUrl"),
+        "audio_url": public.get("asset_url") or public.get("assetUrl"),
+        "assetId": public.get("asset_id") or public.get("assetId"),
+        "asset_id": public.get("asset_id") or public.get("assetId"),
+        "createdAt": datetime.utcnow().isoformat() + "Z",
+        "source": "stable_audio_3_medium_v204g6",
+    }
+
+    print("[AUDIO STUDIO STABLE AUDIO READY V204G6]", {
+        "projectId": project_id,
+        "blockId": block_id,
+        "promptId": prompt_id,
+        "mode": mode_choice,
+        "exactDurationSec": round(float(exact_duration_f), 3),
+        "requestDurationSec": request_duration_i,
+        "assetApiPath": variant.get("assetApiPath"),
+    }, flush=True)
+
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "job_id": job_id,
+        "promptId": prompt_id,
+        "prompt_id": prompt_id,
+        "blockId": block_id,
+        "block_id": block_id,
+        "variant": variant,
+        "stableAudioVariant": variant,
+        "stable_audio_variant": variant,
+        "outputs": outputs[-8:],
+        "workflowKey": workflow_key,
+        "workflowPatchCount": len(patches),
+        "workflowPatches": patches,
+        "targetComfyBaseUrl": base_url,
+    }
+
 @router.post("/audio-studio/stable-preview/block")
 def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     project_id = _clean_project_id(payload.project_id or payload.projectId)
@@ -10691,6 +11059,27 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
         ])
 
         duration_total = _ffprobe_duration(preview_path) or sum(durations)
+        layers_v204g6 = ["scene_video_applied_mmaudio", "timing_audio"]
+        stable_audio_included_v204g6 = False
+        stable_audio_payload_v204g6 = _audio_studio_stable_audio_payload_v204g6(payload)
+        stable_audio_ref_v204g6 = stable_audio_payload_v204g6.get("ref") if stable_audio_payload_v204g6 else ""
+        if (payload.includeStableAudio or payload.include_stable_audio) and stable_audio_ref_v204g6:
+            stable_audio_path_v204g6 = _resolve_local_file(stable_audio_ref_v204g6)
+            preview_with_stau_path_v204g6 = tmp_dir / f"{block_title}_{uuid4().hex[:8]}_preview_stau.mp4"
+            _audio_studio_mix_stable_audio_bed_v204g6(
+                preview_path=preview_path,
+                stable_audio_path=stable_audio_path_v204g6,
+                out_path=preview_with_stau_path_v204g6,
+                duration_sec=duration_total,
+                volume_percent=_audio_studio_float_v204g12b(stable_audio_payload_v204g6.get("volume"), DEFAULT_STAU_VOLUME_PERCENT_V204G15),
+                fade_in_sec=float(stable_audio_payload_v204g6.get("fadeInSec") or 0.2),
+                fade_out_sec=float(stable_audio_payload_v204g6.get("fadeOutSec") or 0.5),
+            )
+            preview_path = preview_with_stau_path_v204g6
+            duration_total = _ffprobe_duration(preview_path) or duration_total
+            layers_v204g6.append("stable_audio")
+            stable_audio_included_v204g6 = True
+
         public = _register_board_output_asset(
             preview_path,
             job={
@@ -10734,8 +11123,10 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
         "asset_url": public.get("asset_url") or public.get("assetUrl"),
         "assetId": public.get("asset_id") or public.get("assetId"),
         "asset_id": public.get("asset_id") or public.get("assetId"),
-        "source": "audio_studio_stable_block_preview_v204g1",
-        "layers": ["scene_video_applied_mmaudio", "timing_audio"],
+        "source": "audio_studio_stable_block_preview_v204g6",
+        "layers": layers_v204g6,
+        "stableAudioIncluded": stable_audio_included_v204g6,
+        "stable_audio_included": stable_audio_included_v204g6,
         "scenes": scene_debug,
     }
 

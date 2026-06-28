@@ -1849,3 +1849,201 @@
 .avaAudioStableActionRowV204F7.isSimpleV204F8 {
   grid-template-columns: repeat(3, minmax(0, auto));
 }
+
+
+/* V204G1_STABLE_BLOCK_PREVIEW_MP4 */
+.avaAudioStableActionRowV204F7 button:disabled {
+  opacity: .55;
+}
+
+
+/* V204G4_STABLE_PREVIEW_BUTTON_UI_RECOVERY */
+.avaAudioStablePreviewActionV204G4 {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 174px;
+  transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+
+.avaAudioStablePreviewActionV204G4.isLoading {
+  border-color: rgba(125, 211, 252, .76) !important;
+  color: rgba(191, 241, 255, .98) !important;
+  background: linear-gradient(135deg, rgba(14, 165, 233, .22), rgba(99, 102, 241, .18)) !important;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, .20), 0 14px 34px rgba(14, 165, 233, .14) !important;
+}
+
+.avaAudioStablePreviewActionV204G4.isReady:not(.isLoading) {
+  border-color: rgba(74, 222, 128, .80) !important;
+  color: rgba(187, 247, 208, .98) !important;
+  background: linear-gradient(135deg, rgba(22, 163, 74, .22), rgba(20, 184, 166, .16)) !important;
+  box-shadow: 0 0 0 1px rgba(74, 222, 128, .22), 0 14px 34px rgba(22, 163, 74, .14) !important;
+}
+
+.avaAudioStablePreviewActionV204G4.isError:not(.isLoading) {
+  border-color: rgba(248, 113, 113, .78) !important;
+  color: rgba(254, 202, 202, .98) !important;
+  background: linear-gradient(135deg, rgba(185, 28, 28, .22), rgba(244, 63, 94, .14)) !important;
+}
+
+.avaAudioStablePreviewSpinnerV204G4 {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid rgba(191, 241, 255, .28);
+  border-top-color: rgba(191, 241, 255, .98);
+  border-right-color: rgba(191, 241, 255, .72);
+  animation: avaAudioStablePreviewSpinV204G4 .72s linear infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes avaAudioStablePreviewSpinV204G4 {
+  to { transform: rotate(360deg); }
+}
+
+
+/* V204G6_STABLE_AUDIO_GENERATE_VARIANTS */
+.avaAudioStableVariantsRailV204G6 {
+  display: grid;
+  gap: 12px;
+}
+
+.avaAudioStableVariantListV204G6 {
+  display: grid;
+  gap: 12px;
+}
+
+.avaAudioStableVariantCardV204G6 {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, .16);
+  background: rgba(15, 23, 42, .54);
+}
+
+.avaAudioStableVariantCardV204G6.isActive {
+  border-color: rgba(125, 211, 252, .72);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, .18), 0 16px 38px rgba(14, 165, 233, .12);
+}
+
+.avaAudioStableVariantCardV204G6.isApplied {
+  border-color: rgba(74, 222, 128, .68);
+}
+
+.avaAudioStableVariantPickV204G6 {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(226, 232, 240, .96);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.avaAudioStableVariantPickV204G6 strong {
+  font-size: 14px;
+}
+
+.avaAudioStableVariantPickV204G6 span {
+  font-size: 12px;
+  color: rgba(148, 163, 184, .86);
+}
+
+.avaAudioStableAudioPlayerV204G6 {
+  width: 100%;
+  height: 38px;
+}
+
+.avaAudioStableVolumeV204G6 {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(203, 213, 225, .88);
+}
+
+.avaAudioStableVolumeV204G6 input[type="range"] {
+  width: 100%;
+  accent-color: #22d3ee;
+}
+
+.avaAudioStableNoAudioV204G6 {
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, .18);
+  color: rgba(148, 163, 184, .78);
+}
+
+
+/* V204G7B_STAU_AUDIO_BLOB_PLAYER_DELETE */
+.avaAudioStableVariantCardV204G6 {
+  position: relative;
+}
+
+.avaAudioStableVariantDeleteV204G7B {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, .45);
+  background: rgba(127, 29, 29, .34);
+  color: rgba(254, 202, 202, .96);
+  cursor: pointer;
+}
+
+.avaAudioStableVariantDeleteV204G7B:hover {
+  border-color: rgba(248, 113, 113, .88);
+  background: rgba(185, 28, 28, .48);
+  color: #fff;
+}
+
+.avaAudioStableAudioPlayerV204G6 {
+  width: 100%;
+}
+
+.avaAudioStableAudioEmptyV204G7B {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(148, 163, 184, .24);
+  color: rgba(148, 163, 184, .8);
+  background: rgba(2, 6, 23, .24);
+  font-size: 12px;
+}
+
+.avaAudioStableAudioEmptyV204G7B.isLoading {
+  color: rgba(125, 211, 252, .92);
+}
+
+.avaAudioStableAudioEmptyV204G7B.isError {
+  color: rgba(254, 202, 202, .95);
+  border-color: rgba(248, 113, 113, .35);
+}
+
+
+/* V204G8B_PREVIEW_BUTTON_RESET_NO_ANCHOR */
+.avaAudioStablePreviewActionV204G4 {
+  min-width: 210px;
+}
+
+
+/* V204G9_STABLE_PREVIEW_FLOW_CLEANUP */
+.avaAudioStablePreviewActionV204G4.isReady:not(.isLoading) {
+  border-color: rgba(74, 222, 128, .78) !important;
+  color: rgba(187, 247, 208, .98) !important;
+}

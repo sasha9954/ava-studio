@@ -19,12 +19,22 @@ import {
 } from 'lucide-react'
 import { useProjects } from '../../context/ProjectContext.jsx'
 import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, normalizeAssetFileUrl, uploadMediaAsset } from '../../services/apiClient.js'
+// V204G13_STAU_VOLUME_DRAFT_APPLY_PREVIEW
 import './AudioStudioPage.css'
+const DEFAULT_STABLE_AUDIO_VOLUME_PERCENT_V204G14 = 30
+const DEFAULT_STAU_VOLUME_PERCENT_V204G15 = 30
+const DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G15 = 7
+// V204G19_DEFINE_MISSING_VOLUME_CONSTANTS - shared audio defaults restored after backup merge
+const DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14 = 7
+const DEFAULT_STAU_VOLUME_PERCENT_V204G14 = 30
+
 
 const STAGE = 'audio_studio'
 const VERSION = 'V204D3'
 const AVA_AUDIO_REFRESH_FROM_BOARD_MODAL_V204D3 = true
 const DEFAULT_NEGATIVE = 'музыка, речь, голоса, гул, hiss, шум'
+const DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G18 = 7
+const DEFAULT_STAU_VOLUME_PERCENT_V204G18 = 30
 
 
 function isInterruptedPlayErrorV204E11(err) {
@@ -837,6 +847,23 @@ function stableBlockTimelineFromScenesV204F4(scenes = []) {
 // V204F7_STABLE_AUDIO_CONTROLS_SHELL
 const STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7 = 'vocals, lyrics, speech, dialogue, singing, gunshots, bullets, explosions, glass breaking, debris sounds, footsteps, sirens, city traffic, silence, sudden ending, short cutoff, distortion'
 
+
+function stableAudioVariantRefV204G6(variant = {}) {
+  return firstText(
+    variant.assetApiPath,
+    variant.asset_api_path,
+    variant.audioApiPath,
+    variant.audio_api_path,
+    variant.apiPath,
+    variant.api_path,
+    variant.url,
+    variant.assetUrl,
+    variant.asset_url,
+    variant.audioUrl,
+    variant.audio_url,
+  )
+}
+
 function stableAudioModeApiValueV204F7(value = 'Music') {
   const clean = cleanId(value).toLowerCase()
   if (clean === 'instrument' || clean === 'instrumental') return 'Instrument'
@@ -847,7 +874,7 @@ function stableAudioModeUiLabelV204F7(value = 'Music') {
   return stableAudioModeApiValueV204F7(value) === 'Instrument' ? 'Instrumental' : 'Music'
 }
 
-function stableAudioVolumeV204F7(value, fallback = 16) {
+function stableAudioVolumeV204F7(value, fallback = DEFAULT_STAU_VOLUME_PERCENT_V204G14) {
   const n = Number(value)
   if (!Number.isFinite(n)) return fallback
   return Math.max(0, Math.min(100, Math.round(n)))
@@ -995,7 +1022,7 @@ function buildAudioScenesFromBoard(board = {}) {
     const sourceAudioRef = normalizeRef(boardSourceAudioRef(scene))
     const prompt = firstText(scene.mmaudio_prompt, scene.mmaudioPrompt, scene.sound_prompt, scene.soundPrompt)
     const negativePrompt = firstText(scene.mmaudio_negative_prompt, scene.mmaudioNegativePrompt, scene.negative_sound_prompt, scene.negativeSoundPrompt, DEFAULT_NEGATIVE)
-    const volume = toNumber(scene.mmaudio_volume ?? scene.mmaudioVolume ?? scene.audio_studio_mmaudio_volume ?? scene.audioStudioMmaudioVolume, 100)
+    const volume = toNumber(scene.mmaudio_volume ?? scene.mmaudioVolume ?? scene.audio_studio_mmaudio_volume ?? scene.audioStudioMmaudioVolume, DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14)
     const variants = []
     if (sourceRef.apiPath || sourceRef.url) {
       variants.push({
@@ -1107,7 +1134,7 @@ function buildManualAudioSceneV204C6(index = 0) {
     sourceAudio: { url: '', apiPath: '', assetId: '', name: '' },
     prompt: '',
     negativePrompt: DEFAULT_NEGATIVE,
-    mmaudioVolume: 100,
+    mmaudioVolume: DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14,
     selectedVariantId: '',
     appliedVariantId: '',
     variants: [],
@@ -1133,7 +1160,7 @@ function mergeAudioWithFreshBoard(audio = {}, board = {}, projectId = '') {
       ...freshScene,
       prompt: old.prompt || freshScene.prompt,
       negativePrompt: old.negativePrompt || freshScene.negativePrompt,
-      mmaudioVolume: toNumber(old.mmaudioVolume, freshScene.mmaudioVolume || 100),
+      mmaudioVolume: toNumber(old.mmaudioVolume, freshScene.mmaudioVolume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14),
       selectedVariantId: old.selectedVariantId || freshScene.selectedVariantId,
       appliedVariantId: old.appliedVariantId || freshScene.appliedVariantId,
       variants: mergedVariants,
@@ -1205,7 +1232,7 @@ function audioStudioSceneVideoRefV204F2(scene = {}) {
   )
 }
 
-function PreviewVideo({ source = '', title = '', className = '', volume = 1, controls = true }) {
+function PreviewVideo({ source = '', title = '', className = '', volume = 1, controls = true, autoPlayKey = '' }) {
   const [blobUrl, setBlobUrl] = useState('')
   const [error, setError] = useState('')
   const videoRef = useRef(null)
@@ -1243,6 +1270,31 @@ function PreviewVideo({ source = '', title = '', className = '', volume = 1, con
 
   const shouldFetch = /\/(api\/)?assets\/[^/]+\/file/i.test(cleanSource)
   const src = shouldFetch ? blobUrl : (cleanSource ? buildApiUrl(cleanSource) : '')
+  const autoPlayKeyV204G9 = cleanId(autoPlayKey)
+
+  // V204G9_STABLE_PREVIEW_FLOW_CLEANUP
+  // Autoplay is only triggered by a fresh button-click result. Restored previews after F5
+  // remain visible but do not unexpectedly start playing in the wrong tab/panel.
+  useEffect(() => {
+    if (!autoPlayKeyV204G9 || !src || !videoRef.current) return undefined
+    let cancelled = false
+    const playOnce = () => {
+      if (cancelled || !videoRef.current) return
+      try {
+        const node = videoRef.current
+        node.currentTime = 0
+        const promise = node.play()
+        if (promise && typeof promise.catch === 'function') promise.catch(() => {})
+      } catch (_err) {
+        // Browser may block autoplay with sound; the video remains ready for manual play.
+      }
+    }
+    const timers = [80, 240, 650].map((ms) => window.setTimeout(playOnce, ms))
+    return () => {
+      cancelled = true
+      timers.forEach((timer) => window.clearTimeout(timer))
+    }
+  }, [autoPlayKeyV204G9, src])
 
   if (!cleanSource) {
     return <div className={`avaAudioPreviewEmpty ${className}`}>Нет видео</div>
@@ -1468,7 +1520,7 @@ function buildAudioStudioExportPayload(snapshot = {}, projectId = '') {
       route: scene.route || '',
       prompt: scene.prompt || '',
       negativePrompt: scene.negativePrompt || DEFAULT_NEGATIVE,
-      mmaudioVolume: Number(scene.mmaudioVolume ?? 100),
+      mmaudioVolume: Number(scene.mmaudioVolume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14),
       selectedVariantId: scene.selectedVariantId || '',
       appliedVariantId: scene.appliedVariantId || '',
       sourceVideo: scene.sourceVideo || {},
@@ -1575,6 +1627,57 @@ function applyAudioStudioImportedJson(current = {}, imported = {}, projectId = '
   }
 }
 
+
+// V204G12B_STAU_VOLUME100_DRAG_SAVE
+// V204G7B_STAU_AUDIO_BLOB_PLAYER_DELETE
+function StableAudioAssetPlayerV204G7B({ source = '', title = 'STAU', className = '', volumePercent = DEFAULT_STAU_VOLUME_PERCENT_V204G18 }) {
+  const audioRef = useRef(null)
+  const [blobUrl, setBlobUrl] = useState('')
+  const [error, setError] = useState('')
+  const cleanSource = cleanId(source)
+  const safeVolume = stableAudioVolumeV204F7(volumePercent, DEFAULT_STAU_VOLUME_PERCENT_V204G18)
+
+  useEffect(() => {
+    const node = audioRef.current
+    if (!node) return
+    node.volume = clampMediaVolumeV204E10A(safeVolume / 100, 1)
+  }, [safeVolume])
+
+  useEffect(() => {
+    let alive = true
+    let objectUrl = ''
+    setError('')
+    setBlobUrl('')
+    if (!cleanSource) return undefined
+
+    const shouldFetch = /\/(api\/)?assets\/[^/]+\/file/i.test(cleanSource)
+    if (!shouldFetch) return undefined
+
+    fetchProtectedBlobUrl(cleanSource)
+      .then((url) => {
+        if (!alive) return
+        objectUrl = url
+        setBlobUrl(url)
+      })
+      .catch((err) => {
+        if (alive) setError(String(err?.message || err))
+      })
+
+    return () => {
+      alive = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [cleanSource])
+
+  const shouldFetch = /\/(api\/)?assets\/[^/]+\/file/i.test(cleanSource)
+  const src = shouldFetch ? blobUrl : (cleanSource ? buildApiUrl(cleanSource) : '')
+
+  if (!cleanSource) return <div className="avaAudioStableAudioEmptyV204G7B">нет audio asset</div>
+  if (shouldFetch && !blobUrl && !error) return <div className="avaAudioStableAudioEmptyV204G7B isLoading">загружаю STAU…</div>
+  if (error) return <div className="avaAudioStableAudioEmptyV204G7B isError">STAU недоступен: {error}</div>
+  return <audio ref={audioRef} controls preload="metadata" src={src} title={title} className={className} />
+}
+
 export default function AudioStudioPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -1620,29 +1723,24 @@ export default function AudioStudioPage() {
   // V204G1_STABLE_BLOCK_PREVIEW_MP4
   const [stableBlockPreviewVideoV204G1, setStableBlockPreviewVideoV204G1] = useState(null)
   const [stableBlockPreviewLoadingV204G1, setStableBlockPreviewLoadingV204G1] = useState(false)
+  // V204G6_STABLE_AUDIO_GENERATE_VARIANTS
+  const [stableAudioGeneratingV204G6, setStableAudioGeneratingV204G6] = useState(false)
+  // V204G13_STAU_VOLUME_DRAFT_APPLY_PREVIEW: slider is local until preview/apply
+  const [stableAudioVolumeDraftsV204G13, setStableAudioVolumeDraftsV204G13] = useState({})
   // V204G4_STABLE_PREVIEW_BUTTON_UI_RECOVERY
   const [stableBlockPreviewUiPhaseV204G4, setStableBlockPreviewUiPhaseV204G4] = useState('idle')
   const [stableBlockPreviewUiNonceV204G4, setStableBlockPreviewUiNonceV204G4] = useState(0)
-
+  // V204G9_STABLE_PREVIEW_FLOW_CLEANUP
+  const [stableBlockPreviewPlayKeyV204G9, setStableBlockPreviewPlayKeyV204G9] = useState('')
+  // V204G8B_PREVIEW_BUTTON_RESET_NO_ANCHOR
   useEffect(() => {
-    if (!stableBlockPreviewVideoV204G1) return
-    setStableBlockPreviewLoadingV204G1(false)
-    setStableBlockPreviewUiPhaseV204G4('ready')
-    const timers = [120, 450, 900, 1400].map((ms) => window.setTimeout(() => {
-      try {
-        const node = document.querySelector('.avaAudioStablePreviewPanelV204F1 video.avaAudioMainVideo, .avaAudioStablePreviewPanelV204F1 video, video.avaAudioMainVideo')
-        if (!node) return
-        node.currentTime = 0
-        const promise = node.play()
-        if (promise && typeof promise.catch === 'function') {
-          promise.catch(() => {})
-        }
-      } catch (_err) {
-        // Browser autoplay can be blocked with sound; manual play remains available.
-      }
-    }, ms))
-    return () => timers.forEach((timer) => window.clearTimeout(timer))
-  }, [stableBlockPreviewVideoV204G1, stableBlockPreviewUiNonceV204G4])
+    if (stableBlockPreviewUiPhaseV204G4 !== 'ready') return undefined
+    const timer = window.setTimeout(() => {
+      setStableBlockPreviewUiPhaseV204G4((phase) => (phase === 'ready' ? 'idle' : phase))
+    }, 1600)
+    return () => window.clearTimeout(timer)
+  }, [stableBlockPreviewUiPhaseV204G4])
+
 
   const pollRef = useRef(null)
   const snapshotRef = useRef(snapshot)
@@ -2253,7 +2351,7 @@ export default function AudioStudioPage() {
           assetId: ref.assetId,
           prompt,
           negativePrompt,
-          volume: selectedScene.mmaudioVolume || 100,
+          volume: selectedScene.mmaudioVolume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14,
           rawMode: true,
           steps: 25,
           cfg: 3,
@@ -2272,7 +2370,7 @@ export default function AudioStudioPage() {
         return
       }
       if (jobId) {
-        pollMmaudioJob(jobId, sceneId, { prompt, negativePrompt, volume: selectedScene.mmaudioVolume || 100 })
+        pollMmaudioJob(jobId, sceneId, { prompt, negativePrompt, volume: selectedScene.mmaudioVolume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14 })
       } else {
         setGeneratingSceneId('')
         throw new Error('MMAudio не вернул job_id')
@@ -2297,7 +2395,7 @@ export default function AudioStudioPage() {
         const originalRef = normalizeRef(boardSourceVideoRef(boardScene))
         const originalUrl = firstText(originalRef.url, originalRef.apiPath)
         const appliedUrl = ref.url || ref.apiPath
-        const appliedVolume = Number(variant.volume ?? scene.mmaudioVolume ?? 100)
+        const appliedVolume = Number(variant.volume ?? scene.mmaudioVolume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14)
         const appliedAt = nowIso()
 
         return {
@@ -2384,7 +2482,7 @@ export default function AudioStudioPage() {
     setError('')
     setStatus('Применяю MMAudio вариант…')
     try {
-      const volume = Math.max(0, Math.min(150, Number(selectedScene.mmaudioVolume ?? selectedVariant.volume ?? 100) || 0))
+      const volume = Math.max(0, Math.min(150, Number(selectedScene.mmaudioVolume ?? selectedVariant.volume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14) || 0))
       setStatus(volume === 100 ? 'Применяю MMAudio вариант…' : `Применяю MMAudio вариант и запекаю громкость ${volume}%…`)
       const rawMedia = variantRawMediaRefV204C3({ ...selectedVariant, ...selectedRef })
       const appliedMedia = await bakeMmaudioVariantVolumeV204C3({
@@ -2482,7 +2580,7 @@ export default function AudioStudioPage() {
       return {
         ...scene,
         selectedVariantId: variantId,
-        mmaudioVolume: Number(variant?.volume ?? scene.mmaudioVolume ?? 100),
+        mmaudioVolume: Number(variant?.volume ?? scene.mmaudioVolume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14),
       }
     })
   }, [patchSelectedScene, selectedScene])
@@ -2540,7 +2638,7 @@ export default function AudioStudioPage() {
     boardSourceAudioRef(selectedScene?.boardRaw || {}),
   )
   const selectedResultRef = selectedVariant ? variantRef(selectedVariant) : ''
-  const activeVolume = Math.max(0, Math.min(100, Number(selectedScene?.mmaudioVolume ?? selectedVariant?.volume ?? 100) || 100))
+  const activeVolume = Math.max(0, Math.min(100, Number(selectedScene?.mmaudioVolume ?? selectedVariant?.volume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14) || DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14))
   const selectedTimingAudioRefV204E10 = audioStudioTimingAudioRefV204E10(selectedScene || {})
   const selectedTimingAudioReadyV204E10 = Boolean(selectedTimingAudioRefV204E10)
   const selectedTimingAudioPreparingV204E10 = Boolean(selectedScene && cleanId(timingAudioPreparingSceneIdV204E10) === cleanId(selectedScene.id || selectedScene.sceneId))
@@ -2591,7 +2689,7 @@ export default function AudioStudioPage() {
       assetId: firstText(preview?.assetId, preview?.asset_id),
       restoredAfterF5V204G5: true,
     })
-    if (typeof setStableBlockPreviewUiPhaseV204G4 === 'function') setStableBlockPreviewUiPhaseV204G4('ready')
+    if (typeof setStableBlockPreviewUiPhaseV204G4 === 'function') setStableBlockPreviewUiPhaseV204G4('idle')
   }, [selectedSavedStableBlockV204F4])
 
   const selectedStableBlockScenesV204F1 = useMemo(() => {
@@ -2700,7 +2798,7 @@ export default function AudioStudioPage() {
     )
     const existingStableAudioV204F7 = existingBlock?.stableAudio || {}
     const draftModeForBlockV204F7 = stableAudioModeApiValueV204F7(stableDraftModeV204F7 || existingStableAudioV204F7.mode || existingBlock?.mode || 'Music')
-    const draftVolumeForBlockV204F7 = stableAudioVolumeV204F7(stableDraftVolumeV204F7, existingStableAudioV204F7.volume ?? 16)
+    const draftVolumeForBlockV204F7 = stableAudioVolumeV204F7(stableDraftVolumeV204F7, existingStableAudioV204F7.volume ?? 100)
     const draftFadeInForBlockV204F7 = stableAudioFadeV204F7(stableDraftFadeInSecV204F7, existingStableAudioV204F7.fadeInSec ?? 0.35)
     const draftFadeOutForBlockV204F7 = stableAudioFadeV204F7(stableDraftFadeOutSecV204F7, existingStableAudioV204F7.fadeOutSec ?? 0.8)
 
@@ -2877,6 +2975,11 @@ export default function AudioStudioPage() {
     setActiveStableBlockIdV204F4('')
     setStableManualSelectionV204F2([])
     setStableDraftBlockTitleV204F3('')
+    // V204G9_STABLE_PREVIEW_FLOW_CLEANUP - clear preview on disassemble V204G9
+    setStableBlockPreviewVideoV204G1(null)
+    setStableBlockPreviewLoadingV204G1(false)
+    setStableBlockPreviewUiPhaseV204G4('idle')
+    setStableBlockPreviewPlayKeyV204G9('')
     setStatus(`Stable Audio: блок разобран, сцены снова отдельно (${removedIds.length})`)
   }, [clearStableManualSelectionV204F2, persistSnapshotSilently, selectedSavedStableBlockV204F4])
 
@@ -2889,7 +2992,7 @@ export default function AudioStudioPage() {
     setStableDraftPromptV204F7(firstText(stableAudio.prompt, block?.prompt, ''))
     setStableDraftNegativePromptV204F7(firstText(stableAudio.negativePrompt, block?.negativePrompt, STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7))
     setStableDraftModeV204F7(stableAudioModeApiValueV204F7(stableAudio.mode || block?.mode || 'Music'))
-    setStableDraftVolumeV204F7(stableAudioVolumeV204F7(stableAudio.volume ?? block?.volume ?? 16))
+    setStableDraftVolumeV204F7(stableAudioVolumeV204F7(stableAudio.volume ?? block?.volume ?? 100))
     setStableDraftFadeInSecV204F7(stableAudioFadeV204F7(stableAudio.fadeInSec ?? block?.fadeInSec ?? 0.35))
     setStableDraftFadeOutSecV204F7(stableAudioFadeV204F7(stableAudio.fadeOutSec ?? block?.fadeOutSec ?? 0.8))
   }, [selectedStableBlockIdV204F7])
@@ -2905,7 +3008,7 @@ export default function AudioStudioPage() {
         ...(block.stableAudio || {}),
         ...patch,
         mode: stableAudioModeApiValueV204F7(patch.mode || block.stableAudio?.mode || block.mode || 'Music'),
-        volume: stableAudioVolumeV204F7(patch.volume ?? block.stableAudio?.volume ?? block.volume ?? 16),
+        volume: stableAudioVolumeV204F7(patch.volume ?? block.stableAudio?.volume ?? block.volume ?? 100),
         fadeInSec: stableAudioFadeV204F7(patch.fadeInSec ?? block.stableAudio?.fadeInSec ?? block.fadeInSec ?? 0.35),
         fadeOutSec: stableAudioFadeV204F7(patch.fadeOutSec ?? block.stableAudio?.fadeOutSec ?? block.fadeOutSec ?? 0.8),
         exactDurationSec: toNumber(block.durationSec, selectedStableBlockDurationV204F1),
@@ -2948,7 +3051,7 @@ export default function AudioStudioPage() {
   }, [patchStableBlockSettingsV204F7])
 
   const updateStableVolumeV204F7 = useCallback((value) => {
-    const volume = stableAudioVolumeV204F7(value, 16)
+    const volume = stableAudioVolumeV204F7(value, DEFAULT_STAU_VOLUME_PERCENT_V204G18)
     setStableDraftVolumeV204F7(volume)
     patchStableBlockSettingsV204F7({ volume }, 'stable_audio_volume_v204f7')
   }, [patchStableBlockSettingsV204F7])
@@ -2965,6 +3068,15 @@ export default function AudioStudioPage() {
     patchStableBlockSettingsV204F7({ fadeOutSec }, 'stable_audio_fade_out_v204f7')
   }, [patchStableBlockSettingsV204F7])
 
+  // V204G10_ENABLE_STABLE_GENERATE_ON_BLOCK
+  const stableDefaultPromptV204G10 = useMemo(() => {
+    const seconds = Math.max(1, Math.ceil(toNumber(selectedStableBlockRequestDurationV204F1, selectedStableBlockDurationV204F1 + 1 || 10)))
+    const title = cleanId(stableDisplayBlockTitleV204F3) || 'this video block'
+    return `${seconds}-second continuous instrumental tension bed for ${title}, cinematic pulse, controlled background energy, no vocals, no lyrics`
+  }, [selectedStableBlockDurationV204F1, selectedStableBlockRequestDurationV204F1, stableDisplayBlockTitleV204F3])
+
+  const stableEffectivePromptV204G10 = cleanId(stableDraftPromptV204F7) || stableDefaultPromptV204G10
+
   // V204F8_STABLE_AUDIO_SIMPLE_GENERATE_UI
   const buildStableAudioRequestPayloadV204F7 = useCallback(() => ({
     blockId: selectedSavedStableBlockV204F4?.id || '',
@@ -2976,23 +3088,108 @@ export default function AudioStudioPage() {
     requestDurationSec: selectedStableBlockRequestDurationV204F1,
     mode: stableAudioModeApiValueV204F7(stableDraftModeV204F7),
     modeLabel: stableAudioModeUiLabelV204F7(stableDraftModeV204F7),
-    prompt: stableDraftPromptV204F7,
+    prompt: stableEffectivePromptV204G10,
     negativePrompt: stableDraftNegativePromptV204F7,
-  }), [selectedSavedStableBlockV204F4, selectedStableBlockDurationV204F1, selectedStableBlockRequestDurationV204F1, selectedStableBlockSceneIdsV204F1, stableDisplayBlockTitleV204F3, stableDraftModeV204F7, stableDraftNegativePromptV204F7, stableDraftPromptV204F7])
+  }), [selectedSavedStableBlockV204F4, selectedStableBlockDurationV204F1, selectedStableBlockRequestDurationV204F1, selectedStableBlockSceneIdsV204F1, stableDisplayBlockTitleV204F3, stableDraftModeV204F7, stableDraftNegativePromptV204F7, stableEffectivePromptV204G10])
 
-  const submitStableAudioBlockV204F7 = useCallback(() => {
+  const stableAudioVariantsV204G6 = asArray(selectedSavedStableBlockV204F4?.stableAudio?.variants)
+  const selectedStableAudioVariantIdV204G6 = firstText(
+    selectedSavedStableBlockV204F4?.stableAudio?.selectedVariantId,
+    selectedSavedStableBlockV204F4?.stableAudio?.selected_variant_id,
+    selectedSavedStableBlockV204F4?.stableAudio?.appliedVariantId,
+    selectedSavedStableBlockV204F4?.stableAudio?.applied_variant_id,
+  )
+  const selectedStableAudioVariantV204G6 = stableAudioVariantsV204G6.find((variant) => cleanId(variant.id || variant.variantId) === cleanId(selectedStableAudioVariantIdV204G6)) || stableAudioVariantsV204G6[0] || null
+
+  const submitStableAudioBlockV204F7 = useCallback(async () => {
     if (!selectedSavedStableBlockV204F4?.id) {
       setError('Сначала выбери сцены и нажми “Создать блок”.')
       return
     }
-    if (!cleanId(stableDraftPromptV204F7)) {
-      setError('Stable prompt пустой.')
-      return
+    const payload = {
+      ...buildStableAudioRequestPayloadV204F7(),
+      project_id: projectId,
+      projectId,
+      block: selectedSavedStableBlockV204F4,
+      workflowKey: 'Stable_Audio_3_Medium_CLEAN.json',
+      workflow_key: 'Stable_Audio_3_Medium_CLEAN.json',
+      source: 'audio_studio_stable_audio_generate_v204g6',
     }
-    const payload = buildStableAudioRequestPayloadV204F7()
-    console.info('[AUDIO STUDIO STABLE AUDIO REQUEST V204F7]', payload)
-    setStatus(`Stable Audio: запрос готов (${payload.modeLabel} → Comfy ${payload.mode}, ${payload.requestDurationSec} сек). Следующий патч подключит backend генерацию.`)
-  }, [buildStableAudioRequestPayloadV204F7, selectedSavedStableBlockV204F4, stableDraftPromptV204F7])
+    setError('')
+    setStableAudioGeneratingV204G6(true)
+    // V204G7B_STAU_AUDIO_BLOB_PLAYER_DELETE - keep right preview UI out of generation state
+    setStableBlockPreviewLoadingV204G1(false)
+    setStatus(`Stable Audio: генерирую ${payload.modeLabel} на ${payload.requestDurationSec} сек, потом подгоню под ${payload.durationSec?.toFixed ? payload.durationSec.toFixed(2) : payload.durationSec} сек…`)
+    try {
+      const data = await apiRequest('/audio-studio/stable-audio/generate', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      const variantRaw = data.variant || data.stableAudioVariant || data.stable_audio_variant
+      if (!variantRaw) throw new Error('Backend не вернул Stable Audio variant.')
+      const variant = {
+        ...variantRaw,
+        id: firstText(variantRaw.id, variantRaw.variantId, `stau_${Date.now()}`),
+        volume: stableAudioVolumeV204F7(variantRaw.volume ?? selectedSavedStableBlockV204F4?.stableAudio?.volume ?? DEFAULT_STAU_VOLUME_PERCENT_V204G14),
+        selected: true,
+      }
+      const blockId = cleanId(selectedSavedStableBlockV204F4.id)
+      const current = sanitizeAudioSnapshot(snapshotRef.current || {})
+      const nextBlocks = asArray(current.stableBlocks).map((block) => {
+        if (cleanId(block.id) !== blockId) return block
+        const oldStableAudio = block.stableAudio || {}
+        const oldVariants = asArray(oldStableAudio.variants)
+        const filtered = oldVariants.filter((item) => cleanId(item.id || item.variantId) !== cleanId(variant.id))
+        const stableAudio = {
+          ...oldStableAudio,
+          enabled: true,
+          mode: stableAudioModeApiValueV204F7(payload.mode),
+          prompt: stableEffectivePromptV204G10,
+          volume: variant.volume,
+          selectedVariantId: variant.id,
+          selected_variant_id: variant.id,
+          variants: [variant, ...filtered],
+          updatedAt: nowIso(),
+        }
+        return {
+          ...block,
+          mode: stableAudio.mode,
+          prompt: stableEffectivePromptV204G10,
+          stableAudio,
+          updatedAt: nowIso(),
+        }
+      })
+      const next = { ...current, stableBlocks: nextBlocks, stableAudio: { ...(current.stableAudio || {}), enabled: true }, updatedAt: nowIso() }
+      snapshotRef.current = next
+      setSnapshot(next)
+      persistSnapshotSilently(next, 'stable_audio_variant_generated_v204g6')
+      // V204G9_STABLE_PREVIEW_FLOW_CLEANUP - clear stale preview after stable generation V204G9
+      setStableBlockPreviewVideoV204G1(null)
+      setStableBlockPreviewLoadingV204G1(false)
+      setStableBlockPreviewUiPhaseV204G4('idle')
+      setStableBlockPreviewPlayKeyV204G9('')
+      setStatus(`Stable Audio готов: ${variant.modeLabel || payload.modeLabel} · ${variant.finalDurationSec || payload.durationSec} сек. Ниже можно прослушать, выставить громкость и нажать “Применить”, потом “Прослушать блок” соберёт свежий preview с STAU.`)
+    } catch (err) {
+      setError(`Stable Audio не сгенерировался: ${err?.message || err}`)
+      console.warn('[AUDIO STUDIO STABLE AUDIO GENERATE FAILED V204G6]', err)
+    } finally {
+      setStableAudioGeneratingV204G6(false)
+    }
+  }, [buildStableAudioRequestPayloadV204F7, persistSnapshotSilently, projectId, selectedSavedStableBlockV204F4, stableEffectivePromptV204G10])
+
+  // V204G13_STAU_VOLUME_DRAFT_APPLY_PREVIEW
+  const stableAudioVolumeDraftKeyV204G13 = useCallback((blockId, variantId) => `${cleanId(blockId)}::${cleanId(variantId)}`, [])
+
+  const stableAudioVariantVolumeForUiV204G13 = useCallback((variant = null) => {
+    const blockId = cleanId(selectedSavedStableBlockV204F4?.id)
+    const variantId = cleanId(variant?.id || variant?.variantId)
+    const draftKey = stableAudioVolumeDraftKeyV204G13(blockId, variantId)
+    const draftValue = Object.prototype.hasOwnProperty.call(stableAudioVolumeDraftsV204G13, draftKey) ? stableAudioVolumeDraftsV204G13[draftKey] : undefined
+    return stableAudioVolumeV204F7(
+      draftValue ?? variant?.volume ?? selectedSavedStableBlockV204F4?.stableAudio?.volume ?? selectedSavedStableBlockV204F4?.volume ?? 100,
+      100,
+    )
+  }, [selectedSavedStableBlockV204F4, stableAudioVolumeDraftKeyV204G13, stableAudioVolumeDraftsV204G13])
 
   const previewStableAudioBlockV204F7 = useCallback(async () => {
     if (!selectedStableBlockSceneIdsV204F1.length) {
@@ -3006,7 +3203,8 @@ export default function AudioStudioPage() {
 
     setError('')
     setStableBlockPreviewLoadingV204G1(true)
-    setStatus(`Собираю preview блока: ${selectedStableBlockScenesV204F1.length} сцен · готовлю Timing audio…`)
+    setStableBlockPreviewUiPhaseV204G4('loading')
+    setStatus(`Собираю preview блока: ${selectedStableBlockScenesV204F1.length} сцен · видео + Timing audio + MMAudio${selectedStableAudioVariantV204G6 ? ' + STAU' : ''}…`)
 
     try {
       const preparedScenes = []
@@ -3025,14 +3223,24 @@ export default function AudioStudioPage() {
         })
       }
 
+      const stablePreviewVariantV204G6 = selectedStableAudioVariantV204G6 || null
+      const stablePreviewRefV204G6 = stableAudioVariantRefV204G6(stablePreviewVariantV204G6 || {})
+      const stablePreviewAudioPayloadV204G6 = stablePreviewRefV204G6 ? {
+        ...stablePreviewVariantV204G6,
+        ref: stablePreviewRefV204G6,
+        volume: stableAudioVariantVolumeForUiV204G13(stablePreviewVariantV204G6),
+      } : null
+
       const payload = {
         ...buildStableAudioRequestPayloadV204F7(),
         project_id: projectId,
         projectId,
         block: selectedSavedStableBlockV204F4 || null,
         scenes: preparedScenes,
-        includeStableAudio: false,
-        include_stable_audio: false,
+        includeStableAudio: Boolean(stablePreviewRefV204G6),
+        include_stable_audio: Boolean(stablePreviewRefV204G6),
+        stableAudio: stablePreviewAudioPayloadV204G6,
+        stable_audio: stablePreviewAudioPayloadV204G6,
         source: 'audio_studio_stable_block_preview_v204g1',
       }
 
@@ -3054,6 +3262,9 @@ export default function AudioStudioPage() {
         throw new Error('Backend не вернул preview video.')
       }
       setStableBlockPreviewVideoV204G1(previewVideo)
+      setStableBlockPreviewLoadingV204G1(false)
+      setStableBlockPreviewUiPhaseV204G4('ready')
+      setStableBlockPreviewPlayKeyV204G9(`${firstText(previewVideo.assetId, previewVideo.apiPath, previewVideo.url)}:${Date.now()}`)
 
       // V204G5_PERSIST_STABLE_BLOCK_PREVIEW_AFTER_F5
       const stablePreviewSnapshotV204G5 = {
@@ -3085,7 +3296,7 @@ export default function AudioStudioPage() {
         setSnapshot(nextSnapshotV204G5)
         persistSnapshotSilently(nextSnapshotV204G5, 'stable_block_preview_v204g5')
       }
-      setStatus(`Preview блока собран: ${previewVideo.sceneCount || selectedStableBlockScenesV204F1.length} сцен · ${previewVideo.durationSec ? previewVideo.durationSec.toFixed(2) : selectedStableBlockDurationV204F1.toFixed(2)} сек · Timing + MMAudio`)
+      setStatus(`Preview блока собран: ${previewVideo.sceneCount || selectedStableBlockScenesV204F1.length} сцен · ${previewVideo.durationSec ? previewVideo.durationSec.toFixed(2) : selectedStableBlockDurationV204F1.toFixed(2)} сек · ${stablePreviewRefV204G6 ? 'Timing + MMAudio + STAU' : 'Timing + MMAudio'}`)
     } catch (err) {
       setStableBlockPreviewLoadingV204G1(false)
       setStableBlockPreviewUiPhaseV204G4('error')
@@ -3098,13 +3309,108 @@ export default function AudioStudioPage() {
   // Do not put prepareTimingAudioForSceneV204E10 in this dependency array here:
   // in the current file it is declared lower in the component, and reading it during render
   // triggers the JS temporal-dead-zone crash before Audio Studio can mount.
-  }, [buildStableAudioRequestPayloadV204F7, projectId, selectedSavedStableBlockV204F4, selectedStableBlockDurationV204F1, selectedStableBlockSceneIdsV204F1, selectedStableBlockScenesV204F1])
+  }, [buildStableAudioRequestPayloadV204F7, persistSnapshotSilently, projectId, selectedSavedStableBlockV204F4, selectedStableAudioVariantV204G6, selectedStableBlockDurationV204F1, selectedStableBlockSceneIdsV204F1, selectedStableBlockScenesV204F1])
+
+  const updateStableAudioVariantVolumeV204G6 = useCallback((variantId, value) => {
+    const blockId = cleanId(selectedSavedStableBlockV204F4?.id)
+    const id = cleanId(variantId)
+    if (!blockId || !id) return
+    const volume = stableAudioVolumeV204F7(value, DEFAULT_STAU_VOLUME_PERCENT_V204G18)
+    const key = stableAudioVolumeDraftKeyV204G13(blockId, id)
+    setStableAudioVolumeDraftsV204G13((prev) => ({ ...prev, [key]: volume }))
+  }, [selectedSavedStableBlockV204F4, stableAudioVolumeDraftKeyV204G13])
+
+  const selectStableAudioVariantV204G6 = useCallback((variantId) => {
+    const blockId = cleanId(selectedSavedStableBlockV204F4?.id)
+    const id = cleanId(variantId)
+    if (!blockId || !id) return
+    const current = sanitizeAudioSnapshot(snapshotRef.current || {})
+    const nextBlocks = asArray(current.stableBlocks).map((block) => {
+      if (cleanId(block.id) !== blockId) return block
+      const stableAudio = block.stableAudio || {}
+      return { ...block, stableAudio: { ...stableAudio, selectedVariantId: id, selected_variant_id: id, updatedAt: nowIso() }, updatedAt: nowIso() }
+    })
+    const next = { ...current, stableBlocks: nextBlocks, updatedAt: nowIso() }
+    snapshotRef.current = next
+    setSnapshot(next)
+    persistSnapshotSilently(next, 'stable_audio_variant_select_v204g6')
+    // V204G10_ENABLE_STABLE_GENERATE_ON_BLOCK - mark stable preview stale after variant select V204G10
+    setStableBlockPreviewVideoV204G1(null)
+    setStableBlockPreviewUiPhaseV204G4('idle')
+    setStableBlockPreviewPlayKeyV204G9('')
+    setStatus('STAU вариант выбран. Нажми “Прослушать блок”, чтобы собрать preview с этим вариантом.')
+  }, [persistSnapshotSilently, selectedSavedStableBlockV204F4])
+
+  const removeStableAudioVariantV204G7B = useCallback((variantId) => {
+    const blockId = cleanId(selectedSavedStableBlockV204F4?.id)
+    const id = cleanId(variantId)
+    if (!blockId || !id) return
+    const current = sanitizeAudioSnapshot(snapshotRef.current || {})
+    const nextBlocks = asArray(current.stableBlocks).map((block) => {
+      if (cleanId(block.id) !== blockId) return block
+      const stableAudio = block.stableAudio || {}
+      const variants = asArray(stableAudio.variants).filter((variant) => cleanId(variant.id || variant.variantId) !== id)
+      const selectedId = cleanId(stableAudio.selectedVariantId || stableAudio.selected_variant_id)
+      const appliedId = cleanId(stableAudio.appliedVariantId || stableAudio.applied_variant_id)
+      const replacement = variants[0] || null
+      const nextStableAudio = {
+        ...stableAudio,
+        variants,
+        selectedVariantId: selectedId === id ? cleanId(replacement?.id || replacement?.variantId) : stableAudio.selectedVariantId,
+        selected_variant_id: selectedId === id ? cleanId(replacement?.id || replacement?.variantId) : stableAudio.selected_variant_id,
+        appliedVariantId: appliedId === id ? '' : stableAudio.appliedVariantId,
+        applied_variant_id: appliedId === id ? '' : stableAudio.applied_variant_id,
+        updatedAt: nowIso(),
+      }
+      return { ...block, stableAudio: nextStableAudio, updatedAt: nowIso() }
+    })
+    const next = { ...current, stableBlocks: nextBlocks, updatedAt: nowIso() }
+    snapshotRef.current = next
+    setSnapshot(next)
+    persistSnapshotSilently(next, 'stable_audio_variant_delete_v204g7b')
+    setStatus('Stable Audio вариант удалён из блока.')
+  }, [persistSnapshotSilently, selectedSavedStableBlockV204F4])
 
   const applyStableAudioBlockV204F7 = useCallback(() => {
-    setStatus('Stable Audio: применять пока нечего — сначала нужна генерация варианта. Кнопка готова под следующий backend-патч.')
-  }, [])
+    const blockId = cleanId(selectedSavedStableBlockV204F4?.id)
+    const variant = selectedStableAudioVariantV204G6
+    const variantId = cleanId(variant?.id || variant?.variantId)
+    if (!blockId || !variantId || !stableAudioVariantRefV204G6(variant || {})) {
+      setError('Сначала сгенерируй Stable Audio вариант.')
+      return
+    }
+    const volume = stableAudioVariantVolumeForUiV204G13(variant)
+    const current = sanitizeAudioSnapshot(snapshotRef.current || {})
+    const nextBlocks = asArray(current.stableBlocks).map((block) => {
+      if (cleanId(block.id) !== blockId) return block
+      const stableAudio = block.stableAudio || {}
+      const variants = asArray(stableAudio.variants).map((item) => cleanId(item.id || item.variantId) === variantId ? { ...item, volume, applied: true, updatedAt: nowIso() } : item)
+      return {
+        ...block,
+        volume,
+        stableAudio: {
+          ...stableAudio,
+          enabled: true,
+          volume,
+          selectedVariantId: variantId,
+          selected_variant_id: variantId,
+          appliedVariantId: variantId,
+          applied_variant_id: variantId,
+          appliedAt: nowIso(),
+          variants,
+          updatedAt: nowIso(),
+        },
+        updatedAt: nowIso(),
+      }
+    })
+    const next = { ...current, stableBlocks: nextBlocks, stableAudio: { ...(current.stableAudio || {}), enabled: true }, updatedAt: nowIso() }
+    snapshotRef.current = next
+    setSnapshot(next)
+    persistSnapshotSilently(next, 'stable_audio_variant_applied_v204g6')
+    setStatus(`Stable Audio применён к блоку “${stableDisplayBlockTitleV204F3}” · громкость ${volume}%`)
+  }, [persistSnapshotSilently, selectedSavedStableBlockV204F4, selectedStableAudioVariantV204G6, stableAudioVariantVolumeForUiV204G13, stableDisplayBlockTitleV204F3])
 
-  // V204F2_STABLE_BLOCK_VISUAL_CTRL_SELECT
+  // V204F2_STABLE_BLOCK_VISUAL_CTRL_SELECT  // V204F2_STABLE_BLOCK_VISUAL_CTRL_SELECT
   const timingAudioRefForMixV204E9 = firstText(
     selectedScene?.sourceAudio?.apiPath,
     selectedScene?.sourceAudio?.url,
@@ -3799,14 +4105,6 @@ export default function AudioStudioPage() {
                     onChange={(event) => updateStablePromptV204F7(event.target.value)}
                   />
                 </label>
-                <label className="avaAudioField avaAudioStableFieldV204F7">
-                  <span>Stable negative</span>
-                  <textarea
-                    value={stableDraftNegativePromptV204F7}
-                    placeholder={STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7}
-                    onChange={(event) => updateStableNegativePromptV204F7(event.target.value)}
-                  />
-                </label>
                 <div className="avaAudioStableModeRowV204F7 isSimpleV204F8">
                   <span>Модель для генерации</span>
                   <div>
@@ -3819,24 +4117,20 @@ export default function AudioStudioPage() {
                   <span>{selectedStableBlockDurationV204F1 ? `Блок ${selectedStableBlockDurationV204F1.toFixed(2)} сек → в Stable Audio уйдёт ${selectedStableBlockRequestDurationV204F1 || '—'} сек, после генерации система подрежет аудио обратно под тайминг блока.` : 'Сначала создай или выбери Stable-блок.'}</span>
                 </div>
                 <div className="avaAudioStableActionRowV204F7 isSimpleV204F8">
-                  <button type="button" className="isPrimary" onClick={submitStableAudioBlockV204F7} disabled={!stableSavedBlockActiveV204F4 || !cleanId(stableDraftPromptV204F7)}>
-                    <WandSparkles size={16} /> Сгенерировать Stable
+                  <button type="button" className="isPrimary" onClick={submitStableAudioBlockV204F7} disabled={!stableSavedBlockActiveV204F4 || stableAudioGeneratingV204G6}>
+                    {stableAudioGeneratingV204G6 ? <span className="avaAudioStablePreviewSpinnerV204G3A" aria-hidden="true" /> : <WandSparkles size={16} />} {stableAudioGeneratingV204G6 ? 'Генерирую Stable…' : 'Сгенерировать Stable'}
                   </button>
                   <button
                     type="button"
-                    className={`avaAudioStablePreviewActionV204G4 ${stableBlockPreviewUiPhaseV204G4 === 'loading' ? 'isLoading' : ''} ${stableBlockPreviewUiPhaseV204G4 !== 'loading' && stableBlockPreviewVideoV204G1 ? 'isReady' : ''} ${stableBlockPreviewUiPhaseV204G4 === 'error' ? 'isError' : ''}`}
-                    onClick={() => {
-                      setStableBlockPreviewUiPhaseV204G4('loading')
-                      setStableBlockPreviewUiNonceV204G4((value) => value + 1)
-                      previewStableAudioBlockV204F7()
-                    }}
+                    className={`avaAudioStablePreviewActionV204G4 ${stableBlockPreviewUiPhaseV204G4 === 'loading' ? 'isLoading' : ''} ${stableBlockPreviewUiPhaseV204G4 === 'ready' ? 'isReady' : ''} ${stableBlockPreviewUiPhaseV204G4 === 'error' ? 'isError' : ''}`}
+                    onClick={previewStableAudioBlockV204F7}
                     disabled={!selectedStableBlockSceneIdsV204F1.length || stableBlockPreviewUiPhaseV204G4 === 'loading'}
-                    title="Собрать preview всего Stable-блока: видео сцен + Timing audio + applied MMAudio + STAU, если он уже есть"
+                    title="Собрать или пересобрать preview всего Stable-блока: видео сцен + Timing audio + applied MMAudio + STAU, если он уже есть"
                   >
                     {stableBlockPreviewUiPhaseV204G4 === 'loading' ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Play size={16} />}
-                    <span>{stableBlockPreviewUiPhaseV204G4 === 'loading' ? 'Собираю preview…' : stableBlockPreviewVideoV204G1 ? 'Preview готов' : 'Прослушать блок'}</span>
+                    <span>{stableBlockPreviewUiPhaseV204G4 === 'loading' ? 'Собираю preview…' : stableBlockPreviewUiPhaseV204G4 === 'ready' ? 'Preview готов' : 'Прослушать блок'}</span>
                   </button>
-                  <button type="button" onClick={applyStableAudioBlockV204F7} disabled={!stableSavedBlockActiveV204F4} title="После генерации здесь будет применяться выбранный Stable Audio вариант к блоку">
+                  <button type="button" onClick={applyStableAudioBlockV204F7} disabled={!stableSavedBlockActiveV204F4 || !stableAudioVariantRefV204G6(selectedStableAudioVariantV204G6 || {})} title="Привязать выбранный Stable Audio вариант к таймингу блока">
                     <CheckCircle2 size={16} /> Применить
                   </button>
                 </div>
@@ -3851,11 +4145,12 @@ export default function AudioStudioPage() {
                   source={firstText(stableBlockPreviewVideoV204G1?.apiPath, stableBlockPreviewVideoV204G1?.url, sourceVideoRef)}
                   title={stableBlockPreviewVideoV204G1 ? 'Preview всего Stable-блока' : 'Preview выбранной сцены блока'}
                   className="avaAudioMainVideo"
+                  autoPlayKey={stableBlockPreviewPlayKeyV204G9}
                 />
                 <div className="avaAudioStablePreviewNoteV204F1">
                   {stableBlockPreviewVideoV204G1
-                    ? `Сейчас справа собранный preview всего блока: ${stableBlockPreviewVideoV204G1.sceneCount || selectedStableBlockScenesV204F1.length} сцен · Timing audio + applied MMAudio. Stable Audio добавим следующим шагом.`
-                    : 'Нажми “Прослушать блок”: backend соберёт MP4 из всех сцен блока с Timing audio и applied MMAudio. Пока Stable Audio ещё не добавляется.'}
+                    ? `Сейчас справа собранный preview всего блока: ${stableBlockPreviewVideoV204G1.sceneCount || selectedStableBlockScenesV204F1.length} сцен · Timing audio + applied MMAudio${selectedStableAudioVariantV204G6 ? ' + STAU' : ''}.`
+                    : 'Нажми “Прослушать блок”: backend соберёт MP4 из всех сцен блока с Timing audio, applied MMAudio и выбранным STAU, если он есть.'}
                 </div>
               </section>
             </>
@@ -3887,14 +4182,50 @@ export default function AudioStudioPage() {
       ) : null}
 
       {selectedScene && audioStudioModeV204F1 === 'stable' ? (
-        <section className="avaAudioStableVariantsRailV204F1">
+        <section className="avaAudioStableVariantsRailV204F1 avaAudioStableVariantsRailV204G6">
           <div className="avaAudioRailTitle">
             <h3>Stable Audio варианты блока</h3>
-            <span>появятся после генерации Stable Audio</span>
+            <span>{stableAudioVariantsV204G6.length ? `${stableAudioVariantsV204G6.length} вариантов · выбери, громкость, preview, применить` : 'появятся после генерации Stable Audio'}</span>
           </div>
-          <div className="avaAudioStableVariantPlaceholderV204F1">
-            После backend-генерации здесь появятся варианты v1/v2/v3: audio player, громкость уже у результата, preview блока и применение. Центральная панель остаётся простой: prompt + Music/Instrumental + генерация + “Прослушать блок” + “Применить”.
-          </div>
+          {stableAudioVariantsV204G6.length ? (
+            <div className="avaAudioStableVariantListV204G6">
+              {stableAudioVariantsV204G6.map((variant, index) => {
+                const variantId = cleanId(variant.id || variant.variantId || `stable_${index}`)
+                const active = cleanId(selectedStableAudioVariantV204G6?.id || selectedStableAudioVariantV204G6?.variantId) === variantId
+                const applied = cleanId(selectedSavedStableBlockV204F4?.stableAudio?.appliedVariantId || selectedSavedStableBlockV204F4?.stableAudio?.applied_variant_id) === variantId
+                const ref = stableAudioVariantRefV204G6(variant)
+                const volume = stableAudioVariantVolumeForUiV204G13(variant)
+                return (
+                  <article key={variantId} className={`avaAudioStableVariantCardV204G6 ${active ? 'isActive' : ''} ${applied ? 'isApplied' : ''}`}>
+                    <button
+                      type="button"
+                      className="avaAudioStableVariantDeleteV204G7B"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        removeStableAudioVariantV204G7B(variantId)
+                      }}
+                      title="Удалить этот Stable Audio вариант из блока"
+                    >
+                      <X size={14} />
+                    </button>
+                    <button type="button" className="avaAudioStableVariantPickV204G6" onClick={() => selectStableAudioVariantV204G6(variantId)}>
+                      <strong>{variant.label || `v${index + 1}`}</strong>
+                      <span>{variant.modeLabel || stableAudioModeUiLabelV204F7(variant.mode)} · {toNumber(variant.finalDurationSec ?? variant.exactDurationSec, selectedStableBlockDurationV204F1).toFixed(2)} сек {applied ? '· применён' : ''}</span>
+                    </button>
+                    {ref ? <StableAudioAssetPlayerV204G7B source={ref} title={`STAU ${variant.label || `v${index + 1}`}`} className="avaAudioStableAudioPlayerV204G6" volumePercent={volume} /> : <div className="avaAudioStableNoAudioV204G6">нет audio asset</div>}
+                    <label className="avaAudioStableVolumeV204G6">
+                      <span>Громкость STAU: {volume}%</span>
+                      <input type="range" min="0" max="100" step="1" value={volume} onChange={(event) => updateStableAudioVariantVolumeV204G6(variantId, event.target.value)} />
+                    </label>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="avaAudioStableVariantPlaceholderV204F1">
+              После генерации здесь появится audio player результата и громкость STAU. Эта громкость попадёт в “Прослушать блок” и потом фиксируется кнопкой “Применить”.
+            </div>
+          )}
         </section>
       ) : null}
     </div>
