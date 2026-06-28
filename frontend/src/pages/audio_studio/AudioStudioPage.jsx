@@ -26,6 +26,20 @@ const VERSION = 'V204D3'
 const AVA_AUDIO_REFRESH_FROM_BOARD_MODAL_V204D3 = true
 const DEFAULT_NEGATIVE = 'музыка, речь, голоса, гул, hiss, шум'
 
+
+function isInterruptedPlayErrorV204E11(err) {
+  const message = String(err?.message || err || '').toLowerCase()
+  return err?.name === 'AbortError'
+    || message.includes('interrupted by a call to pause')
+    || message.includes('interrupted by a new load request')
+}
+
+function clampMediaVolumeV204E10A(value, fallback = 1) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(0, Math.min(1, n))
+}
+
 function cleanId(value = '') {
   return String(value || '').trim()
 }
@@ -185,6 +199,148 @@ function boardSourceVideoRef(scene = {}) {
   )
 }
 
+function boardSourceAudioRef(scene = {}) {
+  return firstText(
+    scene.audio_slice_api_path,
+    scene.audioSliceApiPath,
+    scene.audio_slice_url,
+    scene.audioSliceUrl,
+    scene.timing_audio_api_path,
+    scene.timingAudioApiPath,
+    scene.timing_audio_url,
+    scene.timingAudioUrl,
+    scene.source_audio_api_path,
+    scene.sourceAudioApiPath,
+    scene.source_audio_url,
+    scene.sourceAudioUrl,
+    scene.original_audio_api_path,
+    scene.originalAudioApiPath,
+    scene.original_audio_url,
+    scene.originalAudioUrl,
+    scene.audio_api_path,
+    scene.audioApiPath,
+    scene.audio_url,
+    scene.audioUrl,
+    scene.audio_asset_api_path,
+    scene.audioAssetApiPath,
+    scene.lip_sync_audio_api_path,
+    scene.lipSyncAudioApiPath,
+    scene.lip_sync_audio_url,
+    scene.lipSyncAudioUrl,
+    scene.voice_audio_api_path,
+    scene.voiceAudioApiPath,
+    scene.voice_audio_url,
+    scene.voiceAudioUrl,
+  )
+}
+
+function boardSourceAudioRefV204E5A(scene = {}) {
+  if (typeof boardSourceAudioRefV204E4 === 'function') return boardSourceAudioRefV204E4(scene)
+  if (typeof boardSourceAudioRefV204E3 === 'function') return boardSourceAudioRefV204E3(scene)
+  return firstText(
+    scene.audio_slice_api_path,
+    scene.audioSliceApiPath,
+    scene.audio_slice_url,
+    scene.audioSliceUrl,
+    scene.timing_audio_api_path,
+    scene.timingAudioApiPath,
+    scene.timing_audio_url,
+    scene.timingAudioUrl,
+    scene.source_audio_api_path,
+    scene.sourceAudioApiPath,
+    scene.source_audio_url,
+    scene.sourceAudioUrl,
+    scene.original_audio_api_path,
+    scene.originalAudioApiPath,
+    scene.original_audio_url,
+    scene.originalAudioUrl,
+    scene.audio_api_path,
+    scene.audioApiPath,
+    scene.audio_url,
+    scene.audioUrl,
+    scene.lip_sync_audio_api_path,
+    scene.lipSyncAudioApiPath,
+    scene.lip_sync_audio_url,
+    scene.lipSyncAudioUrl,
+    scene.voice_audio_api_path,
+    scene.voiceAudioApiPath,
+    scene.voice_audio_url,
+    scene.voiceAudioUrl,
+  )
+}
+
+function boardSourceAudioRefV204E7(scene = {}) {
+  if (typeof boardSourceAudioRefV204E5A === 'function') return boardSourceAudioRefV204E5A(scene)
+  if (typeof boardSourceAudioRefV204E4 === 'function') return boardSourceAudioRefV204E4(scene)
+  if (typeof boardSourceAudioRef === 'function') return boardSourceAudioRef(scene)
+  return firstText(
+    scene.audio_slice_api_path,
+    scene.audioSliceApiPath,
+    scene.audio_slice_url,
+    scene.audioSliceUrl,
+    scene.timing_audio_api_path,
+    scene.timingAudioApiPath,
+    scene.timing_audio_url,
+    scene.timingAudioUrl,
+    scene.source_audio_api_path,
+    scene.sourceAudioApiPath,
+    scene.source_audio_url,
+    scene.sourceAudioUrl,
+    scene.original_audio_api_path,
+    scene.originalAudioApiPath,
+    scene.original_audio_url,
+    scene.originalAudioUrl,
+    scene.audio_api_path,
+    scene.audioApiPath,
+    scene.audio_url,
+    scene.audioUrl,
+    scene.lip_sync_audio_api_path,
+    scene.lipSyncAudioApiPath,
+    scene.lip_sync_audio_url,
+    scene.lipSyncAudioUrl,
+    scene.voice_audio_api_path,
+    scene.voiceAudioApiPath,
+    scene.voice_audio_url,
+    scene.voiceAudioUrl,
+  )
+}
+
+function audioStudioBoardAudioRefV204E8(scene = {}) {
+  if (typeof boardSourceAudioRefV204E7 === 'function') return boardSourceAudioRefV204E7(scene)
+  if (typeof boardSourceAudioRefV204E5A === 'function') return boardSourceAudioRefV204E5A(scene)
+  if (typeof boardSourceAudioRef === 'function') return boardSourceAudioRef(scene)
+  return firstText(
+    scene.audio_slice_api_path,
+    scene.audioSliceApiPath,
+    scene.audio_slice_url,
+    scene.audioSliceUrl,
+    scene.timing_audio_api_path,
+    scene.timingAudioApiPath,
+    scene.timing_audio_url,
+    scene.timingAudioUrl,
+    scene.source_audio_api_path,
+    scene.sourceAudioApiPath,
+    scene.source_audio_url,
+    scene.sourceAudioUrl,
+    scene.original_audio_api_path,
+    scene.originalAudioApiPath,
+    scene.original_audio_url,
+    scene.originalAudioUrl,
+    scene.audio_api_path,
+    scene.audioApiPath,
+    scene.audio_url,
+    scene.audioUrl,
+    scene.lip_sync_audio_api_path,
+    scene.lipSyncAudioApiPath,
+    scene.lip_sync_audio_url,
+    scene.lipSyncAudioUrl,
+    scene.voice_audio_api_path,
+    scene.voiceAudioApiPath,
+    scene.voice_audio_url,
+    scene.voiceAudioUrl,
+  )
+}
+
 function boardAppliedMmaudioRef(scene = {}) {
   return firstText(
     scene.mmaudio_video_api_path,
@@ -231,7 +387,6 @@ function sourceVideoForMmaudioV204B7(scene = {}) {
   const original = sceneOriginalSourceVideoV204B7(scene)
   return firstText(original.apiPath, original.url, scene.sourceVideo?.apiPath, scene.sourceVideo?.url)
 }
-
 
 
 function variantRawMediaRefV204C3(variant = {}) {
@@ -373,7 +528,6 @@ async function bakeMmaudioVariantVolumeV204C3({ variant = {}, scene = {}, volume
     rawAssetId: rawMedia.assetId || '',
   }
 }
-
 
 
 function mediaCompareKey(refLike = {}) {
@@ -707,6 +861,68 @@ function makeMediaRefFromUpload(data = {}) {
   }
 }
 
+
+function audioStudioTimingAudioRefV204E10(scene = {}) {
+  const raw = scene?.boardRaw || {}
+  const rawRef = typeof boardSourceAudioRef === 'function' ? boardSourceAudioRef(raw) : ''
+  return firstText(
+    scene?.sourceAudio?.apiPath,
+    scene?.sourceAudio?.url,
+    scene?.audio?.apiPath,
+    scene?.audio?.url,
+    scene?.audioApiPath,
+    scene?.audioUrl,
+    scene?.audio_slice_api_path,
+    scene?.audioSliceApiPath,
+    scene?.audio_slice_url,
+    scene?.audioSliceUrl,
+    scene?.timing_audio_api_path,
+    scene?.timingAudioApiPath,
+    scene?.timing_audio_url,
+    scene?.timingAudioUrl,
+    rawRef,
+    raw?.audio_slice_api_path,
+    raw?.audioSliceApiPath,
+    raw?.audio_slice_url,
+    raw?.audioSliceUrl,
+    raw?.timing_audio_api_path,
+    raw?.timingAudioApiPath,
+    raw?.timing_audio_url,
+    raw?.timingAudioUrl,
+    raw?.audio_api_path,
+    raw?.audioApiPath,
+    raw?.audio_url,
+    raw?.audioUrl,
+  )
+}
+
+function audioStudioTimingRangeV204E10(scene = {}) {
+  const start = toNumber(scene?.startSec ?? scene?.start_sec ?? scene?.start, 0)
+  const explicitEnd = scene?.endSec ?? scene?.end_sec ?? scene?.end
+  const duration = toNumber(scene?.durationSec ?? scene?.duration_sec, 0)
+  const end = explicitEnd !== undefined && explicitEnd !== null && explicitEnd !== ''
+    ? toNumber(explicitEnd, start + duration)
+    : start + duration
+  return { start, end, durationSec: Math.max(0, end - start) }
+}
+
+function audioStudioSourceAudioFromSliceResponseV204E10(data = {}, scene = {}) {
+  const apiPath = firstText(data.audioSliceApiPath, data.audio_slice_api_path, data.apiPath, data.asset_api_path, data.url)
+  const url = firstText(data.audioSliceUrl, data.audio_slice_url, data.assetUrl, data.asset_url, apiPath)
+  const ref = normalizeRef(firstText(apiPath, url))
+  return {
+    url,
+    apiPath,
+    assetId: ref.assetId,
+    name: firstText(data.audioSliceName, data.audio_slice_name, data.name, 'timing_audio.mp3'),
+    startSec: toNumber(data.startSec ?? data.start_sec ?? scene?.startSec ?? scene?.start_sec, 0),
+    endSec: toNumber(data.endSec ?? data.end_sec ?? scene?.endSec ?? scene?.end_sec, 0),
+    durationSec: toNumber(data.durationSec ?? data.duration_sec ?? scene?.durationSec ?? scene?.duration_sec, 0),
+    source: 'audio_studio_timing_preload_v204e10',
+    createdAt: nowIso(),
+  }
+}
+
 function buildAudioScenesFromBoard(board = {}) {
   const scenes = asArray(board.scenes || board.board_scenes || board.boardScenes)
   return scenes.map((scene, index) => {
@@ -715,6 +931,12 @@ function buildAudioScenesFromBoard(board = {}) {
     const dur = durationOf(scene)
     const endSec = toNumber(scene.end_sec ?? scene.end, startSec + dur)
     const sourceRef = normalizeRef(boardSourceVideoRef(scene))
+    const sourceAudioRefV204E10 = normalizeRef(audioStudioTimingAudioRefV204E10({ boardRaw: scene }))
+    const sourceAudioRefV204E9 = normalizeRef(boardSourceAudioRef(scene))
+    const sourceAudioRefV204E8 = normalizeRef(audioStudioBoardAudioRefV204E8(scene))
+    const sourceAudioRefV204E7 = normalizeRef(boardSourceAudioRefV204E7(scene))
+    const sourceAudioRefV204E5A = normalizeRef(boardSourceAudioRefV204E5A(scene))
+    const sourceAudioRef = normalizeRef(boardSourceAudioRef(scene))
     const prompt = firstText(scene.mmaudio_prompt, scene.mmaudioPrompt, scene.sound_prompt, scene.soundPrompt)
     const negativePrompt = firstText(scene.mmaudio_negative_prompt, scene.mmaudioNegativePrompt, scene.negative_sound_prompt, scene.negativeSoundPrompt, DEFAULT_NEGATIVE)
     const volume = toNumber(scene.mmaudio_volume ?? scene.mmaudioVolume ?? scene.audio_studio_mmaudio_volume ?? scene.audioStudioMmaudioVolume, 100)
@@ -754,6 +976,12 @@ function buildAudioScenesFromBoard(board = {}) {
         apiPath: sourceRef.apiPath,
         assetId: sourceRef.assetId,
         name: firstText(scene.video_name, scene.videoName, scene.output_name, scene.outputName),
+      },
+      sourceAudio: {
+        url: sourceAudioRef.url,
+        apiPath: sourceAudioRef.apiPath,
+        assetId: sourceAudioRef.assetId,
+        name: firstText(scene.audio_name, scene.audioName, scene.audio_slice_name, scene.audioSliceName, 'timing_audio'),
       },
       prompt,
       negativePrompt,
@@ -820,6 +1048,7 @@ function buildManualAudioSceneV204C6(index = 0) {
     durationSec: 6,
     route: 'audio_studio_manual',
     sourceVideo: { url: '', apiPath: '', assetId: '', name: '' },
+    sourceAudio: { url: '', apiPath: '', assetId: '', name: '' },
     prompt: '',
     negativePrompt: DEFAULT_NEGATIVE,
     mmaudioVolume: 100,
@@ -959,6 +1188,73 @@ function PreviewVideo({ source = '', title = '', className = '', volume = 1, con
   return <video ref={videoRef} className={className} src={src} title={title} controls={controls} playsInline />
 }
 
+function PreviewAudio({ source = '', title = 'Аудио тайминга', className = '' }) {
+  const [blobUrl, setBlobUrl] = useState('')
+  const [error, setError] = useState('')
+  const audioRef = useRef(null)
+  const cleanSource = cleanId(source)
+
+  useEffect(() => {
+    let alive = true
+    let objectUrl = ''
+    setError('')
+    setBlobUrl('')
+    if (!cleanSource) return undefined
+
+    const shouldFetch = /\/(api\/)?assets\/[^/]+\/file/i.test(cleanSource)
+    if (!shouldFetch) return undefined
+
+    fetchProtectedBlobUrl(cleanSource)
+      .then((url) => {
+        if (!alive) return
+        objectUrl = url
+        setBlobUrl(url)
+      })
+      .catch((err) => {
+        if (alive) setError(String(err?.message || err))
+      })
+
+    return () => {
+      alive = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [cleanSource])
+
+  const shouldFetch = /\/(api\/)?assets\/[^/]+\/file/i.test(cleanSource)
+  const src = shouldFetch ? blobUrl : (cleanSource ? buildApiUrl(cleanSource) : '')
+
+  if (!cleanSource) {
+    return (
+      <div className="avaAudioTimingAudioBoxV204E3 isMissing">
+        <span>Аудио тайминга</span>
+        <small>не найдено в сцене — обнови импорт из Доски</small>
+      </div>
+    )
+  }
+  if (shouldFetch && !blobUrl && !error) {
+    return (
+      <div className="avaAudioTimingAudioBoxV204E3 isLoading">
+        <span>Аудио тайминга</span>
+        <small>загружаю…</small>
+      </div>
+    )
+  }
+  if (error) {
+    return (
+      <div className="avaAudioTimingAudioBoxV204E3 isError">
+        <span>Аудио тайминга</span>
+        <small>{error}</small>
+      </div>
+    )
+  }
+  return (
+    <div className="avaAudioTimingAudioBoxV204E3">
+      <span>Аудио тайминга</span>
+      <audio ref={audioRef} className={className} src={src} title={title} controls preload="auto" />
+    </div>
+  )
+}
+
 function SceneStrip({ scenes, selectedSceneId, onSelect }) {
   return (
     <div className="avaAudioSceneStrip" aria-label="Сцены Audio Studio">
@@ -1084,6 +1380,7 @@ function buildAudioStudioExportPayload(snapshot = {}, projectId = '') {
       selectedVariantId: scene.selectedVariantId || '',
       appliedVariantId: scene.appliedVariantId || '',
       sourceVideo: scene.sourceVideo || {},
+      sourceAudio: scene.sourceAudio || {},
       variants: asArray(scene.variants),
     })),
   }
@@ -1156,6 +1453,7 @@ function applyAudioStudioImportedJson(current = {}, imported = {}, projectId = '
         durationSec: importedScene.durationSec ?? scene.durationSec,
         route: importedScene.route || scene.route,
         sourceVideo: importedScene.sourceVideo || scene.sourceVideo,
+        sourceAudio: importedScene.sourceAudio || scene.sourceAudio,
       } : {}),
       prompt: hasPrompt ? importedScene.prompt : scene.prompt,
       negativePrompt: hasNegative ? importedScene.negativePrompt : scene.negativePrompt,
@@ -1223,9 +1521,73 @@ export default function AudioStudioPage() {
   const didLoadRef = useRef(false)
   const autosaveTimerRef = useRef(null)
   const importInputRefV204B2 = useRef(null)
+  const timingAudioPreparePromisesRefV204E10 = useRef({})
+  const timingAudioPlaybackRefV204E10 = useRef(null)
+  const timingAudioPlaybackBlobUrlRefV204E10 = useRef('')
+  const timingAudioPlaybackStopTimerRefV204E10 = useRef(null)
+  const timingAudioAutoWarmKeyRefV204E10 = useRef('')
+  const [timingAudioPreparingSceneIdV204E10, setTimingAudioPreparingSceneIdV204E10] = useState('')
+  const [timingAudioMixPlayingV204E10, setTimingAudioMixPlayingV204E10] = useState(false)
+  const timingSliceAudioRefV204E9 = useRef(null)
+  const timingSliceBlobUrlRefV204E9 = useRef('')
+  const timingSliceStopTimerRefV204E9 = useRef(null)
+  const [timingSliceMixPlayingV204E9, setTimingSliceMixPlayingV204E9] = useState(false)
+  const [timingSliceMixPreparingV204E9, setTimingSliceMixPreparingV204E9] = useState(false)
+  const timingMixAudioNodeRefV204E8 = useRef(null)
+  const timingMixBlobUrlRefV204E8 = useRef('')
+  const timingMixStopTimerRefV204E8 = useRef(null)
+  const [timingMixPlayingV204E8, setTimingMixPlayingV204E8] = useState(false)
+  const [timingMixPreparingV204E8, setTimingMixPreparingV204E8] = useState(false)
+  const mixTimingAudioRefV204E7 = useRef(null)
+  const mixPlaybackTimerRefV204E7 = useRef(null)
+  const [mixTimingAudioSrcV204E7, setMixTimingAudioSrcV204E7] = useState('')
+  const [mixPreviewPlayingV204E7, setMixPreviewPlayingV204E7] = useState(false)
+  const mixPreviewNodesRefV204E5A = useRef([])
   const projectApiRef = useRef({ loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage })
 
   useEffect(() => { snapshotRef.current = snapshot }, [snapshot])
+  // AUDIO_STUDIO_STOP_MIX_V204E10
+  useEffect(() => () => {
+    try { timingAudioPlaybackRefV204E10.current?.pause?.() } catch {}
+    if (timingAudioPlaybackStopTimerRefV204E10.current) clearTimeout(timingAudioPlaybackStopTimerRefV204E10.current)
+    if (timingAudioPlaybackBlobUrlRefV204E10.current) {
+      try { URL.revokeObjectURL(timingAudioPlaybackBlobUrlRefV204E10.current) } catch {}
+    }
+  }, [])
+
+  // AUDIO_STUDIO_STOP_TIMING_SLICE_MIX_V204E9
+  useEffect(() => () => {
+    try { timingSliceAudioRefV204E9.current?.pause?.() } catch {}
+    if (timingSliceStopTimerRefV204E9.current) clearTimeout(timingSliceStopTimerRefV204E9.current)
+    if (timingSliceBlobUrlRefV204E9.current) {
+      try { URL.revokeObjectURL(timingSliceBlobUrlRefV204E9.current) } catch {}
+    }
+  }, [])
+
+  // AUDIO_STUDIO_STOP_TIMING_SLICE_MIX_V204E8
+  useEffect(() => () => {
+    try { timingMixAudioNodeRefV204E8.current?.pause?.() } catch {}
+    if (timingMixStopTimerRefV204E8.current) clearTimeout(timingMixStopTimerRefV204E8.current)
+    if (timingMixBlobUrlRefV204E8.current) {
+      try { URL.revokeObjectURL(timingMixBlobUrlRefV204E8.current) } catch {}
+    }
+  }, [])
+
+  // AUDIO_STUDIO_STOP_MIX_BUTTON_PLAYER_V204E7
+  useEffect(() => () => {
+    try { mixTimingAudioRefV204E7.current?.pause?.() } catch {}
+    if (mixPlaybackTimerRefV204E7.current) clearTimeout(mixPlaybackTimerRefV204E7.current)
+  }, [])
+
+  // AUDIO_STUDIO_STOP_HIDDEN_MIX_V204E5A
+  useEffect(() => () => {
+    asArray(mixPreviewNodesRefV204E5A.current).forEach((item) => {
+      try { item?.node?.pause?.() } catch {}
+      try { if (item?.blobUrl) URL.revokeObjectURL(item.blobUrl) } catch {}
+    })
+    mixPreviewNodesRefV204E5A.current = []
+  }, [])
+
   useEffect(() => {
     projectApiRef.current = { loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage }
   }, [loadStage, saveStage, loadWorkspaceStage, saveWorkspaceStage])
@@ -1471,11 +1833,6 @@ export default function AudioStudioPage() {
       setRefreshingFromBoardV204D3(false)
     }
   }, [loadStage, loadWorkspaceStage, projectId, refreshingFromBoardV204D3, saveSnapshot, workspaceMode])
-
-
-
-
-
 
 
   const performClearAllAudioStudioV204C8 = useCallback(async () => {
@@ -2038,15 +2395,367 @@ export default function AudioStudioPage() {
   }, [projectId, saveSnapshot])
 
   const sourceVideoRef = firstText(selectedScene?.sourceVideo?.apiPath, selectedScene?.sourceVideo?.url)
+  const sourceAudioRefForMixV204E5A = firstText(
+    selectedScene?.sourceAudio?.apiPath,
+    selectedScene?.sourceAudio?.url,
+    selectedScene?.audio?.apiPath,
+    selectedScene?.audio?.url,
+    selectedScene?.audioApiPath,
+    selectedScene?.audioUrl,
+    selectedScene?.boardRaw ? boardSourceAudioRefV204E5A(selectedScene.boardRaw) : '',
+    sourceVideoRef,
+  )
+  const sourceAudioRef = firstText(
+    selectedScene?.sourceAudio?.apiPath,
+    selectedScene?.sourceAudio?.url,
+    boardSourceAudioRef(selectedScene?.boardRaw || {}),
+  )
   const selectedResultRef = selectedVariant ? variantRef(selectedVariant) : ''
-  const activeVolume = Number(selectedScene?.mmaudioVolume ?? selectedVariant?.volume ?? 100)
+  const activeVolume = Math.max(0, Math.min(100, Number(selectedScene?.mmaudioVolume ?? selectedVariant?.volume ?? 100) || 100))
+  const selectedTimingAudioRefV204E10 = audioStudioTimingAudioRefV204E10(selectedScene || {})
+  const selectedTimingAudioReadyV204E10 = Boolean(selectedTimingAudioRefV204E10)
+  const selectedTimingAudioPreparingV204E10 = Boolean(selectedScene && cleanId(timingAudioPreparingSceneIdV204E10) === cleanId(selectedScene.id || selectedScene.sceneId))
+
+  const timingAudioRefForMixV204E9 = firstText(
+    selectedScene?.sourceAudio?.apiPath,
+    selectedScene?.sourceAudio?.url,
+    selectedScene?.audio?.apiPath,
+    selectedScene?.audio?.url,
+    selectedScene?.audioApiPath,
+    selectedScene?.audioUrl,
+    selectedScene?.boardRaw ? boardSourceAudioRef(selectedScene.boardRaw) : '',
+  )
+
+  const timingAudioSourceRefV204E8 = firstText(
+    selectedScene?.sourceAudio?.apiPath,
+    selectedScene?.sourceAudio?.url,
+    selectedScene?.audio?.apiPath,
+    selectedScene?.audio?.url,
+    selectedScene?.audioApiPath,
+    selectedScene?.audioUrl,
+    selectedScene?.boardRaw ? audioStudioBoardAudioRefV204E8(selectedScene.boardRaw) : '',
+    typeof sourceAudioRefForMixV204E5A !== 'undefined' ? sourceAudioRefForMixV204E5A : '',
+    typeof sourceAudioRef === 'string' ? sourceAudioRef : '',
+  )
+
+  const mixTimingSourceRefV204E7 = firstText(
+    selectedScene?.sourceAudio?.apiPath,
+    selectedScene?.sourceAudio?.url,
+    selectedScene?.audio?.apiPath,
+    selectedScene?.audio?.url,
+    selectedScene?.audioApiPath,
+    selectedScene?.audioUrl,
+    selectedScene?.boardRaw ? boardSourceAudioRefV204E7(selectedScene.boardRaw) : '',
+    typeof sourceAudioRefForMixV204E5A !== 'undefined' ? sourceAudioRefForMixV204E5A : '',
+    typeof sourceAudioRef === 'string' ? sourceAudioRef : '',
+    sourceVideoRef,
+  )
+
+  useEffect(() => {
+    let alive = true
+    let objectUrl = ''
+    const clean = cleanId(mixTimingSourceRefV204E7)
+    setMixTimingAudioSrcV204E7('')
+    setMixPreviewPlayingV204E7(false)
+
+    if (mixPlaybackTimerRefV204E7.current) {
+      clearTimeout(mixPlaybackTimerRefV204E7.current)
+      mixPlaybackTimerRefV204E7.current = null
+    }
+
+    if (!clean) return undefined
+
+    const setUrl = (url, blob = '') => {
+      if (!alive) return
+      objectUrl = blob
+      setMixTimingAudioSrcV204E7(url)
+    }
+
+    if (/^(blob:|data:|https?:)/i.test(clean)) {
+      setUrl(clean)
+      return undefined
+    }
+
+    if (/\/(api\/)?assets\/[^/]+\/file/i.test(clean)) {
+      fetchProtectedBlobUrl(clean)
+        .then((url) => setUrl(url, url))
+        .catch((err) => {
+          console.warn('[AUDIO STUDIO MIX TIMING AUDIO LOAD FAILED V204E7]', err)
+          if (alive) setMixTimingAudioSrcV204E7('')
+        })
+    } else {
+      setUrl(buildApiUrl(clean))
+    }
+
+    return () => {
+      alive = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [mixTimingSourceRefV204E7])
+
+
   const selectedIsApplied = Boolean(selectedVariant && appliedVariant && cleanId(selectedVariant.id) === cleanId(appliedVariant.id))
+  // V204E10_AUDIO_STUDIO_PRELOAD_TIMING_AUDIO:
+  // Prepare and cache per-scene Timing audio once, then keep the ref in Audio Studio snapshot.
+  const prepareTimingAudioForSceneV204E10 = useCallback(async (scene, options = {}) => {
+    const target = scene || selectedScene
+    const sceneId = cleanId(target?.id || target?.sceneId)
+    if (!target || !sceneId) throw new Error('Нет сцены для подготовки аудио.')
+
+    const existing = audioStudioTimingAudioRefV204E10(target)
+    if (existing) return existing
+
+    if (timingAudioPreparePromisesRefV204E10.current[sceneId]) {
+      return timingAudioPreparePromisesRefV204E10.current[sceneId]
+    }
+
+    const { start, end, durationSec } = audioStudioTimingRangeV204E10(target)
+    if (!(end > start)) {
+      throw new Error(`У сцены нет корректного диапазона start/end: ${start}–${end}`)
+    }
+
+    const promise = (async () => {
+      if (!options.silent) setStatus(`Готовлю аудио тайминга ${sceneId}…`)
+      setTimingAudioPreparingSceneIdV204E10(sceneId)
+
+      console.log('[AUDIO STUDIO TIMING AUDIO PRELOAD REQUEST V204E10]', {
+        projectId,
+        sceneId,
+        start,
+        end,
+        durationSec,
+        reason: options.reason || 'manual',
+      })
+
+      const data = await apiRequest('/manual-clip/slice-audio', {
+        method: 'POST',
+        body: JSON.stringify({
+          project_id: projectId,
+          projectId,
+          scene_id: sceneId,
+          sceneId,
+          start_sec: start,
+          startSec: start,
+          end_sec: end,
+          endSec: end,
+          duration_sec: durationSec,
+          durationSec,
+          format: 'mp3',
+          source: options.reason || 'audio_studio_preload_v204e10',
+        }),
+      })
+
+      const sourceAudio = audioStudioSourceAudioFromSliceResponseV204E10(data, target)
+      const ref = firstText(sourceAudio.apiPath, sourceAudio.url)
+      if (!ref) throw new Error('Backend не вернул audio slice.')
+
+      const current = sanitizeAudioSnapshot(snapshotRef.current || {})
+      const next = {
+        ...current,
+        scenes: asArray(current.scenes).map((item) => cleanId(item.id || item.sceneId) === sceneId
+          ? { ...item, sourceAudio, timingAudioReadyV204E10: true, updatedAt: nowIso() }
+          : item),
+        selectedSceneId: current.selectedSceneId || sceneId,
+        updatedAt: nowIso(),
+      }
+
+      snapshotRef.current = next
+      setSnapshot(next)
+      await saveSnapshot(sanitizeAudioSnapshot(next), 'audio_studio_timing_audio_preload_v204e10')
+
+      if (!options.silent) setStatus(`Аудио сцены ${sceneId} готово`)
+      console.log('[AUDIO STUDIO TIMING AUDIO PRELOAD READY V204E10]', { sceneId, ref })
+      return ref
+    })()
+
+    timingAudioPreparePromisesRefV204E10.current[sceneId] = promise
+
+    try {
+      return await promise
+    } finally {
+      delete timingAudioPreparePromisesRefV204E10.current[sceneId]
+      setTimingAudioPreparingSceneIdV204E10((currentId) => cleanId(currentId) === sceneId ? '' : currentId)
+    }
+  }, [projectId, saveSnapshot, selectedScene])
+
+  const prepareSelectedTimingAudioV204E10 = useCallback(async () => {
+    if (!selectedScene) return
+    setError('')
+    try {
+      await prepareTimingAudioForSceneV204E10(selectedScene, { reason: 'manual_audio_ready_button_v204e10', silent: false })
+    } catch (err) {
+      setError(`Не удалось подготовить аудио сцены: ${err?.message || err}`)
+    }
+  }, [prepareTimingAudioForSceneV204E10, selectedScene])
+
+  // Background warm-up: one at a time, cached in the snapshot. Current scene first, then the rest.
+  useEffect(() => {
+    const scenes = asArray(snapshot.scenes)
+    if (!scenes.length || !projectId) return undefined
+
+    const pending = scenes.filter((scene) => !audioStudioTimingAudioRefV204E10(scene))
+    if (!pending.length) return undefined
+
+    const selectedId = cleanId(selectedScene?.id || selectedScene?.sceneId)
+    const ordered = [
+      ...pending.filter((scene) => cleanId(scene.id || scene.sceneId) === selectedId),
+      ...pending.filter((scene) => cleanId(scene.id || scene.sceneId) !== selectedId),
+    ]
+
+    const key = ordered.map((scene) => cleanId(scene.id || scene.sceneId)).join('|')
+    if (!key || timingAudioAutoWarmKeyRefV204E10.current === key) return undefined
+    timingAudioAutoWarmKeyRefV204E10.current = key
+
+    let cancelled = false
+    ;(async () => {
+      for (const scene of ordered) {
+        if (cancelled) return
+        try {
+          await prepareTimingAudioForSceneV204E10(scene, { reason: 'auto_preload_audio_studio_v204e10', silent: true })
+        } catch (err) {
+          console.warn('[AUDIO STUDIO TIMING AUDIO AUTO PRELOAD FAILED V204E10]', cleanId(scene.id || scene.sceneId), err)
+          return
+        }
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [projectId, selectedScene?.id, selectedScene?.sceneId, snapshot.scenes, prepareTimingAudioForSceneV204E10])
+
+  const previewTimingAudioMmaudioMixV204E10 = useCallback(async () => {
+    setError('')
+
+    const stopMixV204E10 = () => {
+      try { timingAudioPlaybackRefV204E10.current?.pause?.() } catch {}
+      const rightVideo = document.querySelector('.avaAudioResultPanel video.avaAudioResultVideo') || document.querySelector('.avaAudioResultPanel video')
+      try { rightVideo?.pause?.() } catch {}
+      if (timingAudioPlaybackStopTimerRefV204E10.current) {
+        clearTimeout(timingAudioPlaybackStopTimerRefV204E10.current)
+        timingAudioPlaybackStopTimerRefV204E10.current = null
+      }
+      if (timingAudioPlaybackBlobUrlRefV204E10.current) {
+        try { URL.revokeObjectURL(timingAudioPlaybackBlobUrlRefV204E10.current) } catch {}
+        timingAudioPlaybackBlobUrlRefV204E10.current = ''
+      }
+      timingAudioPlaybackRefV204E10.current = null
+      setTimingAudioMixPlayingV204E10(false)
+    }
+
+    if (timingAudioMixPlayingV204E10) {
+      stopMixV204E10()
+      setStatus('Микс остановлен')
+      return
+    }
+
+    if (!selectedScene) {
+      setError('Нет выбранной сцены.')
+      return
+    }
+
+    const rightVideo = document.querySelector('.avaAudioResultPanel video.avaAudioResultVideo') || document.querySelector('.avaAudioResultPanel video')
+    if (!rightVideo || !selectedResultRef) {
+      setError('Нет правого MMAudio-варианта для микса.')
+      return
+    }
+
+    const resolvePlayableAudioUrlV204E10 = async (ref) => {
+      const clean = cleanId(ref)
+      if (!clean) return { url: '', blobUrl: '' }
+      if (/^(blob:|data:|https?:)/i.test(clean)) return { url: clean, blobUrl: '' }
+      if (/\/(api\/)?assets\/[^/]+\/file/i.test(clean)) {
+        const blobUrl = await fetchProtectedBlobUrl(clean)
+        return { url: blobUrl, blobUrl }
+      }
+      return { url: buildApiUrl(clean), blobUrl: '' }
+    }
+
+    try {
+      stopMixV204E10()
+
+      const timingRef = firstText(
+        audioStudioTimingAudioRefV204E10(selectedScene),
+        await prepareTimingAudioForSceneV204E10(selectedScene, { reason: 'mix_button_missing_audio_v204e10', silent: false }),
+      )
+
+      const playable = await resolvePlayableAudioUrlV204E10(timingRef)
+      if (!playable.url) throw new Error('Нет playable URL для аудио сцены.')
+
+      const timingAudio = new Audio(playable.url)
+      timingAudio.preload = 'auto'
+      timingAudio.volume = 1
+      timingAudio.currentTime = 0
+      timingAudio.onended = () => setTimingAudioMixPlayingV204E10(false)
+
+      timingAudioPlaybackRefV204E10.current = timingAudio
+      timingAudioPlaybackBlobUrlRefV204E10.current = playable.blobUrl || ''
+
+      const mmaudioGain = clampMediaVolumeV204E10A(Number(activeVolume) / 100, 1)
+      try { rightVideo.pause?.() } catch {}
+      try { rightVideo.currentTime = 0 } catch {}
+      try { rightVideo.muted = false } catch {}
+      try { rightVideo.volume = clampMediaVolumeV204E10A(mmaudioGain, 1) } catch {}
+
+      console.log('[AUDIO STUDIO MIX PLAY V204E10]', {
+        sceneId: selectedScene.id || selectedScene.sceneId,
+        timingRef,
+        timingUrl: playable.url,
+        rightVideoSrc: rightVideo.currentSrc || rightVideo.src || '',
+        mmaudioGain,
+        audioWasReady: Boolean(selectedTimingAudioRefV204E10),
+      })
+
+      setStatus(`Прослушивание микса: аудио сцены 100% + MMAudio ${Math.round(mmaudioGain * 100)}%`)
+
+      const safePlayLayerV204E11 = async (node, label, required = false) => {
+        try {
+          await node.play()
+          return true
+        } catch (playErr) {
+          if (isInterruptedPlayErrorV204E11(playErr)) {
+            console.warn('[AUDIO STUDIO MIX PLAY INTERRUPTED V204E11]', label, playErr)
+            return false
+          }
+          if (required) throw playErr
+          console.warn('[AUDIO STUDIO MIX OPTIONAL PLAY FAILED V204E11]', label, playErr)
+          return false
+        }
+      }
+
+      // Start both layers from the same click. Timing is the important layer; MMAudio is allowed to recover on the next click if browser interrupted it.
+      const [timingStarted, mmaudioStarted] = await Promise.all([
+        safePlayLayerV204E11(timingAudio, 'timing-audio', true),
+        safePlayLayerV204E11(rightVideo, 'right-mmaudio-video', false),
+      ])
+
+      if (!timingStarted && !mmaudioStarted) {
+        throw new Error('Браузер остановил оба слоя прослушивания.')
+      }
+
+      setTimingAudioMixPlayingV204E10(true)
+      const stopAfterMs = Math.max(1500, Math.ceil(toNumber(selectedScene.durationSec, 5) * 1000) + 700)
+      timingAudioPlaybackStopTimerRefV204E10.current = setTimeout(() => {
+        setTimingAudioMixPlayingV204E10(false)
+        timingAudioPlaybackStopTimerRefV204E10.current = null
+      }, stopAfterMs)
+    } catch (err) {
+      stopMixV204E10()
+      setError(`Не удалось запустить микс: ${err?.message || err}`)
+      console.warn('[AUDIO STUDIO MIX FAILED V204E10]', err)
+    }
+  }, [activeVolume, prepareTimingAudioForSceneV204E10, selectedResultRef, selectedScene, selectedTimingAudioRefV204E10, timingAudioMixPlayingV204E10])
+
   const isGeneratingSelected = generatingSceneId && cleanId(generatingSceneId) === cleanId(selectedScene?.id)
   const isApplyingSelected = Boolean(applyingVariantId && cleanId(applyingVariantId) === cleanId(selectedVariant?.id))
 
   if (loading) {
     return (
       <div className="avaAudioStudioPage">
+      <audio
+        ref={mixTimingAudioRefV204E7}
+        src={mixTimingAudioSrcV204E7}
+        preload="auto"
+        style={{ display: 'none' }}
+      />
         <div className="avaAudioLoading">
           <div className="avaAudioLoadingOrb"><AudioLines size={26} /></div>
           <strong>{loadMessage || 'Загружаю Audio Studio…'}</strong>
@@ -2258,10 +2967,25 @@ export default function AudioStudioPage() {
                 <WandSparkles size={16} /> {isGeneratingSelected ? 'Генерится…' : 'Генерить'}
               </button>
               <button type="button" onClick={applySelectedVariant} disabled={!selectedVariant || selectedVariant?.sourceBaseline || selectedVariant?.kind === 'source_video' || Boolean(applyingVariantId)}>{isApplyingSelected ? <span className="avaAudioApplySpinnerV204B3" /> : <CheckCircle2 size={16} />} {isApplyingSelected ? 'Применяю…' : 'Применить'}</button>
-              <button type="button" onClick={() => {
-                const video = document.querySelector('.avaAudioResultVideo')
-                if (video?.play) video.play()
-              }} disabled={!selectedResultRef}><Play size={16} /> Прослушать сцену</button>
+              <button
+                type="button"
+                className={`avaAudioTimingReadyButtonV204E10 ${selectedTimingAudioReadyV204E10 ? 'isReady' : ''} ${selectedTimingAudioPreparingV204E10 ? 'isLoading' : ''}`}
+                onClick={prepareSelectedTimingAudioV204E10}
+                disabled={!selectedScene || selectedTimingAudioReadyV204E10 || selectedTimingAudioPreparingV204E10}
+                title={selectedTimingAudioReadyV204E10 ? 'Аудио сцены уже привязано и сохранено' : 'Аудио сцены не привязано. Нажми, чтобы подготовить его заранее.'}
+              >
+                {selectedTimingAudioReadyV204E10 ? <CheckCircle2 size={14} /> : <AudioLines size={14} />}
+                {selectedTimingAudioPreparingV204E10 ? 'готовлю аудио…' : selectedTimingAudioReadyV204E10 ? 'аудио сцены' : 'нет аудио'}
+              </button>
+
+              <button
+                type="button"
+                onClick={previewTimingAudioMmaudioMixV204E10}
+                disabled={!selectedResultRef || selectedTimingAudioPreparingV204E10}
+                title="Одновременно проиграть аудио сцены из тайминга и выбранный MMAudio-вариант с текущей громкостью"
+              >
+                <Play size={16} /> {mixPreviewPlayingV204E7 ? 'Стоп микс' : 'Прослушать микс'}
+              </button>
             </div>
             {selectedScene?.jobStatus ? <p className="avaAudioJobStatus">{selectedScene.jobStatus}</p> : null}
           </section>
@@ -2271,12 +2995,12 @@ export default function AudioStudioPage() {
               <span><Headphones size={17} /> Готовый результат</span>
               <small>{selectedIsApplied ? 'применён вариант' : selectedVariant ? 'просмотр варианта' : 'нет варианта'}</small>
             </div>
-            <PreviewVideo source={selectedResultRef} title="MMAudio результат" className="avaAudioMainVideo avaAudioResultVideo" volume={activeVolume / 100} />
+            <PreviewVideo source={selectedResultRef} title="MMAudio результат" className="avaAudioMainVideo avaAudioResultVideo" volume={clampMediaVolumeV204E10A(activeVolume / 100, 1)} />
             <label className="avaAudioVolume">
               <span><Volume2 size={15} /> Громкость MMAudio <b>{activeVolume}%</b></span>
               <input type="range" min="0" max="150" value={activeVolume} onChange={(event) => updateSelectedVolume(event.target.value)} />
             </label>
-            <p className="avaAudioVolumeNote">Исходный звук сцены не меняем. В монтажку уходит только эта громкость MMAudio.</p>
+            <p className="avaAudioVolumeNote">Прослушивание: кнопка при необходимости нарезает аудио тайминга сцены, запускает его на 100% и следом запускает правый MMAudio с этой громкостью. При “Применить” громкость MMAudio запекается для монтажки.</p>
           </section>
         </main>
       )}

@@ -1145,3 +1145,162 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* V204E3_AUDIO_STUDIO_TIMING_AUDIO_MIX */
+.avaAudioTimingAudioBoxV204E3 {
+  margin-top: 10px;
+  padding: 10px 11px;
+  border-radius: 14px;
+  border: 1px solid rgba(125, 211, 252, .18);
+  background: rgba(15, 23, 42, .46);
+  display: grid;
+  gap: 7px;
+}
+
+.avaAudioTimingAudioBoxV204E3 span {
+  font-size: 12px;
+  font-weight: 850;
+  color: rgba(224, 242, 254, .92);
+}
+
+.avaAudioTimingAudioBoxV204E3 small {
+  font-size: 12px;
+  color: rgba(203, 213, 225, .72);
+}
+
+.avaAudioTimingAudioBoxV204E3.isMissing {
+  border-color: rgba(251, 191, 36, .22);
+  background: rgba(120, 53, 15, .18);
+}
+
+.avaAudioTimingAudioBoxV204E3.isError {
+  border-color: rgba(248, 113, 113, .28);
+  background: rgba(127, 29, 29, .2);
+}
+
+.avaAudioTimingAudioV204E3 {
+  width: 100%;
+  height: 34px;
+}
+
+
+/* V204E5A_AUDIO_STUDIO_HIDE_EXPERIMENTAL_PLAYERS */
+.avaAudioLayerBoxV204E4,
+.avaAudioTimingAudioBoxV204E3 {
+  display: none !important;
+}
+
+
+/* V204E6_AUDIO_STUDIO_HIDE_EXPERIMENTAL_AUDIO_BOXES */
+.avaAudioLayerBoxV204E4,
+.avaAudioTimingAudioBoxV204E3 {
+  display: none !important;
+}
+
+
+/* V204E7_HIDE_EXPERIMENTAL_AUDIO_BOXES */
+.avaAudioLayerBoxV204E4,
+.avaAudioTimingAudioBoxV204E3 {
+  display: none !important;
+}
+
+
+/* V204E8_HIDE_EXPERIMENTAL_AUDIO_BOXES */
+.avaAudioLayerBoxV204E4,
+.avaAudioTimingAudioBoxV204E3 {
+  display: none !important;
+}
+
+
+/* V204E9_HIDE_EXPERIMENTAL_AUDIO_BOXES */
+.avaAudioLayerBoxV204E4,
+.avaAudioTimingAudioBoxV204E3 {
+  display: none !important;
+}
+
+
+/* V204E10_AUDIO_STUDIO_PRELOAD_TIMING_AUDIO */
+.avaAudioTimingReadyButtonV204E10 {
+  border-color: rgba(125, 211, 252, .26) !important;
+  background: rgba(15, 23, 42, .72) !important;
+  color: rgba(224, 242, 254, .92) !important;
+}
+
+.avaAudioTimingReadyButtonV204E10.isReady {
+  border-color: rgba(34, 197, 94, .42) !important;
+  background: rgba(20, 83, 45, .28) !important;
+  color: rgba(187, 247, 208, .96) !important;
+}
+
+.avaAudioTimingReadyButtonV204E10.isLoading {
+  border-color: rgba(250, 204, 21, .34) !important;
+  background: rgba(113, 63, 18, .22) !important;
+  color: rgba(254, 240, 138, .96) !important;
+}
+
+.avaAudioLayerBoxV204E4,
+.avaAudioTimingAudioBoxV204E3 {
+  display: none !important;
+}
+
+
+/* V204E11_AUDIO_STATUS_LOWER_RIGHT */
+.avaAudioPromptActions {
+  position: relative;
+  padding-bottom: 22px;
+}
+
+.avaAudioTimingReadyButtonV204E10 {
+  position: absolute !important;
+  right: 2px !important;
+  bottom: -6px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: .01em !important;
+  color: rgba(148, 163, 184, .72) !important;
+  opacity: .95 !important;
+}
+
+.avaAudioTimingReadyButtonV204E10:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+  color: rgba(203, 213, 225, .95) !important;
+}
+
+.avaAudioTimingReadyButtonV204E10.isReady {
+  color: #22ff66 !important;
+  text-shadow: 0 0 12px rgba(34, 255, 102, .36), 0 0 22px rgba(34, 197, 94, .22) !important;
+}
+
+.avaAudioTimingReadyButtonV204E10.isReady svg {
+  filter: drop-shadow(0 0 6px rgba(34, 255, 102, .55));
+}
+
+.avaAudioTimingReadyButtonV204E10.isLoading {
+  color: rgba(250, 204, 21, .96) !important;
+  text-shadow: 0 0 10px rgba(250, 204, 21, .22) !important;
+}
+
+.avaAudioTimingReadyButtonV204E10:disabled {
+  opacity: .95 !important;
+  cursor: default !important;
+}
+
+.avaAudioTimingReadyButtonV204E10:not(.isReady):not(.isLoading) {
+  color: rgba(148, 163, 184, .64) !important;
+}
