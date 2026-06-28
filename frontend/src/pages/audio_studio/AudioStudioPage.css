@@ -2047,3 +2047,12 @@
   border-color: rgba(74, 222, 128, .78) !important;
   color: rgba(187, 247, 208, .98) !important;
 }
+
+
+.avaAudioStableApplyActionV204H1.isLoading {
+  pointer-events: none;
+}
+
+.avaAudioStableApplyActionV204H1.isApplied {
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.45) inset;
+}
