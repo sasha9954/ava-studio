@@ -10392,3 +10392,350 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
         "-movflags", "+faststart",
         str(out_path),
     ])
+
+
+# ---------------------------------------------------------------------
+# V204G1_STABLE_BLOCK_PREVIEW_MP4
+# Audio Studio / Stable Audio: quick backend preview for a saved block.
+# This first backend step intentionally renders only:
+#   scene videos (already applied MMAudio when available)
+#   + per-scene Timing audio slices
+# Stable Audio will be mixed in a later patch after generation variants exist.
+# ---------------------------------------------------------------------
+class AudioStudioStablePreviewIn(BaseModel):
+    project_id: str | None = None
+    projectId: str | None = None
+    block_id: str | None = None
+    blockId: str | None = None
+    title: str | None = None
+    scene_ids: list[Any] | None = None
+    sceneIds: list[Any] | None = None
+    scenes: list[dict[str, Any]] | None = None
+    block: dict[str, Any] | None = None
+    duration_sec: float | None = None
+    durationSec: float | None = None
+    include_stable_audio: bool | None = False
+    includeStableAudio: bool | None = False
+    source: str | None = None
+
+
+def _audio_studio_first_text_v204g1(*values: Any) -> str:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _audio_studio_nested_ref_v204g1(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if not isinstance(value, dict):
+        return ""
+    return _audio_studio_first_text_v204g1(
+        value.get("apiPath"),
+        value.get("api_path"),
+        value.get("assetApiPath"),
+        value.get("asset_api_path"),
+        value.get("url"),
+        value.get("assetUrl"),
+        value.get("asset_url"),
+        value.get("path"),
+    )
+
+
+def _audio_studio_scene_id_v204g1(scene: dict[str, Any], index: int) -> str:
+    return _audio_studio_first_text_v204g1(
+        scene.get("id"),
+        scene.get("sceneId"),
+        scene.get("scene_id"),
+        scene.get("title"),
+        f"seg_{index + 1:02d}",
+    )
+
+
+def _audio_studio_scene_duration_v204g1(scene: dict[str, Any], fallback: float = 0.0) -> float:
+    def _num(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except Exception:
+            return default
+
+    duration = _num(scene.get("durationSec", scene.get("duration_sec", 0)), 0.0)
+    if duration > 0.03:
+        return duration
+    start = _num(scene.get("startSec", scene.get("start_sec", scene.get("start", 0))), 0.0)
+    end = _num(scene.get("endSec", scene.get("end_sec", scene.get("end", 0))), 0.0)
+    if end > start:
+        return end - start
+    return max(0.05, float(fallback or 0.0))
+
+
+def _audio_studio_scene_applied_variant_v204g1(scene: dict[str, Any]) -> dict[str, Any]:
+    applied_id = _audio_studio_first_text_v204g1(scene.get("appliedVariantId"), scene.get("applied_variant_id"))
+    variants = scene.get("variants") if isinstance(scene.get("variants"), list) else []
+    for variant in variants:
+        if isinstance(variant, dict) and applied_id and _audio_studio_first_text_v204g1(variant.get("id")) == applied_id:
+            return variant
+    for variant in variants:
+        if isinstance(variant, dict) and (variant.get("applied") is True or variant.get("isApplied") is True):
+            return variant
+    return {}
+
+
+def _audio_studio_scene_video_ref_v204g1(scene: dict[str, Any]) -> str:
+    variant = _audio_studio_scene_applied_variant_v204g1(scene)
+    return _audio_studio_first_text_v204g1(
+        _audio_studio_nested_ref_v204g1(variant.get("appliedVideo")),
+        variant.get("appliedApiPath"),
+        variant.get("applied_api_path"),
+        variant.get("appliedUrl"),
+        variant.get("applied_url"),
+        _audio_studio_nested_ref_v204g1(scene.get("mmaudioAppliedVideo")),
+        _audio_studio_nested_ref_v204g1(scene.get("currentVideo")),
+        _audio_studio_nested_ref_v204g1(scene.get("sourceVideo")),
+        _audio_studio_nested_ref_v204g1(scene.get("video")),
+        scene.get("apiPath"),
+        scene.get("api_path"),
+        scene.get("url"),
+        _audio_studio_nested_ref_v204g1(scene.get("boardRaw", {}).get("video") if isinstance(scene.get("boardRaw"), dict) else None),
+    )
+
+
+def _audio_studio_scene_timing_audio_ref_v204g1(scene: dict[str, Any]) -> str:
+    return _audio_studio_first_text_v204g1(
+        _audio_studio_nested_ref_v204g1(scene.get("sourceAudio")),
+        _audio_studio_nested_ref_v204g1(scene.get("timingAudio")),
+        _audio_studio_nested_ref_v204g1(scene.get("audioSlice")),
+        _audio_studio_nested_ref_v204g1(scene.get("audio_slice")),
+        scene.get("timingAudioApiPath"),
+        scene.get("timing_audio_api_path"),
+        scene.get("sourceAudioApiPath"),
+        scene.get("source_audio_api_path"),
+        scene.get("audioApiPath"),
+        scene.get("audio_api_path"),
+        scene.get("audioUrl"),
+        scene.get("audio_url"),
+    )
+
+
+def _audio_studio_probe_size_v204g1(path: Path) -> tuple[int, int]:
+    data = _ffprobe_json([
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "json",
+        str(path),
+    ])
+    try:
+        stream = (data.get("streams") or [{}])[0]
+        width = int(stream.get("width") or 0)
+        height = int(stream.get("height") or 0)
+        if width > 0 and height > 0:
+            # Normalize to a stable preview frame without changing orientation.
+            return (1280, 720) if width >= height else (720, 1280)
+    except Exception:
+        pass
+    return (720, 1280)
+
+
+def _audio_studio_make_preview_clip_v204g1(
+    *,
+    video_path: Path,
+    timing_audio_path: Path | None,
+    out_path: Path,
+    duration_sec: float,
+    width: int,
+    height: int,
+) -> None:
+    duration = max(0.08, float(duration_sec or 0.0))
+    has_video_audio = _ffprobe_has_audio(video_path)
+    has_timing_audio = bool(timing_audio_path and timing_audio_path.exists() and timing_audio_path.is_file())
+
+    inputs = ["-y", "-t", f"{duration:.3f}", "-i", str(video_path)]
+    timing_index = None
+    silent_index = None
+    if has_timing_audio:
+        timing_index = 1
+        inputs += ["-t", f"{duration:.3f}", "-i", str(timing_audio_path)]
+    if not has_video_audio and not has_timing_audio:
+        silent_index = 1
+        inputs += ["-f", "lavfi", "-t", f"{duration:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
+
+    video_filter = (
+        f"[0:v]trim=0:{duration:.6f},setpts=PTS-STARTPTS,"
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v]"
+    )
+
+    audio_filters: list[str] = []
+    audio_labels: list[str] = []
+    if has_video_audio:
+        audio_filters.append(f"[0:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,aresample=48000[a0]")
+        audio_labels.append("[a0]")
+    if has_timing_audio and timing_index is not None:
+        audio_filters.append(f"[{timing_index}:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,aresample=48000[a1]")
+        audio_labels.append("[a1]")
+    if silent_index is not None:
+        audio_filters.append(f"[{silent_index}:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,aresample=48000[a0]")
+        audio_labels.append("[a0]")
+
+    if len(audio_labels) >= 2:
+        audio_filters.append("".join(audio_labels) + f"amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0[a]")
+    elif len(audio_labels) == 1:
+        audio_filters.append(f"{audio_labels[0]}anull[a]")
+    else:
+        raise HTTPException(status_code=500, detail="preview_audio_filter_empty_v204g1")
+
+    filter_complex = ";".join([video_filter, *audio_filters])
+    _run_ffmpeg([
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "[v]",
+        "-map", "[a]",
+        "-t", f"{duration:.3f}",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        str(out_path),
+    ])
+
+
+@router.post("/audio-studio/stable-preview/block")
+def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn, user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    project_id = _clean_project_id(payload.project_id or payload.projectId)
+    if project_id:
+        ensure_project_access(project_id, user)
+
+    scenes = payload.scenes if isinstance(payload.scenes, list) else []
+    scenes = [scene for scene in scenes if isinstance(scene, dict)]
+    if not scenes:
+        raise HTTPException(status_code=400, detail="No scenes for Stable block preview")
+
+    block_title = _safe_name(payload.title or "stable_block_preview", "stable_block_preview")
+    with tempfile.TemporaryDirectory(prefix="ava_audio_stable_preview_v204g1_") as tmp_raw:
+        tmp_dir = Path(tmp_raw)
+        video_paths: list[Path] = []
+        timing_paths: list[Path | None] = []
+        durations: list[float] = []
+        scene_debug: list[dict[str, Any]] = []
+
+        first_video_path: Path | None = None
+        for index, scene in enumerate(scenes):
+            scene_id = _audio_studio_scene_id_v204g1(scene, index)
+            video_ref = _audio_studio_scene_video_ref_v204g1(scene)
+            if not video_ref:
+                raise HTTPException(status_code=400, detail=f"Scene {scene_id} has no video for preview")
+            video_path = _resolve_local_file(video_ref)
+            if first_video_path is None:
+                first_video_path = video_path
+
+            timing_ref = _audio_studio_scene_timing_audio_ref_v204g1(scene)
+            timing_path = None
+            if timing_ref:
+                try:
+                    timing_path = _resolve_local_file(timing_ref)
+                except Exception as exc:
+                    print("[AUDIO STUDIO STABLE PREVIEW TIMING AUDIO SKIP V204G1]", {
+                        "sceneId": scene_id,
+                        "timingRef": timing_ref,
+                        "error": str(exc),
+                    }, flush=True)
+                    timing_path = None
+
+            duration = _audio_studio_scene_duration_v204g1(scene, _ffprobe_duration(video_path))
+            video_paths.append(video_path)
+            timing_paths.append(timing_path)
+            durations.append(duration)
+            scene_debug.append({
+                "sceneId": scene_id,
+                "videoRef": video_ref,
+                "videoPath": str(video_path),
+                "timingAudio": bool(timing_path),
+                "durationSec": round(duration, 3),
+            })
+
+        if first_video_path is None:
+            raise HTTPException(status_code=400, detail="No video paths resolved")
+        width, height = _audio_studio_probe_size_v204g1(first_video_path)
+
+        clip_paths: list[Path] = []
+        for index, (video_path, timing_path, duration) in enumerate(zip(video_paths, timing_paths, durations)):
+            clip_path = tmp_dir / f"clip_{index + 1:03d}.mp4"
+            _audio_studio_make_preview_clip_v204g1(
+                video_path=video_path,
+                timing_audio_path=timing_path,
+                out_path=clip_path,
+                duration_sec=duration,
+                width=width,
+                height=height,
+            )
+            clip_paths.append(clip_path)
+
+        concat_file = tmp_dir / "concat.txt"
+        concat_file.write_text("".join(f"file '{path.as_posix()}'\n" for path in clip_paths), encoding="utf-8")
+        preview_path = tmp_dir / f"{block_title}_{uuid4().hex[:8]}_preview.mp4"
+        _run_ffmpeg([
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_file),
+            "-c", "copy",
+            "-movflags", "+faststart",
+            str(preview_path),
+        ])
+
+        duration_total = _ffprobe_duration(preview_path) or sum(durations)
+        public = _register_board_output_asset(
+            preview_path,
+            job={
+                "jobId": f"audio_studio_stable_preview_{uuid4().hex[:8]}",
+                "projectId": project_id,
+                "userId": user.get("id"),
+                "sceneId": _audio_studio_first_text_v204g1(payload.block_id, payload.blockId, block_title),
+            },
+            kind="video",
+            stage="audio_studio",
+            original_name=f"{block_title}_preview.mp4",
+        )
+
+    if not public:
+        raise HTTPException(status_code=500, detail="preview_asset_register_failed_v204g1")
+
+    print("[AUDIO STUDIO STABLE BLOCK PREVIEW READY V204G1]", {
+        "projectId": project_id,
+        "blockId": payload.block_id or payload.blockId,
+        "sceneCount": len(scenes),
+        "durationSec": round(duration_total, 3),
+        "assetApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        "scenes": scene_debug,
+    }, flush=True)
+
+    return {
+        "ok": True,
+        "sceneCount": len(scenes),
+        "scene_count": len(scenes),
+        "durationSec": round(float(duration_total), 3),
+        "duration_sec": round(float(duration_total), 3),
+        "previewVideoApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        "preview_video_api_path": public.get("asset_api_path") or public.get("assetApiPath"),
+        "previewVideoUrl": public.get("asset_url") or public.get("assetUrl"),
+        "preview_video_url": public.get("asset_url") or public.get("assetUrl"),
+        "previewVideoAssetId": public.get("asset_id") or public.get("assetId"),
+        "preview_video_asset_id": public.get("asset_id") or public.get("assetId"),
+        "assetApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        "asset_api_path": public.get("asset_api_path") or public.get("assetApiPath"),
+        "assetUrl": public.get("asset_url") or public.get("assetUrl"),
+        "asset_url": public.get("asset_url") or public.get("assetUrl"),
+        "assetId": public.get("asset_id") or public.get("assetId"),
+        "asset_id": public.get("asset_id") or public.get("assetId"),
+        "source": "audio_studio_stable_block_preview_v204g1",
+        "layers": ["scene_video_applied_mmaudio", "timing_audio"],
+        "scenes": scene_debug,
+    }
+

@@ -1617,6 +1617,33 @@ export default function AudioStudioPage() {
   const [stableDraftVolumeV204F7, setStableDraftVolumeV204F7] = useState(16)
   const [stableDraftFadeInSecV204F7, setStableDraftFadeInSecV204F7] = useState(0.35)
   const [stableDraftFadeOutSecV204F7, setStableDraftFadeOutSecV204F7] = useState(0.8)
+  // V204G1_STABLE_BLOCK_PREVIEW_MP4
+  const [stableBlockPreviewVideoV204G1, setStableBlockPreviewVideoV204G1] = useState(null)
+  const [stableBlockPreviewLoadingV204G1, setStableBlockPreviewLoadingV204G1] = useState(false)
+  // V204G4_STABLE_PREVIEW_BUTTON_UI_RECOVERY
+  const [stableBlockPreviewUiPhaseV204G4, setStableBlockPreviewUiPhaseV204G4] = useState('idle')
+  const [stableBlockPreviewUiNonceV204G4, setStableBlockPreviewUiNonceV204G4] = useState(0)
+
+  useEffect(() => {
+    if (!stableBlockPreviewVideoV204G1) return
+    setStableBlockPreviewLoadingV204G1(false)
+    setStableBlockPreviewUiPhaseV204G4('ready')
+    const timers = [120, 450, 900, 1400].map((ms) => window.setTimeout(() => {
+      try {
+        const node = document.querySelector('.avaAudioStablePreviewPanelV204F1 video.avaAudioMainVideo, .avaAudioStablePreviewPanelV204F1 video, video.avaAudioMainVideo')
+        if (!node) return
+        node.currentTime = 0
+        const promise = node.play()
+        if (promise && typeof promise.catch === 'function') {
+          promise.catch(() => {})
+        }
+      } catch (_err) {
+        // Browser autoplay can be blocked with sound; manual play remains available.
+      }
+    }, ms))
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [stableBlockPreviewVideoV204G1, stableBlockPreviewUiNonceV204G4])
+
   const pollRef = useRef(null)
   const snapshotRef = useRef(snapshot)
   const initialLoadDoneRefV204B = useRef(false)
@@ -2547,6 +2574,26 @@ export default function AudioStudioPage() {
     return index >= 0 ? index + 1 : 0
   }, [selectedSavedStableBlockV204F4, stableBlocksV204F4])
 
+
+  // V204G5_PERSIST_STABLE_BLOCK_PREVIEW_AFTER_F5
+  useEffect(() => {
+    const preview = selectedSavedStableBlockV204F4?.previewVideo || selectedSavedStableBlockV204F4?.stablePreviewVideo || selectedSavedStableBlockV204F4?.stableAudio?.previewVideo || null
+    const previewRef = firstText(preview?.apiPath, preview?.assetApiPath, preview?.asset_api_path, preview?.url, preview?.assetUrl, preview?.asset_url)
+    if (!previewRef) {
+      setStableBlockPreviewVideoV204G1(null)
+      if (typeof setStableBlockPreviewUiPhaseV204G4 === 'function') setStableBlockPreviewUiPhaseV204G4('idle')
+      return
+    }
+    setStableBlockPreviewVideoV204G1({
+      ...preview,
+      apiPath: firstText(preview?.apiPath, preview?.assetApiPath, preview?.asset_api_path, previewRef),
+      url: firstText(preview?.url, preview?.assetUrl, preview?.asset_url),
+      assetId: firstText(preview?.assetId, preview?.asset_id),
+      restoredAfterF5V204G5: true,
+    })
+    if (typeof setStableBlockPreviewUiPhaseV204G4 === 'function') setStableBlockPreviewUiPhaseV204G4('ready')
+  }, [selectedSavedStableBlockV204F4])
+
   const selectedStableBlockScenesV204F1 = useMemo(() => {
     const scenes = asArray(snapshot.scenes)
     const byId = new Map(scenes.map((scene) => [cleanId(scene.id || scene.sceneId), scene]))
@@ -2947,15 +2994,111 @@ export default function AudioStudioPage() {
     setStatus(`Stable Audio: запрос готов (${payload.modeLabel} → Comfy ${payload.mode}, ${payload.requestDurationSec} сек). Следующий патч подключит backend генерацию.`)
   }, [buildStableAudioRequestPayloadV204F7, selectedSavedStableBlockV204F4, stableDraftPromptV204F7])
 
-  const previewStableAudioBlockV204F7 = useCallback(() => {
+  const previewStableAudioBlockV204F7 = useCallback(async () => {
     if (!selectedStableBlockSceneIdsV204F1.length) {
       setError('Нет сцен для preview блока.')
       return
     }
-    const payload = buildStableAudioRequestPayloadV204F7()
-    console.info('[AUDIO STUDIO STABLE BLOCK PREVIEW V204F7]', payload)
-    setStatus(`Preview блока подготовлен: ${selectedStableBlockSceneIdsV204F1.length} сцен · Timing + MMAudio${cleanId(stableDraftPromptV204F7) ? ' + STAU' : ' без STAU'}. Backend-сборка MP4 будет следующим отдельным патчем.`)
-  }, [buildStableAudioRequestPayloadV204F7, selectedStableBlockSceneIdsV204F1, stableDraftPromptV204F7])
+    if (!selectedStableBlockScenesV204F1.length) {
+      setError('Нет сцен блока для preview.')
+      return
+    }
+
+    setError('')
+    setStableBlockPreviewLoadingV204G1(true)
+    setStatus(`Собираю preview блока: ${selectedStableBlockScenesV204F1.length} сцен · готовлю Timing audio…`)
+
+    try {
+      const preparedScenes = []
+      for (const scene of selectedStableBlockScenesV204F1) {
+        const sceneId = cleanId(scene.id || scene.sceneId)
+        let timingRef = audioStudioTimingAudioRefV204E10(scene)
+        if (!timingRef) {
+          timingRef = await prepareTimingAudioForSceneV204E10(scene, { reason: 'stable_block_preview_v204g1', silent: false })
+        }
+        preparedScenes.push({
+          ...scene,
+          sceneId,
+          scene_id: sceneId,
+          sourceAudio: timingRef ? { ...(scene.sourceAudio || {}), apiPath: timingRef, url: timingRef } : scene.sourceAudio,
+          timingAudioReadyV204E10: Boolean(timingRef),
+        })
+      }
+
+      const payload = {
+        ...buildStableAudioRequestPayloadV204F7(),
+        project_id: projectId,
+        projectId,
+        block: selectedSavedStableBlockV204F4 || null,
+        scenes: preparedScenes,
+        includeStableAudio: false,
+        include_stable_audio: false,
+        source: 'audio_studio_stable_block_preview_v204g1',
+      }
+
+      console.info('[AUDIO STUDIO STABLE BLOCK PREVIEW REQUEST V204G1]', payload)
+      const data = await apiRequest('/audio-studio/stable-preview/block', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+
+      const previewVideo = {
+        apiPath: firstText(data.previewVideoApiPath, data.preview_video_api_path, data.assetApiPath, data.asset_api_path, data.apiPath, data.api_path),
+        url: firstText(data.previewVideoUrl, data.preview_video_url, data.assetUrl, data.asset_url, data.url),
+        assetId: firstText(data.previewVideoAssetId, data.preview_video_asset_id, data.assetId, data.asset_id),
+        durationSec: toNumber(data.durationSec ?? data.duration_sec, selectedStableBlockDurationV204F1),
+        sceneCount: toNumber(data.sceneCount ?? data.scene_count, selectedStableBlockScenesV204F1.length),
+        createdAt: nowIso(),
+      }
+      if (!firstText(previewVideo.apiPath, previewVideo.url)) {
+        throw new Error('Backend не вернул preview video.')
+      }
+      setStableBlockPreviewVideoV204G1(previewVideo)
+
+      // V204G5_PERSIST_STABLE_BLOCK_PREVIEW_AFTER_F5
+      const stablePreviewSnapshotV204G5 = {
+        kind: 'video',
+        stage: 'audio_studio',
+        source: 'stable_block_preview_v204g5',
+        apiPath: firstText(previewVideo.apiPath, previewVideo.url),
+        assetApiPath: firstText(previewVideo.apiPath, previewVideo.url),
+        url: firstText(previewVideo.url, previewVideo.apiPath),
+        assetId: firstText(previewVideo.assetId),
+        durationSec: previewVideo.durationSec,
+        sceneCount: previewVideo.sceneCount,
+        createdAt: previewVideo.createdAt || nowIso(),
+      }
+      const previewBlockIdV204G5 = cleanId(selectedSavedStableBlockV204F4?.id || payload.blockId || payload.block_id)
+      if (previewBlockIdV204G5) {
+        const currentSnapshotV204G5 = snapshotRef.current || snapshot
+        const nextBlocksV204G5 = asArray(currentSnapshotV204G5.stableBlocks).map((block) => {
+          if (cleanId(block?.id) !== previewBlockIdV204G5) return block
+          return {
+            ...block,
+            previewVideo: stablePreviewSnapshotV204G5,
+            stablePreviewVideo: stablePreviewSnapshotV204G5,
+            updatedAt: nowIso(),
+          }
+        })
+        const nextSnapshotV204G5 = { ...currentSnapshotV204G5, stableBlocks: nextBlocksV204G5, updatedAt: nowIso() }
+        snapshotRef.current = nextSnapshotV204G5
+        setSnapshot(nextSnapshotV204G5)
+        persistSnapshotSilently(nextSnapshotV204G5, 'stable_block_preview_v204g5')
+      }
+      setStatus(`Preview блока собран: ${previewVideo.sceneCount || selectedStableBlockScenesV204F1.length} сцен · ${previewVideo.durationSec ? previewVideo.durationSec.toFixed(2) : selectedStableBlockDurationV204F1.toFixed(2)} сек · Timing + MMAudio`)
+    } catch (err) {
+      setStableBlockPreviewLoadingV204G1(false)
+      setStableBlockPreviewUiPhaseV204G4('error')
+      setError(`Не удалось собрать preview блока: ${err?.message || err}`)
+      console.warn('[AUDIO STUDIO STABLE BLOCK PREVIEW FAILED V204G1]', err)
+    } finally {
+      setStableBlockPreviewLoadingV204G1(false)
+    }
+  // V204G1A_FIX_PREVIEW_TDZ
+  // Do not put prepareTimingAudioForSceneV204E10 in this dependency array here:
+  // in the current file it is declared lower in the component, and reading it during render
+  // triggers the JS temporal-dead-zone crash before Audio Studio can mount.
+  }, [buildStableAudioRequestPayloadV204F7, projectId, selectedSavedStableBlockV204F4, selectedStableBlockDurationV204F1, selectedStableBlockSceneIdsV204F1, selectedStableBlockScenesV204F1])
 
   const applyStableAudioBlockV204F7 = useCallback(() => {
     setStatus('Stable Audio: применять пока нечего — сначала нужна генерация варианта. Кнопка готова под следующий backend-патч.')
@@ -3679,8 +3822,19 @@ export default function AudioStudioPage() {
                   <button type="button" className="isPrimary" onClick={submitStableAudioBlockV204F7} disabled={!stableSavedBlockActiveV204F4 || !cleanId(stableDraftPromptV204F7)}>
                     <WandSparkles size={16} /> Сгенерировать Stable
                   </button>
-                  <button type="button" onClick={previewStableAudioBlockV204F7} disabled={!selectedStableBlockSceneIdsV204F1.length}>
-                    <Play size={16} /> Прослушать блок
+                  <button
+                    type="button"
+                    className={`avaAudioStablePreviewActionV204G4 ${stableBlockPreviewUiPhaseV204G4 === 'loading' ? 'isLoading' : ''} ${stableBlockPreviewUiPhaseV204G4 !== 'loading' && stableBlockPreviewVideoV204G1 ? 'isReady' : ''} ${stableBlockPreviewUiPhaseV204G4 === 'error' ? 'isError' : ''}`}
+                    onClick={() => {
+                      setStableBlockPreviewUiPhaseV204G4('loading')
+                      setStableBlockPreviewUiNonceV204G4((value) => value + 1)
+                      previewStableAudioBlockV204F7()
+                    }}
+                    disabled={!selectedStableBlockSceneIdsV204F1.length || stableBlockPreviewUiPhaseV204G4 === 'loading'}
+                    title="Собрать preview всего Stable-блока: видео сцен + Timing audio + applied MMAudio + STAU, если он уже есть"
+                  >
+                    {stableBlockPreviewUiPhaseV204G4 === 'loading' ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Play size={16} />}
+                    <span>{stableBlockPreviewUiPhaseV204G4 === 'loading' ? 'Собираю preview…' : stableBlockPreviewVideoV204G1 ? 'Preview готов' : 'Прослушать блок'}</span>
                   </button>
                   <button type="button" onClick={applyStableAudioBlockV204F7} disabled={!stableSavedBlockActiveV204F4} title="После генерации здесь будет применяться выбранный Stable Audio вариант к блоку">
                     <CheckCircle2 size={16} /> Применить
@@ -3693,9 +3847,15 @@ export default function AudioStudioPage() {
                   <span><Film size={17} /> Preview блока</span>
                   <small>Timing + MMAudio + STAU</small>
                 </div>
-                <PreviewVideo source={sourceVideoRef} title="Preview выбранной сцены блока" className="avaAudioMainVideo" />
+                <PreviewVideo
+                  source={firstText(stableBlockPreviewVideoV204G1?.apiPath, stableBlockPreviewVideoV204G1?.url, sourceVideoRef)}
+                  title={stableBlockPreviewVideoV204G1 ? 'Preview всего Stable-блока' : 'Preview выбранной сцены блока'}
+                  className="avaAudioMainVideo"
+                />
                 <div className="avaAudioStablePreviewNoteV204F1">
-                  Кнопка “Прослушать блок” должна собрать backend-preview: все сцены блока + Timing audio + applied MMAudio + выбранный Stable Audio. Сейчас справа остаётся быстрый просмотр выбранной сцены, следующий backend-патч заменит его на собранный MP4 всего блока.
+                  {stableBlockPreviewVideoV204G1
+                    ? `Сейчас справа собранный preview всего блока: ${stableBlockPreviewVideoV204G1.sceneCount || selectedStableBlockScenesV204F1.length} сцен · Timing audio + applied MMAudio. Stable Audio добавим следующим шагом.`
+                    : 'Нажми “Прослушать блок”: backend соберёт MP4 из всех сцен блока с Timing audio и applied MMAudio. Пока Stable Audio ещё не добавляется.'}
                 </div>
               </section>
             </>
