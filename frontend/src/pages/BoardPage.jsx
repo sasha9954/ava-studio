@@ -4367,9 +4367,30 @@ function isBoardVideoDoneStatus(status) {
 
     const audioSlice = manualLipSyncAudioSourceV129A(scene)
 
+    const rawImageStatusV204I1 = String(
+      scene?.image_status || scene?.imageStatus ||
+      scene?.first_frame_status || scene?.firstFrameStatus ||
+      scene?.last_frame_status || scene?.lastFrameStatus ||
+      scene?.photo_status || scene?.photoStatus ||
+      ''
+    ).toLowerCase()
+
+    const imageUploadPendingV204I1 = Boolean(
+      scene?.image_uploading_v129q || scene?.imageUploadingV129Q ||
+      scene?.image_uploading || scene?.imageUploading ||
+      scene?.photo_uploading || scene?.photoUploading ||
+      scene?.mediaMutationReplaceSave || scene?.forceReplaceSave ||
+      rawImageStatusV204I1.includes('upload') ||
+      rawImageStatusV204I1.includes('local_pending') ||
+      rawImageStatusV204I1.includes('local_preview') ||
+      rawImageStatusV204I1.includes('pending')
+    )
+    const firstNamePendingV204I1 = Boolean(scene?.first_frame_name || scene?.firstFrameName || scene?.image_name || scene?.imageName)
+    const lastNamePendingV204I1 = Boolean(scene?.last_frame_name || scene?.lastFrameName || scene?.last_image_name || scene?.lastImageName || scene?.end_image_name || scene?.endImageName)
+
     const problems = []
-    if (!startImage) problems.push('нет первого/основного кадра')
-    if (isFirstLast && !endImage) problems.push('нет последнего кадра')
+    if (!startImage) problems.push(imageUploadPendingV204I1 && firstNamePendingV204I1 ? 'первый кадр ещё загружается в asset' : 'нет первого/основного кадра')
+    if (isFirstLast && !endImage) problems.push(imageUploadPendingV204I1 && lastNamePendingV204I1 ? 'последний кадр ещё загружается в asset' : 'нет последнего кадра')
     if (isLipSync && !audioSlice) problems.push('нет audio slice для ia2v')
     return problems
   }
@@ -9572,12 +9593,17 @@ function updateSelectedSceneDuration(nextValue) {
       return nextBoard
     })
 
-    // AVA_BOARD_STILLS_CLEAR_VIDEO_IMMEDIATE_V129R:
-    // Save the cleared video refs immediately, before /api/assets/media finishes. If user presses F5
-    // during upload, old video refs must already be gone from the project snapshot.
-    window.setTimeout(() => {
-      if (nextBoardForImmediateSave) saveBoard(nextBoardForImmediateSave, true)
-    }, 0)
+    // V204I1_BOARD_FIRST_LAST_UPLOAD_COMMIT_GUARD:
+    // Do NOT save the local-preview state before /api/assets/media finishes.
+    // For first/last uploads this made the UI show a runtime photo while the project
+    // snapshot still had no committed last-frame asset, so Make Video could say
+    // "нет последнего кадра". The final asset-ready patch below is the authoritative save.
+    if (nextBoardForImmediateSave) {
+      console.log('[BOARD IMAGE LOCAL PREVIEW NO SNAPSHOT V204I1]', {
+        scenes: asSceneArray(nextBoardForImmediateSave.scenes).length,
+        saveMode: nextBoardForImmediateSave.saveMode || '',
+      })
+    }
   }
 
   function setBoardRuntimeImagePreviewV129Q(sceneId = '', slot = 'image', dataUrl = '') {
@@ -11004,6 +11030,20 @@ async function markVideoPlanned(sceneOverride = null) {
     let sceneToStart = sceneOverride || selectedScene
     if (!sceneToStart) return
     const requestSceneId = asText(sceneToStart.id || sceneToStart.scene_id)
+    const latestSceneForStartV204I1 = asSceneArray(boardRef.current?.scenes).find((item) => asText(item?.id || item?.scene_id) === requestSceneId)
+    if (latestSceneForStartV204I1) {
+      sceneToStart = canonicalizeBoardSceneMediaRefs({
+        ...sceneToStart,
+        ...latestSceneForStartV204I1,
+      })
+      console.log('[BOARD VIDEO START LATEST SCENE V204I1]', {
+        sceneId: requestSceneId,
+        route: sceneToStart.route,
+        first: sceneMediaFieldValue(sceneToStart, 'first', 'apiPath') || sceneMediaFieldValue(sceneToStart, 'first', 'url') || sceneMediaFieldValue(sceneToStart, 'image', 'apiPath') || sceneMediaFieldValue(sceneToStart, 'image', 'url') || '',
+        last: sceneMediaFieldValue(sceneToStart, 'last', 'apiPath') || sceneMediaFieldValue(sceneToStart, 'last', 'url') || '',
+        imageStatus: sceneToStart.image_status || sceneToStart.imageStatus || '',
+      })
+    }
     const reviewWasBadBeforeRegenerateV130J = boardSceneHasBadVideoReview(sceneToStart)
     if (!workspaceMode && !projectId) {
       const message = 'Нет projectId, видео не будет сохранено в проект'

@@ -6369,6 +6369,9 @@ def _assembly_stau_ref_v204h3(block: dict[str, Any], applied: dict[str, Any]) ->
 
 
 def _assembly_stau_layers_v204h3(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    # V204H23_ASSEMBLY_MASTER_GAIN:
+    # Audio Studio appliedVolume is the per-block base level.
+    # Assembly STAU slider is only a master gain multiplier: 100%=1.0, 150%=1.5, 45%=0.45.
     stau_payload = payload.get("stau") if isinstance(payload.get("stau"), dict) else {}
     volumes = payload.get("volumes") if isinstance(payload.get("volumes"), dict) else {}
     enabled = any(_assembly_bool(value) for value in (
@@ -6386,17 +6389,109 @@ def _assembly_stau_layers_v204h3(payload: dict[str, Any]) -> list[dict[str, Any]
     )
     if not enabled or not isinstance(raw_blocks, list):
         return []
-    raw_global_percent = stau_payload.get("volume_percent") or stau_payload.get("volumePercent") or 30
-    try:
-        percent_volume = float(raw_global_percent) / 100.0
-    except Exception:
-        percent_volume = 0.3
-    global_volume = _assembly_float(volumes.get("stau") or stau_payload.get("volume") or percent_volume, 0.3)
+
+    def _norm_gain_v204h23(value: Any, default: float | None = None, *, percent_hint: bool = False) -> float | None:
+        try:
+            if value is None:
+                return default
+            if isinstance(value, str) and not value.strip():
+                return default
+            raw = float(value)
+        except Exception:
+            return default
+        if raw != raw:  # NaN
+            return default
+        raw = max(0.0, raw)
+        # UI payload may send either 1.5 or 150.  Audio Studio applied fields may send 0.1 or 10.
+        if percent_hint or raw > 3.0:
+            raw = raw / 100.0
+        return max(0.0, min(3.0, raw))
+
+    def _first_value_v204h23(*values: Any) -> Any:
+        for value in values:
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            return value
+        return None
+
+    # Prefer normalized master gain from Assembly payload. 100% is default.
+    raw_master = _first_value_v204h23(
+        volumes.get("stau"),
+        stau_payload.get("masterVolumeV204H23"),
+        stau_payload.get("masterVolumeV204H22"),
+        stau_payload.get("master_volume"),
+        stau_payload.get("volume"),
+    )
+    if raw_master is not None:
+        master_volume = _norm_gain_v204h23(raw_master, 1.0, percent_hint=False) or 1.0
+        master_source = "volumes/stau.volume"
+        master_raw = raw_master
+    else:
+        raw_master_percent = _first_value_v204h23(
+            stau_payload.get("masterVolumePercentV204H23"),
+            stau_payload.get("masterVolumePercentV204H22"),
+            stau_payload.get("master_volume_percent"),
+            stau_payload.get("volume_percent"),
+            stau_payload.get("volumePercent"),
+            payload.get("stauVolumeV204H3"),
+            payload.get("stauVolume"),
+            100,
+        )
+        master_volume = _norm_gain_v204h23(raw_master_percent, 1.0, percent_hint=True) or 1.0
+        master_source = "percent"
+        master_raw = raw_master_percent
+
+    print("[ASSEMBLY STAU MASTER GAIN V204H23]", {
+        "enabled": bool(enabled),
+        "blockCount": len(raw_blocks),
+        "masterVolume": master_volume,
+        "masterVolumePercent": round(master_volume * 100.0, 3),
+        "masterRaw": master_raw,
+        "masterSource": master_source,
+    }, flush=True)
+
+    def _applied_dict_from_block_v204h23(block: dict[str, Any]) -> dict[str, Any]:
+        applied = _assembly_stau_applied_audio_v204h3(block)
+        if isinstance(applied, dict) and applied:
+            return applied
+        return {}
+
+    def _pick_applied_volume_v204h23(block: dict[str, Any], applied: dict[str, Any]) -> tuple[float, str, Any]:
+        stable_audio = block.get("stableAudio") if isinstance(block.get("stableAudio"), dict) else block.get("stable_audio") if isinstance(block.get("stable_audio"), dict) else {}
+        applied_variant = stable_audio.get("appliedVariant") if isinstance(stable_audio.get("appliedVariant"), dict) else stable_audio.get("applied_variant") if isinstance(stable_audio.get("applied_variant"), dict) else {}
+        candidates: list[tuple[str, Any, bool]] = [
+            ("applied.volumePercent", applied.get("volumePercent"), True),
+            ("applied.volume_percent", applied.get("volume_percent"), True),
+            ("applied.appliedVolume", applied.get("appliedVolume"), True),
+            ("applied.applied_volume", applied.get("applied_volume"), True),
+            ("applied.volume", applied.get("volume"), False),
+            ("applied_variant.volumePercent", applied_variant.get("volumePercent") if isinstance(applied_variant, dict) else None, True),
+            ("applied_variant.volume", applied_variant.get("volume") if isinstance(applied_variant, dict) else None, False),
+            ("stableAudio.appliedVolume", stable_audio.get("appliedVolume") if isinstance(stable_audio, dict) else None, True),
+            ("stableAudio.applied_volume", stable_audio.get("applied_volume") if isinstance(stable_audio, dict) else None, True),
+            ("stableAudio.volumePercent", stable_audio.get("volumePercent") if isinstance(stable_audio, dict) else None, True),
+            ("stableAudio.volume_percent", stable_audio.get("volume_percent") if isinstance(stable_audio, dict) else None, True),
+            ("stableAudio.volume", stable_audio.get("volume") if isinstance(stable_audio, dict) else None, False),
+            ("block.appliedStableAudio.volumePercent", (block.get("appliedStableAudio") or {}).get("volumePercent") if isinstance(block.get("appliedStableAudio"), dict) else None, True),
+            ("block.appliedStableAudio.volume", (block.get("appliedStableAudio") or {}).get("volume") if isinstance(block.get("appliedStableAudio"), dict) else None, False),
+            ("block.volumePercent", block.get("volumePercent"), True),
+            ("block.volume_percent", block.get("volume_percent"), True),
+            ("block.volume", block.get("volume"), False),
+        ]
+        for label, raw, percent_hint in candidates:
+            value = _norm_gain_v204h23(raw, None, percent_hint=percent_hint)
+            if value is not None:
+                return value, label, raw
+        return 1.0, "default_applied_100", 100
+
     layers: list[dict[str, Any]] = []
+    seen_keys: set[tuple[Any, ...]] = set()
     for index, block in enumerate(raw_blocks):
         if not isinstance(block, dict):
             continue
-        applied = _assembly_stau_applied_audio_v204h3(block)
+        applied = _applied_dict_from_block_v204h23(block)
         ref = _assembly_stau_ref_v204h3(block, applied)
         if not ref:
             continue
@@ -6421,6 +6516,29 @@ def _assembly_stau_layers_v204h3(payload: dict[str, Any]) -> list[dict[str, Any]
         if duration_sec <= 0:
             continue
         block_id = str(applied.get("blockId") or applied.get("block_id") or block.get("id") or block.get("blockId") or f"stau_{index + 1}")
+        scene_ids = applied.get("sceneIds") or applied.get("scene_ids") or block.get("sceneIds") or block.get("scene_ids") or []
+        applied_volume, applied_source, applied_raw = _pick_applied_volume_v204h23(block, applied)
+        final_volume = max(0.0, min(3.0, float(applied_volume) * float(master_volume)))
+        dedupe_key = (block_id, ref, round(max(0.0, start_sec), 3), round(max(0.05, duration_sec), 3), tuple(scene_ids) if isinstance(scene_ids, list) else str(scene_ids))
+        if dedupe_key in seen_keys:
+            print("[ASSEMBLY STAU DUPLICATE SKIP V204H23]", {"blockId": block_id, "ref": ref, "sceneIds": scene_ids}, flush=True)
+            continue
+        seen_keys.add(dedupe_key)
+        print("[ASSEMBLY STAU LAYER PICK V204H23]", {
+            "blockId": block_id,
+            "ref": ref,
+            "appliedVolume": applied_volume,
+            "appliedVolumePercent": round(applied_volume * 100.0, 3),
+            "appliedVolumeSource": applied_source,
+            "appliedVolumeRaw": applied_raw,
+            "masterVolume": master_volume,
+            "masterVolumePercent": round(master_volume * 100.0, 3),
+            "finalVolume": final_volume,
+            "finalVolumePercent": round(final_volume * 100.0, 3),
+            "sceneIds": scene_ids,
+            "startSec": max(0.0, start_sec),
+            "durationSec": max(0.05, duration_sec),
+        }, flush=True)
         layers.append({
             "index": index,
             "blockId": block_id,
@@ -6428,11 +6546,12 @@ def _assembly_stau_layers_v204h3(payload: dict[str, Any]) -> list[dict[str, Any]
             "path": audio_path,
             "startSec": max(0.0, start_sec),
             "durationSec": max(0.05, duration_sec),
-            "volume": max(0.0, float(global_volume)),
-            "sceneIds": applied.get("sceneIds") or applied.get("scene_ids") or block.get("sceneIds") or block.get("scene_ids") or [],
+            "volume": final_volume,
+            "appliedVolumeV204H23": applied_volume,
+            "masterVolumeV204H23": master_volume,
+            "sceneIds": scene_ids,
         })
     return layers
-
 
 def _assembly_apply_stau_layers_v204h3(video_path: Path, target_path: Path, layers: list[dict[str, Any]], *, timeline_duration: float, job_id: str) -> dict[str, Any]:
     if not layers:
@@ -10761,10 +10880,16 @@ def _audio_studio_make_preview_clip_v204g1(
     duration_sec: float,
     width: int,
     height: int,
+    video_audio_volume_percent: float = 100.0,
+    timing_audio_volume_percent: float = 100.0,
 ) -> None:
     duration = max(0.08, float(duration_sec or 0.0))
     has_video_audio = _ffprobe_has_audio(video_path)
     has_timing_audio = bool(timing_audio_path and timing_audio_path.exists() and timing_audio_path.is_file())
+    # V204H7: scene video may contain applied MMAudio. Keep baked videos at 100%,
+    # but when frontend marks a not-yet-baked applied MMAudio source, lower it here.
+    video_audio_volume = max(0.0, min(1.5, float(video_audio_volume_percent or 0.0) / 100.0))
+    timing_audio_volume = max(0.0, min(1.5, float(timing_audio_volume_percent or 0.0) / 100.0))
 
     inputs = ["-y", "-t", f"{duration:.3f}", "-i", str(video_path)]
     timing_index = None
@@ -10785,10 +10910,10 @@ def _audio_studio_make_preview_clip_v204g1(
     audio_filters: list[str] = []
     audio_labels: list[str] = []
     if has_video_audio:
-        audio_filters.append(f"[0:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,aresample=48000[a0]")
+        audio_filters.append(f"[0:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,aresample=48000,volume={video_audio_volume:.6f}[a0]")
         audio_labels.append("[a0]")
     if has_timing_audio and timing_index is not None:
-        audio_filters.append(f"[{timing_index}:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,aresample=48000[a1]")
+        audio_filters.append(f"[{timing_index}:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,aresample=48000,volume={timing_audio_volume:.6f}[a1]")
         audio_labels.append("[a1]")
     if silent_index is not None:
         audio_filters.append(f"[{silent_index}:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,aresample=48000[a0]")
@@ -10980,7 +11105,7 @@ def _audio_studio_stable_audio_payload_v204g6(payload: AudioStudioStablePreviewI
 
     return {
         "ref": ref,
-        "volume": max(0.0, min(100.0, num(value.get("volume"), DEFAULT_STAU_VOLUME_PERCENT_V204G15))),
+        "volume": max(0.0, min(100.0, num(value.get("volume", value.get("volumePercent", value.get("volume_percent", value.get("uiVolumePercentV204H12", value.get("ui_volume_percent_v204h12"))))), DEFAULT_STAU_VOLUME_PERCENT_V204G15))),
         "fadeInSec": max(0.0, min(10.0, num(value.get("fadeInSec", value.get("fade_in_sec")), 0.2))),
         "fadeOutSec": max(0.0, min(10.0, num(value.get("fadeOutSec", value.get("fade_out_sec")), 0.5))),
     }
@@ -11079,6 +11204,7 @@ def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerate
         final_path = tmp_dir / f"{block_title}_{uuid4().hex[:8]}_stau.mp3"
         _stable_audio_download_output_v204g6(base_url, output, raw_path)
         fit_info = _stable_audio_fit_to_block_v204g6(raw_path, final_path, exact_duration_sec=exact_duration_f)
+
         public = _register_board_output_asset(
             final_path,
             job={
@@ -11196,6 +11322,14 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
                     timing_path = None
 
             duration = _audio_studio_scene_duration_v204g1(scene, _ffprobe_duration(video_path))
+            video_audio_volume_percent_v204h7 = _audio_studio_float_v204g12b(
+                scene.get("previewVideoAudioVolumePercentV204H7", scene.get("preview_video_audio_volume_percent_v204h7", 100.0)),
+                100.0,
+            )
+            timing_audio_volume_percent_v204h7 = _audio_studio_float_v204g12b(
+                scene.get("previewTimingAudioVolumePercentV204H7", scene.get("preview_timing_audio_volume_percent_v204h7", 100.0)),
+                100.0,
+            )
             video_paths.append(video_path)
             timing_paths.append(timing_path)
             durations.append(duration)
@@ -11205,6 +11339,9 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
                 "videoPath": str(video_path),
                 "timingAudio": bool(timing_path),
                 "durationSec": round(duration, 3),
+                "videoAudioVolumePercentV204H7": round(video_audio_volume_percent_v204h7, 3),
+                "timingAudioVolumePercentV204H7": round(timing_audio_volume_percent_v204h7, 3),
+                "videoAudioAlreadyBakedV204H7": bool(scene.get("previewVideoAudioAlreadyBakedV204H7", scene.get("preview_video_audio_already_baked_v204h7", False))),
             })
 
         if first_video_path is None:
@@ -11214,6 +11351,35 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
         clip_paths: list[Path] = []
         for index, (video_path, timing_path, duration) in enumerate(zip(video_paths, timing_paths, durations)):
             clip_path = tmp_dir / f"clip_{index + 1:03d}.mp4"
+            dbg_v204h7 = scene_debug[index] if index < len(scene_debug) else {}
+            # V204H20_SKIP_TIMING_AUDIO_WHEN_VIDEO_BAKED
+            # If the scene video already contains baked/applied audio (MMAudio/apply-volume
+            # or another baked source), do not add the separate Timing/sourceAudio slice again.
+            # Otherwise preview becomes: baked video audio + timing audio + STAU.
+            scene_src_v204h20 = scenes[index] if index < len(scenes) and isinstance(scenes[index], dict) else {}
+            source_video_v204h20 = scene_src_v204h20.get("sourceVideo") if isinstance(scene_src_v204h20.get("sourceVideo"), dict) else scene_src_v204h20.get("source_video")
+            if not isinstance(source_video_v204h20, dict):
+                source_video_v204h20 = {}
+            video_audio_already_baked_v204h20 = bool(
+                dbg_v204h7.get("videoAudioAlreadyBakedV204H7")
+                or scene_src_v204h20.get("previewVideoAudioAlreadyBakedV204H7")
+                or scene_src_v204h20.get("preview_video_audio_already_baked_v204h7")
+                or source_video_v204h20.get("volumeBaked")
+                or source_video_v204h20.get("volume_baked")
+                or source_video_v204h20.get("audioBaked")
+                or source_video_v204h20.get("audio_baked")
+            )
+            if video_audio_already_baked_v204h20 and timing_path is not None:
+                print("[AUDIO STUDIO STABLE PREVIEW TIMING AUDIO MUTED V204H20]", {
+                    "sceneId": dbg_v204h7.get("sceneId"),
+                    "reason": "video_audio_already_baked",
+                    "videoRef": dbg_v204h7.get("videoRef"),
+                    "timingAudioWas": True,
+                }, flush=True)
+                timing_path = None
+                dbg_v204h7["timingAudio"] = False
+                dbg_v204h7["timingAudioSkippedBecauseVideoAudioBakedV204H20"] = True
+                dbg_v204h7["timingAudioVolumePercentV204H7"] = 0.0
             _audio_studio_make_preview_clip_v204g1(
                 video_path=video_path,
                 timing_audio_path=timing_path,
@@ -11221,6 +11387,8 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
                 duration_sec=duration,
                 width=width,
                 height=height,
+                video_audio_volume_percent=float(dbg_v204h7.get("videoAudioVolumePercentV204H7", 100.0) or 100.0),
+                timing_audio_volume_percent=float(dbg_v204h7.get("timingAudioVolumePercentV204H7", 100.0) or 100.0),
             )
             clip_paths.append(clip_path)
 
@@ -11238,10 +11406,23 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
         ])
 
         duration_total = _ffprobe_duration(preview_path) or sum(durations)
-        layers_v204g6 = ["scene_video_applied_mmaudio", "timing_audio"]
+        # V204H20_SKIP_TIMING_AUDIO_WHEN_VIDEO_BAKED: report actual audio layers.
+        layers_v204g6 = ["scene_video"]
+        if any(bool(item.get("timingAudio")) for item in scene_debug):
+            layers_v204g6.append("timing_audio")
+        if any(bool(item.get("videoAudioAlreadyBakedV204H7")) for item in scene_debug):
+            layers_v204g6.append("scene_video_baked_audio")
         stable_audio_included_v204g6 = False
         stable_audio_payload_v204g6 = _audio_studio_stable_audio_payload_v204g6(payload)
         stable_audio_ref_v204g6 = stable_audio_payload_v204g6.get("ref") if stable_audio_payload_v204g6 else ""
+        stable_audio_volume_v204h12 = _audio_studio_float_v204g12b((stable_audio_payload_v204g6 or {}).get("volume"), DEFAULT_STAU_VOLUME_PERCENT_V204G15) if stable_audio_payload_v204g6 else 0.0
+        print("[AUDIO STUDIO STAU PREVIEW VOLUME BACKEND V204H12]", {
+            "projectId": project_id,
+            "blockId": payload.block_id or payload.blockId,
+            "includeStableAudio": bool(payload.includeStableAudio or payload.include_stable_audio),
+            "stableAudioRef": stable_audio_ref_v204g6,
+            "stableAudioVolumePercent": round(float(stable_audio_volume_v204h12 or 0.0), 3),
+        }, flush=True)
         if (payload.includeStableAudio or payload.include_stable_audio) and stable_audio_ref_v204g6:
             stable_audio_path_v204g6 = _resolve_local_file(stable_audio_ref_v204g6)
             preview_with_stau_path_v204g6 = tmp_dir / f"{block_title}_{uuid4().hex[:8]}_preview_stau.mp4"
@@ -11250,7 +11431,7 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
                 stable_audio_path=stable_audio_path_v204g6,
                 out_path=preview_with_stau_path_v204g6,
                 duration_sec=duration_total,
-                volume_percent=_audio_studio_float_v204g12b(stable_audio_payload_v204g6.get("volume"), DEFAULT_STAU_VOLUME_PERCENT_V204G15),
+                volume_percent=stable_audio_volume_v204h12,
                 fade_in_sec=float(stable_audio_payload_v204g6.get("fadeInSec") or 0.2),
                 fade_out_sec=float(stable_audio_payload_v204g6.get("fadeOutSec") or 0.5),
             )
@@ -11281,6 +11462,8 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
         "sceneCount": len(scenes),
         "durationSec": round(duration_total, 3),
         "assetApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        "stableAudioIncluded": stable_audio_included_v204g6,
+        "stableAudioVolumePercent": round(float(stable_audio_volume_v204h12 or 0.0), 3),
         "scenes": scene_debug,
     }, flush=True)
 
@@ -11306,6 +11489,8 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
         "layers": layers_v204g6,
         "stableAudioIncluded": stable_audio_included_v204g6,
         "stable_audio_included": stable_audio_included_v204g6,
+        "stableAudioVolumePercent": round(float(stable_audio_volume_v204h12 or 0.0), 3),
+        "stable_audio_volume_percent": round(float(stable_audio_volume_v204h12 or 0.0), 3),
         "scenes": scene_debug,
     }
 

@@ -115,6 +115,9 @@ function writeAssemblySettings(key, value) {
 
 
 function normalizeAssemblyLocalUiSettingsV197F(raw = {}) {
+  // V204H24_ASSEMBLY_MASTER_MAX_200: scene/STAU master sliders allow 0..200%.
+  // V204H22_ASSEMBLY_MASTER_UI: Assembly volume sliders are master multipliers; old saved values are migrated to 100%.
+  const localMasterVersionV204H22 = raw.uiLocalVersionV204H22 === 'assembly_ui_local_v204h22_master_v1' || raw.uiLocalVersionV197F === 'assembly_ui_local_v204h22_master_v1'
   const hasAudioModeV197F = AUDIO_MODES.some((mode) => mode.value === raw.audioMode)
   const audioMode = hasAudioModeV197F ? raw.audioMode : ''
   const hasTransitionVisualModeV197F = ['xfade', 'fade_to_black'].includes(raw.transitionVisualModeV196E)
@@ -129,7 +132,8 @@ function normalizeAssemblyLocalUiSettingsV197F(raw = {}) {
     0.5,
   )
   return {
-    uiLocalVersionV197F: 'assembly_ui_local_v200n',
+    uiLocalVersionV197F: 'assembly_ui_local_v204h22_master_v1',
+    uiLocalVersionV204H22: 'assembly_ui_local_v204h22_master_v1',
     hasAudioModeV197F,
     audioMode,
     hasSmoothTransitionsTimingEnabledV197F,
@@ -140,14 +144,14 @@ function normalizeAssemblyLocalUiSettingsV197F(raw = {}) {
     transitionVisualModeV196E,
     hasOriginalVolumeV200N: Object.prototype.hasOwnProperty.call(raw, 'originalVolume'),
     originalVolume: clampNumber(raw.originalVolume, 0, 150, 100),
-    hasSceneVolumeV200N: Object.prototype.hasOwnProperty.call(raw, 'sceneVolume'),
-    sceneVolume: clampNumber(raw.sceneVolume, 0, 150, 25),
+    hasSceneVolumeV200N: localMasterVersionV204H22 && Object.prototype.hasOwnProperty.call(raw, 'sceneVolume'),
+    sceneVolume: clampNumber(localMasterVersionV204H22 ? raw.sceneVolume : 100, 0, 200, 100),
     hasMusicVolumeV200N: Object.prototype.hasOwnProperty.call(raw, 'musicVolume'),
     musicVolume: clampNumber(raw.musicVolume, 0, 150, 15),
     hasStauEnabledV204H3: Object.prototype.hasOwnProperty.call(raw, 'stauEnabledV204H3') || Object.prototype.hasOwnProperty.call(raw, 'stauEnabled'),
     stauEnabledV204H3: raw.stauEnabledV204H3 ?? raw.stauEnabled ?? true,
-    hasStauVolumeV204H3: Object.prototype.hasOwnProperty.call(raw, 'stauVolumeV204H3') || Object.prototype.hasOwnProperty.call(raw, 'stauVolume'),
-    stauVolumeV204H3: clampNumber(raw.stauVolumeV204H3 ?? raw.stauVolume, 0, 150, 30),
+    hasStauVolumeV204H3: localMasterVersionV204H22 && (Object.prototype.hasOwnProperty.call(raw, 'stauVolumeV204H3') || Object.prototype.hasOwnProperty.call(raw, 'stauVolume')),
+    stauVolumeV204H3: clampNumber(localMasterVersionV204H22 ? (raw.stauVolumeV204H3 ?? raw.stauVolume) : 100, 0, 200, 100),
   }
 }
 
@@ -706,10 +710,9 @@ function mergeAudioStudioStauIntoBoardV204H3(board = {}, audioStudioRaw = {}) {
   }
 }
 
-function assemblyStauDefaultVolumeV204H3(blocks = [], fallback = 30) {
-  const first = asArray(blocks)[0] || {}
-  const applied = first.appliedStableAudio || first.applied_stable_audio || {}
-  return clampNumber(applied.volumePercent ?? applied.volume ?? first.volume, 0, 150, fallback)
+function assemblyStauDefaultVolumeV204H3(blocks = [], fallback = 100) {
+  // V204H23_ASSEMBLY_MASTER_UI: Assembly STAU slider is a master gain, not block volume.
+  return clampNumber(fallback, 0, 200, 100)
 }
 
 
@@ -1048,10 +1051,10 @@ export default function BoardAssemblyPage() {
   const [smoothTransitionTimingDurationSecV134G, setSmoothTransitionTimingDurationSecV134G] = useState(0.5)
   const [transitionVisualModeV196E, setTransitionVisualModeV196E] = useState('fade_to_black')
   const [originalVolume, setOriginalVolume] = useState(100)
-  const [sceneVolume, setSceneVolume] = useState(25)
+  const [sceneVolume, setSceneVolume] = useState(100)
   const [musicVolume, setMusicVolume] = useState(15)
   const [stauEnabledV204H3, setStauEnabledV204H3] = useState(true)
-  const [stauVolumeV204H3, setStauVolumeV204H3] = useState(30)
+  const [stauVolumeV204H3, setStauVolumeV204H3] = useState(100)
   const [musicFile, setMusicFile] = useState(null)
   const [musicAsset, setMusicAsset] = useState(null)
   const [musicPreviewUrl, setMusicPreviewUrl] = useState('')
@@ -1346,11 +1349,13 @@ export default function BoardAssemblyPage() {
       stauEnabled: Boolean(snapshotStauEnabledV204H3),
       stauVolumeV204H3: snapshotStauVolumeV204H3,
       stauVolume: snapshotStauVolumeV204H3,
+      assemblyAudioMasterVersionV204H22: 'assembly_ui_local_v204h22_master_v1',
       stableBlocks: snapshotStauBlocksV204H3,
       appliedStableAudioBlocks: snapshotStauBlocksV204H3,
       stauBlocks: snapshotStauBlocksV204H3,
       stau: {
         enabled: Boolean(snapshotStauEnabledV204H3 && asArray(snapshotStauBlocksV204H3).length),
+        masterVolumePercentV204H22: snapshotStauVolumeV204H3,
         volumePercent: snapshotStauVolumeV204H3,
         volume: snapshotStauVolumeV204H3 / 100,
         blocks: snapshotStauBlocksV204H3,
@@ -1407,11 +1412,11 @@ export default function BoardAssemblyPage() {
     setSmoothTransitionsTimingEnabledV134G(Boolean(raw.smoothTransitionsTimingEnabledV134G ?? false))
     setSmoothTransitionTimingDurationSecV134G(clampNumber(raw.smoothTransitionTimingDurationSecV134G ?? raw.smoothTransitionDurationSecV134G, 0.1, 3, 0.5))
     setOriginalVolume(clampNumber(raw.originalVolume, 0, 150, isGeneratorAssemblyBoard(nextBoard) ? 0 : 100))
-    setSceneVolume(clampNumber(raw.sceneVolume, 0, 150, isGeneratorAssemblyBoard(nextBoard) ? 100 : 25))
+    setSceneVolume(clampNumber(raw.sceneVolume, 0, 200, 100))
     setMusicVolume(clampNumber(raw.musicVolume, 0, 150, 15))
     const restoredStauBlocksV204H3 = extractAssemblyStauBlocksV204H3(raw)
     setStauEnabledV204H3(Boolean(raw.stauEnabledV204H3 ?? raw.stauEnabled ?? raw.stau?.enabled ?? restoredStauBlocksV204H3.length))
-    setStauVolumeV204H3(clampNumber(raw.stauVolumeV204H3 ?? raw.stauVolume ?? raw.stau?.volumePercent ?? (Number(raw.stau?.volume) * 100), 0, 150, assemblyStauDefaultVolumeV204H3(restoredStauBlocksV204H3, 30)))
+    setStauVolumeV204H3(clampNumber(raw.stauVolumeV204H3 ?? raw.stauVolume ?? raw.stau?.volumePercent ?? (Number(raw.stau?.volume) * 100), 0, 200, assemblyStauDefaultVolumeV204H3(restoredStauBlocksV204H3, 100)))
     setMusicAsset(raw.musicAsset || null)
     setMusicFile(null)
     setMusicLoop(raw.musicLoop ?? true)
@@ -1760,7 +1765,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
             assemblyData.sceneVolume ?? (Number(assemblyData.volumes?.scene) * 100),
             0,
             150,
-            localUiSettingsV197F.hasSceneVolumeV200N ? localUiSettingsV197F.sceneVolume : (isGeneratorAssemblyBoard(restoredBoard) ? 100 : 25),
+            localUiSettingsV197F.hasSceneVolumeV200N ? localUiSettingsV197F.sceneVolume : 100,
           ))
           setMusicVolume(clampNumber(
             assemblyData.musicVolume ?? (Number(assemblyData.volumes?.music) * 100),
@@ -1774,7 +1779,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
             assemblyData.stauVolumeV204H3 ?? assemblyData.stauVolume ?? assemblyData.stau?.volumePercent ?? (Number(assemblyData.stau?.volume) * 100),
             0,
             150,
-            localUiSettingsV197F.hasStauVolumeV204H3 ? localUiSettingsV197F.stauVolumeV204H3 : assemblyStauDefaultVolumeV204H3(restoredStauBlocksV204H3, 30),
+            localUiSettingsV197F.hasStauVolumeV204H3 ? localUiSettingsV197F.stauVolumeV204H3 : assemblyStauDefaultVolumeV204H3(restoredStauBlocksV204H3, 100),
           ))
           setMusicLoop(assemblyData.musicLoop ?? assemblyData.music?.loop ?? true)
           setMusicFadeOut(assemblyData.musicFadeOut ?? assemblyData.music?.fade_out ?? true)
@@ -1813,7 +1818,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           nextBoard = mergeAudioStudioStauIntoBoardV204H3(nextBoard, audioStudioRawV204H3)
           const importedBlocksV204H3 = extractAssemblyStauBlocksV204H3(nextBoard)
           setStauEnabledV204H3(Boolean(importedBlocksV204H3.length))
-          setStauVolumeV204H3(localUiSettingsV197F.hasStauVolumeV204H3 ? localUiSettingsV197F.stauVolumeV204H3 : assemblyStauDefaultVolumeV204H3(importedBlocksV204H3, 30))
+          setStauVolumeV204H3(localUiSettingsV197F.hasStauVolumeV204H3 ? localUiSettingsV197F.stauVolumeV204H3 : assemblyStauDefaultVolumeV204H3(importedBlocksV204H3, 100))
           console.log('[AVA ASSEMBLY IMPORT STAU FROM AUDIO STUDIO V204H3]', { blocks: importedBlocksV204H3.length })
         } catch (error) {
           console.warn('[AVA ASSEMBLY IMPORT STAU FROM AUDIO STUDIO FAILED V204H3]', error?.message || error)
@@ -2159,6 +2164,8 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       },
       stau: {
         enabled: Boolean(stauEnabledV204H3 && activeStauBlocksV204H3.length),
+        masterVolumePercentV204H23: stauVolumeV204H3,
+        masterVolumeV204H23: stauVolumeV204H3 / 100,
         volume: stauVolumeV204H3 / 100,
         volume_percent: stauVolumeV204H3,
         volumePercent: stauVolumeV204H3,
@@ -2644,16 +2651,16 @@ function clearBoardAssemblyWorkflowEntryV200O() {
                 <input type="range" min="0" max="150" value={originalVolume} onChange={(event) => setOriginalVolume(Number(event.target.value))} />
               </label>
               <label>
-                <span><Volume2 size={14} /> Звук сцен: {sceneVolume}%</span>
-                <input type="range" min="0" max="150" value={sceneVolume} onChange={(event) => setSceneVolume(Number(event.target.value))} />
+                <span><Volume2 size={14} /> Звук сцен master: {sceneVolume}%</span>
+                <input type="range" min="0" max="200" value={sceneVolume} onChange={(event) => setSceneVolume(Number(event.target.value))} />
               </label>
               <label>
                 <span><Music size={14} /> Музыка: {musicVolume}%</span>
                 <input type="range" min="0" max="150" value={musicVolume} onChange={(event) => setMusicVolume(Number(event.target.value))} />
               </label>
               <label className={!stauBlocksV204H3.length ? 'isDisabledV204H3' : ''}>
-                <span><Music size={14} /> STAU: {stauVolumeV204H3}%</span>
-                <input type="range" min="0" max="150" value={stauVolumeV204H3} onChange={(event) => setStauVolumeV204H3(Number(event.target.value))} disabled={!stauBlocksV204H3.length} />
+                <span><Music size={14} /> STAU master: {stauVolumeV204H3}%</span>
+                <input type="range" min="0" max="200" value={stauVolumeV204H3} onChange={(event) => setStauVolumeV204H3(Number(event.target.value))} disabled={!stauBlocksV204H3.length} />
               </label>
             </div>
           </div>

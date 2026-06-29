@@ -2056,3 +2056,56 @@
 .avaAudioStableApplyActionV204H1.isApplied {
   box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.45) inset;
 }
+
+
+/* V204H18_STAU_EXPLICIT_CHOICE_RESET */
+.avaAudioStableVariantCardV204G6.isPickedForBuildV204H18 {
+  border-color: rgba(34, 211, 238, .98);
+  background: linear-gradient(135deg, rgba(8, 47, 73, .86), rgba(15, 23, 42, .72));
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, .30), 0 18px 44px rgba(14, 165, 233, .22);
+}
+
+.avaAudioStableSelectedBadgeV204H18 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(125, 211, 252, .55);
+  background: rgba(14, 165, 233, .18);
+  color: #e0f7ff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/* V204H24_STAU_APPLIED_BADGE_CSS */
+.avaAudioStableAppliedBadgeV204H24,
+.avaAudioStableSelectedBadgeV204H24 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin: 2px 0 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.avaAudioStableAppliedBadgeV204H24 {
+  color: #06251b;
+  background: linear-gradient(135deg, #8cffcf, #22c55e);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, .55), 0 0 18px rgba(34, 197, 94, .32);
+}
+
+.avaAudioStableSelectedBadgeV204H24 {
+  color: #dffbff;
+  background: rgba(14, 116, 144, .35);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, .45);
+}
+
