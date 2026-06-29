@@ -7092,9 +7092,9 @@ const applyComposedAudioToTiming = async () => {
         stageKey="podcast"
         stageLabel="Подкаст"
         clearLabel="Очистить подкаст"
-        clearStages={[]}
+        clearStages={['podcast']}
         clearStorageMatchers={['podcast', 'podcast_audio', 'ava_podcast', 'manual_timing_podcast_return']}
-        clearDescription="Очистит локальный проект подкаста, временные ключи и IndexedDB с actor/audio blobs. Backend assets на диске не удаляются."
+        clearDescription="Очистит Podcast snapshot проекта на сервере, локальный проект подкаста, временные ключи и IndexedDB с actor/audio blobs. Backend assets на диске не удаляются."
       />
 
       <header className="podcastComposerHeader">

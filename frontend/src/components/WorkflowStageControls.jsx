@@ -96,9 +96,13 @@ export default function WorkflowStageControls({
           body: JSON.stringify({
             data: {},
             guard_mode: 'replace',
-            client_version: 'workflow-stage-controls-clear-v1',
+            client_version: 'workflow-stage-controls-clear-v205e',
+            cleared_stage: stage,
+            cleared_by: stageKey,
           }),
         })
+
+        console.log('[WORKFLOW STAGE SNAPSHOT CLEARED V205E]', { stageKey, stage, endpoint })
       }
 
       window.setTimeout(() => window.location.reload(), 120)
