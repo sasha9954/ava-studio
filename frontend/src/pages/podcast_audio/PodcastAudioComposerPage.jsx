@@ -2842,6 +2842,7 @@ export default function PodcastAudioComposerPage() {
   const phrasePreviewRef = useRef(null);
   const actorAudioInputRef = useRef(null);
   const mainAudioInputRef = useRef(null);
+  const podcastJsonImportInputRefV205A = useRef(null); // V205A_PODCAST_JSON_IMPORT_EXPORT_TIMING_AUDIO
   const blockMenuRef = useRef(null);
   const activeActorPlaybackRef = useRef(null);
   const activeMainPlaybackRef = useRef(null);
@@ -2879,6 +2880,8 @@ export default function PodcastAudioComposerPage() {
   const [finalAudioBusy, setFinalAudioBusy] = useState("");
   const [actorAudioPreppingId, setActorAudioPreppingId] = useState("");
   const [podcastUploadBusy, setPodcastUploadBusy] = useState(null);
+  const [podcastProjectLoadingV205C, setPodcastProjectLoadingV205C] = useState(false);
+  const [podcastProjectLoadInfoV205C, setPodcastProjectLoadInfoV205C] = useState('');
   const [showTimingHandoffConfirm, setShowTimingHandoffConfirm] = useState(false);
   const timingHandoffConfirmedRef = useRef(false);
 
@@ -3081,11 +3084,17 @@ export default function PodcastAudioComposerPage() {
       podcastBackendSnapshotHydratedRef.current = true;
       setBackendPodcastSnapshot(null);
       setBackendPodcastAudio(normalizeManualTimingAudio(null));
+      setPodcastProjectLoadingV205C(false);
+      setPodcastProjectLoadInfoV205C('');
       return undefined;
     }
 
     let cancelled = false;
     podcastBackendSnapshotHydratedRef.current = false;
+    setPodcastProjectLoadingV205C(true);
+    setPodcastProjectLoadInfoV205C(routeProjectId
+      ? 'Подгружаю сохранённый подкаст с сервера...'
+      : 'Подгружаю сохранённый подкаст...');
 
     (async () => {
       try {
@@ -3101,6 +3110,7 @@ export default function PodcastAudioComposerPage() {
           if (restoredAudio.url || restoredAudio.assetApiPath || restoredAudio.asset_api_path) {
             setBackendPodcastAudio(restoredAudio);
           }
+          setPodcastProjectLoadInfoV205C(`Найден сохранённый подкаст: ${Array.isArray(data.blocks) ? data.blocks.length : 0} блоков. Подгружаю аудио...`);
           console.log("[PODCAST PROJECT SNAPSHOT RESTORED]", {
             projectId: routeProjectId || "",
             sourceNodeId,
@@ -3112,11 +3122,20 @@ export default function PodcastAudioComposerPage() {
           podcastBackendSnapshotRef.current = null;
           setBackendPodcastSnapshot(null);
           setBackendPodcastAudio(normalizeManualTimingAudio(null));
+          setPodcastProjectLoadInfoV205C('');
         }
       } catch (error) {
         if (!cancelled) console.warn("[PODCAST PROJECT SNAPSHOT LOAD_FAILED]", { error: error?.message || error });
       } finally {
-        if (!cancelled) podcastBackendSnapshotHydratedRef.current = true;
+        if (!cancelled) {
+          podcastBackendSnapshotHydratedRef.current = true;
+          window.setTimeout(() => {
+            if (!cancelled) {
+              setPodcastProjectLoadingV205C(false);
+              setPodcastProjectLoadInfoV205C('');
+            }
+          }, 250);
+        }
       }
     })();
 
@@ -3167,8 +3186,9 @@ export default function PodcastAudioComposerPage() {
 
   useEffect(() => {
     if (podcastStageCleared) return undefined;
+    if (podcastProjectLoadingV205C) return undefined;
     if (!hasHydrated || !audio.url) return undefined;
-    if (!podcastBackendSnapshotHydratedRef.current && !routeProjectId) return undefined;
+    if (!podcastBackendSnapshotHydratedRef.current) return undefined;
 
     const snapshot = buildPodcastStageSnapshot({
       sourceNodeId,
@@ -3206,7 +3226,7 @@ export default function PodcastAudioComposerPage() {
     return () => {
       if (podcastBackendSaveTimerRef.current) window.clearTimeout(podcastBackendSaveTimerRef.current);
     };
-  }, [podcastStageCleared, routeProjectId, sourceNodeId, audio.url, audio.assetId, audio.asset_id, audio.assetApiPath, audio.asset_api_path, audioSignature, durationSec, blocks, selectedBlockId, deletionMarkers, savedClips, actorAudios, microStepSec, hasHydrated]);
+  }, [podcastStageCleared, podcastProjectLoadingV205C, routeProjectId, sourceNodeId, audio.url, audio.assetId, audio.asset_id, audio.assetApiPath, audio.asset_api_path, audioSignature, durationSec, blocks, selectedBlockId, deletionMarkers, savedClips, actorAudios, microStepSec, hasHydrated]);
   useEffect(() => {
     if (podcastStageCleared) return;
     if (!hasHydrated || !actorAudios.length) return;
@@ -6349,6 +6369,264 @@ export default function PodcastAudioComposerPage() {
     }
   };
 
+
+  // V205A_PODCAST_JSON_IMPORT_EXPORT_TIMING_AUDIO
+  const readPodcastImportSecV205A = (...values) => {
+    for (const value of values) {
+      if (value === null || value === undefined || value === "") continue;
+      const number = Number(value);
+      if (Number.isFinite(number)) return roundSeconds(number);
+    }
+    return null;
+  };
+
+  const normalizePodcastProjectJsonAudioV205A = (data = {}) => {
+    const manifest = data?.podcast_edit_manifest || data?.podcastEditManifest || data?.manifest || {};
+    const candidate = data?.timingAudio || data?.timing_audio || data?.finalAudio || data?.final_audio || data?.audio || manifest?.final_audio || manifest?.finalAudio || {};
+    const rawUrl = candidate?.url || candidate?.assetUrl || candidate?.asset_url || candidate?.publicUrl || candidate?.public_url || candidate?.audioUrl || candidate?.audio_url || "";
+    const normalizedUrl = normalizePodcastAudioSourceUrl(rawUrl);
+    return normalizeManualTimingAudio({
+      ...candidate,
+      url: normalizedUrl || rawUrl || "",
+      assetUrl: candidate?.assetUrl || candidate?.asset_url || normalizedUrl || rawUrl || "",
+      asset_url: candidate?.asset_url || candidate?.assetUrl || normalizedUrl || rawUrl || "",
+      publicUrl: candidate?.publicUrl || candidate?.public_url || normalizedUrl || rawUrl || "",
+      assetApiPath: candidate?.assetApiPath || candidate?.asset_api_path || candidate?.audioApiPath || "",
+      asset_api_path: candidate?.asset_api_path || candidate?.assetApiPath || candidate?.audioApiPath || "",
+      audioApiPath: candidate?.audioApiPath || candidate?.assetApiPath || candidate?.asset_api_path || "",
+      filename: candidate?.filename || candidate?.name || extractBackendStaticAssetFilename(normalizedUrl || rawUrl, "podcast_timing_audio.mp3"),
+      name: candidate?.name || candidate?.filename || extractBackendStaticAssetFilename(normalizedUrl || rawUrl, "podcast_timing_audio.mp3"),
+      duration_sec: roundSeconds(candidate?.duration_sec || candidate?.durationSec || data?.durationSec || data?.duration_sec || manifest?.timeline_duration_sec || 0),
+      durationSec: roundSeconds(candidate?.durationSec || candidate?.duration_sec || data?.durationSec || data?.duration_sec || manifest?.timeline_duration_sec || 0),
+      source: candidate?.source || PODCAST_AUDIO_HANDOFF_SOURCE,
+    });
+  };
+
+  const getPodcastJsonRowsV205A = (data = {}) => {
+    const manifest = data?.podcast_edit_manifest || data?.podcastEditManifest || data?.manifest || {};
+    const rows = data?.blocks || data?.timeline || data?.segments || manifest?.blocks || [];
+    return Array.isArray(rows) ? rows : [];
+  };
+
+  const buildPodcastBlocksFromJsonRowsV205A = (rows = [], fallbackDurationSec = 0) => {
+    const normalizedRows = (Array.isArray(rows) ? rows : [])
+      .map((row, index) => {
+        const start = readPodcastImportSecV205A(row?.timeline_start_sec, row?.timelineStartSec, row?.start_sec, row?.startSec, row?.start, row?.t0);
+        const end = readPodcastImportSecV205A(row?.timeline_end_sec, row?.timelineEndSec, row?.end_sec, row?.endSec, row?.end, row?.t1);
+        const duration = readPodcastImportSecV205A(row?.duration_sec, row?.durationSec, row?.duration);
+        const safeStart = start ?? null;
+        const safeEnd = end ?? (safeStart !== null && duration !== null ? roundSeconds(safeStart + duration) : null);
+        return { row, index, start: safeStart, end: safeEnd, duration };
+      })
+      .filter((item) => item.end !== null && (item.start !== null || item.duration !== null) && (item.end > (item.start ?? 0) || item.duration > 0))
+      .sort((a, b) => (a.start ?? 0) - (b.start ?? 0) || (a.end ?? 0) - (b.end ?? 0));
+
+    const out = [];
+    let timelineCursor = 0;
+    let sourceCursor = 0;
+
+    const pushSilence = (durationSec, seed = {}, index = 0) => {
+      const duration = clampSeconds(durationSec, 0.01, 600);
+      const block = {
+        ...createSilenceBlock(duration, Number.isInteger(seed?.color_index) ? seed.color_index : 4),
+        id: String(seed?.block_id || seed?.blockId || seed?.id || createId("block")),
+        block_label: String(seed?.label || seed?.role_label || seed?.speaker_label || seed?.block_label || "Тишина").trim() || "Тишина",
+        label: String(seed?.label || seed?.role_label || seed?.speaker_label || "Тишина").trim() || "Тишина",
+        color: String(seed?.color || "").trim() || undefined,
+        imported_from_json_v205a: true,
+        json_index_v205a: index,
+      };
+      out.push(block);
+      timelineCursor = roundSeconds(timelineCursor + duration);
+    };
+
+    normalizedRows.forEach(({ row, index, start, end, duration }) => {
+      const rowStart = start !== null ? Math.max(0, start) : timelineCursor;
+      const rowDuration = duration !== null ? duration : Math.max(0, roundSeconds((end ?? rowStart) - rowStart));
+      if (rowStart > timelineCursor + 0.0005) {
+        pushSilence(rowStart - timelineCursor, { label: "Тишина", color_index: 4 }, index);
+      }
+
+      const isSilence = Boolean(
+        row?.is_silence || row?.isSilence ||
+        String(row?.type || row?.source_kind || row?.sourceKind || row?.source_audio_id || row?.sourceAudioId || "").toLowerCase().includes("silence") ||
+        String(row?.label || row?.role_label || "").trim().toLowerCase() === "тишина"
+      );
+
+      const safeDuration = clampSeconds(rowDuration, 0.01, 600);
+      if (isSilence) {
+        pushSilence(safeDuration, row, index);
+        return;
+      }
+
+      const sourceStartExplicit = readPodcastImportSecV205A(row?.source_start_sec, row?.sourceStartSec, row?.source_start, row?.sourceStart);
+      const sourceEndExplicit = readPodcastImportSecV205A(row?.source_end_sec, row?.sourceEndSec, row?.source_end, row?.sourceEnd);
+      const sourceStart = sourceStartExplicit !== null ? sourceStartExplicit : sourceCursor;
+      let sourceEnd = sourceEndExplicit !== null ? sourceEndExplicit : roundSeconds(sourceStart + safeDuration);
+      if (sourceEnd <= sourceStart + 0.0005) sourceEnd = roundSeconds(sourceStart + safeDuration);
+
+      const label = String(row?.label || row?.role_label || row?.speaker_label || row?.block_label || row?.source_audio_name || "Диктор").trim() || "Диктор";
+      out.push({
+        id: String(row?.block_id || row?.blockId || row?.id || createId("block")),
+        type: "audio",
+        source_audio_id: "main",
+        source_kind: "main_audio",
+        block_type: "main_audio",
+        source_start_sec: roundSeconds(sourceStart),
+        source_end_sec: roundSeconds(sourceEnd),
+        color_index: Number.isInteger(row?.color_index) ? row.color_index : (index % BLOCK_COLORS.length),
+        color: String(row?.color || "").trim() || undefined,
+        block_label: label,
+        label,
+        guide_note: String(row?.note || row?.user_note || "").trim(),
+        guide_phrase_hint: String(row?.phrase_hint || row?.phraseHint || "").trim(),
+        imported_from_json_v205a: true,
+        json_index_v205a: index,
+      });
+      sourceCursor = roundSeconds(sourceEnd);
+      timelineCursor = roundSeconds(timelineCursor + safeDuration);
+    });
+
+    const fallback = roundSeconds(fallbackDurationSec);
+    if (!out.length && fallback > 0) return createInitialBlocks(fallback);
+    return out.length ? normalizeBlocks(out, fallback) : [];
+  };
+
+  const buildPodcastProjectJsonV205A = async () => {
+    const finalDurationSec = roundSeconds(totalDurationSec || durationSec || audio.duration_sec);
+    const preliminaryManifest = buildPodcastEditManifestForTiming({ finalAudio: null, finalDurationSec });
+    const finalAudio = await renderComposerAudioToServerAsset({ manifest: preliminaryManifest, finalDurationSec });
+    const manifest = buildPodcastEditManifestForTiming({ finalAudio, finalDurationSec: finalAudio.duration_sec || finalDurationSec });
+    return {
+      schema: "ava_podcast_composer_project_v1",
+      version: "V205A",
+      source: "podcast_audio_composer",
+      exportedAt: new Date().toISOString(),
+      projectId: routeProjectId || "",
+      sourceNodeId,
+      purpose: "Editable Podcast JSON. Edit blocks/timeline to cut source timing audio and insert silence rows, then import back into Podcast Audio Composer.",
+      edit_rules: {
+        timing_audio_is_base_source: true,
+        non_silence_blocks_cut_from_timing_audio: true,
+        silence_blocks_insert_empty_audio_and_shift_timeline: true,
+        keep_source_start_sec_source_end_sec_on_audio_rows_when_inserting_silence: true,
+      },
+      timingAudio: finalAudio,
+      timing_audio: finalAudio,
+      finalAudio,
+      final_audio: finalAudio,
+      audio: finalAudio,
+      durationSec: roundSeconds(finalAudio.duration_sec || finalDurationSec),
+      duration_sec: roundSeconds(finalAudio.duration_sec || finalDurationSec),
+      blocks: manifest.blocks,
+      podcast_edit_manifest: manifest,
+      podcastEditManifest: manifest,
+      composerBlocks: serializeBlocksForStorage(blocks),
+      composer_blocks: serializeBlocksForStorage(blocks),
+      deletionMarkers: cloneJson(deletionMarkers),
+      deletion_markers: cloneJson(deletionMarkers),
+      savedClips: serializeSavedClipsForStorage(savedClips),
+      saved_clips: serializeSavedClipsForStorage(savedClips),
+      actorAudios: serializeActorAudiosForStorage(actorAudios),
+      actor_audios: serializeActorAudiosForStorage(actorAudios),
+    };
+  };
+
+  const downloadPodcastProjectJsonV205A = async () => {
+    if (finalAudioBusy) return;
+    if (!audio.url || !blocks.length) {
+      setMessage("Нужно загрузить аудио и иметь хотя бы один блок, чтобы скачать JSON.");
+      return;
+    }
+    setFinalAudioBusy("json");
+    setMessage("Собираю timing audio и скачиваю JSON подкаста...");
+    try {
+      const data = await buildPodcastProjectJsonV205A();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const baseName = sanitizeAudioDownloadName(data?.audio?.filename || audio.filename || "podcast_timing_audio").replace(/\.wav$/i, "");
+      link.href = url;
+      link.download = `${baseName}_podcast_project.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+      setMessage(`JSON скачан: ${data.blocks?.length || 0} блоков, timing audio ${formatTimer(data.durationSec || 0)}.`);
+    } catch (error) {
+      setMessage(`JSON не скачан: ${error?.message || "ошибка сборки"}.`);
+    } finally {
+      setFinalAudioBusy("");
+    }
+  };
+
+  const importPodcastProjectJsonV205A = async (rawText = "") => {
+    const data = JSON.parse(String(rawText || ""));
+    const nextAudio = normalizePodcastProjectJsonAudioV205A(data);
+    if (!nextAudio.url) throw new Error("В JSON нет timingAudio/finalAudio/audio URL.");
+    const rows = getPodcastJsonRowsV205A(data);
+    const nextBlocks = buildPodcastBlocksFromJsonRowsV205A(rows, nextAudio.duration_sec || data?.durationSec || data?.duration_sec || 0);
+    if (!nextBlocks.length) throw new Error("В JSON нет блоков timeline/blocks для подкаста.");
+
+    const cleanAudio = {
+      ...nextAudio,
+      source: nextAudio.source || PODCAST_AUDIO_HANDOFF_SOURCE,
+    };
+    const nextDurationSec = roundSeconds(cleanAudio.duration_sec || cleanAudio.durationSec || 0);
+    setStandaloneAudio(cleanAudio);
+    setBackendPodcastAudio(cleanAudio);
+    setDurationSec(nextDurationSec);
+    setBlocks(nextBlocks);
+    setSelectedBlockId(nextBlocks[0]?.id || "");
+    setDeletionMarkers(Array.isArray(data?.deletionMarkers) ? data.deletionMarkers : (Array.isArray(data?.deletion_markers) ? data.deletion_markers : []));
+    setSavedClips([]);
+    setActorAudios([]);
+    setHistory([]);
+    setBlockMenu(null);
+    setSaveClipDialog(null);
+    setGuideJsonDialog(null);
+    setBrokenPhrases([]);
+    setCurrentTimeSec(0);
+    setHasHydrated(true);
+    hydratedRef.current = true;
+    try {
+      const storedAudio = {
+        ...cleanAudio,
+        url: cleanAudio.url || cleanAudio.assetUrl || cleanAudio.asset_url || "",
+        assetUrl: cleanAudio.assetUrl || cleanAudio.asset_url || cleanAudio.url || "",
+        asset_url: cleanAudio.asset_url || cleanAudio.assetUrl || cleanAudio.url || "",
+      };
+      localStorage.setItem(`ava_podcast_standalone_audio:${sourceNodeId}`, JSON.stringify(storedAudio));
+      sessionStorage.setItem(`ava_podcast_standalone_audio:${sourceNodeId}`, JSON.stringify(storedAudio));
+      writeComposerStorage(sourceNodeId, {
+        version: COMPOSER_STORAGE_VERSION,
+        mainAudioSignature: getAudioSignature(storedAudio, nextDurationSec),
+        duration_sec: nextDurationSec,
+        blocks: serializeBlocksForStorage(nextBlocks),
+        selectedBlockId: nextBlocks[0]?.id || "",
+        deletionMarkers: [],
+        savedClips: [],
+        actorAudios: [],
+        microStepSec,
+        updatedAt: Date.now(),
+      });
+    } catch {}
+    setMessage(`JSON импортирован: ${nextBlocks.length} блоков. Timing audio будет резаться по JSON, тишина вставится отдельными блоками.`);
+  };
+
+  const handlePodcastProjectJsonImportV205A = async (event) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) return;
+    setMessage(`Импортирую JSON: ${file.name || "podcast_project.json"}...`);
+    try {
+      await importPodcastProjectJsonV205A(await file.text());
+    } catch (error) {
+      setMessage(`JSON не импортирован: ${error?.message || "ошибка формата"}.`);
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   
 function avaStage114StripLargePodcastValue(value, depth = 0) {
   if (depth > 6) return null;
@@ -6836,12 +7114,33 @@ const applyComposedAudioToTiming = async () => {
             >
               {finalAudioBusy === "timing" ? "Собираю переход..." : "Перейти в Timing"}
             </button>
-          <div className="podcastHeaderJsonActionsV173C" aria-label="JSON-план подсказок">
-            <button type="button" title="Скопировать образец JSON" onClick={copyGuideJsonSample}>⧉ JSON</button>
-            <button type="button" title="Вставить JSON-план" onClick={openGuideJsonDialog}>{"{}"} JSON</button>
+          <div className="podcastHeaderJsonActionsV205A" aria-label="JSON проекта подкаста">
+            <input
+              ref={podcastJsonImportInputRefV205A}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={handlePodcastProjectJsonImportV205A}
+            />
+            <button type="button" title="Скачать JSON с timing audio и блоками" onClick={downloadPodcastProjectJsonV205A} disabled={!!finalAudioBusy || !audio.url || !blocks.length}>
+              {finalAudioBusy === "json" ? "… JSON" : "⬇ JSON"}
+            </button>
+            <button type="button" title="Импортировать JSON и перестроить блоки" onClick={() => podcastJsonImportInputRefV205A.current?.click()} disabled={!!finalAudioBusy}>
+              ⬆ JSON
+            </button>
           </div>
         </div>
       </header>
+
+      {podcastProjectLoadingV205C ? (
+        <section className="podcastProjectLoadingCardV205C" role="status" aria-live="polite">
+          <div className="podcastProjectLoadingSpinnerV205C" />
+          <div>
+            <strong>Подгружаю сохранённый подкаст</strong>
+            <span>{podcastProjectLoadInfoV205C || 'Проверяю серверный snapshot и аудио-файлы...'}</span>
+          </div>
+        </section>
+      ) : null}
 
       {!audio.url ? (
         <section className="podcastComposerCard podcastStandaloneStartCard" aria-label="Старт подкаста">
@@ -6934,6 +7233,8 @@ const applyComposedAudioToTiming = async () => {
 
             <div className="podcastComposerControlGroupV173F isSave" aria-label="Сохранение результата">
               <button className="podcastComposerSaveAudioButton podcastComposerSaveAudioButtonV173F" type="button" onClick={downloadComposedAudio} disabled={!!finalAudioBusy || !blocks.length}>{finalAudioBusy === "download" ? "…" : "💾 MP3"}</button>
+              <button className="podcastComposerSaveAudioButton podcastComposerSaveAudioButtonV173F podcastComposerJsonButtonV205A" type="button" onClick={downloadPodcastProjectJsonV205A} disabled={!!finalAudioBusy || !audio.url || !blocks.length}>{finalAudioBusy === "json" ? "…" : "💾 JSON"}</button>
+              <button className="podcastComposerSaveAudioButton podcastComposerSaveAudioButtonV173F podcastComposerJsonButtonV205A" type="button" onClick={() => podcastJsonImportInputRefV205A.current?.click()} disabled={!!finalAudioBusy}>↥ JSON</button>
             </div>
           </div>
 

@@ -128,6 +128,7 @@
 
 @media (max-width:760px){
   .podcastComposerPage{ padding:18px; }
+  .podcastProjectLoadingCardV205C{ margin:12px auto 16px; padding:13px 14px 17px; }
   .podcastComposerHeader,.podcastComposerAudioMeta,.podcastComposerControls{ grid-template-columns:1fr; flex-direction:column; align-items:stretch; }
   .podcastComposerHeaderActions{ justify-content:flex-start; }
   .podcastComposerAudioMeta strong{ white-space:normal; }
@@ -2118,3 +2119,137 @@ button.podcastSavePhraseDone {
   border-color: rgba(125, 211, 252, 0.16);
 }
 /* WORKSPACE_PAGE_BACKGROUND_BLEND_V185A_END */
+
+
+/* V205A Podcast JSON import/export with timing audio */
+.podcastHeaderJsonActionsV205A {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 6px !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(52, 211, 153, .26) !important;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(34, 197, 94, .16), transparent 42%),
+    rgba(2, 6, 23, .42) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+
+.podcastHeaderJsonActionsV205A button,
+.podcastComposerJsonButtonV205A {
+  min-height: 34px !important;
+  padding: 0 12px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(74, 222, 128, .32) !important;
+  background: linear-gradient(135deg, rgba(22, 163, 74, .28), rgba(14, 165, 233, .14)) !important;
+  color: #ecfdf5 !important;
+  font-size: 12px !important;
+  font-weight: 950 !important;
+  letter-spacing: .015em !important;
+}
+
+.podcastHeaderJsonActionsV205A button:hover:not(:disabled),
+.podcastComposerJsonButtonV205A:hover:not(:disabled) {
+  border-color: rgba(134, 239, 172, .78) !important;
+  background: linear-gradient(135deg, rgba(34, 197, 94, .48), rgba(14, 165, 233, .22)) !important;
+}
+
+.podcastHeaderJsonActionsV205A button:disabled,
+.podcastComposerJsonButtonV205A:disabled {
+  opacity: .45 !important;
+  cursor: not-allowed !important;
+}
+
+
+/* V205C: visible project/server loading state for Podcast. */
+.podcastProjectLoadingCardV205C {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 1120px;
+  margin: 14px auto 18px;
+  padding: 14px 16px 18px;
+  overflow: hidden;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(168, 85, 247, 0.10));
+  box-shadow: 0 14px 42px rgba(2, 6, 23, 0.25);
+  color: rgba(226, 232, 240, 0.96);
+}
+
+.podcastProjectLoadingCardV205C::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  overflow: hidden;
+}
+
+.podcastProjectLoadingCardV205C::before {
+  content: '';
+  position: absolute;
+  left: -22%;
+  bottom: 8px;
+  width: 22%;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0), rgba(56, 189, 248, 0.96), rgba(168, 85, 247, 0.92), rgba(250, 204, 21, 0.92), rgba(250, 204, 21, 0));
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.36);
+  animation: podcastProjectLoadingSlideV205D 1.35s ease-in-out infinite;
+  z-index: 1;
+}
+
+.podcastProjectLoadingCardV205C strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 3px;
+}
+
+.podcastProjectLoadingCardV205C span {
+  display: block;
+  color: rgba(203, 213, 225, 0.82);
+  font-size: 0.84rem;
+}
+
+.podcastProjectLoadingSpinnerV205C {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 3px solid rgba(148, 163, 184, 0.22);
+  border-top-color: rgba(56, 189, 248, 0.98);
+  border-right-color: rgba(168, 85, 247, 0.82);
+  animation: podcastProjectLoadingSpinV205C 0.85s linear infinite;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03), 0 0 18px rgba(56, 189, 248, 0.15);
+}
+
+.podcastProjectLoadingSpinnerV205C::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.08);
+  border-top-color: rgba(250, 204, 21, 0.58);
+  border-left-color: rgba(168, 85, 247, 0.42);
+  animation: podcastProjectLoadingSpinOuterV205D 1.65s linear infinite;
+}
+
+@keyframes podcastProjectLoadingSpinV205C {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes podcastProjectLoadingSpinOuterV205D {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes podcastProjectLoadingSlideV205D {
+  0% { transform: translateX(0); opacity: 0.15; }
+  20% { opacity: 1; }
+  100% { transform: translateX(560%); opacity: 0.2; }
+}
