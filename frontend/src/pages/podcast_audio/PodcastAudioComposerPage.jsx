@@ -1590,9 +1590,9 @@ function encodeWavFromFloatChannels(channels = [], sampleRate = 44100) {
 
 function getAudioUrlForSourceId(sourceId = "", mainAudio = {}, actorAudios = []) {
   const safeId = String(sourceId || "main").trim() || "main";
-  if (safeId === "main") return getAvaAudioPlaybackUrl(mainAudio);
+  if (safeId === "main") return getAvaAudioPlaybackUrl(mainAudio) || getAvaAudioServerUrl(mainAudio);
   const actor = (Array.isArray(actorAudios) ? actorAudios : []).find((item) => item.id === safeId);
-  return getAvaAudioPlaybackUrl(actor);
+  return getAvaAudioPlaybackUrl(actor) || getAvaAudioServerUrl(actor);
 }
 
 function getAudioNameForSourceId(sourceId = "", mainAudio = {}, actorAudios = []) {
@@ -3054,7 +3054,8 @@ export default function PodcastAudioComposerPage() {
   useEffect(() => {
     let cancelled = false;
     const element = audioRef.current;
-    if (!element || !getAvaAudioPlaybackUrl(audio)) return undefined;
+    const hasAnyMainAudioUrl = Boolean(getAvaAudioPlaybackUrl(audio) || getAvaAudioServerUrl(audio));
+    if (!element || !hasAnyMainAudioUrl) return undefined;
 
     void resolvePodcastPlaybackUrl(audio).then((playbackUrl) => {
       if (cancelled || !playbackUrl || !audioRef.current) return;
@@ -3064,6 +3065,11 @@ export default function PodcastAudioComposerPage() {
         audioRef.current.src = playbackUrl;
         audioRef.current.load();
       }
+      console.log("[PODCAST MAIN AUDIO HYDRATED V205F]", {
+        playbackUrl,
+        mainAudioUrl: getAvaAudioPlaybackUrl(audio),
+        mainServerUrl: getAvaAudioServerUrl(audio),
+      });
     });
 
     return () => {
@@ -3466,42 +3472,87 @@ export default function PodcastAudioComposerPage() {
 
   const prepareAudioElement = async (sourceUrl = "", sourceTimeSec = 0) => {
     const element = audioRef.current;
-    const sourceCandidate = sourceUrl || audio || "";
-    const playbackUrl = await resolvePodcastPlaybackUrl(sourceCandidate);
 
-    console.log("[PODCAST PREPARE AUDIO]", {
+    const candidates = [];
+    const addCandidate = (candidate) => {
+      if (!candidate) return;
+      if (typeof candidate === "object") {
+        const key = JSON.stringify({
+          playback: getAvaAudioPlaybackUrl(candidate),
+          server: getAvaAudioServerUrl(candidate),
+        });
+        if (!candidates.some((item) => item.key === key)) candidates.push({ key, value: candidate });
+        return;
+      }
+      const key = String(candidate || "").trim();
+      if (key && !candidates.some((item) => item.key === key)) candidates.push({ key, value: key });
+    };
+
+    addCandidate(sourceUrl);
+    addCandidate(audio);
+    addCandidate(getAvaAudioServerUrl(audio));
+    addCandidate(getAvaAudioPlaybackUrl(audio));
+
+    console.log("[PODCAST PREPARE AUDIO V205F]", {
       sourceUrl,
-      playbackUrl,
       sourceTimeSec,
+      candidates: candidates.map((item) => item.key).slice(0, 6),
       readyState: element?.readyState,
       currentSrc: element?.currentSrc || element?.src || "",
     });
 
-    if (!element || !playbackUrl) {
+    if (!element || !candidates.length) {
       setMessage("Не найден URL для прослушки аудио.");
       return false;
     }
 
-    const normalizedUrl = new URL(playbackUrl, window.location.href).href;
-    if (element.src !== normalizedUrl && element.currentSrc !== normalizedUrl) {
-      try { element.pause(); } catch {}
-      element.src = playbackUrl;
-      element.load();
-      const ready = await waitForAudioReady(element);
-      if (!ready) {
-        console.warn("[PODCAST AUDIO NOT READY]", { playbackUrl, error: element.error });
-        setMessage("Аудио не открылось для прослушки. Проверь upload или перезагрузи аудио.");
-        return false;
+    let lastPlaybackUrl = "";
+    for (const candidate of candidates) {
+      const playbackUrl = await resolvePodcastPlaybackUrl(candidate.value);
+      lastPlaybackUrl = playbackUrl || lastPlaybackUrl;
+      if (!playbackUrl) continue;
+
+      const normalizedUrl = new URL(playbackUrl, window.location.href).href;
+      if (element.src !== normalizedUrl && element.currentSrc !== normalizedUrl) {
+        try { element.pause(); } catch {}
+        element.src = playbackUrl;
+        element.load();
+        const ready = await waitForAudioReady(element);
+        if (!ready) {
+          console.warn("[PODCAST AUDIO CANDIDATE NOT READY V205F]", {
+            playbackUrl,
+            candidate: candidate.key,
+            error: element.error,
+          });
+          continue;
+        }
       }
+
+      try {
+        const nextTime = roundSeconds(sourceTimeSec);
+        if (Number.isFinite(nextTime)) element.currentTime = nextTime;
+      } catch (error) {
+        console.warn("[PODCAST AUDIO SEEK FAILED V205F]", { error, playbackUrl, sourceTimeSec });
+        continue;
+      }
+
+      console.log("[PODCAST AUDIO READY V205F]", {
+        playbackUrl,
+        sourceTimeSec,
+        currentSrc: element.currentSrc || element.src || "",
+      });
+      return true;
     }
 
-    try {
-      const nextTime = roundSeconds(sourceTimeSec);
-      if (Number.isFinite(nextTime)) element.currentTime = nextTime;
-    } catch (error) {
-      console.warn("[PODCAST AUDIO SEEK FAILED]", error);
-    }
-    return true;
+    console.warn("[PODCAST AUDIO ALL CANDIDATES FAILED V205F]", {
+      sourceUrl,
+      sourceTimeSec,
+      lastPlaybackUrl,
+      audioUrl: getAvaAudioPlaybackUrl(audio),
+      audioServerUrl: getAvaAudioServerUrl(audio),
+    });
+    setMessage("Аудио не открылось для прослушки. На другом ПК попробуй F5; если повторится — пришли лог V205F.");
+    return false;
   };
 
 
