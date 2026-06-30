@@ -697,6 +697,138 @@ function normalizeScenes(data, duration) {
   return makeSingleScene(safeDuration)
 }
 
+
+// AVA_MANUAL_TIMING_ASR_SCENE_COLOR_REPAIR_V205H:
+// After split/merge/delete and after F5, scene.index, stale color fields and old storyBlocks
+// must not drive the editor/timeline. The array order is the source of truth.
+// ASR segments stay absolute to current audio; on load we clamp/drop segments outside duration.
+function avaManualTimingRepairTimingSegmentV205H(item = {}, durationSec = 0) {
+  const duration = Math.max(0, Number(durationSec) || 0)
+  const startRaw = Number(item?.start ?? item?.start_sec ?? item?.t0 ?? item?.from ?? 0)
+  const endRaw = Number(item?.end ?? item?.end_sec ?? item?.t1 ?? item?.to ?? startRaw)
+  if (!Number.isFinite(startRaw) || !Number.isFinite(endRaw)) return null
+
+  const start = Math.max(0, startRaw)
+  const end = Math.max(start, endRaw)
+
+  if (duration > 0 && start >= duration - 0.01) return null
+  const safeEnd = duration > 0 ? Math.min(duration, end) : end
+  if (safeEnd - start <= 0.01) return null
+
+  const nextStart = Number(start.toFixed(3))
+  const nextEnd = Number(safeEnd.toFixed(3))
+  return {
+    ...item,
+    start: nextStart,
+    end: nextEnd,
+    start_sec: item.start_sec !== undefined ? nextStart : item.start_sec,
+    end_sec: item.end_sec !== undefined ? nextEnd : item.end_sec,
+    t0: item.t0 !== undefined ? nextStart : item.t0,
+    t1: item.t1 !== undefined ? nextEnd : item.t1,
+  }
+}
+
+function avaManualTimingRepairTimingListV205H(items = [], durationSec = 0) {
+  if (!Array.isArray(items)) return []
+  return items
+    .map((item) => avaManualTimingRepairTimingSegmentV205H(item, durationSec))
+    .filter(Boolean)
+    .sort((a, b) => Number(a.start ?? a.start_sec ?? a.t0 ?? 0) - Number(b.start ?? b.start_sec ?? b.t0 ?? 0))
+}
+
+function avaManualTimingBlockColorMapV205H(storyBlocks = []) {
+  const map = new Map()
+  ;(Array.isArray(storyBlocks) ? storyBlocks : []).forEach((block, blockIndex) => {
+    const blockId = String(block?.id || block?.blockId || block?.block_id || '').trim()
+    if (!blockId) return
+    const color = avaSemanticBlockHexColorV69(block?.color || block?.blockColor || block?.block_color || '', blockIndex)
+    const title = String(block?.title || block?.blockTitle || block?.block_title || blockId).trim()
+    map.set(blockId, { color, title })
+  })
+  return map
+}
+
+function avaManualTimingRepairSceneColorV205H(scene = {}, index = 0, storyBlockColorMap = new Map()) {
+  const next = { ...scene }
+  const blockId = String(next.blockId || next.block_id || next.semanticBlockId || next.semantic_block_id || '').trim()
+
+  if (blockId) {
+    const blockMeta = storyBlockColorMap.get(blockId) || {}
+    const title = String(next.blockTitle || next.block_title || next.semanticBlockTitle || next.semantic_block_title || blockMeta.title || blockId).trim()
+    const color = avaSemanticBlockHexColorV69(
+      blockMeta.color ||
+      next.blockColor ||
+      next.block_color ||
+      next.semanticBlockColor ||
+      next.semantic_block_color ||
+      next.color ||
+      next.sceneColor ||
+      next.scene_color ||
+      '',
+      index
+    )
+    return {
+      ...next,
+      blockId,
+      block_id: blockId,
+      blockTitle: title,
+      block_title: title,
+      semanticBlockId: blockId,
+      semantic_block_id: blockId,
+      semanticBlockTitle: title,
+      semantic_block_title: title,
+      blockColor: color,
+      block_color: color,
+      semanticBlockColor: color,
+      semantic_block_color: color,
+      color,
+      sceneColor: color,
+      scene_color: color,
+      timelineColor: color,
+      cardColor: color,
+      user_scene_color: color,
+      scene_block_index: index,
+    }
+  }
+
+  delete next.blockId
+  delete next.block_id
+  delete next.blockTitle
+  delete next.block_title
+  delete next.blockColor
+  delete next.block_color
+  delete next.semanticBlockId
+  delete next.semantic_block_id
+  delete next.semanticBlockTitle
+  delete next.semantic_block_title
+  delete next.semanticBlockColor
+  delete next.semantic_block_color
+  delete next.color
+  delete next.sceneColor
+  delete next.scene_color
+  delete next.timelineColor
+  delete next.cardColor
+  delete next.user_scene_color
+  delete next.scene_block_index
+  return next
+}
+
+function avaManualTimingRepairScenesAfterEditsV205H(sceneList = [], storyBlocks = []) {
+  const blockColorMap = avaManualTimingBlockColorMapV205H(storyBlocks)
+  return (Array.isArray(sceneList) ? sceneList : [])
+    .map((scene, index) => avaManualTimingRepairSceneColorV205H(scene, index, blockColorMap))
+}
+
+function avaManualTimingSafeSceneIndexV205H(sceneList = [], sceneIndex = 0) {
+  const count = Array.isArray(sceneList) ? sceneList.length : 0
+  if (!count) return 0
+  return Math.max(0, Math.min(Number(sceneIndex) || 0, count - 1))
+}
+
+function avaManualTimingSceneAtV205H(sceneList = [], sceneIndex = 0) {
+  return (Array.isArray(sceneList) ? sceneList : [])[avaManualTimingSafeSceneIndexV205H(sceneList, sceneIndex)] || null
+}
+
 function repairManualTimingAudioAssetFields(data = {}) {
   const audioUrl = String(data?.audioUrl || data?.audio_url || data?.assetUrl || data?.asset_url || data?.url || '').trim()
   const audioApiPath = String(data?.audioApiPath || data?.audio_api_path || data?.asset_api_path || '').trim()
@@ -727,7 +859,11 @@ function normalizeDraft(data) {
   const parsedStep = Number(cleanData?.stepSec)
   const parsedDuration = Number(cleanData?.audioDurationSec)
   const duration = Number.isFinite(parsedDuration) ? Math.max(0, parsedDuration) : 0
-  const scenes = normalizeScenes(cleanData || {}, duration)
+  const rawNormalizedScenesV205H = normalizeScenes(cleanData || {}, duration)
+  const scenes = avaManualTimingRepairScenesAfterEditsV205H(
+    rawNormalizedScenesV205H,
+    cleanData?.storyBlocks || cleanData?.story_blocks || []
+  )
   const selectedIndex = Number.isFinite(Number(cleanData?.selectedSceneIndex)) ? Number(cleanData.selectedSceneIndex) : 0
 
   return {
@@ -747,12 +883,12 @@ function normalizeDraft(data) {
     vocalAudioDurationSec: Number(cleanData?.vocalAudioDurationSec || cleanData?.vocal_audio_duration_sec || 0),
     vocalOffsetSec: Number(cleanData?.vocalOffsetSec || cleanData?.vocal_offset_sec || 0),
     scenes,
-    storyBlocks: Array.isArray(cleanData?.storyBlocks) ? cleanData.storyBlocks : [],
+    storyBlocks: avaSemanticStoryBlocksFromScenesV69(scenes),
     roles: Array.isArray(cleanData?.roles) ? cleanData.roles : [],
-    speechSegments: normalizeSpeechSegments(cleanData?.speechSegments || cleanData?.speech_segments || []),
-    audioPhrases: Array.isArray(cleanData?.audioPhrases) ? cleanData.audioPhrases : Array.isArray(cleanData?.audio_phrases) ? cleanData.audio_phrases : [],
-    missingSpeechHints: normalizeMissingSpeechHints(cleanData?.missingSpeechHints || cleanData?.missing_speech_hints || []),
-    silentSegments: Array.isArray(cleanData?.silentSegments) ? cleanData.silentSegments : [],
+    speechSegments: avaManualTimingRepairTimingListV205H(normalizeSpeechSegments(cleanData?.speechSegments || cleanData?.speech_segments || []), duration),
+    audioPhrases: avaManualTimingRepairTimingListV205H(Array.isArray(cleanData?.audioPhrases) ? cleanData.audioPhrases : Array.isArray(cleanData?.audio_phrases) ? cleanData.audio_phrases : [], duration),
+    missingSpeechHints: avaManualTimingRepairTimingListV205H(normalizeMissingSpeechHints(cleanData?.missingSpeechHints || cleanData?.missing_speech_hints || []), duration),
+    silentSegments: avaManualTimingRepairTimingListV205H(Array.isArray(cleanData?.silentSegments) ? cleanData.silentSegments : [], duration),
     handoffSource: cleanData?.handoffSource || cleanData?.source || '',
     historySnapshots: Array.isArray(cleanData?.historySnapshots) ? cleanData.historySnapshots.slice(-MAX_UNDO) : [],
     scenesCount: scenes.length,
@@ -2479,12 +2615,14 @@ function clearBlockSelection() {
   }
 
   function openSceneEditor(sceneIndex) {
-    const scene = scenes[Math.min(sceneIndex, scenes.length - 1)]
+    const safeSceneIndexV205H = avaManualTimingSafeSceneIndexV205H(scenes, sceneIndex)
+    const scene = avaManualTimingSceneAtV205H(scenes, safeSceneIndexV205H)
     if (!scene) return
     stopAudio(scene.start)
-    setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: sceneIndex }))
+    setDraft((prev) => normalizeDraft({ ...prev, selectedSceneIndex: safeSceneIndexV205H }))
     setSceneEditor({
-      sceneIndex,
+      sceneIndex: safeSceneIndexV205H,
+      sceneId: scene.id || scene.scene_id || scene.title || '',
       note: scene.note || scene.memo || '',
       route: avaTimingNormalizeRouteV154A(scene.route || scene.planned_route || scene.plannedRoute || 'auto'),
     })
@@ -2493,7 +2631,13 @@ function clearBlockSelection() {
 
   function saveSceneEditor() {
     if (!sceneEditor) return
-    const index = Math.min(sceneEditor.sceneIndex, scenes.length - 1)
+    const editorSceneIdV205H = String(sceneEditor.sceneId || '').trim()
+    const byIdIndexV205H = editorSceneIdV205H
+      ? scenes.findIndex((scene) => String(scene.id || scene.scene_id || scene.title || '') === editorSceneIdV205H)
+      : -1
+    const index = byIdIndexV205H >= 0
+      ? byIdIndexV205H
+      : avaManualTimingSafeSceneIndexV205H(scenes, sceneEditor.sceneIndex)
     const nextScenes = scenes.map((scene, sceneIndex) => (
       sceneIndex === index
         ? { ...scene, note: sceneEditor.note || '', route: avaTimingNormalizeRouteV154A(sceneEditor.route || 'auto'), planned_route: avaTimingNormalizeRouteV154A(sceneEditor.route || 'auto') }
@@ -4621,8 +4765,9 @@ const useVocalStem = mode === 'vocal'
           )}
 
         <div ref={segmentsRowRef} className="avaTimingSegmentsRow">
-            {scenes.map((scene) => {
-              const sceneLeft = timelineDurationSec > 0 ? timeToTimelinePct(scene.start, timelineDurationSec) : ((scene.index || 0) / Math.max(1, scenes.length)) * 100
+            {scenes.map((scene, sceneArrayIndex) => {
+              const sceneUiIndex = sceneArrayIndex
+              const sceneLeft = timelineDurationSec > 0 ? timeToTimelinePct(scene.start, timelineDurationSec) : ((sceneUiIndex || 0) / Math.max(1, scenes.length)) * 100
               const sceneWidth = timelineDurationSec > 0 ? Math.max(0.5, ((scene.end - scene.start) / timelineDurationSec) * 100) : (100 / Math.max(1, scenes.length))
               const roleLabels = getSceneRoleLabels(scene)
               const podcastRoleLabel = String(
@@ -4638,17 +4783,18 @@ const useVocalStem = mode === 'vocal'
               ).trim()
               const visibleRoleLabels = podcastRoleLabel ? [podcastRoleLabel] : roleLabels
               const isDeletingSceneAudioV168A = deletingSceneAudio && String(deletingSceneAudioIdV168A || "") === String(scene.id || scene.title || scene.index || "")
+              const isActiveSceneV205H = sceneUiIndex === Math.min(Number(draft.selectedSceneIndex || 0), Math.max(0, scenes.length - 1))
   return (
                 <button
                   key={`${scene.id}-${scene.start}-${scene.end}`}
                   type="button"
                   data-scene-id={scene.id || scene.title || scene.index}
-                  style={{ left: `${sceneLeft}%`, width: `${sceneWidth}%`, '--scene-hue': sceneBlockHue(scene, scene.index), '--scene-block-color': avaSemanticBlockCssColorV69(scene, scene.index) }}
-                  className={`${scene.index === selectedScene.index ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${isSceneInBlockSelection(scene) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''} ${isDeletingSceneAudioV168A ? 'isDeletingAudioV168A' : ''}`}
-                  onClick={(event) => handleSceneClick(event, scene.index)}
+                  style={{ left: `${sceneLeft}%`, width: `${sceneWidth}%`, '--scene-hue': sceneBlockHue(scene, sceneUiIndex), '--scene-block-color': avaSemanticBlockCssColorV69(scene, sceneUiIndex) }}
+                  className={`${isActiveSceneV205H ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${isSceneInBlockSelection(scene) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''} ${isDeletingSceneAudioV168A ? 'isDeletingAudioV168A' : ''}`}
+                  onClick={(event) => handleSceneClick(event, sceneUiIndex)}
                   onDoubleClick={(event) => {
                     event?.stopPropagation?.()
-                    openSceneEditor(scene.index)
+                    openSceneEditor(sceneUiIndex)
                   }}
                 
                   title={getSceneTooltip(scene)}>
@@ -4790,17 +4936,17 @@ const useVocalStem = mode === 'vocal'
             className="avaTimingSceneEditor isSceneTintedV161A"
             style={{
               '--scene-hue': sceneBlockHue(
-                scenes[sceneEditor.sceneIndex] || selectedScene || {},
-                scenes[sceneEditor.sceneIndex]?.index ?? selectedScene?.index ?? sceneEditor.sceneIndex ?? 0
+                avaManualTimingSceneAtV205H(scenes, sceneEditor.sceneIndex) || selectedScene || {},
+                avaManualTimingSafeSceneIndexV205H(scenes, sceneEditor.sceneIndex)
               ),
               '--scene-block-color': avaSemanticBlockCssColorV69(
-                scenes[sceneEditor.sceneIndex] || selectedScene || {},
-                scenes[sceneEditor.sceneIndex]?.index ?? selectedScene?.index ?? sceneEditor.sceneIndex ?? 0
+                avaManualTimingSceneAtV205H(scenes, sceneEditor.sceneIndex) || selectedScene || {},
+                avaManualTimingSafeSceneIndexV205H(scenes, sceneEditor.sceneIndex)
               ),
             }}
           >
             <div>
-              <strong>Памятка сцены · {scenes[sceneEditor.sceneIndex]?.title}</strong>
+              <strong>Памятка сцены · {avaManualTimingSceneAtV205H(scenes, sceneEditor.sceneIndex)?.title}</strong>
               <span>Двойной клик по сцене открывает это окно</span>
             </div>
             <label>

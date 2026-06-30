@@ -11,6 +11,29 @@ router = APIRouter(prefix='/workspace', tags=['workspace'])
 STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator', 'audio_studio'}
 
 
+
+
+def state_richness_v206b(data: dict) -> int:
+    if not isinstance(data, dict):
+        return 0
+    root = data.get("project") if isinstance(data.get("project"), dict) else data
+    score = 0
+    for key in [
+        "audio", "audio_file", "scenes", "phrases", "board_scenes", "videos", "images", "jobs", "assets", "final_video_url",
+        "sourceVideos", "source_videos", "sourceVideo", "source_video", "sourceVideoPath", "sourceVideoPathForAssembly",
+        "uploadedSourceVideoPath", "matchSegments", "videoBlocks", "timingContext", "audioMap", "audioPreviewMeta",
+        "audioPathForAssembly", "assembleAudioPath", "importSignature",
+    ]:
+        value = root.get(key)
+        if isinstance(value, list):
+            score += min(len(value), 50) * 3
+        elif isinstance(value, dict):
+            score += 5 if value else 0
+        elif value:
+            score += 3
+    score += min(len(str(data)), 20000) // 1000
+    return score
+
 def workspace_public(workspace: dict) -> dict:
     return {k: v for k, v in workspace.items() if k != 'user_id'}
 
@@ -171,6 +194,17 @@ def save_workspace_snapshot(stage: str, payload: SnapshotSaveRequest, user: dict
         incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
         preserved_media_refs = 0
         if payload.guard_mode == 'safe_merge' and current:
+            old_score = state_richness_v206b(current.get('data') or {})
+            new_score = state_richness_v206b(incoming_data)
+            if old_score > 10 and new_score < max(3, old_score // 4):
+                return {
+                    'saved': False,
+                    'reason': 'incoming_workspace_snapshot_too_poor_to_overwrite_saved_state_v206b',
+                    'old_score': old_score,
+                    'new_score': new_score,
+                    'snapshot': current,
+                    '_skip_store_write_v206b': True,
+                }
             incoming_data, preserved_media_refs = preserve_media_refs(current.get('data') or {}, incoming_data)
         print('[PROJECT SAVE MEDIA REFS SUMMARY]', {
             'scope': 'workspace',

@@ -1046,28 +1046,214 @@ function normalizeVideoMatchSourceVideos(parsed = {}) {
   });
 }
 
+
+// AVA_VIDEO_NODE_JSON_IMPORT_MEDIA_GUARD_V206A:
+// Video Node should accept final video_match_board_v2 JSON, Codex job JSON that contains
+// video_match_seed, and timing-only seed JSON. Importing JSON must not detach the already
+// uploaded source video/audio. If no final candidates exist yet, create safe placeholder
+// candidates so fixed scene slots can be visible and editable.
+function unwrapVideoMatchImportRootV206A(parsed = {}) {
+  const warnings = [];
+  let current = parsed && typeof parsed === "object" ? parsed : {};
+  const seen = new Set();
+
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (!current || typeof current !== "object" || seen.has(current)) break;
+    seen.add(current);
+
+    if (Array.isArray(current.segments) || Array.isArray(current.matches)) {
+      return { parsed: current, warnings };
+    }
+
+    const candidates = [
+      ["video_match_seed", current.video_match_seed],
+      ["videoMatchSeed", current.videoMatchSeed],
+      ["video_match_board", current.video_match_board],
+      ["videoMatchBoard", current.videoMatchBoard],
+      ["manual_timing_seed", current.manual_timing_seed],
+      ["manualTimingSeed", current.manualTimingSeed],
+      ["seed", current.seed],
+      ["payload", current.payload],
+      ["result", current.result],
+      ["data", current.data],
+      ["board", current.board],
+    ];
+
+    const next = candidates.find(([, value]) => value && typeof value === "object" && (
+      Array.isArray(value.segments)
+      || Array.isArray(value.matches)
+      || Array.isArray(value?.audio_map?.segments)
+      || Array.isArray(value?.audioMap?.segments)
+      || Array.isArray(value?.timingContext?.segments)
+      || Array.isArray(value?.timingContext?.timingScenes)
+      || Array.isArray(value?.audio_map?.timingSegments)
+      || Array.isArray(value?.audioMap?.timingSegments)
+    ));
+
+    if (!next) break;
+    warnings.push(`Импорт развёрнут из ${next[0]}`);
+    current = next[1];
+  }
+
+  return { parsed: current, warnings };
+}
+
+function pickVideoMatchSegmentArrayV206A(source = {}) {
+  const root = source && typeof source === "object" ? source : {};
+  const candidates = [
+    root.segments,
+    root.matches,
+    root.audioSegments,
+    root.markers,
+    root?.audio_map?.segments,
+    root?.audioMap?.segments,
+    root?.audio_map?.timingSegments,
+    root?.audioMap?.timingSegments,
+    root?.timingContext?.segments,
+    root?.timingContext?.timingScenes,
+    root?.timingContext?.scenes,
+    root?.manual_timing_seed?.segments,
+    root?.manualTimingSeed?.segments,
+    root?.manual_timing_seed?.audio_map?.segments,
+    root?.manualTimingSeed?.audioMap?.segments,
+    root.scenes,
+  ];
+  return candidates.find((value) => Array.isArray(value)) || [];
+}
+
+function normalizeVideoMatchImportSegmentV206A(segment = {}, index = 0) {
+  const item = segment && typeof segment === "object" ? segment : {};
+  const start = toFiniteNumber(
+    item.target_t0
+    ?? item.targetStartSec
+    ?? item.start_sec
+    ?? item.startSec
+    ?? item.start
+    ?? item.t0,
+    0,
+  );
+  const duration = toFiniteNumber(item.duration_sec ?? item.durationSec ?? item.duration, 0);
+  const rawEnd = toFiniteNumber(
+    item.target_t1
+    ?? item.targetEndSec
+    ?? item.end_sec
+    ?? item.endSec
+    ?? item.end
+    ?? item.t1,
+    duration > 0 ? start + duration : start,
+  );
+  const end = Math.max(start, rawEnd > start ? rawEnd : (duration > 0 ? start + duration : start + 1));
+  const id = String(
+    item.audio_scene_id
+    || item.audioSceneId
+    || item.scene_id
+    || item.sceneId
+    || item.id
+    || `seg_${String(index + 1).padStart(2, "0")}`,
+  ).trim();
+  const sourceVideoId = String(item.sourceVideoId || item.source_video_id || item.selectedSourceVideoId || item.selected_source_video_id || "V1").trim() || "V1";
+  const text = String(item.text || item.original_text || item.scene_word_text || item.lyrics_text || item.translated_text_ru || item.user_scene_label || "").trim();
+  const hasCandidates = Array.isArray(item.candidates) && item.candidates.length > 0;
+
+  if (hasCandidates) {
+    return {
+      ...item,
+      id,
+      audio_scene_id: item.audio_scene_id || id,
+      audioSceneId: item.audioSceneId || id,
+      scene_id: item.scene_id || id,
+      sourceVideoId,
+      source_video_id: sourceVideoId,
+      target_t0: start,
+      target_t1: end,
+      targetStartSec: start,
+      targetEndSec: end,
+      text,
+    };
+  }
+
+  const candidateId = `${id}_placeholder_candidate_01`;
+  const safeDuration = Math.max(0.05, end - start);
+  return {
+    ...item,
+    id,
+    audio_scene_id: item.audio_scene_id || id,
+    audioSceneId: item.audioSceneId || id,
+    scene_id: item.scene_id || id,
+    sourceVideoId,
+    source_video_id: sourceVideoId,
+    target_t0: start,
+    target_t1: end,
+    targetStartSec: start,
+    targetEndSec: end,
+    duration_sec: toFiniteNumber(item.duration_sec ?? item.durationSec, safeDuration),
+    durationSec: toFiniteNumber(item.durationSec ?? item.duration_sec, safeDuration),
+    text,
+    selected_candidate_id: String(item.selected_candidate_id || item.selectedCandidateId || candidateId),
+    selectedCandidateId: String(item.selectedCandidateId || item.selected_candidate_id || candidateId),
+    candidates: [
+      {
+        id: candidateId,
+        candidate_id: candidateId,
+        candidateType: "timing_placeholder",
+        candidate_type: "timing_placeholder",
+        sourceKind: "pending_source_match",
+        source_kind: "pending_source_match",
+        sourceVideoId,
+        source_video_id: sourceVideoId,
+        sourceVideoStartSec: toFiniteNumber(item.video_t0 ?? item.sourceVideoStartSec ?? item.source_video_start_sec ?? start, start),
+        sourceVideoEndSec: toFiniteNumber(item.video_t1 ?? item.sourceVideoEndSec ?? item.source_video_end_sec ?? start + safeDuration, start + safeDuration),
+        video_t0: toFiniteNumber(item.video_t0 ?? item.sourceVideoStartSec ?? item.source_video_start_sec ?? start, start),
+        video_t1: toFiniteNumber(item.video_t1 ?? item.sourceVideoEndSec ?? item.source_video_end_sec ?? start + safeDuration, start + safeDuration),
+        matchReason: "Timing-only JSON import: placeholder candidate, choose/replace source window later.",
+        match_reason: "Timing-only JSON import: placeholder candidate, choose/replace source window later.",
+        confidence: 0,
+      },
+    ],
+  };
+}
+
 export function parseVideoMatchBoardJson(jsonText = "", sourceVideoUrl = "") {
   let parsed;
+  let unwrapWarningsV206A = [];
   try {
     parsed = JSON.parse(String(jsonText || ""));
   } catch (error) {
     return { ok: false, error: `Невалидный JSON: ${String(error?.message || error)}` };
   }
   if (!parsed || typeof parsed !== "object") return { ok: false, error: "JSON должен быть объектом." };
-  const schemaAlias = parsed.schema === VIDEO_MATCH_BOARD_SCHEMA_PHOTOSTUDIO_V2
+
+  const originalParsedV206A = parsed;
+  const unwrappedV206A = unwrapVideoMatchImportRootV206A(parsed);
+  parsed = unwrappedV206A.parsed || parsed;
+  unwrapWarningsV206A = unwrappedV206A.warnings || [];
+
+  const pickedSegmentsV206A = pickVideoMatchSegmentArrayV206A(parsed);
+  let schemaAlias = parsed.schema === VIDEO_MATCH_BOARD_SCHEMA_PHOTOSTUDIO_V2
     ? VIDEO_MATCH_BOARD_SCHEMA_V2
     : parsed.schema;
   if (![VIDEO_MATCH_BOARD_SCHEMA_V1, VIDEO_MATCH_BOARD_SCHEMA_V2].includes(schemaAlias)) {
-    return { ok: false, error: `schema должен быть ${VIDEO_MATCH_BOARD_SCHEMA_V1} или ${VIDEO_MATCH_BOARD_SCHEMA_V2}.` };
+    if (pickedSegmentsV206A.length) {
+      schemaAlias = Array.isArray(parsed.matches) ? VIDEO_MATCH_BOARD_SCHEMA_V1 : VIDEO_MATCH_BOARD_SCHEMA_V2;
+      unwrapWarningsV206A.push(`schema ${parsed.schema || originalParsedV206A.schema || "unknown"} принят как timing/video_match seed`);
+    } else {
+      return { ok: false, error: `schema должен быть ${VIDEO_MATCH_BOARD_SCHEMA_V1} или ${VIDEO_MATCH_BOARD_SCHEMA_V2}.` };
+    }
   }
 
   let matchSegments = [];
   if (schemaAlias === VIDEO_MATCH_BOARD_SCHEMA_V1) {
-    if (!Array.isArray(parsed.matches)) return { ok: false, error: "matches должен быть массивом." };
-    matchSegments = parsed.matches.map((match, index) => normalizeV1MatchAsSegment(match, index, sourceVideoUrl));
+    const matchesV206A = Array.isArray(parsed.matches) ? parsed.matches : pickedSegmentsV206A;
+    if (!Array.isArray(matchesV206A) || !matchesV206A.length) return { ok: false, error: "matches должен быть массивом." };
+    matchSegments = matchesV206A.map((match, index) => normalizeV1MatchAsSegment(match, index, sourceVideoUrl));
   } else {
-    if (!Array.isArray(parsed.segments)) return { ok: false, error: "segments должен быть массивом." };
-    matchSegments = parsed.segments.map((segment, index) => normalizeVideoMatchSegment(segment, index, sourceVideoUrl));
+    const sourceSegmentsV206A = (Array.isArray(parsed.segments) && parsed.segments.length)
+      ? parsed.segments
+      : pickedSegmentsV206A;
+    if (!Array.isArray(sourceSegmentsV206A) || !sourceSegmentsV206A.length) return { ok: false, error: "segments должен быть массивом." };
+    matchSegments = sourceSegmentsV206A
+      .map((segment, index) => normalizeVideoMatchImportSegmentV206A(segment, index))
+      .map((segment, index) => normalizeVideoMatchSegment(segment, index, sourceVideoUrl));
   }
 
   const videoBlocks = buildVideoBlocksFromMatchSegments(matchSegments, sourceVideoUrl);
@@ -1126,7 +1312,12 @@ export function parseVideoMatchBoardJson(jsonText = "", sourceVideoUrl = "") {
     importWarnings: normalizeVideoMatchSourceVideos(parsed).length ? [] : ["sourceVideos is empty; bind source video V1 before assembly"],
     selectedSegmentId: matchSegments[0]?.id || "",
     selectedCandidateId: matchSegments[0]?.selectedCandidateId || "",
-    raw: parsed,
+    raw: {
+      ...parsed,
+      __original_import_schema: originalParsedV206A?.schema || "",
+      __unwrap_warnings: unwrapWarningsV206A,
+      segments: Array.isArray(parsed.segments) ? parsed.segments : matchSegments,
+    },
   };
 }
 

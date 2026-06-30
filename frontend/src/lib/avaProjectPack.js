@@ -681,6 +681,261 @@ function buildSceneTextContractV177A(scene = {}) {
   }
 }
 
+
+// AVA_MANUAL_TIMING_ASR_PACK_EXPORT_V206F:
+// Manual Timing UI can show ASR words by overlapping speechSegments with scene windows.
+// The project-pack exporter must do the same before calculating pipeline/asr/readiness state.
+function compactTextV206F(value = '') {
+  return String(value ?? '').replace(/\s+/g, ' ').trim()
+}
+
+function joinUniqueTextV206F(parts = [], separator = ' ') {
+  const seen = new Set()
+  return asArray(parts)
+    .map((part) => compactTextV206F(part))
+    .filter(Boolean)
+    .filter((part) => {
+      const key = part.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .join(separator)
+}
+
+function numberFromAnyV206F(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue
+    const num = Number(value)
+    if (Number.isFinite(num)) return num
+  }
+  return 0
+}
+
+function getAsrSegmentStartV206F(segment = {}) {
+  return numberFromAnyV206F(segment.start, segment.start_sec, segment.startSec, segment.t0, segment.begin, segment.from)
+}
+
+function getAsrSegmentEndV206F(segment = {}) {
+  const start = getAsrSegmentStartV206F(segment)
+  const duration = numberFromAnyV206F(segment.duration, segment.duration_sec, segment.durationSec)
+  const end = numberFromAnyV206F(segment.end, segment.end_sec, segment.endSec, segment.t1, segment.finish, segment.to)
+  return end > start ? end : (duration > 0 ? start + duration : start)
+}
+
+function getAsrWordStartV206F(word = {}) {
+  return numberFromAnyV206F(word.start, word.start_sec, word.startSec, word.t0, word.begin, word.from)
+}
+
+function getAsrWordEndV206F(word = {}) {
+  const start = getAsrWordStartV206F(word)
+  const duration = numberFromAnyV206F(word.duration, word.duration_sec, word.durationSec)
+  const end = numberFromAnyV206F(word.end, word.end_sec, word.endSec, word.t1, word.finish, word.to)
+  return end > start ? end : (duration > 0 ? start + duration : start)
+}
+
+function getAsrWordTextV206F(word = {}) {
+  return compactTextV206F(word.word ?? word.text ?? word.value ?? word.token ?? word.label ?? '')
+}
+
+function segmentsOverlapV206F(aStart = 0, aEnd = 0, bStart = 0, bEnd = 0) {
+  const startA = Number(aStart || 0)
+  const endA = Math.max(startA, Number(aEnd || startA))
+  const startB = Number(bStart || 0)
+  const endB = Math.max(startB, Number(bEnd || startB))
+  return Math.max(startA, startB) < Math.min(endA, endB)
+}
+
+function normalizeSpeechSegmentForPackV206F(segment = {}, index = 0, source = 'existing_speech_segments') {
+  if (!segment || typeof segment !== 'object') return null
+  const start = getAsrSegmentStartV206F(segment)
+  const end = getAsrSegmentEndV206F(segment)
+  const words = asArray(segment.words || segment.word_segments || segment.wordSegments || segment.tokens).map((word, wordIndex) => ({
+    ...word,
+    id: firstText(word.id, word.word_id, word.wordId, `${firstText(segment.phrase_id, segment.phraseId, segment.id, `phrase_${index + 1}`)}_w${wordIndex + 1}`),
+    start: getAsrWordStartV206F(word),
+    end: getAsrWordEndV206F(word),
+    text: getAsrWordTextV206F(word),
+  })).filter((word) => word.text || word.end > word.start)
+  return {
+    ...segment,
+    id: firstText(segment.id, segment.phrase_id, segment.phraseId, segment.segment_id, segment.segmentId, `phrase_${String(index + 1).padStart(3, '0')}`),
+    phrase_id: firstText(segment.phrase_id, segment.phraseId, segment.id, segment.segment_id, segment.segmentId, `phrase_${String(index + 1).padStart(3, '0')}`),
+    start,
+    end,
+    text: compactTextV206F(segment.text || segment.originalText || segment.original_text || segment.transcript || segment.caption || ''),
+    ruText: compactTextV206F(segment.ruText || segment.text_ru || segment.translation_ru || segment.translated_text_ru || segment.translation || ''),
+    meaningText: compactTextV206F(segment.meaningText || segment.meaning_hint_ru || segment.meaning_ru || segment.meaning || ''),
+    source: firstText(segment.asr_source, segment.source, source),
+    words,
+  }
+}
+
+
+function guessAsrSourceLabelV206G(sourceName = '', rawSegments = []) {
+  const joined = [
+    sourceName,
+    ...asArray(rawSegments).slice(0, 12).flatMap((segment) => [
+      segment?.asr_source,
+      segment?.asrSource,
+      segment?.source,
+      segment?.source_kind,
+      segment?.sourceKind,
+      segment?.provider,
+      segment?.track,
+      segment?.stem,
+      segment?.kind,
+      segment?.type,
+    ]),
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+
+  if (/asr[_-]?vocal[_-]?stem|vocal[_-]?stem|stem/.test(joined)) return 'asr_vocal_stem'
+  if (/vocal|song|lyrics|lyric|sing|music/.test(joined)) return 'vocal_asr'
+  if (/speech|main|dialog|dialogue|transcription|narration|narrator/.test(joined)) return 'speech_asr'
+  return 'existing_speech_segments'
+}
+
+function collectSpeechSegmentsForPackV206F(manualTiming = {}) {
+  const sourceCandidates = [
+    ['speech_segments', manualTiming.speech_segments],
+    ['speechSegments', manualTiming.speechSegments],
+    ['phrases', manualTiming.phrases],
+    ['asr_phrases', manualTiming.asr_phrases],
+    ['audio_phrases', manualTiming.audio_phrases],
+    ['audioPhrases', manualTiming.audioPhrases],
+    ['timing.speech_segments', manualTiming?.timing?.speech_segments],
+    ['timing.speechSegments', manualTiming?.timing?.speechSegments],
+    ['asr.segments', manualTiming?.asr?.segments],
+    ['main_asr.segments', manualTiming?.main_asr?.segments],
+    ['vocal_asr.segments', manualTiming?.vocal_asr?.segments],
+    ['transcription.segments', manualTiming?.transcription?.segments],
+  ]
+  const found = sourceCandidates.find(([, value]) => Array.isArray(value) && value.length > 0)
+  const source = found?.[0] || 'none'
+  const rawSegments = asArray(found?.[1])
+  const sourceLabel = guessAsrSourceLabelV206G(source, rawSegments)
+  const segments = rawSegments
+    .map((segment, index) => normalizeSpeechSegmentForPackV206F(segment, index, sourceLabel))
+    .filter(Boolean)
+    .map((segment) => ({
+      ...segment,
+      source: firstText(segment.asr_source, segment.asrSource, segment.source, sourceLabel),
+      asr_source: firstText(segment.asr_source, segment.asrSource, segment.source, sourceLabel),
+    }))
+  const realSourceLabel = guessAsrSourceLabelV206G(sourceLabel, segments)
+  const normalizedSegments = segments.map((segment) => ({
+    ...segment,
+    source: realSourceLabel,
+    asr_source: realSourceLabel,
+  }))
+  const words = normalizedSegments.flatMap((segment) => asArray(segment.words))
+  return {
+    source,
+    source_label: realSourceLabel,
+    segments: normalizedSegments,
+    words,
+    segments_count: normalizedSegments.length,
+    words_count: words.length,
+  }
+}
+
+function clipSpeechSegmentToSceneForPackV206F(sceneStart = 0, sceneEnd = 0, segment = {}) {
+  const segStart = getAsrSegmentStartV206F(segment)
+  const segEnd = getAsrSegmentEndV206F(segment)
+  const overlap = Math.max(0, Math.min(sceneEnd, segEnd) - Math.max(sceneStart, segStart))
+  const sceneDuration = Math.max(0.001, sceneEnd - sceneStart)
+  const segmentDuration = Math.max(0.001, segEnd - segStart)
+  const overlapRatioScene = overlap / sceneDuration
+  const overlapRatioSegment = overlap / segmentDuration
+  const isPartial = overlap > 0.03 && (segStart < sceneStart - 0.035 || segEnd > sceneEnd + 0.035)
+  const words = asArray(segment.words)
+  const wordsInside = words.filter((word) => {
+    const start = getAsrWordStartV206F(word)
+    const end = getAsrWordEndV206F(word)
+    const mid = start + ((Math.max(start, end) - start) / 2)
+    return mid >= sceneStart - 0.02 && mid <= sceneEnd + 0.02
+  })
+  const wordText = joinUniqueTextV206F(wordsInside.map(getAsrWordTextV206F))
+  return {
+    text: wordText || (words.length ? '' : compactTextV206F(segment.text || segment.originalText || segment.original_text || '')),
+    ruText: compactTextV206F(segment.ruText || segment.text_ru || segment.translation_ru || segment.translated_text_ru || segment.translation || ''),
+    meaningText: compactTextV206F(segment.meaningText || segment.meaning_hint_ru || segment.meaning_ru || segment.meaning || ''),
+    wordIds: wordsInside.map((word) => firstText(word.id, word.word_id, word.wordId)).filter(Boolean),
+    isPartial,
+    hasWords: words.length > 0,
+    overlap,
+    overlapRatioScene,
+    overlapRatioSegment,
+  }
+}
+
+function buildSceneSpeechExportForPackV206F(scene = {}, speechContext = {}, route = '') {
+  const sceneStart = Number(scene.start ?? scene.start_sec ?? scene.target_t0 ?? 0) || 0
+  const rawSceneEnd = Number(scene.end ?? scene.end_sec ?? scene.target_t1 ?? 0) || 0
+  const sceneEnd = Math.max(sceneStart, rawSceneEnd)
+  const sceneItems = asArray(speechContext.segments)
+    .filter((segment) => segmentsOverlapV206F(sceneStart, sceneEnd, getAsrSegmentStartV206F(segment), getAsrSegmentEndV206F(segment)))
+    .map((segment) => ({ segment, clipped: clipSpeechSegmentToSceneForPackV206F(sceneStart, sceneEnd, segment) }))
+    .filter((item) => item.clipped.overlap > 0.03 && (item.clipped.text || item.clipped.ruText || item.clipped.overlapRatioScene > 0.12 || item.clipped.overlapRatioSegment > 0.12))
+
+  const sourcePhraseIds = sceneItems.map(({ segment }) => firstText(segment.phrase_id, segment.phraseId, segment.id, segment.segment_id, segment.segmentId)).filter(Boolean)
+  const sourceWordIds = sceneItems.flatMap((item) => item.clipped.wordIds || [])
+  const sceneWordText = joinUniqueTextV206F(sceneItems.map((item) => item.clipped.text))
+  const phraseTranslationRu = joinUniqueTextV206F(sceneItems.map((item) => item.clipped.ruText))
+  const phraseMeaningRu = joinUniqueTextV206F(sceneItems.map((item) => item.clipped.meaningText), ' • ')
+  const phraseCutWarning = sceneItems.some((item) => item.clipped.isPartial)
+  const lowerRoute = String(route || scene.route || scene.planned_route || '').toLowerCase()
+  const containsVocal = Boolean(scene.contains_vocal === true || scene.containsVocal === true || lowerRoute.includes('ia2v') || lowerRoute.includes('lip') || sceneItems.length > 0)
+
+  return {
+    source_phrase_ids: [...new Set(sourcePhraseIds)],
+    source_word_ids: [...new Set(sourceWordIds)],
+    scene_word_text: sceneWordText,
+    lyrics_text: sceneWordText,
+    original_text: sceneWordText,
+    translated_text_ru: phraseTranslationRu || sceneWordText,
+    meaning_hint_ru: phraseCutWarning ? '' : phraseMeaningRu,
+    phrase_cut_warning: phraseCutWarning,
+    phrase_cut_boundary_check: phraseCutWarning ? 'phrase_cut_boundary_check' : '',
+    asr_overlap_warning: phraseCutWarning ? 'phrase overlaps scene boundary; timing not changed' : '',
+    contains_vocal: containsVocal,
+    source_kind: sceneItems.length ? 'asr_overlap' : firstText(scene.source_kind, scene.sourceKind),
+    asr_source: firstText(speechContext.source_label, speechContext.source, 'existing_speech_segments'),
+  }
+}
+
+function buildAssistantFirstResponsePolicyV206F({ audioDurationSec = 0, normalizedScenes = [], sceneTextStats = {}, asrState = {}, format = '' } = {}) {
+  const routeCounts = normalizedScenes.reduce((acc, scene) => {
+    const key = firstText(scene.route, 'i2v') || 'i2v'
+    acc[key] = (acc[key] || 0) + 1
+    return acc
+  }, {})
+  return {
+    version: 'manual_timing_first_response_policy_v206f',
+    read_this_first: true,
+    first_say: [
+      `Сцен: ${normalizedScenes.length}`,
+      `Длительность аудио: ${Number(audioDurationSec || 0).toFixed(3)} sec`,
+      `Формат: ${format || 'unknown'}`,
+      `ASR: ${asrState.ready ? 'есть' : 'нет'} (${asrState.segments_count || 0} phrases, ${asrState.words_count || 0} words)`,
+      `Текст сцен: ${sceneTextStats.real || 0}/${sceneTextStats.total || 0}`,
+      `Routes: ${Object.entries(routeCounts).map(([route, count]) => `${route}:${count}`).join(', ')}`,
+    ],
+    then_ask_user: [
+      'Ты хочешь клип, историю, подкаст или Video Node/source-video нарезку?',
+      'Строим по смыслу текста, по ритму, по концам фраз или по ручной идее?',
+      'Routes locked или можно менять route/planned_route?',
+      'Нужно отправлять задачу Codex или пока только план/вопросы?',
+    ],
+    do_not_start_with: [
+      'photo prompts',
+      'video prompts',
+      'image-aware video prompt pass',
+      'repo changes/Codex task without confirmation',
+    ],
+  }
+}
+
 function buildSceneSourceContractV177A(scene = {}, start = 0, end = 0) {
   const existing = asObject(scene.scene_source || scene.sceneSource)
   const kind = firstText(existing.kind, scene.source_kind, scene.composer_source_kind, scene.is_silence ? 'silence' : '', scene.composer_block_type === 'phrase' ? 'inserted_audio' : '', 'main_audio')
@@ -729,66 +984,120 @@ function buildBoardCardContractV177A(scene = {}, route = 'i2v', color = '') {
   }
 }
 
+
+
 function buildSceneTextStatsV177A(normalizedScenes = []) {
   const total = normalizedScenes.length
-  const labelOnly = normalizedScenes.filter((scene) => scene.scene_text?.status === 'label_only' || sceneTextLooksLabelOnlyV177A(scene)).length
-  const real = Math.max(0, total - labelOnly)
-  return { total, labelOnly, real }
+  const textReadyScenes = normalizedScenes.filter((scene) => !sceneTextLooksLabelOnlyV177A(scene))
+  const labelOnly = Math.max(0, total - textReadyScenes.length)
+  const real = textReadyScenes.length
+  const asrPhraseIds = new Set()
+  const asrWordIds = new Set()
+  const asrSources = new Set()
+  normalizedScenes.forEach((scene) => {
+    asArray(scene.source_phrase_ids || scene.sourcePhraseIds).forEach((id) => { if (id) asrPhraseIds.add(String(id)) })
+    asArray(scene.source_word_ids || scene.sourceWordIds).forEach((id) => { if (id) asrWordIds.add(String(id)) })
+    const source = firstText(scene.asr_source, scene.asrSource)
+    if (source) asrSources.add(source)
+  })
+  const scenesWithAsr = normalizedScenes.filter((scene) => asArray(scene.source_phrase_ids || scene.sourcePhraseIds).length > 0).length
+  const cutBoundaryScenes = normalizedScenes.filter((scene) => scene.phrase_cut_warning === true || scene.phrase_cut_boundary_check).map((scene) => scene.scene_id || scene.id).filter(Boolean)
+  const asrSourceList = Array.from(asrSources)
+  const preferredAsrSource = asrSourceList.find((item) => /asr_vocal_stem/i.test(item))
+    || asrSourceList.find((item) => /vocal/i.test(item))
+    || asrSourceList.find((item) => /speech/i.test(item))
+    || asrSourceList[0]
+    || ''
+  return {
+    total,
+    labelOnly,
+    real,
+    scene_text_ready_count: real,
+    scene_text_empty_count: labelOnly,
+    scene_text_partial: real > 0 && labelOnly > 0,
+    asr_phrase_count: asrPhraseIds.size,
+    asr_word_count: asrWordIds.size,
+    scenes_with_asr: scenesWithAsr,
+    has_asr_segments: asrPhraseIds.size > 0 || scenesWithAsr > 0,
+    asr_source: preferredAsrSource,
+    asr_sources: asrSourceList,
+    primary_asr_source: preferredAsrSource,
+    cut_boundary_scene_ids: cutBoundaryScenes,
+  }
 }
 
 function buildPipelineStateContractV177A({ audio = null, normalizedScenes = [], sceneTextStats = {} } = {}) {
   const audioReady = Boolean(audio)
   const sceneSplitReady = normalizedScenes.length > 0
-  const textReady = Boolean(sceneTextStats.real > 0 && sceneTextStats.labelOnly === 0)
-  const blocked = Boolean(audioReady && sceneSplitReady && !textReady)
+  const hasAsr = Boolean(sceneTextStats.has_asr_segments || sceneTextStats.asr_phrase_count > 0)
+  const hasAnySceneText = Boolean((sceneTextStats.real || 0) > 0)
+  const allSceneTextReady = Boolean(sceneTextStats.total > 0 && sceneTextStats.labelOnly === 0 && hasAnySceneText)
+  const partialSceneText = Boolean(hasAsr && hasAnySceneText && !allSceneTextReady)
+  const blocked = Boolean(audioReady && sceneSplitReady && !hasAnySceneText)
+  const blocker = !hasAsr && !hasAnySceneText
+    ? 'Audio exists, but ASR scene text is missing. Run ASR or fill real scene text before Codex storyboard.'
+    : (partialSceneText ? 'ASR exists, but some scene text is empty. Review partial_scene_text_review before storyboard.' : '')
   return {
     current_stage: sceneSplitReady ? 'scene_split_ready' : 'input_validation',
     audio_ready: audioReady,
-    asr_ready: textReady,
-    real_scene_text_ready: textReady,
-    translation_ready: textReady,
+    asr_ready: hasAsr,
+    real_scene_text_ready: allSceneTextReady ? true : (hasAnySceneText ? 'partial' : false),
+    translation_ready: allSceneTextReady ? true : (hasAnySceneText ? 'partial' : false),
     scene_split_ready: sceneSplitReady,
     route_map_ready: sceneSplitReady,
     board_import_ready: sceneSplitReady,
-    codex_storyboard_ready: Boolean(sceneSplitReady && textReady),
+    codex_storyboard_ready: Boolean(sceneSplitReady && hasAnySceneText),
     blocked,
-    blocker_reason: blocked ? 'Scenes exist, but text is only labels/placeholders. Run ASR or fill real scene text before Codex storyboard.' : '',
-    next_required_action: blocked ? 'run_asr_or_fill_scene_text' : (sceneSplitReady ? 'codex_storyboard' : 'create_scene_split'),
-    allowed_actions: blocked ? ['review_scenes', 'review_routes', 'board_import', 'run_asr_or_fill_scene_text'] : ['review_scenes', 'review_routes', 'board_import', 'codex_storyboard'],
-    forbidden_actions: blocked ? ['codex_storyboard', 'photo_prompts', 'video_generation'] : [],
+    blocker_reason: blocked || partialSceneText ? blocker : '',
+    next_required_action: !hasAsr && !hasAnySceneText
+      ? 'run_asr_or_fill_scene_text'
+      : (partialSceneText ? 'partial_scene_text_review' : (sceneSplitReady ? 'storyboard_questions' : 'create_scene_split')),
+    allowed_actions: !hasAsr && !hasAnySceneText
+      ? ['review_scenes', 'review_routes', 'board_import', 'run_asr_or_fill_scene_text']
+      : ['review_scenes', 'review_routes', 'board_import', 'storyboard_questions', 'codex_storyboard'],
+    forbidden_actions: !hasAsr && !hasAnySceneText ? ['codex_storyboard', 'photo_prompts', 'video_generation'] : ['image_aware_video_prompt_pass_without_stills'],
   }
 }
 
+
+
 function buildAsrStateContractV177A({ audio = null, sceneTextStats = {} } = {}) {
-  const ready = Boolean(sceneTextStats.total > 0 && sceneTextStats.labelOnly === 0)
+  const hasAsr = Boolean(sceneTextStats.has_asr_segments || sceneTextStats.asr_phrase_count > 0)
+  const ready = hasAsr
+  const partial = Boolean(hasAsr && sceneTextStats.real > 0 && sceneTextStats.labelOnly > 0)
   return {
     required: Boolean(audio),
     ready,
     asr_type_required: 'auto: vocal_asr for songs, speech_asr for stories/podcast',
     main_asr_done: ready,
-    vocal_asr_done: false,
-    word_level_ready: ready,
+    vocal_asr_done: ready,
+    word_level_ready: Boolean((sceneTextStats.asr_word_count || 0) > 0),
     phrase_level_ready: ready,
-    segments_count: ready ? sceneTextStats.total : 0,
-    words_count: 0,
+    segments_count: sceneTextStats.asr_phrase_count || 0,
+    words_count: sceneTextStats.asr_word_count || 0,
     scene_text_ready_count: sceneTextStats.real || 0,
-    quality: ready ? 'scene_text_ready' : 'missing',
-    source: ready ? 'scene_text' : 'none',
+    scene_text_empty_count: sceneTextStats.labelOnly || 0,
+    quality: ready ? (partial ? 'partial' : 'ready') : 'missing',
+    source: ready ? firstText(sceneTextStats.asr_source, sceneTextStats.primary_asr_source, 'existing_speech_segments') : 'none',
+    sources: asArray(sceneTextStats.asr_sources),
     blocker_if_missing: 'Audio exists but ASR is missing. For songs run vocal ASR; for narrator/story run speech ASR before automatic scene split.',
+    phrase_cut_boundary_check: sceneTextStats.cut_boundary_scene_ids || [],
   }
 }
 
 function buildTranslationStateContractV177A(sceneTextStats = {}) {
-  const ready = Boolean(sceneTextStats.total > 0 && sceneTextStats.labelOnly === 0)
+  const hasAnyText = Boolean((sceneTextStats.real || 0) > 0)
+  const ready = Boolean(sceneTextStats.total > 0 && sceneTextStats.labelOnly === 0 && hasAnyText)
+  const partial = Boolean(hasAnyText && !ready)
   return {
     required: true,
-    ready,
-    translated_scene_count: ready ? sceneTextStats.total : 0,
-    meaning_scene_count: ready ? sceneTextStats.total : 0,
+    ready: ready ? true : (partial ? 'partial' : false),
+    translated_scene_count: sceneTextStats.real || 0,
+    meaning_scene_count: sceneTextStats.real || 0,
     real_text_scene_count: sceneTextStats.real || 0,
     label_only_scene_count: sceneTextStats.labelOnly || 0,
     total_scene_count: sceneTextStats.total || 0,
-    quality: ready ? 'scene_text_ready' : 'placeholder_labels_only',
+    quality: ready ? 'scene_text_ready' : (partial ? 'partial_scene_text_review' : 'placeholder_labels_only'),
     needs_translation_pass: false,
     needs_meaning_pass: false,
     blocker_if_placeholder_only: 'Scene text is only speaker/block labels. Run ASR or fill real scene text before Codex storyboard.',
@@ -1086,6 +1395,7 @@ function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming
   const blockColorMap = buildColorMaps(storyBlocks, source)
   const total = source.length
   const sceneFormatV177A = getProjectFormat({ format: projectFormat }, manualTiming, board) || '16:9'
+  const speechContextV206F = collectSpeechSegmentsForPackV206F(manualTiming)
 
   if (!source.length && audioDurationSec > 0) {
     source.push({ id: 'seg_01', scene_id: 'seg_01', start: 0, end: audioDurationSec, duration: audioDurationSec, route: 'i2v' })
@@ -1106,6 +1416,26 @@ function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming
     const color = blockColorMap.has(blockId)
       ? blockColorMap.get(blockId)
       : normalizeHexColor(firstText(scene.color, scene.sceneColor, scene.blockColor, production.color, production.sceneColor, production.blockColor), index)
+    const speechExportV206F = buildSceneSpeechExportForPackV206F({ ...production, ...scene, start, end, route }, speechContextV206F, route)
+    const sceneWordTextV206F = firstText(scene.scene_word_text, scene.text, scene.lyrics_text, production.scene_word_text, production.text, speechExportV206F.scene_word_text)
+    const lyricsTextV206F = firstText(scene.lyrics_text, scene.scene_word_text, production.lyrics_text, production.scene_word_text, speechExportV206F.lyrics_text, sceneWordTextV206F)
+    const originalTextV206F = firstText(scene.original_text, scene.originalText, production.original_text, production.originalText, speechExportV206F.original_text, sceneWordTextV206F)
+    const translatedTextRuV206F = firstText(scene.translated_text_ru, scene.translation, scene.translation_ru, scene.ruText, production.translated_text_ru, production.translation, speechExportV206F.translated_text_ru)
+    const meaningHintRuV206F = firstText(scene.meaning_hint_ru, scene.meaning, scene.meaningText, production.meaning_hint_ru, production.meaning, speechExportV206F.meaning_hint_ru)
+    const sourcePhraseIdsV206F = asArray(scene.source_phrase_ids || scene.sourcePhraseIds).length ? asArray(scene.source_phrase_ids || scene.sourcePhraseIds) : asArray(speechExportV206F.source_phrase_ids)
+    const sourceWordIdsV206F = asArray(scene.source_word_ids || scene.sourceWordIds).length ? asArray(scene.source_word_ids || scene.sourceWordIds) : asArray(speechExportV206F.source_word_ids)
+    const textSceneForContractsV206F = {
+      ...production,
+      ...scene,
+      scene_word_text: sceneWordTextV206F,
+      lyrics_text: lyricsTextV206F,
+      original_text: originalTextV206F,
+      translated_text_ru: translatedTextRuV206F,
+      meaning_hint_ru: meaningHintRuV206F,
+      source_phrase_ids: sourcePhraseIdsV206F,
+      source_word_ids: sourceWordIdsV206F,
+      phrase_cut_warning: Boolean(scene.phrase_cut_warning || speechExportV206F.phrase_cut_warning),
+    }
 
     return {
       ...production,
@@ -1129,15 +1459,26 @@ function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming
       model_route: routeContractV177A,
       route_contract: routeContractV177A,
       route_requirements: routeContractV177A,
-      scene_text: buildSceneTextContractV177A({ ...production, ...scene }),
-      scene_source: buildSceneSourceContractV177A({ ...production, ...scene }, start, end),
-      scene_requirements: buildSceneRequirementsContractV177A({ ...production, ...scene }, routeContractV177A),
-      board_card: buildBoardCardContractV177A({ ...production, ...scene }, route, color),
-      scene_word_text: firstText(scene.scene_word_text, scene.text, scene.lyrics_text, production.scene_word_text, production.text),
-      lyrics_text: firstText(scene.lyrics_text, scene.scene_word_text, production.lyrics_text, production.scene_word_text),
-      original_text: firstText(scene.original_text, scene.originalText, production.original_text, production.originalText),
-      translated_text_ru: firstText(scene.translated_text_ru, scene.translation, scene.translation_ru, scene.ruText, production.translated_text_ru, production.translation),
-      meaning_hint_ru: firstText(scene.meaning_hint_ru, scene.meaning, scene.meaningText, production.meaning_hint_ru, production.meaning),
+      scene_text: buildSceneTextContractV177A(textSceneForContractsV206F),
+      scene_source: buildSceneSourceContractV177A(textSceneForContractsV206F, start, end),
+      scene_requirements: buildSceneRequirementsContractV177A(textSceneForContractsV206F, routeContractV177A),
+      board_card: buildBoardCardContractV177A(textSceneForContractsV206F, route, color),
+      scene_word_text: sceneWordTextV206F,
+      lyrics_text: lyricsTextV206F,
+      original_text: originalTextV206F,
+      translated_text_ru: translatedTextRuV206F,
+      meaning_hint_ru: meaningHintRuV206F,
+      source_phrase_ids: sourcePhraseIdsV206F,
+      sourcePhraseIds: sourcePhraseIdsV206F,
+      source_word_ids: sourceWordIdsV206F,
+      sourceWordIds: sourceWordIdsV206F,
+      contains_vocal: Boolean(scene.contains_vocal === true || scene.containsVocal === true || speechExportV206F.contains_vocal === true),
+      containsVocal: Boolean(scene.contains_vocal === true || scene.containsVocal === true || speechExportV206F.contains_vocal === true),
+      source_kind: firstText(scene.source_kind, scene.sourceKind, speechExportV206F.source_kind),
+      asr_source: firstText(scene.asr_source, speechExportV206F.asr_source),
+      phrase_cut_warning: Boolean(scene.phrase_cut_warning || speechExportV206F.phrase_cut_warning),
+      phrase_cut_boundary_check: firstText(scene.phrase_cut_boundary_check, speechExportV206F.phrase_cut_boundary_check),
+      asr_overlap_warning: firstText(scene.asr_overlap_warning, speechExportV206F.asr_overlap_warning),
       blockId,
       block_id: blockId,
       blockTitle,
@@ -1251,6 +1592,14 @@ function rootScenesFromNormalized(normalizedScenes = [], modeId = 'manual_genera
       original_text: scene.original_text,
       translated_text_ru: scene.translated_text_ru,
       meaning_hint_ru: scene.meaning_hint_ru,
+      source_phrase_ids: asArray(scene.source_phrase_ids || scene.sourcePhraseIds),
+      source_word_ids: asArray(scene.source_word_ids || scene.sourceWordIds),
+      contains_vocal: Boolean(scene.contains_vocal || scene.containsVocal),
+      asr_source: firstText(scene.asr_source),
+      source_kind: firstText(scene.source_kind),
+      phrase_cut_warning: Boolean(scene.phrase_cut_warning),
+      phrase_cut_boundary_check: firstText(scene.phrase_cut_boundary_check),
+      asr_overlap_warning: firstText(scene.asr_overlap_warning),
       blockId: scene.blockId,
       block_id: scene.block_id || scene.blockId,
       blockTitle: scene.blockTitle,
@@ -1287,6 +1636,12 @@ function timingScenesFromNormalized(normalizedScenes = []) {
     original_text: scene.original_text || scene.scene_word_text || '',
     translation: scene.translated_text_ru || '',
     meaning: scene.meaning_hint_ru || scene.viewer_should_understand || '',
+    source_phrase_ids: asArray(scene.source_phrase_ids || scene.sourcePhraseIds),
+    source_word_ids: asArray(scene.source_word_ids || scene.sourceWordIds),
+    contains_vocal: Boolean(scene.contains_vocal || scene.containsVocal),
+    asr_source: firstText(scene.asr_source),
+    phrase_cut_warning: Boolean(scene.phrase_cut_warning),
+    phrase_cut_boundary_check: firstText(scene.phrase_cut_boundary_check),
     note: firstText(scene.note, scene.recipe_step, scene.idea_fn, scene.viewer_should_understand),
     blockId: scene.blockId,
     blockTitle: scene.blockTitle,
@@ -1339,6 +1694,67 @@ function sanitizeFinalGenerationPromptV17(prompt = '') {
 }
 
 
+
+// AVA_MANUAL_TIMING_PRODUCTION_SCENES_ASR_SYNC_V206G:
+// production.scenes must carry the same usable ASR text as root scenes[] and timing.scenes[].
+function buildProductionAsrFieldsV206G(scene = {}) {
+  const sceneWordText = firstText(scene.scene_word_text, scene.sceneWordText, scene.text, scene.lyrics_text, scene.original_text)
+  const lyricsText = firstText(scene.lyrics_text, scene.lyricsText, sceneWordText)
+  const originalText = firstText(scene.original_text, scene.originalText, sceneWordText)
+  const translatedTextRu = firstText(scene.translated_text_ru, scene.translatedTextRu, scene.translation_ru, scene.translation, scene.ruText)
+  const meaningHintRu = firstText(scene.meaning_hint_ru, scene.meaningHintRu, scene.meaningText, scene.meaning)
+  const sourcePhraseIds = asArray(scene.source_phrase_ids || scene.sourcePhraseIds)
+  const sourceWordIds = asArray(scene.source_word_ids || scene.sourceWordIds)
+  const hasAsrText = Boolean(sceneWordText || originalText || lyricsText || sourcePhraseIds.length)
+  return {
+    scene_word_text: sceneWordText,
+    lyrics_text: lyricsText,
+    original_text: originalText,
+    translated_text_ru: translatedTextRu,
+    meaning_hint_ru: meaningHintRu,
+    source_phrase_ids: sourcePhraseIds,
+    sourcePhraseIds,
+    source_word_ids: sourceWordIds,
+    sourceWordIds,
+    contains_vocal: Boolean(scene.contains_vocal === true || scene.containsVocal === true || /vocal|lyrics|lip|ia2v/i.test(String(scene.route || scene.planned_route || '')) || hasAsrText),
+    containsVocal: Boolean(scene.contains_vocal === true || scene.containsVocal === true || /vocal|lyrics|lip|ia2v/i.test(String(scene.route || scene.planned_route || '')) || hasAsrText),
+    asr_source: firstText(scene.asr_source, scene.asrSource, hasAsrText ? 'existing_speech_segments' : ''),
+    asrSource: firstText(scene.asr_source, scene.asrSource, hasAsrText ? 'existing_speech_segments' : ''),
+    source_kind: firstText(scene.source_kind, scene.sourceKind, hasAsrText ? 'asr_overlap' : ''),
+    sourceKind: firstText(scene.source_kind, scene.sourceKind, hasAsrText ? 'asr_overlap' : ''),
+    phrase_cut_warning: Boolean(scene.phrase_cut_warning === true || scene.phraseCutWarning === true),
+    phraseCutWarning: Boolean(scene.phrase_cut_warning === true || scene.phraseCutWarning === true),
+    phrase_cut_boundary_check: firstText(scene.phrase_cut_boundary_check, scene.phraseCutBoundaryCheck),
+    phraseCutBoundaryCheck: firstText(scene.phrase_cut_boundary_check, scene.phraseCutBoundaryCheck),
+    asr_overlap_warning: firstText(scene.asr_overlap_warning, scene.asrOverlapWarning),
+    asrOverlapWarning: firstText(scene.asr_overlap_warning, scene.asrOverlapWarning),
+  }
+}
+
+function sceneTextReadyCountV206G(scenes = []) {
+  return asArray(scenes).filter((scene) => !sceneTextLooksLabelOnlyV177A(scene)).length
+}
+
+function buildBoardImportPriorityV206G({ rootScenes = [], timingScenes = [], productionScenes = [] } = {}) {
+  const productionReady = sceneTextReadyCountV206G(productionScenes)
+  const rootReady = sceneTextReadyCountV206G(rootScenes)
+  const timingReady = sceneTextReadyCountV206G(timingScenes)
+  if (productionReady > 0) return ['production.scenes', 'scenes', 'timing.scenes']
+  if (rootReady > 0) return ['scenes', 'timing.scenes', 'production.scenes']
+  if (timingReady > 0) return ['timing.scenes', 'scenes', 'production.scenes']
+  return ['scenes', 'timing.scenes', 'production.scenes']
+}
+
+function buildVideoNodeHandoffNoteV206G() {
+  return {
+    source_binding_mode: 'not_bound_yet',
+    rule: 'Manual Timing does not assign real source video ids. Video Node assigns src_01/src_02 after source video upload.',
+    do_not_use_v1_as_loaded_source: true,
+    generated_placeholder_rule: 'Generated routes must not reference source video until user provides generated videos.',
+    video_node_workflow: 'Timing gives audio scene slots and routes only; Video Node later binds uploaded source video ranges or generated placeholders.',
+  }
+}
+
 function productionScenesFromNormalized(normalizedScenes = [], modeId = 'manual_general_v1') {
   return normalizedScenes.map((scene, index) => {
     const prompts = promptValues(scene)
@@ -1348,6 +1764,7 @@ function productionScenesFromNormalized(normalizedScenes = [], modeId = 'manual_
     const finalLipsyncPrompt = sanitizeFinalGenerationPromptV17(firstText(scene.final_lipsync_prompt, scene.finalLipsyncPrompt, scene.lipsync_motion_prompt, scene.lipsyncMotionPrompt))
     const promptValidation = validateFinalGenerationPromptV17(finalVideoPrompt, scene)
     const imageAwareUpdated = imageAwarePromptUpdated(scene)
+    const asrFieldsV206G = buildProductionAsrFieldsV206G(scene)
     return {
       scene_id: scene.scene_id,
       id: scene.id,
@@ -1378,8 +1795,11 @@ function productionScenesFromNormalized(normalizedScenes = [], modeId = 'manual_
       visual_action: scene.visual_action || '',
       viewer_should_understand: scene.viewer_should_understand || '',
       readability_check: scene.readability_check || '',
-      source_text: firstText(scene.scene_word_text, scene.lyrics_text, scene.original_text),
-      translated_text_ru: scene.translated_text_ru || '',
+      ...asrFieldsV206G,
+      source_text: firstText(asrFieldsV206G.scene_word_text, asrFieldsV206G.lyrics_text, asrFieldsV206G.original_text),
+      text: firstText(asrFieldsV206G.scene_word_text, asrFieldsV206G.original_text, asrFieldsV206G.lyrics_text),
+      translated_text_ru: asrFieldsV206G.translated_text_ru || '',
+      meaning_hint_ru: asrFieldsV206G.meaning_hint_ru || '',
       scene_action: firstText(scene.scene_action, scene.sceneAction, scene.visual_action),
       motion_hint: firstText(scene.motion_hint, scene.motionHint),
       planned_photo_filename: firstText(scene.planned_photo_filename, scene.photo_filename, scene.image_name, scene.first_frame_name),
@@ -1457,7 +1877,8 @@ function buildSceneBlockMap(storyBlocks = [], normalizedScenes = []) {
   return map
 }
 
-function buildReadiness({ modeId, audio, normalizedScenes, productionScenes, assets }) {
+
+function buildReadiness({ modeId, audio, normalizedScenes, productionScenes, assets, sceneTextStats = {} }) {
   const missing = []
   const warnings = []
   const next_questions = []
@@ -1467,6 +1888,9 @@ function buildReadiness({ modeId, audio, normalizedScenes, productionScenes, ass
   const hasAudioDuration = Boolean(Number(audio?.duration_sec || audio?.durationSec || 0) > 0)
   const hasScenes = normalizedScenes.length > 0
   const hasNonZeroTiming = normalizedScenes.some((scene) => Number(scene.duration || 0) > 0 || Number(scene.end || 0) > Number(scene.start || 0))
+  const hasAsr = Boolean(sceneTextStats.has_asr_segments || sceneTextStats.asr_phrase_count > 0)
+  const hasSceneText = Boolean((sceneTextStats.real || 0) > 0)
+  const partialSceneText = Boolean(hasAsr && hasSceneText && (sceneTextStats.labelOnly || 0) > 0)
   const hasProductionPrompts = productionScenes.some((scene) => scene.has_prompt === true)
   const hasGeneratedStills = productionScenes.some((scene) => scene.has_still === true)
   const ia2vScenes = normalizedScenes.filter((scene) => isIa2vRoute(scene.route))
@@ -1490,6 +1914,15 @@ function buildReadiness({ modeId, audio, normalizedScenes, productionScenes, ass
     missing.push('timing.scenes')
     next_actions_for_user.push('Сделай ASR / Manual Timing или импортируй готовый scene split.')
   }
+  if (!hasAsr && !hasSceneText) {
+    missing.push('timing.speech_segments')
+    next_actions_for_user.push('ASR текста нет: запусти ASR или заполни scene text вручную.')
+  }
+  if (partialSceneText) {
+    missing.push('partial_scene_text_review')
+    warnings.push('ASR найден, но часть сцен не получила текст по overlap. Проверь пустые сцены и phrase boundary warnings.')
+    next_actions_for_user.push('Проверь сцены без текста и границы фраз; timing автоматически не менялся.')
+  }
   if (ia2vScenes.length && !asArray(assets.character_refs).length) {
     missing.push('assets.character_refs.host')
     next_questions.push({
@@ -1501,11 +1934,11 @@ function buildReadiness({ modeId, audio, normalizedScenes, productionScenes, ass
   }
   if (!hasProductionPrompts) {
     missing.push('production.prompts')
-    next_actions_for_user.push('Создай storyboard/prompts/stills по этому заданию или отправь пакет в ChatGPT/Codex.')
+    next_actions_for_user.push('Сначала ответь на storyboard/questions: клип, история, подкаст или Video Node/source-video нарезка.')
   }
   if (!hasGeneratedStills) {
     missing.push('generated_stills')
-    warnings.push('Generated stills отсутствуют: это split/partial package, не full package.')
+    warnings.push('Generated stills отсутствуют: это свежий Timing/split package, не image-aware package.')
   }
   if (soundMissingScenes.length) {
     missing.push('production.sound_prompts')
@@ -1524,26 +1957,36 @@ function buildReadiness({ modeId, audio, normalizedScenes, productionScenes, ass
     next_questions.push({ id: 'twist_object', required: true, question_ru: 'Что является объектом подмены?' })
   }
 
-  const sceneSplitReady = hasAudio && hasAudioDuration && hasScenes && hasNonZeroTiming && !hasProductionPrompts
-  const promptsReady = hasAudio && hasAudioDuration && hasScenes && hasProductionPrompts && !hasGeneratedStills
-  const videoPromptsReady = hasAudio && hasAudioDuration && hasScenes && hasProductionPrompts && hasGeneratedStills && imageAwareVideoPromptsReady
+  const baseReady = hasAudio && hasAudioDuration && hasScenes && hasNonZeroTiming
+  const textReadyForStory = hasSceneText
+  const sceneSplitReady = baseReady && !hasProductionPrompts
+  const promptsReady = baseReady && hasProductionPrompts && !hasGeneratedStills
+  const videoPromptsReady = baseReady && hasProductionPrompts && hasGeneratedStills && imageAwareVideoPromptsReady
   const fullPackage = videoPromptsReady
   const stage = videoPromptsReady ? 'video_prompts_ready' : hasGeneratedStills ? 'stills_ready' : promptsReady ? 'prompts_ready' : sceneSplitReady ? 'scene_split_ready' : hasScenes ? 'scene_split_import_ready' : 'created'
+  const currentBlocker = !hasAsr && !hasSceneText
+    ? 'run_asr_or_fill_scene_text'
+    : (partialSceneText ? 'partial_scene_text_review' : (hasGeneratedStills && !imageAwareVideoPromptsReady ? 'image_aware_video_prompt_pass' : ''))
+  const nextAction = videoPromptsReady
+    ? 'video_generation'
+    : (!hasAsr && !hasSceneText ? 'run_asr_or_fill_scene_text'
+      : (partialSceneText ? 'partial_scene_text_review'
+        : (hasGeneratedStills ? 'image_aware_video_prompt_pass' : 'storyboard_questions')))
 
   return {
     stage,
-    can_continue: hasAudio && hasAudioDuration && hasScenes && hasNonZeroTiming,
+    can_continue: baseReady,
     can_import_to_board: hasScenes,
     can_send_to_codex: false,
-    can_send_to_codex_for_storyboard_prompts: hasAudio && hasAudioDuration && hasScenes,
+    can_send_to_codex_for_storyboard_prompts: Boolean(baseReady && textReadyForStory),
     can_generate_stills: hasProductionPrompts && !missing.includes('assets.character_refs.host'),
     stills_ready: stillsReady,
     image_aware_video_prompts_ready: imageAwareVideoPromptsReady,
     can_generate_video: videoPromptsReady,
     can_patch_prompts: !videoPromptsReady && hasScenes,
     can_import_stills: !hasGeneratedStills && hasScenes,
-    current_blocker: videoPromptsReady ? '' : 'image_aware_video_prompt_pass',
-    next_action: videoPromptsReady ? 'video_generation' : 'patch final video prompts only',
+    current_blocker: currentBlocker,
+    next_action: nextAction,
     prompt_only_import_possible: hasProductionPrompts && !hasGeneratedStills,
     full_package: fullPackage,
     missing: Array.from(new Set(missing)),
@@ -1587,19 +2030,25 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
   }
   if (projectMode.id === 'video_first_documentary_v1') assets.source_video.required = true
 
+  const speechContextV206F = collectSpeechSegmentsForPackV206F(manualTiming)
   const normalizedScenes = normalizeScenesOnce({ projectModeId: projectMode.id, manualTiming, board, audioDurationSec: audioDuration, projectFormat: format })
   const storyBlocks = storyBlocksFromSources(manualTiming, board, normalizedScenes)
   const rootScenes = rootScenesFromNormalized(normalizedScenes, projectMode.id)
   const timingScenes = timingScenesFromNormalized(normalizedScenes)
   const productionScenes = productionScenesFromNormalized(normalizedScenes, projectMode.id)
+  const rootScenesTextReadyCountV206G = sceneTextReadyCountV206G(rootScenes)
+  const timingScenesTextReadyCountV206G = sceneTextReadyCountV206G(timingScenes)
+  const productionScenesTextReadyCountV206G = sceneTextReadyCountV206G(productionScenes)
+  const boardImportPriorityV206G = buildBoardImportPriorityV206G({ rootScenes, timingScenes, productionScenes })
   const sceneBlockMap = buildSceneBlockMap(storyBlocks, normalizedScenes)
   const sceneTextStatsV177A = buildSceneTextStatsV177A(normalizedScenes)
   const pipelineStateV177A = buildPipelineStateContractV177A({ audio: assets.audio, normalizedScenes, sceneTextStats: sceneTextStatsV177A })
   const asrStateV177A = buildAsrStateContractV177A({ audio: assets.audio, sceneTextStats: sceneTextStatsV177A })
   const translationStateV177A = buildTranslationStateContractV177A(sceneTextStatsV177A)
   const codexTasksV177A = buildCodexTasksContractV177A(pipelineStateV177A, format)
-  const readiness = buildReadiness({ modeId: projectMode.id, audio: assets.audio, normalizedScenes, productionScenes, assets })
-  const currentPatchGoalV18 = readiness.image_aware_video_prompts_ready ? 'video_generation' : 'image_aware_video_prompt_pass'
+  const readiness = buildReadiness({ modeId: projectMode.id, audio: assets.audio, normalizedScenes, productionScenes, assets, sceneTextStats: sceneTextStatsV177A })
+  const assistantFirstResponsePolicyV206F = buildAssistantFirstResponsePolicyV206F({ audioDurationSec: audioDuration, normalizedScenes, sceneTextStats: sceneTextStatsV177A, asrState: asrStateV177A, format })
+  const currentPatchGoalV18 = readiness.next_action || (readiness.image_aware_video_prompts_ready ? 'video_generation' : 'storyboard_questions')
   const projectStateSummaryV18 = buildProjectStateSummaryV18({ audio: assets.audio, normalizedScenes, productionScenes, readiness })
   const taskScopeV18 = buildTaskScopeV18(readiness, currentPatchGoalV18)
   const updatePolicyV18 = buildUpdatePolicyV18()
@@ -1615,7 +2064,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
       ? 'recipe_storyboard_prompts_and_generated_stills'
       : buildCodexTaskForMode(projectMode.id, { status: readiness.stage })?.task_type,
     expected_outputs: expectedOutputsForMode(projectMode.id),
-    video_match_board_v2_import_contract: buildVideoMatchBoardV2SourceBindingContractV81(),
+    video_node_handoff_note: buildVideoNodeHandoffNoteV206G(),
     production_fields_to_fill: PRODUCTION_FIELDS_TO_FILL,
     // AVA_PROJECT_PACK_UNIVERSAL_TASK_CONTRACT_V75
     universal_task_contract: buildUniversalTaskContractV75(projectMode),
@@ -1627,7 +2076,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     sound_fields_to_fill: SOUND_FIELDS_TO_FILL,
     prompt_memory_preset: (typeof cookingPromptMemoryEnabledV84 !== 'undefined' ? cookingPromptMemoryEnabledV84 : cookingPromptMemoryEnabledV83) ? 'outdoor_cooking_i2v_sound' : '',
     prompt_memory_ref: (typeof cookingPromptMemoryEnabledV84 !== 'undefined' ? cookingPromptMemoryEnabledV84 : cookingPromptMemoryEnabledV83) ? 'cooking_prompt_memory_v1' : '',
-      image_aware_video_prompt_pass_required: true,
+      image_aware_video_prompt_pass_required: Boolean(readiness.stills_ready),
       image_aware_video_prompt_fields_to_update: IMAGE_AWARE_VIDEO_PROMPT_FIELDS_TO_UPDATE,
       generate_all_precheck: {
         can_generate_video: readiness.can_generate_video,
@@ -1636,7 +2085,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
         default_action: 'Сначала обновить prompts по кадрам',
         override_action: 'Запустить всё равно',
       },
-    image_aware_video_prompt_pass_required: true,
+    image_aware_video_prompt_pass_required: Boolean(readiness.stills_ready),
     image_aware_video_prompt_fields_to_update: IMAGE_AWARE_VIDEO_PROMPT_FIELDS_TO_UPDATE,
     full_package_or_ask: true,
   }
@@ -1651,6 +2100,14 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     debug_included: Boolean(includeLegacyRaw),
     status: readiness.stage,
     exported_at: new Date().toISOString(),
+    README_START_HERE: {
+      title: 'Manual Timing export: start here',
+      summary: 'This pack was exported from Manual Timing. Timing/scene ids/routes are locked. ASR speech segments were mapped into scenes by time overlap when available.',
+      first_response_policy_ref: 'assistant_first_response_policy',
+      do_next: 'First summarize scenes/audio/ASR/routes, then ask the user whether to build clip/story/podcast/Video Node plan.',
+      do_not_do_yet: ['do not invent storyboard', 'do not write photo prompts', 'do not write video prompts', 'do not run Codex or edit repo without user confirmation'],
+    },
+    assistant_first_response_policy: assistantFirstResponsePolicyV206F,
     prompt_memory_preset: (typeof cookingPromptMemoryEnabledV84 !== 'undefined' ? cookingPromptMemoryEnabledV84 : cookingPromptMemoryEnabledV83) ? 'outdoor_cooking_i2v_sound' : '',
     cooking_prompt_memory_v1: (typeof cookingPromptMemoryV84 !== 'undefined' ? cookingPromptMemoryV84 : cookingPromptMemoryV83),
     workflow_notes: (typeof workflowNotesV84 !== 'undefined' ? workflowNotesV84 : workflowNotesV83),
@@ -1726,7 +2183,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     project_mode: projectMode,
     mode_contract: modeContract,
     prompt_guidelines: modeContract.prompt_guidelines || {},
-    video_match_board_v2_import_contract: buildVideoMatchBoardV2SourceBindingContractV81(),
+    video_node_handoff_note: buildVideoNodeHandoffNoteV206G(),
     audio: {
       ...(assets.audio || {}),
       durationSec: audioDuration,
@@ -1768,11 +2225,17 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
       do_not_change_start_end_duration: true,
       audio_duration_sec: audioDuration,
       audioDurationSec: audioDuration,
-      speech_segments: asArray(manualTiming.speech_segments || manualTiming.speechSegments || manualTiming.phrases || manualTiming.asr_phrases),
+      speech_segments: speechContextV206F.segments,
+      speech_segments_source: speechContextV206F.source,
+      speech_segments_count: speechContextV206F.segments_count,
+      speech_words_count: speechContextV206F.words_count,
       scenes: timingScenes,
     },
     production: {
       source: 'normalized_scenes_v15',
+      asr_text_synced_from_normalized_scenes_v206g: true,
+      scene_text_ready_count: productionScenesTextReadyCountV206G,
+      scene_text_empty_count: Math.max(0, productionScenes.length - productionScenesTextReadyCountV206G),
       fields_to_fill: PRODUCTION_FIELDS_TO_FILL,
       sound_fields_to_fill: SOUND_FIELDS_TO_FILL,
       task_scope_mode: taskScopeV18.mode,
@@ -1800,7 +2263,7 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
     expected_outputs: expectedOutputsForMode(projectMode.id).map((name) => ({ name, created: false, expected: true })),
     validation: {
       do_not_change_timing: true,
-      board_import_priority: ['production.scenes', 'timing.scenes'],
+      board_import_priority: boardImportPriorityV206G,
       manual_timing_import_priority: ['scenes', 'timing.scenes', 'production.scenes'],
       prompt_positive_priority: [...PROMPT_POSITIVE_KEYS, 'prompts.positive', 'prompts.video_positive'],
       prompt_negative_priority: [...PROMPT_NEGATIVE_KEYS, 'prompts.negative', 'prompts.video_negative'],
@@ -1821,6 +2284,17 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
         story_blocks_count: storyBlocks.length,
         audio_duration_sec: audioDuration,
         audioDurationSec: audioDuration,
+        asr_ready: asrStateV177A.ready,
+        asr_segments_count: asrStateV177A.segments_count,
+        asr_words_count: asrStateV177A.words_count,
+        scene_text_ready_count: sceneTextStatsV177A.real,
+        root_scenes_text_ready_count: rootScenesTextReadyCountV206G,
+        timing_scenes_text_ready_count: timingScenesTextReadyCountV206G,
+        production_scenes_text_ready_count: productionScenesTextReadyCountV206G,
+        scene_text_empty_count: sceneTextStatsV177A.labelOnly,
+        real_scene_text_ready: pipelineStateV177A.real_scene_text_ready,
+        asr_source: asrStateV177A.source,
+        board_import_priority: boardImportPriorityV206G,
       },
     },
   }

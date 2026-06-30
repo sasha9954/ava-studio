@@ -33,6 +33,7 @@ import WorkflowStageControls from "../../components/WorkflowStageControls.jsx";
 const DEFAULT_WORKFLOW_PRESET = "video_first_documentary";
 const DEFAULT_WORKFLOW_STEP = "01_video_inventory";
 const DEFAULT_WORKFLOW_STEP_FOR_MANIFEST = "auto_or_unspecified";
+const VIDEO_NODE_JSON_HELP_TEXT_V206E = "Привет. Я прикладываю 3 файла:\n\n1. photostudio_video_node_context_v2_olivie_rules.zip\n2. video_match_board_default_1782832745808_FIXED_v2.json\n3. video_match_board_json_patch_notes_v2.md\n\nЗадача: починить экспорт ZIP/JSON из Video Node / Video Match Board по этим примерам.\n\nНужно сделать так, чтобы когда я в Ava скачиваю ZIP/JSON из Video Node, внутри уже были правильные инструкции для ChatGPT:\n- что такое Video Node;\n- как работает связка Timing → Video Node → Codex source cuts → generated placeholders → Assembly;\n- какие вопросы ChatGPT должен сначала задать пользователю;\n- что можно просить у Codex;\n- что нельзя просить у Codex;\n- как не путать V1 и src_01;\n- как правильно экспортировать source ranges и generated placeholders.\n\nГлавное исправление JSON:\nесли source video уже загружено в Video Node и имеет id типа src_01, экспорт должен использовать этот id, а не создавать новый V1.\n\nДля selected source scenes:\nsourceVideoId / source_video_id / selectedSourceVideoId должны ссылаться на текущий source id, например src_01.\n\nДля generated_placeholder scenes:\nsourceVideoId / source_video_id / selectedSourceVideoId должны быть null.\nPlaceholder-сцены не должны ссылаться на V1 или src_01.\n\nНельзя:\n- менять тайминги сцен;\n- менять route;\n- резать видео;\n- делать Codex-задачи;\n- трогать монтажную логику;\n- делать commit без подтверждения.\n\nНужно:\n1. Найти код экспорта ZIP/ChatGPT context из Video Node.\n2. Найти код экспорта video_match_board_v2 JSON.\n3. Встроить правила/памятки из ZIP-примера.\n4. Применить правки из video_match_board_json_patch_notes_v2.md.\n5. Сделать экспорт так, чтобы новый ZIP сам объяснял ChatGPT, что делать дальше.\n6. Проверить, что после экспорта:\n   - есть README_START_HERE.md;\n   - есть Video Node strategy/questions/Codex rules;\n   - JSON содержит source_binding_mode;\n   - не появляется второй V1;\n   - placeholders не ссылаются на source video;\n   - selected source scenes ссылаются на текущий source id.\n\nПосле правок запустить:\n\ncd /d C:\\AVA\\ava-studio-work\\frontend\nnpm run build\n\nЕсли трогались backend Python-файлы — проверить py_compile.\n\nСначала покажи список файлов, которые будешь менять, и короткий план.";
 function getVideoMatchAuthHeaders(extra = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("ava_token") : "";
   return {
@@ -372,7 +373,9 @@ function mergeImportedVideoNodeSourcesWithUploaded(importedSources = [], project
   const registry = buildVideoNodeUploadedSourceRegistry(project, currentSources);
   const sourceList = Array.isArray(importedSources) && importedSources.length
     ? importedSources
-    : (Array.isArray(currentSources) ? currentSources : []);
+    : (Array.isArray(currentSources) && currentSources.length
+      ? currentSources
+      : [registry.byId.get("src_01") || registry.bySlot.get("01") || registry.bySlot.get("1")].filter(Boolean));
   return sourceList.slice(0, 5).map((source, index) => {
     const imported = normalizeVideoNodeSourceEntry(source, index);
     const id = String(imported.id || imported.sourceVideoId || imported.source_video_id || "").trim();
@@ -527,6 +530,23 @@ function normalizePlayableVideoUrl(outputUrl = "") {
 
 function resolveOutputUrl(outputUrl = "") {
   return normalizePlayableVideoUrl(outputUrl);
+}
+
+
+function isVideoMatchBackendMediaUrlV206B(value = "", mediaKind = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw, typeof window !== "undefined" ? window.location.href : "http://localhost");
+    const path = String(parsed.pathname || "");
+    return mediaKind
+      ? path.includes(`/api/video-match/${mediaKind}/`)
+      : path.includes("/api/video-match/source/") || path.includes("/api/video-match/audio/");
+  } catch {
+    return mediaKind
+      ? raw.includes(`/api/video-match/${mediaKind}/`)
+      : raw.includes("/api/video-match/source/") || raw.includes("/api/video-match/audio/");
+  }
 }
 
 function isVideoNodeProtectedAssetUrl(url = "") {
@@ -1165,6 +1185,7 @@ export default function VideoMatchBoardPage() {
   const [boardGeneratedClips, setBoardGeneratedClips] = useState([]);
   const [boardGeneratedClipsStatus, setBoardGeneratedClipsStatus] = useState("");
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [jsonHelpOpen, setJsonHelpOpen] = useState(false);
 
   const refreshBoardGeneratedClips = useCallback(async (reason = "auto") => {
     try {
@@ -1253,6 +1274,14 @@ export default function VideoMatchBoardPage() {
 
   const isVideoNodeSourceLoaded = (source = {}) => {
     const normalized = normalizeVideoNodeSourceEntry(source);
+    const needsRelinkV206B = Boolean(
+      normalized.needsRelink
+      || normalized.needs_relink
+      || normalized.sourceVideoNeedsRelinkV206B
+      || normalized.videoNodeSourceNeedsRelinkV206B
+      || normalized.video_node_source_needs_relink_v206b
+    );
+    if (needsRelinkV206B) return false;
     return Boolean(
       normalized.previewUrl ||
       normalized.sourceVideoUrl ||
@@ -1717,6 +1746,10 @@ export default function VideoMatchBoardPage() {
           filename: normalized.filename || normalized.name || `${getVideoNodeSourceSlotIndex(normalized, index)}.mp4`,
           name: normalized.name || normalized.filename || `${getVideoNodeSourceSlotIndex(normalized, index)}.mp4`,
           needsRelink: true,
+          sourceVideoNeedsRelinkV206B: true,
+          videoNodeSourceNeedsRelinkV206B: true,
+          video_node_source_needs_relink_v206b: true,
+          relinkReasonV206B: "manual_remove_source_video",
         }, index);
       });
     const patch = {
@@ -1744,6 +1777,95 @@ export default function VideoMatchBoardPage() {
     patchProject(patch, { lastGood: false });
     setSourceVideoLoadMessage(`${getVideoNodeSourceShortLabel(safeId)} отвязан. Нажмите "Привязать файл", чтобы вернуть backend path для MP4.`);
     if (activeSourceVideoId === safeId) setActiveSourceVideoId("src_01");
+  };
+
+
+
+  const markVideoNodeSourceNeedsRelinkV206B = (sourceVideoId = "src_01", reason = "source_not_found") => {
+    const safeId = String(sourceVideoId || "src_01").trim() || "src_01";
+    if (sourceVideoObjectUrlByIdRef.current?.[safeId]) {
+      try { URL.revokeObjectURL(sourceVideoObjectUrlByIdRef.current[safeId]); } catch {}
+      sourceVideoObjectUrlByIdRef.current = { ...(sourceVideoObjectUrlByIdRef.current || {}), [safeId]: "" };
+    }
+    if (safeId === "src_01") {
+      if (objectUrlRef.current) {
+        try { URL.revokeObjectURL(objectUrlRef.current); } catch {}
+        objectUrlRef.current = "";
+      }
+      runtimeSourceVideoUrlRef.current = "";
+    }
+    const clearedSources = (Array.isArray(sourceVideos) ? sourceVideos : [])
+      .map((source, index) => {
+        const normalized = normalizeVideoNodeSourceEntry(source, index);
+        const id = String(normalized.id || normalized.sourceVideoId || normalized.source_video_id || "").trim();
+        if (id !== safeId) return normalized;
+        return normalizeVideoNodeSourceEntry({
+          id: safeId,
+          sourceVideoId: safeId,
+          source_video_id: safeId,
+          label: normalized.label || getVideoNodeSourceShortLabel(safeId),
+          color: normalized.color || getVideoNodeSourceColor(safeId),
+          filename: normalized.filename || normalized.name || `${getVideoNodeSourceSlotIndex(normalized, index)}.mp4`,
+          name: normalized.name || normalized.filename || `${getVideoNodeSourceSlotIndex(normalized, index)}.mp4`,
+          previewUrl: "",
+          sourceVideoUrl: "",
+          source_video_url: "",
+          url: "",
+          path: "",
+          backendPath: "",
+          backend_path: "",
+          sourceVideoPath: "",
+          source_video_path: "",
+          sourceVideoPathForAssembly: "",
+          source_video_path_for_assembly: "",
+          needsRelink: true,
+          sourceVideoNeedsRelinkV206B: true,
+          videoNodeSourceNeedsRelinkV206B: true,
+          video_node_source_needs_relink_v206b: true,
+          relinkReasonV206B: reason,
+        }, index);
+      });
+    const patch = {
+      sourceVideos: clearedSources,
+      source_videos: clearedSources,
+      previewSourceNeedsReload: true,
+      jsonError: "Source video файл не найден на backend. Привяжите/загрузите файл заново.",
+    };
+    if (safeId === "src_01") {
+      Object.assign(patch, {
+        sourceVideoUrl: "",
+        sourceVideoPath: "",
+        sourceVideoPathForAssembly: "",
+        uploadedSourceVideoPath: "",
+        sourceVideo: {
+          ...(project.sourceVideo || {}),
+          path: "",
+          backendPath: "",
+          backend_path: "",
+          sourceVideoPath: "",
+          source_video_path: "",
+          sourceVideoPathForAssembly: "",
+          source_video_path_for_assembly: "",
+          sourceVideoNeedsRelinkV206B: true,
+          videoNodeSourceNeedsRelinkV206B: true,
+          video_node_source_needs_relink_v206b: true,
+        },
+        source_video: {
+          ...(project.source_video || {}),
+          path: "",
+          backendPath: "",
+          backend_path: "",
+          sourceVideoPathForAssembly: "",
+          source_video_path_for_assembly: "",
+          sourceVideoNeedsRelinkV206B: true,
+          videoNodeSourceNeedsRelinkV206B: true,
+          video_node_source_needs_relink_v206b: true,
+        },
+      });
+    }
+    patchProject(patch, { lastGood: false });
+    if (activeSourceVideoId === safeId) setActiveSourceVideoId("src_01");
+    setSourceVideoLoadMessage(`${getVideoNodeSourceShortLabel(safeId)} не найден на backend. Нажмите "Привязать файл" или "+ Видео" и выберите исходник заново.`);
   };
 
   const activeSourceVideoUrl = getSourceVideoRuntimeUrl(activeSourceVideoId) || sourceVideoUrl;
@@ -2983,7 +3105,7 @@ export default function VideoMatchBoardPage() {
     runtimeSourceVideoUrlRef.current = url;
     setVideoDurationSec(0);
     setCurrentTimeSec(0);
-    setSourceVideoLoadMessage("");
+    setSourceVideoLoadMessage("Загружаю V1 на backend для preview и MP4-сборки...");
     stopPlayback();
     patchProject({
       sourceVideoUrl: url,
@@ -3058,14 +3180,24 @@ export default function VideoMatchBoardPage() {
       const mergedSources = mergeVideoNodeSourceEntry(sourceVideos, backendEntry);
       patchProject({
         sourceVideoUrl: String(backendSourceVideoUrl || ""),
+        sourceVideoPath: String(data.sourceVideoPathForAssembly || ""),
         sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
         uploadedSourceVideoPath: String(data.sourceVideoPathForAssembly || ""),
+        previewSourceNeedsReload: false,
         sourceVideos: mergedSources,
         source_videos: mergedSources,
         sourceVideo: {
           ...(project.sourceVideo || {}),
           path: String(data.sourceVideoPathForAssembly || ""),
           backendPath: String(data.sourceVideoPathForAssembly || ""),
+          backend_path: String(data.sourceVideoPathForAssembly || ""),
+          sourceVideoPath: String(data.sourceVideoPathForAssembly || ""),
+          source_video_path: String(data.sourceVideoPathForAssembly || ""),
+          sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
+          source_video_path_for_assembly: String(data.sourceVideoPathForAssembly || ""),
+          sourceVideoNeedsRelinkV206B: false,
+          videoNodeSourceNeedsRelinkV206B: false,
+          video_node_source_needs_relink_v206b: false,
           filename: data.filename || file.name || "source.mp4",
           name: data.filename || file.name || "source.mp4",
           durationSec: Number(data.duration_sec || 0),
@@ -3077,8 +3209,23 @@ export default function VideoMatchBoardPage() {
           type: file.type || "video/mp4",
           size: file.size || 0,
         },
+        source_video: {
+          ...(project.source_video || {}),
+          path: String(data.sourceVideoPathForAssembly || ""),
+          backendPath: String(data.sourceVideoPathForAssembly || ""),
+          backend_path: String(data.sourceVideoPathForAssembly || ""),
+          sourceVideoPath: String(data.sourceVideoPathForAssembly || ""),
+          source_video_path: String(data.sourceVideoPathForAssembly || ""),
+          sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
+          source_video_path_for_assembly: String(data.sourceVideoPathForAssembly || ""),
+          sourceVideoNeedsRelinkV206B: false,
+          videoNodeSourceNeedsRelinkV206B: false,
+          video_node_source_needs_relink_v206b: false,
+          filename: data.filename || file.name || "source.mp4",
+          duration_sec: Number(data.duration_sec || 0),
+        },
       });
-      setSourceVideoLoadMessage("");
+      setSourceVideoLoadMessage(`V1 загружено для preview и MP4-сборки: ${data.filename || file.name || "source.mp4"}`);
     } catch (error) {
       setSourceVideoLoadMessage(`Не удалось загрузить source video на backend: ${String(error?.message || error)}`);
     }
@@ -3264,8 +3411,22 @@ export default function VideoMatchBoardPage() {
 
   const onSourceVideoError = () => {
     updateVideoDiagnostics("error");
+    const currentSrc = String(videoRef.current?.currentSrc || videoRef.current?.src || "").trim();
     const width = Number(videoRef.current?.videoWidth || 0);
     const height = Number(videoRef.current?.videoHeight || 0);
+    if (
+      isVideoMatchBackendMediaUrlV206B(currentSrc, "source")
+      || isVideoMatchBackendMediaUrlV206B(project.sourceVideoUrl, "source")
+      || isVideoMatchBackendMediaUrlV206B(getSourceVideoEntryById(activeSourceVideoId)?.sourceVideoUrl, "source")
+      || isVideoMatchBackendMediaUrlV206B(getSourceVideoEntryById(activeSourceVideoId)?.previewUrl, "source")
+    ) {
+      const errorKey = `${activeSourceVideoId}:${currentSrc || project.sourceVideoUrl || "source"}`;
+      if (!videoErrorHandledRef.current[errorKey]) {
+        videoErrorHandledRef.current[errorKey] = true;
+        markVideoNodeSourceNeedsRelinkV206B(activeSourceVideoId, "backend_source_404_or_stale_url");
+      }
+      return;
+    }
     const fallbackMessage = "Видео не загрузилось в player. Проверьте source URL / CORS / blob / stale state.";
     setSourceVideoLoadMessage((width === 0 && height === 0)
       ? fallbackMessage
@@ -3278,8 +3439,49 @@ export default function VideoMatchBoardPage() {
   };
 
   const onAudioError = () => {
+    const currentSrc = String(audioRef.current?.currentSrc || audioRef.current?.src || "").trim();
     setAudioLoadMessage("Аудио недоступно. Если страница перезагружалась, загрузите аудио заново.");
     const sourceUrl = String(project.audioPreviewUrl || "");
+    if (
+      isVideoMatchBackendMediaUrlV206B(currentSrc, "audio")
+      || isVideoMatchBackendMediaUrlV206B(sourceUrl, "audio")
+      || isVideoMatchBackendMediaUrlV206B(project.audioPreviewBackendUrl, "audio")
+      || isVideoMatchBackendMediaUrlV206B(project.audioPreviewMeta?.backendUrl, "audio")
+    ) {
+      const errorKey = `audio:${currentSrc || sourceUrl || project.audioPreviewBackendUrl || "audio"}`;
+      if (!audioErrorHandledRef.current[errorKey]) {
+        audioErrorHandledRef.current[errorKey] = true;
+        runtimeAudioPreviewUrlRef.current = "";
+        setAssembleAudioPath("");
+        patchProject({
+          audioPreviewUrl: "",
+          audioPreviewBackendUrl: "",
+          audioPathForAssembly: "",
+          assembleAudioPath: "",
+          audioPreviewNeedsReload: true,
+          audioPreviewNeedsRelinkV206B: true,
+          videoNodeAudioNeedsRelinkV206B: true,
+          video_node_audio_needs_relink_v206b: true,
+          audioPreviewMeta: {
+            ...(project.audioPreviewMeta || {}),
+            backendPath: "",
+            backendUrl: "",
+            audioPreviewNeedsRelinkV206B: true,
+            videoNodeAudioNeedsRelinkV206B: true,
+            video_node_audio_needs_relink_v206b: true,
+          },
+          timingContext: {
+            ...(project.timingContext || {}),
+            sourceAudioPath: "",
+            audioPreviewNeedsRelinkV206B: true,
+            videoNodeAudioNeedsRelinkV206B: true,
+            video_node_audio_needs_relink_v206b: true,
+          },
+          jsonError: "Audio файл не найден на backend. Загрузите аудио заново.",
+        }, { lastGood: false });
+      }
+      return;
+    }
     if (sourceUrl.startsWith("blob:") && !audioErrorHandledRef.current[sourceUrl]) {
       audioErrorHandledRef.current[sourceUrl] = true;
       runtimeAudioPreviewUrlRef.current = "";
@@ -3335,6 +3537,29 @@ export default function VideoMatchBoardPage() {
       || mergedSourceVideos[0]
       || {};
     const primaryMergedPath = getVideoNodeSourceAssemblyPathValue(primaryMergedSource);
+    const currentSourcePathV206A = String(
+      project.sourceVideoPathForAssembly
+      || project.uploadedSourceVideoPath
+      || project.sourceVideo?.backendPath
+      || project.sourceVideo?.sourceVideoPathForAssembly
+      || project.sourceVideo?.path
+      || project.source_video?.path
+      || ""
+    ).trim();
+    const currentSourceUrlV206A = String(
+      project.sourceVideoUrl
+      || runtimeSourceVideoUrlRef.current
+      || project.sourceVideo?.sourceVideoUrl
+      || project.sourceVideo?.previewUrl
+      || ""
+    ).trim();
+    const safePrimarySourceUrlV206A = String(
+      primaryMergedSource.sourceVideoUrl
+      || primaryMergedSource.previewUrl
+      || currentSourceUrlV206A
+      || ""
+    ).trim();
+    const safePrimarySourcePathV206A = String(primaryMergedPath || normalizedPath || currentSourcePathV206A || "").trim();
     const importedAt = Date.now();
     const incomingAudioMix = Object.prototype.hasOwnProperty.call(result || {}, "audioMix")
       ? getDefaultVideoMatchAudioMix(result.audioMix || {})
@@ -3359,16 +3584,16 @@ export default function VideoMatchBoardPage() {
       ...getDefaultVideoMatchBoardProject(nodeId),
       schema: result.schema,
       audioMix: incomingAudioMix,
-      sourceVideoUrl: String(primaryMergedSource.sourceVideoUrl || primaryMergedSource.previewUrl || runtimeSourceVideoUrlRef.current || project.sourceVideoUrl || ""),
+      sourceVideoUrl: safePrimarySourceUrlV206A,
       audioPreviewUrl: String(runtimeAudioPreviewUrlRef.current || project.audioPreviewUrl || ""),
       audioPreviewMeta: project.audioPreviewMeta || {},
       useAudioPreview: project.useAudioPreview,
       sourceVideo: {
         ...normalizedSourceVideo,
-        ...(primaryMergedPath ? {
-          path: primaryMergedPath,
-          backendPath: primaryMergedPath,
-          sourceVideoPathForAssembly: primaryMergedPath,
+        ...(safePrimarySourcePathV206A ? {
+          path: safePrimarySourcePathV206A,
+          backendPath: safePrimarySourcePathV206A,
+          sourceVideoPathForAssembly: safePrimarySourcePathV206A,
         } : {}),
         filename: primaryMergedSource.filename || normalizedSourceVideo.filename || "source.mp4",
         name: primaryMergedSource.name || primaryMergedSource.filename || normalizedSourceVideo.name || normalizedSourceVideo.filename || "source.mp4",
@@ -3382,13 +3607,13 @@ export default function VideoMatchBoardPage() {
       source_videos: mergedSourceVideos,
       source_video: {
         ...(project.source_video || {}),
-        path: primaryMergedPath || normalizedPath,
+        path: safePrimarySourcePathV206A,
         filename: primaryMergedSource.filename || normalizedSourceVideo.filename || "source.mp4",
         duration_sec: Number(jsonDurationSec.toFixed(3)),
       },
-      sourceVideoPath: primaryMergedPath || normalizedPath,
-      sourceVideoPathForAssembly: primaryMergedPath || "",
-      uploadedSourceVideoPath: primaryMergedPath || "",
+      sourceVideoPath: safePrimarySourcePathV206A,
+      sourceVideoPathForAssembly: safePrimarySourcePathV206A,
+      uploadedSourceVideoPath: safePrimarySourcePathV206A,
       timingContext: importedTimingContext,
       audioMap: importedAudioMap,
       audioDurationSec: Number(importedTimingContext?.audioDurationSec || result?.audioDurationSec || result?.raw?.audio_duration_sec || 0),
@@ -3482,11 +3707,15 @@ export default function VideoMatchBoardPage() {
     if (!result || result.error || result.ok === false) { patchProject({ jsonError: String(result?.error || "JSON parse error") }, { lastGood: false }); return; }
     const warnings = [];
     const sourceData = result.raw || {};
+    if (Array.isArray(sourceData.__unwrap_warnings)) warnings.push(...sourceData.__unwrap_warnings);
     if (!["photostudio_video_match_board_v2", "video_match_board_v2", "video_match_board_v1"].includes(sourceData.schema)) warnings.push(`schema warning: ${sourceData.schema || "unknown"}`);
     if (sourceData.status === "blocked_missing_audio_map") { patchProject({ jsonError: "Это не финальная доска, нужен matched/matched_global_clean/ready/completed" }, { lastGood: false }); return; }
-    if (!Array.isArray(sourceData.segments) || sourceData.segments.length === 0) { patchProject({ jsonError: "В JSON нет segments" }, { lastGood: false }); return; }
-    if (Number(sourceData.audio_map_segments_count || 0) > 0 && Number(sourceData.audio_map_segments_count) !== sourceData.segments.length) warnings.push("audio_map_segments_count не совпадает с segments.length");
-    const missingSelected = sourceData.segments.filter((seg) => !(seg?.selected_candidate_id || seg?.selectedCandidateId || seg?.selected_candidate || seg?.selectedCandidate || seg?.selected_candidate?.candidate_id || seg?.selectedCandidate?.candidate_id)).length;
+    const sourceDataSegmentsV206A = Array.isArray(sourceData.segments)
+      ? sourceData.segments
+      : (Array.isArray(result.matchSegments) ? result.matchSegments : []);
+    if (!sourceDataSegmentsV206A.length) { patchProject({ jsonError: "В JSON нет segments" }, { lastGood: false }); return; }
+    if (Number(sourceData.audio_map_segments_count || 0) > 0 && Number(sourceData.audio_map_segments_count) !== sourceDataSegmentsV206A.length) warnings.push("audio_map_segments_count не совпадает с segments.length");
+    const missingSelected = sourceDataSegmentsV206A.filter((seg) => !(seg?.selected_candidate_id || seg?.selectedCandidateId || seg?.selected_candidate || seg?.selectedCandidate || seg?.selected_candidate?.candidate_id || seg?.selectedCandidate?.candidate_id)).length;
     if (missingSelected > 0) warnings.push(`у ${missingSelected} segments нет selected_candidate`);
     const mismatch = computeImportCompatibilityScore(project, result);
     if (mismatch.mismatch && (matchSegments.length || videoBlocks.length)) { setPendingImportResult({ result, warnings }); return; }
@@ -3784,7 +4013,7 @@ export default function VideoMatchBoardPage() {
       const normalized = normalizeVideoNodeSourceEntry(source, index);
       const sourceId = String(normalized.id || normalized.sourceVideoId || normalized.source_video_id || `src_${String(index + 1).padStart(2, "0")}`).trim();
       const hasBlocksForSource = assemblyBlocks.some((block) => getVideoNodeSourceVideoId(block) === sourceId);
-      const hasJsonIdentity = Boolean(normalized.filename || normalized.name || normalized.label || hasBlocksForSource);
+      const hasJsonIdentity = Boolean(normalized.filename || normalized.name || normalized.label || hasBlocksForSource || project.sourceVideoUrl || project.importSignature || normalized.needsRelink || normalized.videoNodeSourceNeedsRelinkV206B);
       if (!hasJsonIdentity || getVideoNodeSourcePathForAssembly(normalized)) return "";
       const slot = getVideoNodeSourceSlotIndex(normalized, index);
       const filename = normalized.filename || normalized.name || `${slot}.mp4`;
@@ -3959,6 +4188,65 @@ export default function VideoMatchBoardPage() {
       workflowUpdatedAt: Date.now(),
     }, { lastGood: false });
   }, [project, workflowPreset, workflowStep]);
+
+  // AVA_VIDEO_NODE_JSON_UI_SIMPLIFY_V206C:
+  // A direct board JSON download. This is different from the heavy ChatGPT ZIP package:
+  // it exports only the importable video_match_board_v2 JSON that can be re-imported later.
+  const buildDirectVideoMatchBoardJsonV206C = useCallback(() => {
+    const exportedSourceVideos = (Array.isArray(sourceVideos) ? sourceVideos : []).slice(0, 5).map((source, index) => {
+      const normalized = normalizeVideoNodeSourceEntry(source, index);
+      const id = String(
+        normalized.id
+        || normalized.sourceVideoId
+        || normalized.source_video_id
+        || `src_${String(index + 1).padStart(2, "0")}`
+      ).trim();
+      const assemblyPath = getVideoNodeSourcePathForAssembly(normalized);
+      return {
+        ...normalized,
+        id,
+        sourceVideoId: id,
+        source_video_id: id,
+        requiredForAssembly: true,
+        needsBackendBinding: !assemblyPath,
+      };
+    });
+    const primarySource = exportedSourceVideos[0] || project?.sourceVideo || project?.source_video || {};
+    return {
+      schema: "video_match_board_v2",
+      status: project?.status || (matchSegments.length ? "exported_context" : "empty"),
+      node_id: nodeId,
+      exported_at: new Date().toISOString(),
+      source_video: primarySource,
+      sourceVideos: exportedSourceVideos,
+      source_videos: exportedSourceVideos,
+      assembly: {
+        mode: "source_video_ranges",
+        sourceVideoIds: exportedSourceVideos.map((source) => source.id || source.sourceVideoId || source.source_video_id).filter(Boolean),
+        requiresBackendFileBinding: true,
+        preserveSelectedCandidates: true,
+      },
+      video_match_board_v2_import_contract: VIDEO_MATCH_BOARD_V2_SOURCE_BINDING_RULES,
+      timingContext: project?.timingContext || {},
+      timing_context: project?.timingContext || {},
+      audioMap: project?.audioMap || {},
+      audio_map: project?.audioMap || {},
+      audio_duration_sec: Number(project?.timingContext?.audioDurationSec || project?.audioPreviewMeta?.duration_sec || audioDurationSec || 0),
+      segments: matchSegments,
+      export_note: "Direct Video Node JSON export. Re-import with the Import JSON button. Backend video/audio files may still need relink if the saved /api/video-match URLs are missing.",
+    };
+  }, [audioDurationSec, matchSegments, nodeId, project, sourceVideos]);
+
+  const onDownloadVideoMatchBoardJsonV206C = useCallback(() => {
+    const exportedBoard = buildDirectVideoMatchBoardJsonV206C();
+    const blob = new Blob([JSON.stringify(exportedBoard, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `video_match_board_${nodeId}_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [buildDirectVideoMatchBoardJsonV206C, nodeId]);
 
   const onExportChatGptPackage = useCallback(async () => {
     const zip = new JSZip();
@@ -4428,12 +4716,34 @@ Codex must return selected_clips_manifest.json, candidate_manifest.json, final_p
         </div>
       ) : null}
       {/* AVA_PATCH_VIDEO_MATCH_CLEAR_MODAL_V9_END */}
+      {jsonHelpOpen ? (
+        <div className="videoMatchModalOverlay" role="dialog" aria-modal="true" aria-label="Инструкция Video Node для ChatGPT" onMouseDown={() => setJsonHelpOpen(false)}>
+          <div className="videoMatchResetModal videoMatchJsonHelpModal videoMatchJsonHelpModalWide" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="videoMatchResetModalTop">
+              <span className="videoMatchResetModalIcon">🧾</span>
+              <div>
+                <h3>Инструкция для ChatGPT / Codex</h3>
+                <p>Этот текст можно скопировать в новый чат вместе с ZIP/JSON/patch notes.</p>
+              </div>
+            </div>
+            <pre className="videoMatchJsonInstructionText">{VIDEO_NODE_JSON_HELP_TEXT_V206E}</pre>
+            <div className="videoMatchResetModalActions">
+              <button className="videoMatchModalCancelBtn" type="button" onClick={() => setJsonHelpOpen(false)}>Закрыть</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="videoMatchHeader">
         <div>
           <h1>Video Match Board</h1>
           <p>Компактная доска подбора фрагментов большого видео под аудио-карту.</p>
         </div>
         <div className="videoMatchHeaderActions">
+          <div className="videoMatchHeaderJsonActions" aria-label="JSON инструменты Video Node">
+            <button className="clipSB_btn clipSB_btnSecondary videoMatchTopJsonBtn" type="button" onClick={onDownloadVideoMatchBoardJsonV206C}>⬇️ Скачать JSON</button>
+            <label className="clipSB_btn clipSB_btnPrimary videoMatchTopJsonBtn">📥 Импорт JSON<input type="file" accept="application/json,.json" hidden onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file) return; const text = await file.text(); setJsonInputDraft(""); patchProject({ jsonInput: "", jsonInputPreview: String(text || "").slice(0, 2000), jsonInputClearedAfterImport: true, jsonError: "" }, { lastGood: false }); validateAndApplyVideoMatchJsonText(text); }} /></label>
+            <button className="clipSB_btn clipSB_btnSecondary videoMatchTopJsonBtn" type="button" onClick={() => setJsonHelpOpen(true)}>ℹ️ Инструкция</button>
+          </div>
           <button className="videoMatchTopClearBtn" type="button" onClick={() => setResetConfirmOpen(true)} title="Очистить текущую доску">
             <span className="videoMatchTopClearIcon">🧹</span>
             <span>Очистить</span>
@@ -4452,6 +4762,24 @@ Codex must return selected_clips_manifest.json, candidate_manifest.json, final_p
         <span>длительность сборки: {formatSec(assemblyDurationSec)} с</span>
         <span>аудио: {project.audioPreviewMeta?.filename || "—"}</span>
       </div>
+
+      {(pendingImportResult || project.jsonError || importWarnings.length) ? (
+        <div className="videoMatchTopJsonStatusPanel">
+          {pendingImportResult ? (
+            <div className="videoMatchReplacePanel videoMatchReplacePanelCompact videoMatchReplacePanelTop">
+              <div className="videoMatchReplacePanelTitle">Новый JSON отличается от текущего проекта.</div>
+              <div>Сейчас активно: {matchSegments.length} сцены. Новый JSON: {Array.isArray(pendingImportResult?.result?.matchSegments) ? pendingImportResult.result.matchSegments.length : 0} сцены.</div>
+              <div className="videoMatchReplacePanelActions">
+                <button className="clipSB_btn clipSB_btnPrimary" type="button" onClick={() => replaceVideoMatchProjectWithImportedJson(pendingImportResult, { keepRuntimeMedia: true })}>Заменить текущий проект</button>
+                <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => setPendingImportResult(null)}>Отмена</button>
+                <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => { clearNodeState("manual_reset_and_apply"); replaceVideoMatchProjectWithImportedJson(pendingImportResult, { keepRuntimeMedia: true }); }}>Очистить и заменить</button>
+              </div>
+            </div>
+          ) : null}
+          {project.jsonError ? <div className="videoMatchError videoMatchTopJsonMessage">{project.jsonError}</div> : null}
+          {importWarnings.length ? <div className="videoMatchWarnings videoMatchTopJsonMessage">{importWarnings.join("; ")}</div> : null}
+        </div>
+      ) : null}
 
       <div className="videoMatchTopWorkspace">
         <section className="videoMatchPanel videoMatchPlayerPanel">
@@ -4928,40 +5256,12 @@ Codex must return selected_clips_manifest.json, candidate_manifest.json, final_p
               </div>
             </>
           ) : (
-            <div className="videoMatchEmptyList">Примените JSON и выберите сцену на strip.</div>
+            <div className="videoMatchEmptyList">Импортируйте JSON и выберите сцену на strip.</div>
           )}
         </aside>
       </div>
 
       <div className="videoMatchBelowGrid videoMatchMiniPanels">
-        <details className="videoMatchPanel videoMatchDetailsPanel videoMatchJsonPanel">
-          <summary>JSON от Codex</summary>
-          {pendingImportResult ? (
-            <div className="videoMatchReplacePanel">
-              <div className="videoMatchReplacePanelTitle">Новый JSON отличается от текущего проекта.</div>
-              <div>Сейчас активно: {matchSegments.length} сцены.</div>
-              <div>Новый JSON: {Array.isArray(pendingImportResult?.result?.matchSegments) ? pendingImportResult.result.matchSegments.length : 0} сцены.</div>
-              <div>Нажмите &quot;Заменить текущий проект новым JSON&quot;.</div>
-              <div className="videoMatchReplacePanelActions">
-                <button className="clipSB_btn clipSB_btnPrimary" type="button" onClick={() => replaceVideoMatchProjectWithImportedJson(pendingImportResult, { keepRuntimeMedia: true })}>Заменить текущий проект новым JSON</button>
-                <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => setPendingImportResult(null)}>Отмена</button>
-                <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => { clearNodeState("manual_reset_and_apply"); replaceVideoMatchProjectWithImportedJson(pendingImportResult, { keepRuntimeMedia: true }); }}>Очистить ноду и применить JSON</button>
-              </div>
-            </div>
-          ) : null}
-          <div className="videoMatchJsonActions">
-            <label className="clipSB_btn clipSB_btnSecondary">📥 Импорт JSON<input type="file" accept="application/json,.json" hidden onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file) return; const text = await file.text(); setJsonInputDraft(""); patchProject({ jsonInput: "", jsonInputPreview: String(text || "").slice(0, 2000), jsonInputClearedAfterImport: true, jsonError: "" }, { lastGood: false }); validateAndApplyVideoMatchJsonText(text); }} /></label>
-            <button className="clipSB_btn clipSB_btnPrimary" type="button" onClick={onApplyJson}>✅ Применить</button>
-            <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => forceApplyVideoMatchJsonText(String(jsonInputDraft || project.jsonInputPreview || project.jsonInput || ""))}>⚠️ Заменить проект</button>
-            <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={onExportChatGptPackage}>📤 Пакет для ChatGPT</button>
-            <button className="clipSB_btn clipSB_btnSecondary" type="button" onClick={() => setResetConfirmOpen(true)}>🧹 Очистить</button>
-          </div>
-          <div className="videoMatchWorkflowStatus">Пакет для ChatGPT сохраняет контекст. Пришлите его в чат — ChatGPT предложит следующий шаг и напишет точное задание Codex.</div>
-          <textarea value={jsonInputDraft || project.jsonInputPreview || ""} onChange={(event) => setJsonInputDraft(event.target.value)} placeholder="Вставьте JSON schema video_match_board_v1 или video_match_board_v2..." />
-          {project.jsonError ? <div className="videoMatchError">{project.jsonError}</div> : null}
-          {importWarnings.length ? <div className="videoMatchWarnings">{importWarnings.join("; ")}</div> : null}
-          {pendingImportResult ? <div className="videoMatchWarnings">Импорт ожидает подтверждения замены текущего проекта.</div> : null}
-        </details>
 
         <details className="videoMatchPanel videoMatchDetailsPanel videoMatchRemovedPanel">
           <summary>Аудио-карта</summary>
@@ -5028,7 +5328,7 @@ Codex must return selected_clips_manifest.json, candidate_manifest.json, final_p
 
           <details className="videoMatchNestedDebug">
             <summary>Segments / candidates</summary>
-            {matchSegments.length === 0 ? <div className="videoMatchEmptyList">После применения JSON здесь появятся segments и candidates.</div> : null}
+            {matchSegments.length === 0 ? <div className="videoMatchEmptyList">После импорта JSON здесь появятся segments и candidates.</div> : null}
             <div className="videoMatchSegmentsList">
               {matchSegments.map((segment) => {
                 const candidates = Array.isArray(segment.candidates) ? segment.candidates : [];
