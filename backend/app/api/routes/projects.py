@@ -28,7 +28,7 @@ from copy import deepcopy
 
 router = APIRouter(prefix='/projects', tags=['projects'])
 
-STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator', 'audio_studio'}
+STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator', 'audio_studio', 'rules_packs'}
 PROJECT_THEME_COUNT = 8
 
 

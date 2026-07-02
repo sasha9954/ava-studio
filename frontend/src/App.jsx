@@ -21,6 +21,7 @@ const PodcastAudioComposerPage = lazy(() => import('./pages/podcast_audio/Podcas
 const VideoMatchBoardPage = lazy(() => import('./pages/video_match_board/VideoMatchBoardPage.jsx'))
 const StandaloneGeneratorPage = lazy(() => import('./pages/standalone_generator/StandaloneGeneratorPage.jsx'))
 const AudioStudioPage = lazy(() => import('./pages/audio_studio/AudioStudioPage.jsx'))
+const RulesPackPage = lazy(() => import('./pages/RulesPackPage.jsx'))
 
 function Protected({ children }) {
   const { token, booting } = useAuth()
@@ -41,6 +42,7 @@ export default function App() {
       <Route path="/generator" element={<Protected><StandaloneGeneratorPage /></Protected>} />
       <Route path="/studio/generator" element={<Protected><StandaloneGeneratorPage /></Protected>} />
       <Route path="/studio/video-match-board" element={<Protected><VideoMatchBoardPage /></Protected>} />
+      <Route path="/rules/:packId" element={<Protected><RulesPackPage /></Protected>} />
       <Route
         path="/app"
         element={
@@ -69,6 +71,8 @@ export default function App() {
         <Route path="projects/:projectId/video-match-board" element={<VideoMatchBoardPage />} />
         <Route path="projects/:projectId/generator" element={<StandaloneGeneratorPage />} />
         <Route path="projects/:projectId/audio-studio" element={<AudioStudioPage />} />
+        <Route path="rules/:packId" element={<RulesPackPage />} />
+        <Route path="projects/:projectId/rules/:packId" element={<RulesPackPage />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="credits" element={<CreditsPage />} />
         <Route path="settings" element={<SettingsPage />} />

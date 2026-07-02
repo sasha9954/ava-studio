@@ -27,12 +27,34 @@ const MT_PLAYHEAD_DIAG_STORAGE_KEY = 'ava:mt-playhead-diag'
 const MT_BLOCK_DIAG_STORAGE_KEY = 'ava:mt-block-diag'
 
 
+const MT_TIMELINE_ZOOM_STORAGE_KEY_V208A = 'ava:manual-timing:timeline-zoom:v208a'
+const MT_TIMELINE_ZOOM_OPTIONS_V208A = [1, 2, 4, 8]
+
+function avaNearestManualTimingTimelineZoomV208A(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 1
+  return MT_TIMELINE_ZOOM_OPTIONS_V208A.reduce((best, option) => (
+    Math.abs(option - numeric) < Math.abs(best - numeric) ? option : best
+  ), 1)
+}
+
+function avaReadManualTimingTimelineZoomV208A() {
+  if (typeof window === 'undefined') return 1
+  try {
+    return avaNearestManualTimingTimelineZoomV208A(window.localStorage.getItem(MT_TIMELINE_ZOOM_STORAGE_KEY_V208A) || 1)
+  } catch {
+    return 1
+  }
+}
+
+
 const AVA_PODCAST_TO_TIMING_KEY_STAGE95 = 'ava:podcast-to-timing:v1'
 const AVA_DOWNSTREAM_RESET_KEY_STAGE95 = 'ava:downstream-reset:v1'
 const AVA_ACTIVE_JOBS_KEY_STAGE95 = 'ava:active-jobs:v1'
 const AVA_COMPLETED_JOBS_KEY_STAGE95 = 'ava:completed-jobs:v1'
 
 const AVA_MANUAL_TIMING_WORKFLOW_KEY_V160A = 'ava:workflow-entry:manual_timing'
+// AVA_MANUAL_TIMING_VIDEO_CUT_ROUTE_V208K_TOP: source_cut is a Manual Timing route/status for Video Node source-video replacement scenes.
 
 function avaManualTimingClearPodcastHandoffStateV160A({ clearWorkflow = false } = {}) {
   if (typeof window === 'undefined') return
@@ -635,13 +657,143 @@ const emptyDraft = {
   updatedAt: null,
 }
 
+
+// AVA_MANUAL_TIMING_SCENE_TRUTH_VISIBILITY_V208C:
+// Preserve imported scene_truth_v1/user_scene_note metadata as scene state, show it in UI,
+// and keep it available for save/export/Board handoff without changing timing or routes.
+const AVA_MANUAL_TIMING_SCENE_TRUTH_FIELDS_V208C = [
+  'raw_route',
+  'effective_route',
+  'scene_label',
+  'user_scene_note',
+  'viewer_should_understand',
+  'scene_role',
+  'source_or_generated',
+  'character_in_frame',
+  'scene_action',
+  'is_singing',
+  'is_dialogue',
+  'is_dance',
+  'is_reaction',
+  'needs_source_reaction',
+  'reaction_type',
+  'refs_required',
+  'stage_zone',
+  'camera_angle',
+  'gesture',
+  'must_show',
+  'must_not_show',
+  'autofill_confidence',
+  'needs_user_confirmation',
+  'autofill_reason',
+  'user_confirmed_scene_truth',
+]
+
+function avaManualTimingSceneTruthNonEmptyV208C(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function avaManualTimingSceneTruthCopyValueV208C(value) {
+  if (Array.isArray(value)) return value.slice()
+  if (value && typeof value === 'object') return { ...value }
+  return value
+}
+
+function avaManualTimingSceneTruthTextV208C(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (value !== null && value !== undefined && typeof value !== 'object') {
+      const text = String(value).trim()
+      if (text) return text
+    }
+  }
+  return ''
+}
+
+function avaManualTimingSceneTruthSourceV208C(scene = {}, production = {}) {
+  const fromProduction = production?.scene_truth_v1 && typeof production.scene_truth_v1 === 'object' ? production.scene_truth_v1 : {}
+  const fromScene = scene?.scene_truth_v1 && typeof scene.scene_truth_v1 === 'object' ? scene.scene_truth_v1 : {}
+  return { ...fromProduction, ...fromScene }
+}
+
+function avaManualTimingSceneTruthFieldsV208C(scene = {}, production = {}) {
+  const truth = avaManualTimingSceneTruthSourceV208C(scene, production)
+  const out = {}
+
+  AVA_MANUAL_TIMING_SCENE_TRUTH_FIELDS_V208C.forEach((field) => {
+    const value = scene?.[field] !== undefined ? scene[field]
+      : production?.[field] !== undefined ? production[field]
+        : truth?.[field]
+    if (avaManualTimingSceneTruthNonEmptyV208C(value)) {
+      out[field] = avaManualTimingSceneTruthCopyValueV208C(value)
+      truth[field] = avaManualTimingSceneTruthCopyValueV208C(value)
+    }
+  })
+
+  const sceneLabel = avaManualTimingSceneTruthTextV208C(out.scene_label, truth.scene_label, scene?.user_scene_label, production?.user_scene_label, scene?.label, production?.label)
+  if (sceneLabel) {
+    out.scene_label = sceneLabel
+    truth.scene_label = sceneLabel
+    out.user_scene_label = sceneLabel
+  }
+
+  const userNote = avaManualTimingSceneTruthTextV208C(out.user_scene_note, truth.user_scene_note, scene?.note, production?.note, scene?.visual_action, scene?.viewer_should_understand)
+  if (userNote) {
+    out.user_scene_note = userNote
+    truth.user_scene_note = userNote
+    out.note = avaManualTimingSceneTruthTextV208C(scene?.note, production?.note, userNote)
+  }
+
+  const visualAction = avaManualTimingSceneTruthTextV208C(scene?.visual_action, production?.visual_action, out.scene_action, truth.scene_action)
+  if (visualAction) {
+    out.visual_action = visualAction
+    truth.visual_action = visualAction
+  }
+
+  const viewerMeaning = avaManualTimingSceneTruthTextV208C(out.viewer_should_understand, truth.viewer_should_understand, scene?.viewer_should_understand, production?.viewer_should_understand)
+  if (viewerMeaning) {
+    out.viewer_should_understand = viewerMeaning
+    truth.viewer_should_understand = viewerMeaning
+  }
+
+  const hasTruth = Object.values(truth).some(avaManualTimingSceneTruthNonEmptyV208C)
+  const needsConfirmation = out.needs_user_confirmation === true || truth.needs_user_confirmation === true
+  out.scene_truth_status = needsConfirmation ? 'needs confirmation' : (hasTruth ? 'loaded' : 'missing')
+  out.scene_truth_loaded = Boolean(hasTruth)
+  out.scene_truth_needs_confirmation = Boolean(needsConfirmation)
+
+  if (hasTruth) out.scene_truth_v1 = truth
+  return out
+}
+
+function avaManualTimingSceneTruthNoteV208C(scene = {}) {
+  return avaManualTimingSceneTruthTextV208C(
+    scene?.user_scene_note,
+    scene?.scene_truth_v1?.user_scene_note,
+    scene?.visual_action,
+    scene?.viewer_should_understand,
+    scene?.note,
+  )
+}
+
+function avaManualTimingSceneTruthStatusLabelV208C(scene = {}) {
+  const truth = avaManualTimingSceneTruthFieldsV208C(scene)
+  return truth.scene_truth_status || 'missing'
+}
+
 function formatSceneId(index) {
   return `seg_${String(index + 1).padStart(2, '0')}`
 }
 
 function makeScene(index, start, end, extra = {}) {
+  const sceneTruthFieldsV208C = avaManualTimingSceneTruthFieldsV208C(extra)
   return {
     ...extra,
+    ...sceneTruthFieldsV208C,
     id: formatSceneId(index),
     index,
     title: formatSceneId(index),
@@ -1018,6 +1170,131 @@ function avaSemanticBlockCssColorV69(scene = {}, fallbackIndex = 0) {
   const blockId = avaSemanticBlockIdOfSceneV69(scene)
   if (blockId) return avaSemanticBlockColorOfSceneV69(scene, fallbackIndex)
   return `hsl(${sceneHue(fallbackIndex)}, 82%, 52%)`
+}
+
+
+// AVA_MANUAL_TIMING_SCENE_COLOR_CANON_V208E:
+// One scene has one display color. In the current minimal mode semantic block color wins,
+// so all scenes inside the same block stay visually identical across timeline, block band,
+// selected state, editor panel, export and Board handoff. Selected/hover states may add only
+// outline/glow; they must not replace the base scene color.
+function avaManualTimingStoryBlockMetaMapV208E(storyBlocks = []) {
+  const map = new Map()
+  ;(Array.isArray(storyBlocks) ? storyBlocks : []).forEach((block, index) => {
+    const id = String(block?.id || block?.blockId || block?.block_id || block?.semanticBlockId || block?.semantic_block_id || '').trim()
+    if (!id) return
+    const color = avaSemanticBlockHexColorV69(block?.color || block?.blockColor || block?.block_color || block?.semanticBlockColor || block?.semantic_block_color || '', index)
+    const title = String(block?.title || block?.blockTitle || block?.block_title || block?.label || id).trim()
+    map.set(id, { id, title, color })
+  })
+  return map
+}
+
+function avaManualTimingSceneDisplayColorV208E(scene = {}, index = 0, storyBlocks = []) {
+  const blockId = avaSemanticBlockIdOfSceneV69(scene)
+  const blockMeta = blockId ? avaManualTimingStoryBlockMetaMapV208E(storyBlocks).get(blockId) : null
+  const raw = String(
+    blockMeta?.color
+    || scene.blockColor
+    || scene.block_color
+    || scene.semanticBlockColor
+    || scene.semantic_block_color
+    || scene.color
+    || scene.sceneColor
+    || scene.scene_color
+    || scene.timelineColor
+    || scene.cardColor
+    || scene.user_scene_color
+    || ''
+  ).trim()
+  return avaSemanticBlockHexColorV69(raw, index)
+}
+
+function avaManualTimingHexToHueV208E(hex = '', fallbackIndex = 0) {
+  const safe = avaSemanticBlockHexColorV69(hex, fallbackIndex).replace('#', '')
+  const r = parseInt(safe.slice(0, 2), 16) / 255
+  const g = parseInt(safe.slice(2, 4), 16) / 255
+  const b = parseInt(safe.slice(4, 6), 16) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const d = max - min
+  if (!d) return sceneHue(fallbackIndex)
+  let h = 0
+  if (max === r) h = ((g - b) / d) % 6
+  else if (max === g) h = ((b - r) / d) + 2
+  else h = ((r - g) / d) + 4
+  return Math.round((h * 60 + 360) % 360)
+}
+
+function avaManualTimingSceneDisplayHueV208E(scene = {}, index = 0, storyBlocks = []) {
+  return avaManualTimingHexToHueV208E(avaManualTimingSceneDisplayColorV208E(scene, index, storyBlocks), index)
+}
+
+function avaManualTimingSceneColorVarsV208E(scene = {}, index = 0, storyBlocks = []) {
+  const color = avaManualTimingSceneDisplayColorV208E(scene, index, storyBlocks)
+  return {
+    '--scene-hue': avaManualTimingHexToHueV208E(color, index),
+    '--scene-block-color': color,
+    '--scene-display-color': color,
+  }
+}
+
+function avaManualTimingCanonicalSceneColorFieldsV208E(scene = {}, index = 0, storyBlocks = []) {
+  const color = avaManualTimingSceneDisplayColorV208E(scene, index, storyBlocks)
+  const blockId = avaSemanticBlockIdOfSceneV69(scene)
+  const blockMeta = blockId ? avaManualTimingStoryBlockMetaMapV208E(storyBlocks).get(blockId) : null
+  const blockTitle = String(blockMeta?.title || scene.blockTitle || scene.block_title || scene.semanticBlockTitle || scene.semantic_block_title || blockId || '').trim()
+  const patch = {
+    color,
+    sceneColor: color,
+    scene_color: color,
+    user_scene_color: color,
+    timelineColor: color,
+    cardColor: color,
+    blockColor: color,
+    block_color: color,
+    semanticBlockColor: color,
+    semantic_block_color: color,
+  }
+  if (!blockId) return { ...scene, ...patch }
+  return {
+    ...scene,
+    blockId,
+    block_id: blockId,
+    semanticBlockId: blockId,
+    semantic_block_id: blockId,
+    blockTitle,
+    block_title: blockTitle,
+    semanticBlockTitle: blockTitle,
+    semantic_block_title: blockTitle,
+    ...patch,
+  }
+}
+
+function avaManualTimingTimelineBlocksV208E(sceneList = [], storyBlocks = [], durationSec = 0) {
+  const blocks = new Map()
+  const metaMap = avaManualTimingStoryBlockMetaMapV208E(storyBlocks)
+  ;(Array.isArray(sceneList) ? sceneList : []).forEach((scene, index) => {
+    const blockId = avaSemanticBlockIdOfSceneV69(scene)
+    if (!blockId) return
+    const meta = metaMap.get(blockId) || {}
+    const title = String(meta.title || avaSemanticBlockTitleOfSceneV69(scene, blockId) || blockId).trim()
+    const color = avaManualTimingSceneDisplayColorV208E(scene, index, storyBlocks)
+    const start = Number(scene.start ?? scene.start_sec ?? 0)
+    const end = Number(scene.end ?? scene.end_sec ?? start)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return
+    if (!blocks.has(blockId)) blocks.set(blockId, { id: blockId, title, color, start, end, sceneIds: [] })
+    const block = blocks.get(blockId)
+    block.start = Math.min(block.start, start)
+    block.end = Math.max(block.end, end)
+    block.color = color
+    const sceneId = avaSemanticBlockSceneIdV69(scene, `seg_${String(index + 1).padStart(2, '0')}`)
+    if (sceneId && !block.sceneIds.includes(sceneId)) block.sceneIds.push(sceneId)
+  })
+  const duration = Math.max(0, Number(durationSec) || 0)
+  return Array.from(blocks.values())
+    .filter((block) => duration <= 0 || block.end > 0)
+    .sort((a, b) => a.start - b.start)
 }
 
 function avaSemanticStoryBlocksFromScenesV69(sceneList = []) {
@@ -1465,6 +1742,52 @@ function applySceneSliceTranslations(sceneList = [], translatedItems = [], speec
   })
 }
 
+
+// AVA_MANUAL_TIMING_EXPORT_DOWNLOAD_UNBLOCK_V208J:
+// JSON export must never hang forever on autosave, board snapshot restore, huge project objects,
+// or a stale network request. Export uses current Manual Timing data first and treats board snapshot
+// as optional context only.
+async function avaManualTimingRunWithTimeoutV208J(factory, timeoutMs = 3500, fallbackValue = null, label = 'operation') {
+  let timeoutId = null
+  try {
+    const task = Promise.resolve().then(() => factory())
+    const timeout = new Promise((resolve) => {
+      timeoutId = window.setTimeout(() => {
+        console.warn(`[AVA MT EXPORT V208J] ${label} timed out after ${timeoutMs}ms; continuing export`)
+        resolve(fallbackValue)
+      }, timeoutMs)
+    })
+    return await Promise.race([task, timeout])
+  } catch (error) {
+    console.warn(`[AVA MT EXPORT V208J] ${label} failed; continuing export`, error)
+    return fallbackValue
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId)
+  }
+}
+
+function avaManualTimingProjectForPackV208J({ activeProject, projectId, scopeTitle } = {}) {
+  const source = activeProject && typeof activeProject === 'object' ? activeProject : {}
+  const mode = source.project_mode && typeof source.project_mode === 'object'
+    ? source.project_mode
+    : { id: 'manual_general_v1' }
+  return {
+    id: source.id || projectId || '',
+    name: source.name || scopeTitle || 'Ava project',
+    title: source.title || source.name || scopeTitle || 'Ava project',
+    project_mode: {
+      id: mode.id || source.project_mode_id || 'manual_general_v1',
+      label_ru: mode.label_ru || mode.label || '',
+      label: mode.label || mode.label_ru || '',
+    },
+    format: source.format || source.aspect_ratio || source.output_format || '',
+    aspect_ratio: source.aspect_ratio || source.format || '',
+    output_format: source.output_format || source.format || source.aspect_ratio || '',
+    created_at: source.created_at || source.createdAt || '',
+    updated_at: source.updated_at || source.updatedAt || '',
+  }
+}
+
 export default function ManualTimingPage() {
   const { projectId: routeProjectId } = useParams()
   const navigate = useNavigate()
@@ -1497,6 +1820,7 @@ export default function ManualTimingPage() {
   const [translatorPlayingId, setTranslatorPlayingId] = useState('')
   const [missingPhraseEditor, setMissingPhraseEditor] = useState(null)
   const [asrVisualOffsetSec, setAsrVisualOffsetSec] = useState(0)
+  const [timelineZoomV208A, setTimelineZoomV208A] = useState(() => avaReadManualTimingTimelineZoomV208A())
   const [pendingAudioFile, setPendingAudioFile] = useState(null)
   const [showReplaceAudioConfirm, setShowReplaceAudioConfirm] = useState(false)
   const [showTimingToBoardConfirmV16, setShowTimingToBoardConfirmV16] = useState(false)
@@ -1532,6 +1856,44 @@ export default function ManualTimingPage() {
     ...scenes.map((scene) => Number(scene.end) || 0),
   )
   const cursorPct = timeToTimelinePct(cursorSec, timelineDurationSec)
+  const timelineZoomIndexV208A = Math.max(0, MT_TIMELINE_ZOOM_OPTIONS_V208A.indexOf(timelineZoomV208A))
+  const timelineSceneMinWidthPxV208A = timelineZoomV208A >= 8 ? 92 : timelineZoomV208A >= 4 ? 72 : timelineZoomV208A >= 2 ? 54 : 0
+  const timelineContentStyleV208A = {
+    '--mt-zoom': timelineZoomV208A,
+    '--mt-scene-min-width': `${timelineSceneMinWidthPxV208A}px`,
+    width: `${Math.max(100, timelineZoomV208A * 100)}%`,
+    minWidth: '1180px',
+  }
+  const timelineBlocksV208E = avaManualTimingTimelineBlocksV208E(scenes, draft.storyBlocks || [], timelineDurationSec)
+
+  // AVA_MANUAL_TIMING_FOLLOW_PLAYHEAD_V208G:
+  // Visual-only timeline follow mode: while audio is playing, keep the playhead centered in
+  // the horizontal scroll viewport. Near the start/end it clamps naturally. This does not
+  // modify scene timing, ASR, routes, exports, or audio ranges.
+  function centerTimelinePlayheadV208G(cursorValue = cursorSec) {
+    const viewport = timelineScaleRef.current
+    const content = timelineContentRef.current
+    if (!viewport || !content) return
+
+    const maxScrollLeft = Math.max(0, Number(viewport.scrollWidth || 0) - Number(viewport.clientWidth || 0))
+    if (maxScrollLeft <= 2) return
+
+    const duration = Math.max(0.001, Number(timelineDurationSec || draft.audioDurationSec || 0))
+    const safeCursor = clampCursor(Number(cursorValue || 0), duration)
+    const contentWidth = Math.max(
+      Number(content.scrollWidth || 0),
+      Number(content.offsetWidth || 0),
+      Number(viewport.scrollWidth || 0),
+      Number(viewport.clientWidth || 0),
+    )
+    const viewportWidth = Math.max(1, Number(viewport.clientWidth || 1))
+    const playheadX = (safeCursor / duration) * contentWidth
+    const targetLeft = Math.max(0, Math.min(maxScrollLeft, playheadX - (viewportWidth / 2)))
+
+    if (Math.abs(Number(viewport.scrollLeft || 0) - targetLeft) < 1) return
+    viewport.scrollTo({ left: targetLeft, behavior: 'auto' })
+  }
+
   const roleMap = useMemo(() => new Map((draft.roles || []).map((role) => [role.roleId || role.id, role])), [draft.roles])
   function speechSegmentBelongsToScene(scene, segment) {
     const start = Number(segment?.start || 0)
@@ -1581,6 +1943,10 @@ export default function ManualTimingPage() {
     buildSceneDisplayText(selectedScene, selectedSceneSpeechExport)
   ), [selectedScene, selectedSceneSpeechExport])
 
+  const selectedSceneTruthV208C = useMemo(() => (
+    avaManualTimingSceneTruthFieldsV208C(selectedScene || {})
+  ), [selectedScene])
+
   function getSceneSelectionId(scene) {
     return String(scene?.id || scene?.scene_id || scene?.title || scene?.index || '')
   }
@@ -1602,6 +1968,15 @@ export default function ManualTimingPage() {
   }
 
   const selectedBlockSceneCount = getSelectedBlockScenes(blockSelection).length
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(MT_TIMELINE_ZOOM_STORAGE_KEY_V208A, String(timelineZoomV208A))
+    } catch {
+      // localStorage can be unavailable in private/browser-restricted modes; zoom remains session-only.
+    }
+  }, [timelineZoomV208A])
 
   useEffect(() => {
     if (!isManualTimingPlayheadDiagEnabled()) return
@@ -1637,21 +2012,37 @@ export default function ManualTimingPage() {
 
 
   function getSceneTooltip(scene) {
+    const speechExport = buildSceneSpeechExport(scene, draft.speechSegments || [])
+    const sceneDisplay = buildSceneDisplayText(scene, speechExport)
+    const durationSec = Math.max(0, Number(scene?.end || 0) - Number(scene?.start || 0))
+    const routeLabel = String(scene.route || scene.videoRoute || scene.model || 'auto').trim() || 'auto'
+    const sceneTruthV208C = avaManualTimingSceneTruthFieldsV208C(scene)
+    const noteText = avaManualTimingSceneTruthTextV208C(sceneTruthV208C.user_scene_note, scene.note, scene.notes)
     const phraseLines = (draft.speechSegments || [])
       .filter((segment) => speechSegmentBelongsToScene(scene, segment))
-      .map((segment) => `${formatTime(segment.start, true)}-${formatTime(segment.end, true)} ${segment.text || ''}`.trim())
+      .map((segment) => `${formatTime(segment.start, true)}-${formatTime(segment.end, true)} ${segment.text || segment.originalText || segment.original_text || ''}`.trim())
 
     const gapLines = asrGapSegments
       .filter((gap) => segmentsOverlap(scene.start, scene.end, gap.start, gap.end))
       .map((gap) => `${formatTime(gap.start, true)}-${formatTime(gap.end, true)} возможно есть нераспознанная фраза`)
 
     const lines = [
-      `${scene.title || scene.id}: ${formatTime(scene.start, true)} → ${formatTime(scene.end, true)}`,
-      scene.route && scene.route !== 'auto' ? `route: ${scene.route}` : '',
+      `${scene.title || scene.id}: ${formatTime(scene.start, true)} → ${formatTime(scene.end, true)} · ${durationSec.toFixed(3)} сек`,
+      `route/model: ${routeLabel}`,
+      sceneTruthV208C.scene_label ? `scene_label: ${sceneTruthV208C.scene_label}` : '',
+      sceneTruthV208C.effective_route ? `effective_route: ${sceneTruthV208C.effective_route}` : '',
+      sceneTruthV208C.source_or_generated ? `source/generated: ${sceneTruthV208C.source_or_generated}` : '',
+      Array.isArray(sceneTruthV208C.character_in_frame) && sceneTruthV208C.character_in_frame.length ? `character_in_frame: ${sceneTruthV208C.character_in_frame.join(', ')}` : '',
+      sceneTruthV208C.scene_truth_status ? `scene_truth: ${sceneTruthV208C.scene_truth_status}` : '',
+      sceneDisplay.scene_word_text ? `текст сцены: ${sceneDisplay.scene_word_text}` : '',
+      sceneDisplay.translated_text_ru ? `перевод: ${sceneDisplay.translated_text_ru}` : '',
+      sceneDisplay.meaning_hint_ru ? `смысл: ${sceneDisplay.meaning_hint_ru}` : '',
       scene.blockTitle ? `блок: ${scene.blockTitle}` : '',
-      scene.note ? `памятка: ${scene.note}` : '',
-      phraseLines.length ? `ASR:\n${phraseLines.join('\n')}` : '',
-      gapLines.length ? `Проверить:\n${gapLines.join('\n')}` : '',
+      noteText ? `памятка: ${noteText}` : '',
+      phraseLines.length ? `ASR:
+${phraseLines.join('\n')}` : '',
+      gapLines.length ? `Проверить:
+${gapLines.join('\n')}` : '',
     ].filter(Boolean)
 
     return lines.join('\n')
@@ -1967,6 +2358,7 @@ export default function ManualTimingPage() {
       }
 
       setCursorSec(current)
+      centerTimelinePlayheadV208G(current)
       frameId = window.requestAnimationFrame(tick)
     }
 
@@ -2605,6 +2997,22 @@ function clearBlockSelection() {
   function avaTimingNormalizeRouteV154A(value = '') {
     const raw = String(value || '').trim().toLowerCase()
     if (!raw) return 'auto'
+    // AVA_MANUAL_TIMING_VIDEO_CUT_ROUTE_V208K_ALIAS:
+    // This is a status/route for Video Node: the scene is not generated in Board;
+    // Video Node later replaces it with a source-video range/cut.
+    if ([
+      'source_cut',
+      'source-cut',
+      'source cut',
+      'video_cut',
+      'video-cut',
+      'video cut',
+      'video_narezka',
+      'видео нарезка',
+      'видеонарезка',
+      'нарезка',
+      'нарезка видео',
+    ].includes(raw)) return 'source_cut'
     if (raw === 'ia2v_instrumental' || raw === 'ia2v-instrumental' || raw === 'ia2v instrumental' || raw === 'instrumental' || raw === 'instrument') return 'ia2v_instrumental'
     if (raw === 'ia2v_lipsync' || raw === 'ia2v-lipsync' || raw === 'ia2v lip-sync' || raw === 'ia2v lipsync' || raw === 'lip_sync' || raw === 'lipsync' || raw === 'lip-sync') return 'ia2v'
     if (raw === 'first-last') return 'first_last'
@@ -2623,7 +3031,7 @@ function clearBlockSelection() {
     setSceneEditor({
       sceneIndex: safeSceneIndexV205H,
       sceneId: scene.id || scene.scene_id || scene.title || '',
-      note: scene.note || scene.memo || '',
+      note: avaManualTimingSceneTruthNoteV208C(scene) || scene.note || scene.memo || '',
       route: avaTimingNormalizeRouteV154A(scene.route || scene.planned_route || scene.plannedRoute || 'auto'),
     })
     setStatus(`редактирование ${scene.title}`)
@@ -2638,11 +3046,36 @@ function clearBlockSelection() {
     const index = byIdIndexV205H >= 0
       ? byIdIndexV205H
       : avaManualTimingSafeSceneIndexV205H(scenes, sceneEditor.sceneIndex)
-    const nextScenes = scenes.map((scene, sceneIndex) => (
-      sceneIndex === index
-        ? { ...scene, note: sceneEditor.note || '', route: avaTimingNormalizeRouteV154A(sceneEditor.route || 'auto'), planned_route: avaTimingNormalizeRouteV154A(sceneEditor.route || 'auto') }
-        : scene
-    ))
+    const normalizedEditorRouteV208K = avaTimingNormalizeRouteV154A(sceneEditor.route || 'auto')
+    const sourceCutPatchV208K = normalizedEditorRouteV208K === 'source_cut'
+      ? {
+          // AVA_MANUAL_TIMING_VIDEO_CUT_ROUTE_V208K_SAVE:
+          // This scene is a Video Node source-video cut marker. It is not a Board generation route.
+          source_or_generated: 'source',
+          video_node_role: 'source_cut',
+          generated_placeholder: false,
+          skip_board_generation: true,
+        }
+      : {}
+    const nextScenes = scenes.map((scene, sceneIndex) => {
+      if (sceneIndex !== index) return scene
+      const savedNoteV208C = sceneEditor.note || ''
+      const existingTruthV208C = scene?.scene_truth_v1 && typeof scene.scene_truth_v1 === 'object' ? scene.scene_truth_v1 : {}
+      return {
+        ...scene,
+        ...avaManualTimingSceneTruthFieldsV208C(scene),
+        note: savedNoteV208C,
+        user_scene_note: savedNoteV208C || scene.user_scene_note || existingTruthV208C.user_scene_note || '',
+        scene_truth_v1: {
+          ...existingTruthV208C,
+          ...(savedNoteV208C ? { user_scene_note: savedNoteV208C } : {}),
+          updated_from_manual_timing_ui: Boolean(savedNoteV208C),
+        },
+        route: normalizedEditorRouteV208K,
+        planned_route: normalizedEditorRouteV208K,
+        ...sourceCutPatchV208K,
+      }
+    })
     pushHistorySnapshot()
     applyDraftChange({ ...draft, scenes: nextScenes, selectedSceneIndex: index }, 'памятка сцены сохранена', nextScenes[index]?.start ?? cursorSec)
     setSceneEditor(null)
@@ -3121,9 +3554,10 @@ const useVocalStem = mode === 'vocal'
       missingSpeechHints: asrGapSegments || [],
       missing_speech_hints: asrGapSegments || [],
       silentSegments: draft.silentSegments || [],
-      scenes: scenes.map((scene) => {
+      scenes: scenes.map((scene, index) => {
         const speechExport = buildSceneSpeechExport(scene, draft.speechSegments || [])
         const sceneDisplay = buildSceneDisplayText(scene, speechExport)
+        const sceneDisplayColorV208E = avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || [])
         return {
           id: scene.id,
           scene_id: scene.id,
@@ -3135,10 +3569,18 @@ const useVocalStem = mode === 'vocal'
           duration_sec: Number((scene.end - scene.start).toFixed(3)),
           route: scene.route || 'auto',
           note: scene.note || '',
-          blockId: scene.blockId || '',
-          blockTitle: scene.blockTitle || '',
-          block_id: scene.blockId || '',
-          block_title: scene.blockTitle || '',
+          blockId: scene.blockId || scene.block_id || '',
+          blockTitle: scene.blockTitle || scene.block_title || '',
+          block_id: scene.block_id || scene.blockId || '',
+          block_title: scene.block_title || scene.blockTitle || '',
+          color: sceneDisplayColorV208E,
+          sceneColor: sceneDisplayColorV208E,
+          scene_color: sceneDisplayColorV208E,
+          blockColor: sceneDisplayColorV208E,
+          block_color: sceneDisplayColorV208E,
+          user_scene_color: sceneDisplayColorV208E,
+          timelineColor: sceneDisplayColorV208E,
+          cardColor: sceneDisplayColorV208E,
           roleLabels: typeof getSceneRoleLabels === 'function' ? getSceneRoleLabels(scene) : (scene.roleLabels || []),
           ...sceneDisplay,
         }
@@ -3620,7 +4062,7 @@ const useVocalStem = mode === 'vocal'
     const route = avaManualTimingFirstTextV14(scene.route, scene.planned_route, scene.plannedRoute, production.route, production.planned_route) || 'i2v'
     const blockId = avaManualTimingFirstTextV14(scene.blockId, scene.block_id, production.blockId, production.block_id)
     const blockTitle = avaManualTimingFirstTextV14(scene.blockTitle, scene.block_title, production.blockTitle, production.block_title)
-    const color = avaManualTimingFirstTextV14(scene.color, scene.scene_color, scene.sceneColor, production.color, production.scene_color, production.sceneColor)
+    const color = avaManualTimingFirstTextV14(scene.blockColor, scene.block_color, scene.color, scene.scene_color, scene.sceneColor, production.blockColor, production.block_color, production.color, production.scene_color, production.sceneColor)
 
     return {
       ...production,
@@ -3777,7 +4219,7 @@ const useVocalStem = mode === 'vocal'
       const route = pickText(scene.route, scene.planned_route, scene.plannedRoute, production.route, production.planned_route) || 'i2v'
       const blockId = pickText(scene.blockId, scene.block_id, production.blockId, production.block_id)
       const blockTitle = pickText(scene.blockTitle, scene.block_title, production.blockTitle, production.block_title)
-      const color = pickText(scene.color, scene.sceneColor, scene.scene_color, production.color, production.sceneColor, production.scene_color)
+      const color = pickText(scene.blockColor, scene.block_color, scene.color, scene.sceneColor, scene.scene_color, production.blockColor, production.block_color, production.color, production.sceneColor, production.scene_color)
 
       return {
         ...production,
@@ -3813,6 +4255,7 @@ const useVocalStem = mode === 'vocal'
         visual_action: pickText(scene.visual_action, production.visual_action),
         viewer_should_understand: pickText(scene.viewer_should_understand, production.viewer_should_understand),
         readability_check: pickText(scene.readability_check, production.readability_check),
+        ...avaManualTimingSceneTruthFieldsV208C(scene, production),
         photo_prompt_positive: pickText(production.photo_prompt_positive, scene.photo_prompt_positive),
         photo_prompt_negative: pickText(production.photo_prompt_negative, scene.photo_prompt_negative),
         video_motion_prompt: pickText(production.video_motion_prompt, scene.video_motion_prompt),
@@ -4203,19 +4646,24 @@ const useVocalStem = mode === 'vocal'
     setTaskPackDownloadingV178B(true)
     try {
       setStatus('Собираем задание…')
-      try {
-        await saveDraft(draft, 'download_unified_task_pack_v7', true)
-      } catch {}
-
-      const projectForPack = activeProject || {
-        id: projectId || '',
-        name: scopeTitle || 'Ava project',
-        project_mode: { id: 'manual_general_v1' },
+      const saveResultV208J = await avaManualTimingRunWithTimeoutV208J(
+        () => saveDraft(draft, 'download_unified_task_pack_v7', true),
+        3500,
+        null,
+        'manual_timing_save_before_json_export',
+      )
+      if (!saveResultV208J) {
+        setStatus('Собираем JSON без ожидания autosave…')
       }
 
-      const boardSnapshot = projectId
-        ? await loadStage(projectId, 'board').catch(() => ({}))
-        : await loadWorkspaceStage('board').catch(() => ({}))
+      const projectForPack = avaManualTimingProjectForPackV208J({ activeProject, projectId, scopeTitle })
+
+      const boardSnapshot = await avaManualTimingRunWithTimeoutV208J(
+        () => projectId ? loadStage(projectId, 'board') : loadWorkspaceStage('board'),
+        3500,
+        {},
+        'optional_board_snapshot_for_manual_timing_pack',
+      )
 
       const pack = buildAvaProjectPackV1({
         project: projectForPack,
@@ -4228,8 +4676,9 @@ const useVocalStem = mode === 'vocal'
         },
       })
 
-      downloadJsonFile(pack, 'ava_project_pack_v1.json')
-      setStatus(`Скачано задание · режим: ${pack.project_mode?.label_ru || 'Клип'}`)
+      const downloadInfoV208J = downloadJsonFile(pack, 'ava_project_pack_v1.json')
+      const sizeNoteV208J = downloadInfoV208J?.sizeLabel ? ` · ${downloadInfoV208J.sizeLabel}` : ''
+      setStatus(`Скачано задание · режим: ${pack.project_mode?.label_ru || 'Клип'}${sizeNoteV208J}`)
     } catch (error) {
       console.error('[ManualTiming] unified task pack download failed', error)
       setStatus(`Не удалось скачать задание: ${error?.message || 'unknown_error'}`)
@@ -4388,14 +4837,14 @@ const useVocalStem = mode === 'vocal'
       block_title: scene.block_title || scene.blockTitle || '',
       // AVA_TIMING_TO_BOARD_BLOCK_COLOR_CANON_V72:
       // Use the semantic block color as the one canonical color for Board.
-      blockColor: scene.blockColor || scene.block_color || scene.color || scene.sceneColor || scene.scene_color || '',
-      block_color: scene.blockColor || scene.block_color || scene.color || scene.sceneColor || scene.scene_color || '',
-      sceneColor: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
-      scene_color: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
-      color: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
-      user_scene_color: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
-      timelineColor: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
-      cardColor: scene.blockColor ?? scene.block_color ?? scene.color ?? scene.sceneColor ?? scene.scene_color ?? sceneHue(index),
+      blockColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+      block_color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+      sceneColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+      scene_color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+      color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+      user_scene_color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+      timelineColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+      cardColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
     }))
 
     const nextDraft = {
@@ -4701,8 +5150,47 @@ const useVocalStem = mode === 'vocal'
           </div>
         )}
 
+        <div className="avaTimingTimelineZoomBarV208A" onClick={(event) => event.stopPropagation()}>
+          <div className="avaTimingTimelineZoomLabelV208A">
+            <strong>Масштаб сцен</strong>
+            <span>Только визуальный zoom дорожки · тайминги не меняются</span>
+          </div>
+          <div className="avaTimingTimelineZoomControlsV208A">
+            <input
+              type="range"
+              min="0"
+              max={MT_TIMELINE_ZOOM_OPTIONS_V208A.length - 1}
+              step="1"
+              value={timelineZoomIndexV208A}
+              aria-label="Масштаб сцен"
+              onChange={(event) => {
+                const nextIndex = Number(event.target.value) || 0
+                setTimelineZoomV208A(MT_TIMELINE_ZOOM_OPTIONS_V208A[nextIndex] || 1)
+              }}
+            />
+            <span className="avaTimingTimelineZoomValueV208A">{timelineZoomV208A}x</span>
+          </div>
+          <div className="avaTimingTimelineZoomButtonsV208A">
+            {MT_TIMELINE_ZOOM_OPTIONS_V208A.map((zoom) => (
+              <button
+                key={zoom}
+                type="button"
+                className={timelineZoomV208A === zoom ? 'isActive' : ''}
+                onClick={() => setTimelineZoomV208A(zoom)}
+              >
+                {zoom}x
+              </button>
+            ))}
+          </div>
+        </div>
+
+
         <div ref={timelineScaleRef} className="avaTimingTimelineScale" onClick={seekTimeline} onDoubleClick={splitAtCursor}>
-          <div ref={timelineContentRef} className="avaTimingTimelineContent">
+          <div
+            ref={timelineContentRef}
+            className={`avaTimingTimelineContent avaTimingTimelineContentZoomV208A ${timelineZoomV208A >= 2 ? 'isZoomReadableV208A' : ''} ${timelineZoomV208A >= 4 ? 'isZoomWideV208A' : ''}`}
+            style={timelineContentStyleV208A}
+          >
           <div className="avaTimingCursorLabel" style={{ left: `${cursorPct}%` }}>{formatTime(cursorSec, true)}</div>
           <div className="avaTimingWaveLong">
             {Array.from({ length: 180 }).map((_, index) => <i key={index} style={{ '--h': `${14 + ((index * 19) % 74)}%` }} />)}
@@ -4764,11 +5252,35 @@ const useVocalStem = mode === 'vocal'
             </div>
           )}
 
+          {timelineBlocksV208E.length > 0 && (
+            <div className="avaTimingBlockBandV208E" aria-label="Смысловые блоки сцен">
+              {timelineBlocksV208E.map((block) => {
+                const left = timelineDurationSec > 0 ? timeToTimelinePct(block.start, timelineDurationSec) : 0
+                const width = timelineDurationSec > 0 ? Math.max(0.5, ((block.end - block.start) / timelineDurationSec) * 100) : 0
+                return (
+                  <div
+                    key={block.id}
+                    className="avaTimingBlockBandItemV208E"
+                    style={{ left: `${left}%`, width: `${width}%`, '--scene-display-color': block.color, '--scene-block-color': block.color }}
+                    title={`${block.title || block.id}: ${formatTime(block.start, true)} → ${formatTime(block.end, true)} · ${block.sceneIds.length} сцен`}
+                  >
+                    <span>{block.title || block.id}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
         <div ref={segmentsRowRef} className="avaTimingSegmentsRow">
             {scenes.map((scene, sceneArrayIndex) => {
               const sceneUiIndex = sceneArrayIndex
               const sceneLeft = timelineDurationSec > 0 ? timeToTimelinePct(scene.start, timelineDurationSec) : ((sceneUiIndex || 0) / Math.max(1, scenes.length)) * 100
               const sceneWidth = timelineDurationSec > 0 ? Math.max(0.5, ((scene.end - scene.start) / timelineDurationSec) * 100) : (100 / Math.max(1, scenes.length))
+              const sceneSpeechExportV208A = buildSceneSpeechExport(scene, draft.speechSegments || [])
+              const sceneDisplayV208A = buildSceneDisplayText(scene, sceneSpeechExportV208A)
+              const sceneInlineTextV208A = compactText(sceneDisplayV208A.scene_word_text || sceneDisplayV208A.lyrics_text || scene.note || '')
+              const sceneDurationLabelV208A = `${Math.max(0, Number(scene.end || 0) - Number(scene.start || 0)).toFixed(2)}s`
+              const sceneColorVarsV208E = avaManualTimingSceneColorVarsV208E(scene, sceneUiIndex, draft.storyBlocks || [])
               const roleLabels = getSceneRoleLabels(scene)
               const podcastRoleLabel = String(
                 scene.roleLabel ||
@@ -4789,8 +5301,9 @@ const useVocalStem = mode === 'vocal'
                   key={`${scene.id}-${scene.start}-${scene.end}`}
                   type="button"
                   data-scene-id={scene.id || scene.title || scene.index}
-                  style={{ left: `${sceneLeft}%`, width: `${sceneWidth}%`, '--scene-hue': sceneBlockHue(scene, sceneUiIndex), '--scene-block-color': avaSemanticBlockCssColorV69(scene, sceneUiIndex) }}
-                  className={`${isActiveSceneV205H ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${isSceneInBlockSelection(scene) ? 'isBlockPicked' : ''} ${scene.note ? 'hasNote' : ''} ${isDeletingSceneAudioV168A ? 'isDeletingAudioV168A' : ''}`}
+                  style={{ '--scene-left-v208i': `${sceneLeft}%`, '--scene-width-v208i': `${sceneWidth}%`, ...sceneColorVarsV208E }}
+                  className={`${isActiveSceneV205H ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${isSceneInBlockSelection(scene) ? 'isBlockPicked' : ''} ${(scene.note || avaManualTimingSceneTruthNoteV208C(scene)) ? 'hasNote' : ''} ${avaManualTimingSceneTruthFieldsV208C(scene).scene_truth_loaded ? 'hasSceneTruthV208C' : ''} ${avaManualTimingSceneTruthFieldsV208C(scene).scene_truth_needs_confirmation ? 'sceneTruthNeedsConfirmationV208C' : ''} ${isDeletingSceneAudioV168A ? 'isDeletingAudioV168A' : ''}`}
+                  aria-pressed={isActiveSceneV205H}
                   onClick={(event) => handleSceneClick(event, sceneUiIndex)}
                   onDoubleClick={(event) => {
                     event?.stopPropagation?.()
@@ -4801,6 +5314,8 @@ const useVocalStem = mode === 'vocal'
                   <b>{scene.title}</b>
                   {visibleRoleLabels.length > 0 && <em className="avaTimingSceneRoleBadge">{visibleRoleLabels.slice(0, 2).join(' / ')}</em>}
                   <small>{scene.route && scene.route !== 'auto' ? `${scene.route} · ` : ''}{formatTime(scene.start)} → {formatTime(scene.end)}</small>
+                  {sceneInlineTextV208A && <span className="avaTimingSceneZoomTextV208A">{sceneInlineTextV208A}</span>}
+                  <span className="avaTimingSceneDurationV208A">{sceneDurationLabelV208A}</span>
                   {isDeletingSceneAudioV168A ? <span className="avaTimingDeleteProgressV168A" aria-label="Удаляем аудио-сцену"><i /><b>🗑</b></span> : null}
                 </button>
               )
@@ -4934,16 +5449,11 @@ const useVocalStem = mode === 'vocal'
         {sceneEditor && (
           <div
             className="avaTimingSceneEditor isSceneTintedV161A"
-            style={{
-              '--scene-hue': sceneBlockHue(
-                avaManualTimingSceneAtV205H(scenes, sceneEditor.sceneIndex) || selectedScene || {},
-                avaManualTimingSafeSceneIndexV205H(scenes, sceneEditor.sceneIndex)
-              ),
-              '--scene-block-color': avaSemanticBlockCssColorV69(
-                avaManualTimingSceneAtV205H(scenes, sceneEditor.sceneIndex) || selectedScene || {},
-                avaManualTimingSafeSceneIndexV205H(scenes, sceneEditor.sceneIndex)
-              ),
-            }}
+            style={avaManualTimingSceneColorVarsV208E(
+              avaManualTimingSceneAtV205H(scenes, sceneEditor.sceneIndex) || selectedScene || {},
+              avaManualTimingSafeSceneIndexV205H(scenes, sceneEditor.sceneIndex),
+              draft.storyBlocks || []
+            )}
           >
             <div>
               <strong>Памятка сцены · {avaManualTimingSceneAtV205H(scenes, sceneEditor.sceneIndex)?.title}</strong>
@@ -4953,6 +5463,7 @@ const useVocalStem = mode === 'vocal'
               route
               <select value={sceneEditor.route} onChange={(event) => setSceneEditor((prev) => ({ ...prev, route: event.target.value }))}>
                 <option value="auto">auto</option>
+                <option value="source_cut">видео нарезка</option>
                 <option value="ia2v">ia2v / lip-sync</option>
                 <option value="ia2v_instrumental">ia2v / instrumental</option>
                 <option value="i2v">i2v</option>
@@ -5002,9 +5513,11 @@ const useVocalStem = mode === 'vocal'
             <button
               className="avaTimingDownloadSceneButton"
               type="button"
-              style={{
-                '--scene-hue': sceneHue(selectedScene?.index ?? draft.selectedSceneIndex ?? 0),
-              }}
+              style={avaManualTimingSceneColorVarsV208E(
+                selectedScene || {},
+                selectedScene?.index ?? draft.selectedSceneIndex ?? 0,
+                draft.storyBlocks || []
+              )}
               onClick={downloadSelectedSceneAudio}
               disabled={!hasAudio || !selectedScene}
               title={`Скачать аудио выбранной сцены: ${selectedScene?.title || selectedScene?.id || 'сцена'} · ${formatTime(selectedScene?.start || 0, true)} → ${formatTime(selectedScene?.end || 0, true)}`}

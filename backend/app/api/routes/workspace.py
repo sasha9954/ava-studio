@@ -8,7 +8,7 @@ from app.schemas import SnapshotSaveRequest
 
 router = APIRouter(prefix='/workspace', tags=['workspace'])
 
-STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator', 'audio_studio'}
+STAGES = {'manual_timing', 'podcast', 'board', 'board_assembly', 'video_node', 'generator', 'audio_studio', 'rules_packs'}
 
 
 

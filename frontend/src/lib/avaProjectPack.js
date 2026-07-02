@@ -474,33 +474,41 @@ function buildProjectStateSummaryV18({ audio = null, normalizedScenes = [], prod
 
 function buildAssistantInstructionsV18() {
   return {
+    // AVA_MANUAL_TIMING_SAFE_ASSISTANT_INSTRUCTIONS_V206H:
+    // This pack is Manual Timing state, not a direct Video Match / Video Node import contract.
+    // Source video binding happens later inside Video Node after the user uploads source video.
     for_chatgpt: [
-      'Read task_scope and update_policy before making changes.',
-      'Do not rebuild the project unless explicitly requested.',
-      'Patch only fields listed in allowed_updates.',
-      'Never change locked_fields.',
-      'If final prompts are dirty, rewrite only final prompt fields.',
-      'If media already exists, do not overwrite it.',
-      'When the task is Video Match, create video_match_board_v2 with sourceVideos/V1 contract for direct Video Match Board import.',
-      'For Video Match, source video path alone is not enough: candidates must reference sourceVideoId/source_video_id and the UI must bind the real file to V1 before assembly.',
+      'Read README_START_HERE and assistant_first_response_policy first.',
+      'First summarize audio duration, scene count, ASR status, scene text coverage, and route distribution.',
+      'Ask whether the user wants a clip, story, podcast, or Video Node/source-video plan.',
+      'Do not invent storyboard before the user explains the goal.',
+      'Do not write photo prompts or video prompts before the storyboard/stills stage is explicitly requested.',
+      'Do not run Codex or edit the repository without user confirmation.',
+      'Do not change scene_id, start/end/duration, target timing, or route.',
+      'If the user chooses Video Node/source-video work, use video_node_handoff_note: Manual Timing does not bind real source video ids.',
     ],
     for_codex: [
-      'Treat this JSON as a project state patch request, not a full generation request.',
+      'Treat this JSON as Manual Timing project state, not a full generation request.',
       'Do not recalculate timing.',
       'Do not rename scene_id.',
-      'Do not change route.',
-      'Do not overwrite images, videos, audio slices, or MMAudio unless replace_existing=true.',
-      'Only update fields allowed by task_scope.allowed_updates.',
-      'Return a patched JSON with the same scene count and same scene ids.',
-      'If producing Video Match output, return video_match_board_v2, not ava_project_pack_v1, and include sourceVideos plus sourceVideoId/source_video_id = V1 on every candidate.',
+      'Do not change route unless the user explicitly asks.',
+      'Do not overwrite media, audio, images, videos, source ranges, or MMAudio layers.',
+      'Use current stage, readiness, task_scope, update_policy, and codex_tasks before choosing an action.',
+      'If the requested task is storyboard, return storyboard and validation only.',
+      'If the requested task is photo prompts, require an approved storyboard first.',
+      'If the requested task is image-aware video prompts, require approved stills first.',
+      'If the requested task is Video Node/source-video ranges, the user must explicitly request it; then follow video_node_handoff_note and wait for real uploaded source ids from Video Node.',
     ],
     output_requirements: [
-      'Return patched ava_project_pack_v1 JSON.',
-      'For Video Match direct import, also return video_match_board_v2.json with stable V1 source binding.',
-      'Include a patch_report describing what fields were changed.',
+      'Return only the requested stage output.',
+      'Include patch_report if returning a patch.',
       'Include validation_report.',
-      'Do not create a new project id.',
-      'Do not create new scene ids.',
+      'Preserve project id.',
+      'Preserve scene ids.',
+      'Preserve timing.',
+      'Preserve routes unless the user explicitly allows route changes.',
+      'Do not create video_match_board_v2 unless the user explicitly asks for Video Node / Video Match output.',
+      'If Video Node output is requested, do not assume a loaded source id from Manual Timing; source binding is not_bound_yet until Video Node assigns real uploaded source ids.',
     ],
   }
 }
@@ -1258,7 +1266,7 @@ function storyBlocksFromSources(manualTiming = {}, board = {}, scenes = []) {
     const sceneId = sceneIdOf(scene, index)
     const existingBlock = existingById.get(id) || {}
     const title = firstText(scene.blockTitle, scene.block_title, existingBlock.title, id)
-    const color = normalizeHexColor(scene.blockColor || scene.block_color || scene.color || scene.sceneColor || existingBlock.color, byId.size)
+    const color = normalizeHexColor(existingBlock.color || scene.blockColor || scene.block_color || scene.color || scene.sceneColor, byId.size)
 
     if (!byId.has(id)) {
       byId.set(id, {
@@ -1321,7 +1329,7 @@ function buildColorMaps(storyBlocks = [], scenes = []) {
   scenes.forEach((scene, index) => {
     const id = firstText(scene.blockId, scene.block_id)
     if (!id || blockColor.has(id)) return
-    blockColor.set(id, normalizeHexColor(scene.color || scene.sceneColor || scene.blockColor || scene.block_color, index))
+    blockColor.set(id, normalizeHexColor(scene.blockColor || scene.block_color || scene.color || scene.sceneColor, index))
   })
 
   return blockColor
@@ -1388,6 +1396,93 @@ function productionByIdFromSources(manualTiming = {}, board = {}) {
   return map
 }
 
+
+// AVA_MANUAL_TIMING_SCENE_TRUTH_EXPORT_V208C:
+// Scene truth metadata is descriptive UI/story state only. It must travel with root/timing/production
+// scenes, but must not change timing, route, audio ranges, media refs, or generated outputs.
+const AVA_SCENE_TRUTH_FIELDS_V208C = [
+  'raw_route',
+  'effective_route',
+  'scene_label',
+  'user_scene_label',
+  'user_scene_note',
+  'viewer_should_understand',
+  'scene_role',
+  'source_or_generated',
+  'character_in_frame',
+  'scene_action',
+  'is_singing',
+  'is_dialogue',
+  'is_dance',
+  'is_reaction',
+  'needs_source_reaction',
+  'reaction_type',
+  'refs_required',
+  'stage_zone',
+  'camera_angle',
+  'gesture',
+  'must_show',
+  'must_not_show',
+  'autofill_confidence',
+  'needs_user_confirmation',
+  'autofill_reason',
+  'user_confirmed_scene_truth',
+  'visual_action',
+]
+
+function avaSceneTruthNonEmptyV208C(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function avaSceneTruthCopyValueV208C(value) {
+  if (Array.isArray(value)) return value.slice()
+  if (value && typeof value === 'object') return { ...value }
+  return value
+}
+
+function avaSceneTruthFieldsV208C(scene = {}, production = {}) {
+  const fromProduction = production?.scene_truth_v1 && typeof production.scene_truth_v1 === 'object' ? production.scene_truth_v1 : {}
+  const fromScene = scene?.scene_truth_v1 && typeof scene.scene_truth_v1 === 'object' ? scene.scene_truth_v1 : {}
+  const truth = { ...fromProduction, ...fromScene }
+  const out = {}
+
+  AVA_SCENE_TRUTH_FIELDS_V208C.forEach((field) => {
+    const value = scene?.[field] !== undefined ? scene[field]
+      : production?.[field] !== undefined ? production[field]
+        : truth?.[field]
+    if (avaSceneTruthNonEmptyV208C(value)) {
+      out[field] = avaSceneTruthCopyValueV208C(value)
+      truth[field] = avaSceneTruthCopyValueV208C(value)
+    }
+  })
+
+  const note = firstText(out.user_scene_note, truth.user_scene_note, scene?.note, production?.note, scene?.visual_action, production?.visual_action, scene?.viewer_should_understand, production?.viewer_should_understand)
+  if (note) {
+    out.user_scene_note = note
+    truth.user_scene_note = note
+    out.note = firstText(scene?.note, production?.note, note)
+  }
+
+  const label = firstText(out.scene_label, truth.scene_label, scene?.user_scene_label, production?.user_scene_label, scene?.label, production?.label)
+  if (label) {
+    out.scene_label = label
+    out.user_scene_label = label
+    truth.scene_label = label
+  }
+
+  const hasTruth = Object.values(truth).some(avaSceneTruthNonEmptyV208C)
+  const needsConfirmation = out.needs_user_confirmation === true || truth.needs_user_confirmation === true
+  out.scene_truth_status = needsConfirmation ? 'needs confirmation' : (hasTruth ? 'loaded' : 'missing')
+  out.scene_truth_loaded = Boolean(hasTruth)
+  out.scene_truth_needs_confirmation = Boolean(needsConfirmation)
+  if (hasTruth) out.scene_truth_v1 = truth
+  return out
+}
+
 function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming = {}, board = {}, audioDurationSec = 0, projectFormat = '' } = {}) {
   const source = sourceSceneArray(manualTiming, board)
   const productionById = productionByIdFromSources(manualTiming, board)
@@ -1415,7 +1510,7 @@ function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming
     const blockTitle = firstText(scene.blockTitle, scene.block_title, production.blockTitle, production.block_title, scene.recipe_step, production.recipe_step) || blockId
     const color = blockColorMap.has(blockId)
       ? blockColorMap.get(blockId)
-      : normalizeHexColor(firstText(scene.color, scene.sceneColor, scene.blockColor, production.color, production.sceneColor, production.blockColor), index)
+      : normalizeHexColor(firstText(scene.blockColor, scene.block_color, scene.color, scene.sceneColor, production.blockColor, production.block_color, production.color, production.sceneColor), index)
     const speechExportV206F = buildSceneSpeechExportForPackV206F({ ...production, ...scene, start, end, route }, speechContextV206F, route)
     const sceneWordTextV206F = firstText(scene.scene_word_text, scene.text, scene.lyrics_text, production.scene_word_text, production.text, speechExportV206F.scene_word_text)
     const lyricsTextV206F = firstText(scene.lyrics_text, scene.scene_word_text, production.lyrics_text, production.scene_word_text, speechExportV206F.lyrics_text, sceneWordTextV206F)
@@ -1502,6 +1597,7 @@ function normalizeScenesOnce({ projectModeId = 'manual_general_v1', manualTiming
       visual_action: firstText(scene.visual_action, production.visual_action),
       viewer_should_understand: firstText(scene.viewer_should_understand, production.viewer_should_understand, scene.meaning, production.meaning),
       readability_check: firstText(scene.readability_check, production.readability_check),
+      ...avaSceneTruthFieldsV208C(scene, production),
       locked: scene.locked !== false,
       do_not_change_scene_id: true,
       do_not_change_start_end_duration: true,
@@ -1607,9 +1703,15 @@ function rootScenesFromNormalized(normalizedScenes = [], modeId = 'manual_genera
       blockColor: scene.blockColor || scene.color,
       block_color: scene.block_color || scene.blockColor || scene.color,
       color: scene.color,
+      sceneColor: scene.sceneColor || scene.color,
+      scene_color: scene.scene_color || scene.sceneColor || scene.color,
+      user_scene_color: scene.user_scene_color || scene.color,
+      timelineColor: scene.timelineColor || scene.color,
+      cardColor: scene.cardColor || scene.color,
       visual_action: scene.visual_action,
       viewer_should_understand: scene.viewer_should_understand,
       readability_check: scene.readability_check,
+      ...avaSceneTruthFieldsV208C(scene),
       ...avaCodexMirrorSceneFieldsV78(scene),
       locked: true,
       do_not_change_scene_id: true,
@@ -1642,10 +1744,20 @@ function timingScenesFromNormalized(normalizedScenes = []) {
     asr_source: firstText(scene.asr_source),
     phrase_cut_warning: Boolean(scene.phrase_cut_warning),
     phrase_cut_boundary_check: firstText(scene.phrase_cut_boundary_check),
-    note: firstText(scene.note, scene.recipe_step, scene.idea_fn, scene.viewer_should_understand),
+    note: firstText(scene.note, scene.user_scene_note, scene.recipe_step, scene.idea_fn, scene.viewer_should_understand),
+    ...avaSceneTruthFieldsV208C(scene),
     blockId: scene.blockId,
+    block_id: scene.block_id || scene.blockId,
     blockTitle: scene.blockTitle,
+    block_title: scene.block_title || scene.blockTitle,
     color: scene.color,
+    sceneColor: scene.sceneColor || scene.color,
+    scene_color: scene.scene_color || scene.sceneColor || scene.color,
+    blockColor: scene.blockColor || scene.color,
+    block_color: scene.block_color || scene.blockColor || scene.color,
+    user_scene_color: scene.user_scene_color || scene.color,
+    timelineColor: scene.timelineColor || scene.color,
+    cardColor: scene.cardColor || scene.color,
     locked: true,
     do_not_change_scene_id: true,
     do_not_change_start_end_duration: true,
@@ -1750,10 +1862,13 @@ function buildVideoNodeHandoffNoteV206G() {
     source_binding_mode: 'not_bound_yet',
     rule: 'Manual Timing does not assign real source video ids. Video Node assigns src_01/src_02 after source video upload.',
     do_not_use_v1_as_loaded_source: true,
-    generated_placeholder_rule: 'Generated routes must not reference source video until user provides generated videos.',
+    generated_placeholder_rule: 'Generated routes must not reference source video until the user provides generated videos.',
     video_node_workflow: 'Timing gives audio scene slots and routes only; Video Node later binds uploaded source video ranges or generated placeholders.',
+    assistant_rule: 'If the user wants Video Node work, first ask for goal, project format, source video format, locked routes, and whether source-video range matching is actually needed.',
+    codex_rule: 'Do not ask Codex for source ranges unless the user explicitly requests Video Node/source-video matching and provides or confirms the source video binding step.',
   }
 }
+
 
 function productionScenesFromNormalized(normalizedScenes = [], modeId = 'manual_general_v1') {
   return normalizedScenes.map((scene, index) => {
@@ -1783,13 +1898,17 @@ function productionScenesFromNormalized(normalizedScenes = [], modeId = 'manual_
       route: scene.route,
       planned_route: scene.planned_route,
       blockId: scene.blockId,
+      block_id: scene.block_id || scene.blockId,
       blockTitle: scene.blockTitle,
+      block_title: scene.block_title || scene.blockTitle,
       color: scene.color,
-      sceneColor: scene.color,
-      user_scene_color: scene.color,
-      blockColor: scene.color,
-      timelineColor: scene.color,
-      cardColor: scene.color,
+      sceneColor: scene.sceneColor || scene.color,
+      scene_color: scene.scene_color || scene.sceneColor || scene.color,
+      user_scene_color: scene.user_scene_color || scene.color,
+      blockColor: scene.blockColor || scene.color,
+      block_color: scene.block_color || scene.blockColor || scene.color,
+      timelineColor: scene.timelineColor || scene.color,
+      cardColor: scene.cardColor || scene.color,
       recipe_step: modeId === 'recipe_process_v1' ? scene.recipe_step : firstText(scene.recipe_step),
       idea_fn: modeId === 'lyric_meaning_remix_v1' ? scene.idea_fn : firstText(scene.idea_fn),
       visual_action: scene.visual_action || '',
@@ -1802,6 +1921,7 @@ function productionScenesFromNormalized(normalizedScenes = [], modeId = 'manual_
       meaning_hint_ru: asrFieldsV206G.meaning_hint_ru || '',
       scene_action: firstText(scene.scene_action, scene.sceneAction, scene.visual_action),
       motion_hint: firstText(scene.motion_hint, scene.motionHint),
+      ...avaSceneTruthFieldsV208C(scene),
       planned_photo_filename: firstText(scene.planned_photo_filename, scene.photo_filename, scene.image_name, scene.first_frame_name),
       final_video_prompt: finalVideoPrompt,
       final_negative_prompt: finalNegativePrompt,
@@ -2306,8 +2426,42 @@ export function buildAvaProjectPackV1({ project = {}, manualTiming = {}, board =
   return pack
 }
 
+function avaJsonDownloadSafeStringifyV208J(data) {
+  const seen = new WeakSet()
+  return JSON.stringify(data, (key, value) => {
+    if (typeof value === 'string') {
+      const raw = value
+      const lowerKey = String(key || '').toLowerCase()
+      const isLargeInlinePayload = raw.length > 200000 && (
+        raw.startsWith('data:')
+        || raw.startsWith('blob:')
+        || lowerKey.includes('zip')
+        || lowerKey.includes('base64')
+        || lowerKey.includes('dataurl')
+        || lowerKey.includes('data_url')
+      )
+      if (isLargeInlinePayload) {
+        return `[omitted_large_inline_payload:${raw.length}_chars]`
+      }
+      return value
+    }
+    if (value && typeof value === 'object') {
+      if (typeof File !== 'undefined' && value instanceof File) {
+        return { file_name: value.name, file_size: value.size, file_type: value.type, omitted_file_object: true }
+      }
+      if (typeof Blob !== 'undefined' && value instanceof Blob) {
+        return { blob_size: value.size, blob_type: value.type, omitted_blob_object: true }
+      }
+      if (seen.has(value)) return '[circular_ref_omitted]'
+      seen.add(value)
+    }
+    return value
+  }, 2)
+}
+
 export function downloadJsonFile(data, filename = 'ava_project_pack_v1.json') {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
+  const json = avaJsonDownloadSafeStringifyV208J(data)
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -2316,4 +2470,7 @@ export function downloadJsonFile(data, filename = 'ava_project_pack_v1.json') {
   link.click()
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 2500)
+  const sizeKb = Math.max(1, Math.round(blob.size / 1024))
+  return { ok: true, bytes: blob.size, sizeLabel: `${sizeKb} KB` }
 }
+

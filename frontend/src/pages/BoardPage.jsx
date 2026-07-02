@@ -158,6 +158,7 @@ function markTimingToBoardEntryConsumedV146(entry = {}) {
 }
 
 const ROUTE_OPTIONS = [
+  { value: 'source_cut', label: 'видео нарезка', hint: 'Не генерировать в Board · заменить source range в Video Node' },
   { value: 'ia2v', label: 'ia2v lip-sync', hint: 'Фото + audio slice сцены' },
   { value: 'ia2v_instrumental', label: 'ia2v instrumental', hint: 'Фото + audio slice сцены, инструмент/объект вместо лица' },
   { value: 'i2v', label: 'i2v', hint: 'Фото → видео без аудио' },
@@ -168,6 +169,7 @@ const ROUTE_OPTIONS = [
 ]
 
 const BOARD_ROUTE_WORKFLOW_MAP = {
+  source_cut: '',
   i2v: 'image-video.json',
   i2v_text: 'image-video-golos-zvuk.json',
   i2v_sound: 'image-video-golos-zvuk.json',
@@ -183,6 +185,7 @@ const BOARD_ROUTE_WORKFLOW_MAP = {
 function normalizeBoardRouteValueV154A(value = '') {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return ''
+  if (raw === 'source_cut' || raw === 'source-cut' || raw === 'video_cut' || raw === 'video-cut' || raw === 'видео нарезка' || raw === 'нарезка') return 'source_cut'
   if (raw === 'ia2v_instrumental' || raw === 'ia2v-instrumental' || raw === 'ia2v instrumental' || raw === 'instrumental' || raw === 'instrument') return 'ia2v_instrumental'
   if (raw === 'ia2v_lipsync' || raw === 'ia2v-lipsync' || raw === 'ia2v lip-sync' || raw === 'ia2v lipsync' || raw === 'lip_sync' || raw === 'lipsync' || raw === 'lip-sync') return 'ia2v'
   if (raw === 'first-last') return 'first_last'
@@ -194,6 +197,30 @@ function normalizeBoardRouteValueV154A(value = '') {
 
 function isBoardAudioDrivenRouteV154A(value = '') {
   return ['ia2v', 'ia2v_lipsync', 'lip_sync', 'lipsync', 'ia2v_instrumental'].includes(normalizeBoardRouteValueV154A(value))
+}
+
+
+// AVA_BOARD_SOURCE_CUT_GUARD_V208L:
+// `source_cut` / "видео нарезка" scenes are Video Node placeholders.
+// Board may display them, but must not generate photos/videos/jobs for them.
+function isBoardSourceCutRouteV208L(value = '') {
+  return normalizeBoardRouteValueV154A(value) === 'source_cut'
+}
+
+function isBoardSourceCutSceneV208L(scene = {}) {
+  const route = normalizeBoardRouteValueV154A(
+    scene?.route || scene?.planned_route || scene?.plannedRoute || scene?.video_route || scene?.videoRoute || scene?.model_route || scene?.modelRoute || ''
+  )
+  const role = String(scene?.video_node_role || scene?.videoNodeRole || scene?.video_match_role || scene?.videoMatchRole || '').trim().toLowerCase()
+  const sourceKind = String(scene?.source_or_generated || scene?.sourceOrGenerated || scene?.source_kind || scene?.sourceKind || '').trim().toLowerCase()
+  return Boolean(
+    route === 'source_cut'
+    || role === 'source_cut'
+    || role === 'video_node_source_cut'
+    || scene?.skip_board_generation === true
+    || scene?.skipBoardGeneration === true
+    || (sourceKind === 'source' && /source_cut|video_node|нарез/i.test(String(scene?.route || scene?.planned_route || role || '')))
+  )
 }
 
 function boardRouteFromTimingOrSavedV154A(rawScene = {}, savedScene = {}) {
@@ -213,6 +240,7 @@ function boardRouteFromTimingOrSavedV154A(rawScene = {}, savedScene = {}) {
 
 function boardWorkflowKeyForRoute(route, fallbackWorkflowKey = '') {
   const routeKey = normalizeBoardRouteValueV154A(route) || 'i2v'
+  if (routeKey === 'source_cut') return ''
   // Route is the source of truth. Do not allow a stale scene.workflow_key
   // from another route to override sound/no-sound workflows.
   return BOARD_ROUTE_WORKFLOW_MAP[routeKey] || fallbackWorkflowKey || BOARD_ROUTE_WORKFLOW_MAP.i2v
@@ -1883,6 +1911,7 @@ function storyboardRouteLabel(route) {
     i2v: 'i2v',
     i2v_sound: 'i2v sound',
     i2v_text: 'i2v text',
+    source_cut: 'видео нарезка',
     first_last: 'first-last',
     first_last_sound: 'first-last sound',
   }
@@ -2283,6 +2312,90 @@ function boardApplyFormatContractV177A(board = {}) {
   }
 }
 
+
+// AVA_BOARD_SCENE_TRUTH_IMPORT_V208C:
+// Preserve Manual Timing scene_truth_v1/user_scene_note metadata when importing into Board.
+const AVA_BOARD_SCENE_TRUTH_FIELDS_V208C = [
+  'raw_route',
+  'effective_route',
+  'scene_label',
+  'user_scene_label',
+  'user_scene_note',
+  'viewer_should_understand',
+  'scene_role',
+  'source_or_generated',
+  'character_in_frame',
+  'scene_action',
+  'is_singing',
+  'is_dialogue',
+  'is_dance',
+  'is_reaction',
+  'needs_source_reaction',
+  'reaction_type',
+  'refs_required',
+  'stage_zone',
+  'camera_angle',
+  'gesture',
+  'must_show',
+  'must_not_show',
+  'autofill_confidence',
+  'needs_user_confirmation',
+  'autofill_reason',
+  'user_confirmed_scene_truth',
+  'visual_action',
+]
+
+function boardSceneTruthNonEmptyV208C(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function boardSceneTruthCopyValueV208C(value) {
+  if (Array.isArray(value)) return value.slice()
+  if (value && typeof value === 'object') return { ...value }
+  return value
+}
+
+function boardSceneTruthFieldsV208C(rawScene = {}, savedScene = {}) {
+  const savedTruth = savedScene?.scene_truth_v1 && typeof savedScene.scene_truth_v1 === 'object' ? savedScene.scene_truth_v1 : {}
+  const rawTruth = rawScene?.scene_truth_v1 && typeof rawScene.scene_truth_v1 === 'object' ? rawScene.scene_truth_v1 : {}
+  const truth = { ...savedTruth, ...rawTruth }
+  const out = {}
+
+  AVA_BOARD_SCENE_TRUTH_FIELDS_V208C.forEach((field) => {
+    const value = rawScene?.[field] !== undefined ? rawScene[field]
+      : savedScene?.[field] !== undefined ? savedScene[field]
+        : truth?.[field]
+    if (boardSceneTruthNonEmptyV208C(value)) {
+      out[field] = boardSceneTruthCopyValueV208C(value)
+      truth[field] = boardSceneTruthCopyValueV208C(value)
+    }
+  })
+
+  const label = asText(out.scene_label || truth.scene_label || rawScene?.user_scene_label || savedScene?.user_scene_label || rawScene?.label || savedScene?.label)
+  if (label) {
+    out.scene_label = label
+    out.user_scene_label = label
+    truth.scene_label = label
+  }
+  const note = asText(out.user_scene_note || truth.user_scene_note || rawScene?.note || savedScene?.note || rawScene?.visual_action || rawScene?.viewer_should_understand)
+  if (note) {
+    out.user_scene_note = note
+    truth.user_scene_note = note
+  }
+
+  const hasTruth = Object.values(truth).some(boardSceneTruthNonEmptyV208C)
+  const needsConfirmation = out.needs_user_confirmation === true || truth.needs_user_confirmation === true
+  out.scene_truth_status = needsConfirmation ? 'needs confirmation' : (hasTruth ? 'loaded' : 'missing')
+  out.scene_truth_loaded = Boolean(hasTruth)
+  out.scene_truth_needs_confirmation = Boolean(needsConfirmation)
+  if (hasTruth) out.scene_truth_v1 = truth
+  return out
+}
+
 function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
 
 // AVA_PROJECT_FORMAT_CONTEXT_BRIDGE_V177B:
@@ -2379,7 +2492,7 @@ function boardInjectProjectFormatIntoTimingV177C(timingData = {}, projectFormat 
   const route = boardRouteFromTimingOrSavedV154A(rawScene, savedScene)
   const sceneHueValue = storyboardSceneColor({ ...(rawScene || {}), ...(savedScene || {}) }, index)
 
-  const timingNote = asText(rawScene?.note || rawScene?.scene_note || rawScene?.memo || rawScene?.comment)
+  const timingNote = asText(rawScene?.note || rawScene?.user_scene_note || rawScene?.scene_truth_v1?.user_scene_note || rawScene?.scene_note || rawScene?.memo || rawScene?.comment)
   const savedNote = asText(savedScene?.note)
   const blockId = asText(rawScene?.blockId || rawScene?.block_id || savedScene?.blockId || savedScene?.block_id)
   const blockTitle = asText(rawScene?.blockTitle || rawScene?.block_title || savedScene?.blockTitle || savedScene?.block_title)
@@ -2421,6 +2534,16 @@ function boardInjectProjectFormatIntoTimingV177C(timingData = {}, projectFormat 
     end_sec: end,
     duration_sec: toNumber(rawScene?.duration_sec, Math.max(0, end - start)),
     route,
+    planned_route: route,
+    plannedRoute: route,
+    workflow_key: route === 'source_cut' ? '' : boardWorkflowKeyForRoute(route, savedScene?.workflow_key || savedScene?.workflowKey || rawScene?.workflow_key || rawScene?.workflowKey || ''),
+    workflowKey: route === 'source_cut' ? '' : boardWorkflowKeyForRoute(route, savedScene?.workflow_key || savedScene?.workflowKey || rawScene?.workflow_key || rawScene?.workflowKey || ''),
+    source_or_generated: route === 'source_cut' ? 'source' : asText(rawScene?.source_or_generated || rawScene?.sourceOrGenerated || savedScene?.source_or_generated || savedScene?.sourceOrGenerated || ''),
+    sourceOrGenerated: route === 'source_cut' ? 'source' : asText(rawScene?.source_or_generated || rawScene?.sourceOrGenerated || savedScene?.source_or_generated || savedScene?.sourceOrGenerated || ''),
+    video_node_role: route === 'source_cut' ? 'source_cut' : asText(rawScene?.video_node_role || rawScene?.videoNodeRole || savedScene?.video_node_role || savedScene?.videoNodeRole || ''),
+    videoNodeRole: route === 'source_cut' ? 'source_cut' : asText(rawScene?.video_node_role || rawScene?.videoNodeRole || savedScene?.video_node_role || savedScene?.videoNodeRole || ''),
+    skip_board_generation: route === 'source_cut' ? true : Boolean(rawScene?.skip_board_generation || savedScene?.skip_board_generation),
+    skipBoardGeneration: route === 'source_cut' ? true : Boolean(rawScene?.skipBoardGeneration || savedScene?.skipBoardGeneration),
     format: sceneFormat,
     aspect_ratio: sceneFormat,
     blockId,
@@ -2438,6 +2561,7 @@ function boardInjectProjectFormatIntoTimingV177C(timingData = {}, projectFormat 
     translated_text_ru: translated,
     meaning_hint_ru: meaning,
     phrase_cut_warning: Boolean(rawScene?.phrase_cut_warning || rawScene?.phraseCutWarning),
+    ...boardSceneTruthFieldsV208C(rawScene, savedScene),
     note: savedNote || timingNote,
     // AVA_STAGE78_STRICT_VISIBLE_VIDEO_PROMPT: Board visible textarea is the source of truth.
     // positive_prompt is only a legacy alias and must not override video_prompt.
@@ -4353,6 +4477,7 @@ function isBoardVideoDoneStatus(status) {
   }
 
   function sceneVideoInputProblems(scene) {
+    if (isBoardSourceCutSceneV208L(scene)) return []
     const route = normalizeBoardRouteValueV154A(scene?.route || 'i2v')
     const isFirstLast = isFirstLastRoute(route)
     const isLipSync = isBoardAudioDrivenRouteV154A(route)
@@ -4425,6 +4550,14 @@ function isBoardVideoDoneStatus(status) {
 
   
 function sceneVideoActionState(scene) {
+  if (isBoardSourceCutSceneV208L(scene)) {
+    return {
+      className: 'avaBoardWorkflowButton isVideo isSourceCutV208L',
+      label: 'Видео нарезка',
+      hint: 'не генерируется в Board · заменяется source range в Video Node',
+      disabled: true,
+    }
+  }
   // AVA_BOARD_ACTION_LABEL_FLOW_V132S:
   // Full replacement because the first V132S repair accidentally removed const isError,
   // causing runtime ReferenceError after page load.
@@ -4931,6 +5064,10 @@ function sceneVideoActionState(scene) {
       const nextId = localVideoQueueRef.current.shift()
       const scene = asSceneArray(boardRef.current?.scenes || currentBoard?.scenes).find((item) => item.id === nextId || item.scene_id === nextId)
       if (!scene) continue
+      if (isBoardSourceCutSceneV208L(scene)) {
+        setStatus(`Сцена ${nextId} — видео нарезка для Video Node, в Board не генерируется`)
+        continue
+      }
 
       const inputProblems = sceneVideoInputProblems(scene)
       if (inputProblems.length) {
@@ -4966,6 +5103,10 @@ function sceneVideoActionState(scene) {
     }
 
     if (!selectedScene) return
+    if (isBoardSourceCutSceneV208L(selectedScene)) {
+      setStatus(`Сцена ${selectedScene.id || selectedScene.scene_id} — видео нарезка: её нужно заменить в Video Node, Board генерацию не запускает.`)
+      return
+    }
 
     const selectedStatus = String(selectedScene.video_status || '').toLowerCase()
     const selectedHasServerJob = Boolean(selectedScene.video_job_id || selectedScene.video_status_endpoint)
@@ -5069,6 +5210,7 @@ function sceneVideoActionState(scene) {
   }
 
   function boardSceneAutoVideoProblems(scene) {
+    if (isBoardSourceCutSceneV208L(scene)) return []
     let problems = [...sceneVideoInputProblems(scene)]
     if (boardCanServerAutoSliceAudioForSceneV147A(scene)) {
       problems = problems.filter((problem) => !/audio\s*slice|audio[_\s-]*slice|лип-?sync/i.test(String(problem || '')))
@@ -5099,6 +5241,7 @@ function sceneVideoActionState(scene) {
     const busy = []
     const invalid = []
     const alreadyQueued = []
+    const sourceCut = []
 
     scenes.forEach((scene) => {
       const sceneId = asText(scene?.id || scene?.scene_id)
@@ -5106,6 +5249,11 @@ function sceneVideoActionState(scene) {
 
       const markedBadForReview = boardSceneHasBadVideoReview(scene)
       const forceBadRegenerateV157A = boardBadReviewForceRegenerateAllowedV157A(scene)
+
+      if (isBoardSourceCutSceneV208L(scene)) {
+        sourceCut.push({ sceneId, route: scene?.route || '', label: scene?.title || scene?.label || '' })
+        return
+      }
 
       if (boardSceneHasVideoResultForAuto(scene) && !markedBadForReview && !forceBadRegenerateV157A) {
         ready.push({ sceneId, route: scene?.route || '', label: scene?.title || scene?.label || '' })
@@ -5141,12 +5289,14 @@ function sceneVideoActionState(scene) {
       regenerate,
       busy,
       alreadyQueued,
+      sourceCut,
       invalid,
       validCount: valid.length,
       readyCount: ready.length,
       regenerateCount: regenerate.length,
       busyCount: busy.length,
       alreadyQueuedCount: alreadyQueued.length,
+      sourceCutCount: sourceCut.length,
       invalidCount: invalid.length,
       createdAt: new Date().toISOString(),
     }
@@ -5461,6 +5611,7 @@ function sceneVideoActionState(scene) {
     const addedIds = []
     const skippedReadyIds = []
     const skippedBusyIds = []
+    const skippedSourceCutIds = []
     const invalidItems = []
 
     scenes.forEach((scene) => {
@@ -5470,6 +5621,10 @@ function sceneVideoActionState(scene) {
       const markedBadForReviewV132A = boardSceneHasBadVideoReview(scene)
       const forceBadRegenerateV157A = boardBadReviewForceRegenerateAllowedV157A(scene)
       const forceBadRegenV156A = boardBadReviewForceRegenerateAllowedV156A(scene)
+      if (isBoardSourceCutSceneV208L(scene)) {
+        skippedSourceCutIds.push(sceneId)
+        return
+      }
       // AVA_BOARD_BAD_REVIEW_SERVER_BATCH_QUEUE_V132A:
       // Ready videos normally skip server batch, but a red "плохое" review mark means
       // this scene is intentionally selected for regeneration.
@@ -5510,11 +5665,11 @@ function sceneVideoActionState(scene) {
         invalidItems,
         staleHint: 'If busy > 0 but backend status is idle/orphaned, stale queued/running state was blocking the start.'
       })
-      setStatus(`Серверная очередь: новых сцен нет. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, без данных: ${invalidItems.length}`)
+      setStatus(`Серверная очередь: новых сцен нет. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, Video Node: ${skippedSourceCutIds.length}, без данных: ${invalidItems.length}`)
       pushBoardToast({
         type: invalidItems.length ? 'warning' : 'info',
         title: 'Серверная очередь',
-        message: `Новых сцен для запуска нет. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, без данных: ${invalidItems.length}`,
+        message: `Новых сцен для запуска нет. Готово: ${skippedReadyIds.length}, занято: ${skippedBusyIds.length}, Video Node: ${skippedSourceCutIds.length}, без данных: ${invalidItems.length}`,
         dedupeKey: 'board:server_batch:none',
       })
       return
@@ -12294,7 +12449,7 @@ async function importTimingJson(event) {
             <button
               key={sceneIdV200E || scene.id}
               type="button"
-              className={`avaBoardSceneCard ${active ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''}`}
+              className={`avaBoardSceneCard ${active ? 'isActive' : ''} ${scene.blockId ? 'hasBlock' : ''} ${isBoardSourceCutSceneV208L(scene) ? 'isSourceCutV208L' : ''}`}
               ref={(node) => {
                 if (node) sceneCardRefs.current.set(sceneIdV200E, node)
                 else sceneCardRefs.current.delete(sceneIdV200E)
@@ -12312,6 +12467,7 @@ async function importTimingJson(event) {
                 {scene.roleLabels?.map((label) => <em key={label}>{label}</em>)}
                 {scene.phrase_cut_warning && <em className="isWarn">срез</em>}
                 {scene.blockTitle && <em>{scene.blockTitle}</em>}
+                {isBoardSourceCutSceneV208L(scene) && <em className="isSourceCutV208L">VIDEO NODE</em>}
                 {boardSceneCanReviewVideo(scene) && boardSceneCanShowVideoReviewV133B(scene) ? (
                   <span
                     role="button"
@@ -12459,9 +12615,19 @@ async function importTimingJson(event) {
                     value={normalizeBoardRouteValueV154A(selectedScene.route) || 'i2v'}
                     onChange={(event) => {
                       const nextRoute = event.target.value
+                      const sourceCut = nextRoute === 'source_cut'
                       updateScene(selectedScene.id, {
                         route: nextRoute,
-                        workflow_key: boardWorkflowKeyForRoute(nextRoute),
+                        planned_route: nextRoute,
+                        plannedRoute: nextRoute,
+                        workflow_key: sourceCut ? '' : boardWorkflowKeyForRoute(nextRoute),
+                        workflowKey: sourceCut ? '' : boardWorkflowKeyForRoute(nextRoute),
+                        source_or_generated: sourceCut ? 'source' : selectedScene.source_or_generated,
+                        sourceOrGenerated: sourceCut ? 'source' : selectedScene.sourceOrGenerated,
+                        video_node_role: sourceCut ? 'source_cut' : selectedScene.video_node_role,
+                        videoNodeRole: sourceCut ? 'source_cut' : selectedScene.videoNodeRole,
+                        skip_board_generation: sourceCut ? true : false,
+                        skipBoardGeneration: sourceCut ? true : false,
                       })
                     }}
                   >
@@ -12470,6 +12636,9 @@ async function importTimingJson(event) {
                     ))}
                   </select>
                   <small>{ROUTE_OPTIONS.find((route) => route.value === normalizeBoardRouteValueV154A(selectedScene.route))?.hint || 'Выбери режим генерации видео'}</small>
+                  {isBoardSourceCutSceneV208L(selectedScene) ? (
+                    <em className="avaBoardSourceCutNoticeV208L">VIDEO NODE · source_cut · Board генерация отключена</em>
+                  ) : null}
                 </label>
 
                 <label className="avaBoardSelectField">
@@ -12488,6 +12657,13 @@ async function importTimingJson(event) {
                   <small>Формат применяется к выбранной сцене. Формат проекта не меняется автоматически.</small>
                 </label>
               </div>
+
+              {isBoardSourceCutSceneV208L(selectedScene) ? (
+                <div className="avaBoardSourceCutPanelV208L">
+                  <strong>Видео нарезка / Video Node</strong>
+                  <p>Эта сцена не генерируется в Board. Она остаётся тайминг-слотом и позже заменяется source range в Video Node.</p>
+                </div>
+              ) : null}
 
               <div className="avaBoardVideoPromptGrid">
                 <label className="avaBoardWideField">

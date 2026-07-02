@@ -107,6 +107,28 @@ const pipelineChips = [
   { label: 'Авто монтаж', tone: 'orange', icon: Scissors },
 ]
 
+const ruleCards = [
+  {
+    id: 'director-shooting',
+    title: 'Режиссёрская съёмка',
+    subtitle: 'Сценарии, microbeats, раскадровка, LTX, звук',
+    text: 'ZIP-пакет рабочих правил для фильмов, сериалов, мультиков, клипов, сказок, Audio Map, storyboard/photo/video prompts и звука.',
+    icon: Sparkles,
+    tone: 'director',
+    status: 'ZIP · WIP',
+  },
+  {
+    id: 'video-node',
+    title: 'Video Node правила',
+    subtitle: 'Source video, auto/source_cut, generated placeholders',
+    text: 'Черновой ZIP-раздел для правил source video workflow, src_01/src_02 binding, placeholders, будущего ремонта и тестов.',
+    icon: GitBranch,
+    tone: 'videoNode',
+    status: 'ZIP · draft',
+  },
+]
+
+
 function formatMetric(stage, summary) {
   const data = summary?.[stage]
   if (!data) return ''
@@ -347,6 +369,36 @@ export default function DashboardPage() {
           </div>
         </div>
         <HeroPipeline />
+      </section>
+
+      <section className="avaDashRulesPanel">
+        <div className="avaDashRulesHeader">
+          <div>
+            <p>Рабочие правила / ZIP-памятки</p>
+            <h3>Скачал перед тестом → доработал → загрузил обратно</h3>
+          </div>
+          <span>Черновики, не production-логика</span>
+        </div>
+        <div className="avaDashRulesGrid">
+          {ruleCards.map((card) => {
+            const Icon = card.icon
+            const to = activeProject ? `/app/projects/${activeProject.id}/rules/${card.id}` : `/app/rules/${card.id}`
+            return (
+              <Link key={card.id} to={to} className={`avaDashRuleCard is-${card.tone}`}>
+                <div className="avaDashRuleIcon"><Icon size={22} /></div>
+                <div className="avaDashRuleText">
+                  <h4>{card.title}</h4>
+                  <strong>{card.subtitle}</strong>
+                  <p>{card.text}</p>
+                </div>
+                <div className="avaDashRuleFooter">
+                  <span><CheckCircle2 size={13} /> {card.status}</span>
+                  <i><ArrowRight size={16} /></i>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
       </section>
 
       <div className="avaDashSectionHeader">

@@ -4163,3 +4163,492 @@
   cursor: wait !important;
 }
 
+/* AVA_MANUAL_TIMING_TIMELINE_ZOOM_V208A
+   Visual-only scene timeline zoom. It changes pixel scale/scroll only; scene timing data stays unchanged. */
+.avaTimingTimelineZoomBarV208A {
+  margin: 14px 16px 0;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid rgba(142, 233, 255, .14);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(8, 17, 40, .74), rgba(15, 23, 42, .46));
+}
+
+.avaTimingTimelineZoomLabelV208A {
+  display: grid;
+  gap: 2px;
+  min-width: 180px;
+}
+
+.avaTimingTimelineZoomLabelV208A strong {
+  color: #f8fbff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.avaTimingTimelineZoomLabelV208A span {
+  color: rgba(203, 213, 225, .78);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.avaTimingTimelineZoomControlsV208A {
+  flex: 1 1 340px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 240px;
+}
+
+.avaTimingTimelineZoomControlsV208A input[type='range'] {
+  width: min(360px, 42vw);
+  accent-color: #67e8f9;
+}
+
+.avaTimingTimelineZoomValueV208A {
+  min-width: 34px;
+  text-align: center;
+  color: #dff8ff;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.avaTimingTimelineZoomButtonsV208A {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.avaTimingTimelineZoomButtonsV208A button {
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, .10);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.avaTimingTimelineZoomButtonsV208A button.isActive {
+  color: #06111f;
+  border-color: rgba(103, 232, 249, .72);
+  background: linear-gradient(135deg, #67e8f9, #a78bfa);
+  box-shadow: 0 10px 24px rgba(103, 232, 249, .18);
+}
+
+.avaTimingTimelineScale {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(103, 232, 249, .42) rgba(15, 23, 42, .52);
+}
+
+.avaTimingTimelineScale::-webkit-scrollbar {
+  height: 11px;
+}
+
+.avaTimingTimelineScale::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, .62);
+  border-radius: 999px;
+}
+
+.avaTimingTimelineScale::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, rgba(103, 232, 249, .58), rgba(167, 139, 250, .48));
+  border-radius: 999px;
+}
+
+.avaTimingTimelineContentZoomV208A {
+  position: relative !important;
+  max-width: none !important;
+  transform-origin: left center;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingWaveLong,
+.avaTimingTimelineContentZoomV208A .avaTimingAsrPhraseMap,
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow {
+  min-height: 66px !important;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button {
+  min-width: var(--mt-scene-min-width, 0px) !important;
+  padding: 8px 9px !important;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button small {
+  font-size: 10.5px !important;
+}
+
+.avaTimingSceneZoomTextV208A,
+.avaTimingSceneDurationV208A {
+  display: none;
+  position: relative;
+  z-index: 1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avaTimingTimelineContentZoomV208A.isZoomReadableV208A .avaTimingSegmentsRow {
+  min-height: 78px !important;
+}
+
+.avaTimingTimelineContentZoomV208A.isZoomReadableV208A .avaTimingSceneZoomTextV208A {
+  display: block;
+  color: rgba(248, 250, 252, .92);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.15;
+}
+
+.avaTimingTimelineContentZoomV208A.isZoomReadableV208A .avaTimingSceneDurationV208A {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 1px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: rgba(226, 232, 240, .86);
+  background: rgba(2, 6, 23, .38);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.avaTimingTimelineContentZoomV208A.isZoomWideV208A .avaTimingSegmentsRow {
+  min-height: 88px !important;
+}
+
+.avaTimingTimelineContentZoomV208A.isZoomWideV208A .avaTimingSegmentsRow > button b {
+  font-size: 13px !important;
+}
+
+.avaTimingTimelineContentZoomV208A.isZoomWideV208A .avaTimingSceneZoomTextV208A {
+  font-size: 11.5px;
+}
+
+/* AVA_MANUAL_TIMING_SCENE_TRUTH_VISIBILITY_V208C */
+.avaTimingSceneTruthCardV208C {
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(103, 232, 249, .16);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(103, 232, 249, .13), transparent 34%),
+    linear-gradient(135deg, rgba(10, 17, 36, .88), rgba(15, 23, 42, .62));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.035);
+}
+
+.avaTimingSceneTruthCardV208C.isMissing {
+  border-color: rgba(148, 163, 184, .16);
+  background: rgba(15, 23, 42, .48);
+}
+
+.avaTimingSceneTruthCardV208C.isNeedsConfirmation {
+  border-color: rgba(251, 191, 36, .38);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(251, 191, 36, .15), transparent 34%),
+    linear-gradient(135deg, rgba(32, 24, 12, .80), rgba(15, 23, 42, .64));
+}
+
+.avaTimingSceneTruthHeaderV208C {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.avaTimingSceneTruthHeaderV208C strong {
+  color: #f8fbff;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.avaTimingSceneTruthBadgeV208C {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: #06111f;
+  background: linear-gradient(135deg, #67e8f9, #a78bfa);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.avaTimingSceneTruthCardV208C.isMissing .avaTimingSceneTruthBadgeV208C {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, .16);
+}
+
+.avaTimingSceneTruthCardV208C.isNeedsConfirmation .avaTimingSceneTruthBadgeV208C {
+  background: linear-gradient(135deg, #fde68a, #fb923c);
+}
+
+.avaTimingSceneTruthGridV208C {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.avaTimingSceneTruthGridV208C div {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, .30);
+}
+
+.avaTimingSceneTruthGridV208C dt {
+  margin: 0 0 3px;
+  color: rgba(203, 213, 225, .76);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.avaTimingSceneTruthGridV208C dd {
+  margin: 0;
+  color: #f8fbff;
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.avaTimingSegmentsRow button.hasSceneTruthV208C::after {
+  content: '✓';
+}
+
+.avaTimingSegmentsRow button.sceneTruthNeedsConfirmationV208C::after {
+  content: '!';
+  background: linear-gradient(135deg, #fde68a, #fb923c);
+  color: #1f1300;
+}
+
+/* AVA_MANUAL_TIMING_SCENE_COLOR_CANON_V208E
+   Stable scene/block colors: base background always uses --scene-display-color / --scene-block-color.
+   Active/hover state adds outline/glow only and must not switch the scene to a route/random color. */
+.avaTimingBlockBandV208E {
+  position: relative;
+  height: 14px;
+  margin: 0 0 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, .42);
+}
+
+.avaTimingBlockBandItemV208E {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--scene-display-color, #67e8f9) 72%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--scene-display-color, #67e8f9) 86%, transparent), color-mix(in srgb, var(--scene-display-color, #67e8f9) 34%, transparent));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--scene-display-color, #67e8f9) 28%, transparent);
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.avaTimingBlockBandItemV208E span {
+  display: block;
+  padding: 0 7px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, .88);
+  font-size: 9px;
+  line-height: 10px;
+  font-weight: 950;
+  text-shadow: 0 1px 4px rgba(0,0,0,.52);
+}
+
+.avaTimingSegmentsRow > button {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 42%, transparent), rgba(255,255,255,.026) 76%),
+    rgba(255,255,255,.035) !important;
+  border-color: color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 34%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 28%, transparent) !important;
+}
+
+.avaTimingSegmentsRow > button::before {
+  border-left-color: var(--scene-display-color, var(--scene-block-color, #67e8f9)) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 26%, transparent), transparent 56%) !important;
+}
+
+.avaTimingSegmentsRow > button.isActive,
+.avaTimingSegmentsRow > button[aria-pressed="true"] {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 48%, transparent), color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 20%, transparent)),
+    rgba(255,255,255,.035) !important;
+  outline: 2px solid color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 86%, white);
+  outline-offset: -2px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 72%, white),
+    0 0 24px color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 42%, transparent) !important;
+}
+
+.avaTimingSegmentsRow > button.isBlockPicked {
+  outline: 2px dashed color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 74%, white);
+  outline-offset: -5px;
+}
+
+.avaTimingSceneEditor.isSceneTintedV161A {
+  border-color: color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 70%, transparent) !important;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 30%, transparent), transparent 58%),
+    linear-gradient(135deg, color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 20%, transparent), rgba(9, 16, 33, .92) 62%) !important;
+  box-shadow:
+    inset 5px 0 0 var(--scene-display-color, var(--scene-block-color, #67e8f9)),
+    inset 0 0 0 1px color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 22%, transparent),
+    0 0 34px color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 20%, transparent) !important;
+}
+
+.avaTimingSceneEditor.isSceneTintedV161A textarea,
+.avaTimingSceneEditor.isSceneTintedV161A select {
+  border-color: color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 34%, transparent) !important;
+}
+
+/* AVA_MANUAL_TIMING_SCENE_LANE_NO_OVERLAP_V208H
+   Scene blocks are timeline-positioned cells. They must not participate in flex layout,
+   because left/width percentages plus flex sizing make neighboring cards visually climb
+   over each other at higher zoom. This is visual-only: timing data/export are untouched. */
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow,
+.avaTimingSegmentsRow {
+  position: relative !important;
+  display: block !important;
+  height: 78px !important;
+  min-height: 78px !important;
+  isolation: isolate;
+  overflow: hidden !important;
+  border-top: 1px solid rgba(255,255,255,.08);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.032), rgba(255,255,255,.014)),
+    rgba(255,255,255,.018) !important;
+}
+
+.avaTimingTimelineContentZoomV208A.isZoomReadableV208A .avaTimingSegmentsRow {
+  height: 88px !important;
+  min-height: 88px !important;
+}
+
+.avaTimingTimelineContentZoomV208A.isZoomWideV208A .avaTimingSegmentsRow {
+  height: 98px !important;
+  min-height: 98px !important;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button,
+.avaTimingSegmentsRow > button {
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  display: grid !important;
+  align-content: start !important;
+  gap: 3px !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  width: auto;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+  border-left: 1px solid rgba(255,255,255,.12) !important;
+  border-right: 1px solid rgba(2,6,23,.78) !important;
+  border-radius: 0 !important;
+  transform: none !important;
+  z-index: 1;
+  overflow: hidden !important;
+  contain: layout paint;
+  clip-path: inset(0 0 0 0 round 0);
+}
+
+.avaTimingSegmentsRow > button:first-child {
+  border-left-color: rgba(255,255,255,.18) !important;
+}
+
+.avaTimingSegmentsRow > button::before {
+  inset: 0 !important;
+  border-left-width: 2px !important;
+  border-right: 0 !important;
+  box-shadow: inset -1px 0 0 rgba(2,6,23,.88) !important;
+}
+
+.avaTimingSegmentsRow > button:hover {
+  z-index: 3;
+}
+
+.avaTimingSegmentsRow > button.isActive,
+.avaTimingSegmentsRow > button[aria-pressed="true"] {
+  z-index: 4;
+  outline-offset: -3px !important;
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 72%, white),
+    inset -1px 0 0 rgba(2,6,23,.92),
+    0 0 16px color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 26%, transparent) !important;
+}
+
+.avaTimingSegmentsRow > button.isBlockPicked {
+  outline-offset: -6px !important;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button b,
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button small,
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button em,
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button span {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button[style*="width: 0"],
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button[style*="width:0"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* AVA_MANUAL_TIMING_SCENE_LANE_GAP_FIX_V208I
+   Fixes V208H visual holes: CSS selector [style*="width: 0"] accidentally hid
+   normal short scenes whose inline width was e.g. 0.8%. Scene cards now use CSS
+   variables for left/width, stay visible, and get a tiny +1px seam cover so
+   zoomed timeline tiles have crisp continuous borders without changing timing. */
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button {
+  left: var(--scene-left-v208i, 0%) !important;
+  width: calc(var(--scene-width-v208i, 0%) + 1px) !important;
+  min-width: 1px !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  margin-left: -0.5px !important;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button[style*="width: 0"],
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button[style*="width:0"] {
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button:first-child {
+  margin-left: 0 !important;
+}
+
+.avaTimingTimelineContentZoomV208A .avaTimingSegmentsRow > button::before {
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--scene-display-color, var(--scene-block-color, #67e8f9)) 56%, rgba(255,255,255,.24)),
+    inset -1px 0 0 rgba(2,6,23,.82) !important;
+}
+

@@ -8101,3 +8101,59 @@
 }
 /* ASSEMBLY_STAU_SCENE_COLOR_ONLY_V204H6_END */
 
+
+
+/* AVA_BOARD_SOURCE_CUT_GUARD_V208L */
+.avaBoardSceneCard.isSourceCutV208L {
+  border-color: rgba(96, 211, 255, 0.72) !important;
+  background:
+    linear-gradient(135deg, rgba(22, 111, 160, 0.36), rgba(75, 31, 130, 0.28)),
+    rgba(8, 16, 31, 0.82) !important;
+}
+
+.avaBoardSceneCard em.isSourceCutV208L,
+.avaBoardSourceCutNoticeV208L {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid rgba(96, 211, 255, 0.42);
+  background: rgba(31, 142, 197, 0.16);
+  color: #a8ecff;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.avaBoardSourceCutPanelV208L {
+  border: 1px solid rgba(96, 211, 255, 0.32);
+  background: rgba(9, 23, 39, 0.78);
+  border-radius: 18px;
+  padding: 14px 16px;
+  margin: 12px 0;
+  color: rgba(230, 247, 255, 0.88);
+}
+
+.avaBoardSourceCutPanelV208L strong {
+  display: block;
+  color: #b7efff;
+  margin-bottom: 6px;
+}
+
+.avaBoardSourceCutPanelV208L p {
+  margin: 0;
+  color: rgba(218, 235, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.avaBoardWorkflowButton.isSourceCutV208L,
+.avaBoardWorkflowButton.isSourceCutV208L:hover {
+  cursor: not-allowed;
+  border-color: rgba(96, 211, 255, 0.35);
+  background: rgba(11, 31, 52, 0.88);
+  box-shadow: none;
+  opacity: 0.88;
+}
