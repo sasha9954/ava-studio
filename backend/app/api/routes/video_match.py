@@ -1,4 +1,5 @@
 from __future__ import annotations
+# AVA_VIDEO_NODE_SUBPROCESS_UTF8_V209G: ffmpeg/ffprobe subprocess output is decoded safely on Windows cp1251 consoles.
 
 import subprocess
 import uuid
@@ -14,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user
 
+# AVA_VIDEO_NODE_INLINE_MEDIA_PREVIEW_V209C
 router = APIRouter(prefix="/video-match")
 
 VIDEO_MATCH_OUTPUTS_DIR = Path(__file__).resolve().parents[2] / "static" / "assets" / "video_match_outputs"
@@ -183,7 +185,7 @@ def _video_match_block_duration_18aa(block) -> float:
 
 def _run_ffmpeg(cmd: list[str]) -> None:
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail="ffmpeg_not_found") from exc
     except subprocess.CalledProcessError as exc:
@@ -206,7 +208,7 @@ def _probe_duration_sec(path: Path) -> float:
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         return max(0.0, float((proc.stdout or "0").strip() or 0))
     except Exception:
@@ -233,7 +235,7 @@ def _probe_video_stream_meta(path: Path) -> dict:
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         import json
         payload = json.loads(proc.stdout or "{}")
@@ -267,7 +269,7 @@ def _probe_has_audio_stream(path: Path) -> bool:
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         return bool(str(proc.stdout or "").strip())
     except Exception:
@@ -310,7 +312,7 @@ async def get_video_match_override(filename: str):
     path = VIDEO_MATCH_OVERRIDES_DIR / safe_name
     if not path.is_file():
         raise HTTPException(status_code=404, detail={"code": "override_not_found"})
-    return FileResponse(path, media_type="video/mp4", filename=safe_name)
+    return FileResponse(path, media_type="video/mp4")
 
 
 @router.post("/override-upload")
@@ -391,7 +393,7 @@ async def get_video_match_source(filename: str):
     path = VIDEO_MATCH_SOURCES_DIR / safe_name
     if not path.is_file():
         raise HTTPException(status_code=404, detail={"code": "source_not_found"})
-    return FileResponse(path, media_type="video/mp4", filename=safe_name)
+    return FileResponse(path, media_type="video/mp4")
 
 
 
@@ -416,7 +418,7 @@ async def get_video_match_audio(filename: str):
         media_type = "audio/flac"
     elif suffix == ".ogg":
         media_type = "audio/ogg"
-    return FileResponse(path, media_type=media_type, filename=safe_name)
+    return FileResponse(path, media_type=media_type)
 
 
 @router.post("/audio-upload")

@@ -1,3 +1,6 @@
+/* AVA_VIDEO_NODE_BOARD_SCENE_APPLY_SCOPE_V209F: strict per-scene Board clip import/apply for Video Node. */
+/* AVA_VIDEO_NODE_FAST_LOCAL_PREVIEW_AUDIO_BIND_V209C */
+/* AVA_VIDEO_NODE_EXACT_SCENE_PREVIEW_V209G: scene clicks preview only one segment; token-cancel stale audio/video; board clip apply is scene-scoped. */
 /* AVA_VIDEO_NODE_CANDIDATES_PERSIST_V33: persist visible candidates across computers by restoring/saving candidate totals and ids. */
 /* AVA_VIDEO_NODE_TAKE_BOARD_BUTTON_FEEDBACK_V32 */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -365,8 +368,12 @@ function mergeImportedVideoNodeSourceWithUploaded(importedSource = {}, uploadedS
     fps: Number(imported.fps || 0) || Number(uploaded.fps || 0) || 0,
     ...uploadedFields,
   };
-  const id = imported.id || uploaded.id || `src_${String(index + 1).padStart(2, "0")}`;
-  return normalizeVideoNodeSourceEntry({ ...merged, id, sourceVideoId: id, source_video_id: id }, index);
+  const importedId = String(imported.id || imported.sourceVideoId || imported.source_video_id || "").trim();
+  const uploadedId = String(uploaded.id || uploaded.sourceVideoId || uploaded.source_video_id || "").trim();
+  const id = (isVideoNodeStableJsonSourceIdV209A(importedId) && uploadedId)
+    ? uploadedId
+    : (importedId || uploadedId || `src_${String(index + 1).padStart(2, "0")}`);
+  return normalizeVideoNodeSourceEntry({ ...merged, id, sourceVideoId: id, source_video_id: id, stableJsonSourceId: importedId, stable_json_source_id: importedId }, index);
 }
 
 function mergeImportedVideoNodeSourcesWithUploaded(importedSources = [], project = {}, currentSources = []) {
@@ -388,6 +395,234 @@ function mergeImportedVideoNodeSourcesWithUploaded(importedSources = [], project
     return mergeImportedVideoNodeSourceWithUploaded(imported, match, index);
   });
 }
+
+// AVA_VIDEO_NODE_UNIVERSAL_SOURCE_CUT_IMPORT_GUARD_V209A:
+// Import packages often use stable JSON ids such as V1, while the UI/backend runtime uses
+// src_01 or an asset id after upload. This layer remaps selected source_cut scenes to the
+// actually available source video, protects generated placeholders from illegal source ranges,
+// and preserves fixedClipBinding/retimeSpec for assembly validation.
+function isVideoNodeStableJsonSourceIdV209A(value = "") {
+  return /^v\d+$/i.test(String(value || "").trim());
+}
+
+function isVideoNodeSourceCutLikeV209A(item = {}) {
+  const route = String(item.route || item.planned_route || item.plannedRoute || item.video_route || item.videoRoute || "").trim().toLowerCase();
+  const role = String(item.video_node_role || item.videoNodeRole || item.source_or_generated || item.sourceOrGenerated || item.sourceKind || item.source_kind || "").trim().toLowerCase();
+  const assemblyMode = String(item.assemblyMediaMode || item.assembly_media_mode || "").trim().toLowerCase();
+  if (["source_cut", "auto_source_cut", "source-range", "source_range", "source"].includes(route)) return true;
+  if (role.includes("source_cut") || role === "source" || role.includes("source_range")) return true;
+  if (assemblyMode.includes("fixed_clip") || assemblyMode.includes("source")) return true;
+  if (item.fixedClipBinding || item.fixed_clip_binding || item.retimeSpec || item.retime_spec) return true;
+  if (item.useRealSourceClip || item.use_real_source_clip) return true;
+  return false;
+}
+
+function isVideoNodeGeneratedPlaceholderLikeV209A(item = {}) {
+  if (isVideoNodeSourceCutLikeV209A(item)) return false;
+  const route = String(item.route || item.planned_route || item.plannedRoute || item.video_route || item.videoRoute || "").trim().toLowerCase();
+  const role = String(item.source_or_generated || item.sourceOrGenerated || item.video_node_role || item.videoNodeRole || item.scene_type || item.sceneType || "").trim().toLowerCase();
+  if (role === "generated" || role.includes("generated_placeholder")) return true;
+  return ["i2v", "i2v_sound", "i2v_text", "ia2v", "ia2v_lipsync", "ia2v_instrumental", "first_last", "first_last_sound", "lip_sync", "lipsync"].includes(route);
+}
+
+function cloneVideoNodePlainObjectV209A(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  try { return JSON.parse(JSON.stringify(value)); } catch { return { ...value }; }
+}
+
+function normalizeVideoNodeFixedClipBindingV209A(item = {}) {
+  return cloneVideoNodePlainObjectV209A(item.fixedClipBinding || item.fixed_clip_binding || item.fixed_clip || item.fixedClip || {});
+}
+
+function normalizeVideoNodeRetimeSpecV209A(item = {}) {
+  return cloneVideoNodePlainObjectV209A(item.retimeSpec || item.retime_spec || item.retime || {});
+}
+
+function hasVideoNodeFixedClipBindingV209A(item = {}) {
+  const binding = normalizeVideoNodeFixedClipBindingV209A(item);
+  return Object.keys(binding).length > 0;
+}
+
+function getVideoNodeFixedClipPathForAssemblyV209A(item = {}) {
+  const binding = normalizeVideoNodeFixedClipBindingV209A(item);
+  const raw = String(
+    binding.backendAssetPath
+    || binding.backend_asset_path
+    || binding.assetPath
+    || binding.asset_path
+    || binding.assetApiPath
+    || binding.asset_api_path
+    || binding.serverPath
+    || binding.server_path
+    || binding.path
+    || binding.backendPath
+    || binding.backend_path
+    || ""
+  ).trim();
+  if (!raw || /^(blob:|data:)/i.test(raw)) return "";
+  return raw;
+}
+
+function getVideoNodeFixedClipHumanPathV209A(item = {}) {
+  const binding = normalizeVideoNodeFixedClipBindingV209A(item);
+  return String(binding.relative_path || binding.relativePath || binding.local_path || binding.localPath || binding.filename || binding.name || "").trim();
+}
+
+function getVideoNodeRuntimeSourceIdSetV209A(sources = []) {
+  const ids = new Set();
+  (Array.isArray(sources) ? sources : []).forEach((source) => {
+    const id = String(source?.id || source?.sourceVideoId || source?.source_video_id || "").trim();
+    if (id) ids.add(id);
+  });
+  return ids;
+}
+
+function buildVideoNodeSourceIdRemapV209A(importedSources = [], runtimeSources = []) {
+  const runtime = (Array.isArray(runtimeSources) ? runtimeSources : []).map(normalizeVideoNodeSourceEntry).filter(Boolean);
+  const runtimeIds = getVideoNodeRuntimeSourceIdSetV209A(runtime);
+  const uploadedRuntime = runtime.filter((source) => Boolean(getVideoNodeSourceAssemblyPathValue(source) || source.assetId || source.asset_id || source.assetApiPath || source.asset_api_path || source.previewUrl || source.sourceVideoUrl));
+  const singleRuntime = uploadedRuntime.length === 1 ? uploadedRuntime[0] : null;
+  const byFilename = new Map();
+  uploadedRuntime.forEach((source) => {
+    const filename = normalizeVideoNodeSourceFilename(source.filename || source.name || "");
+    const id = String(source.id || source.sourceVideoId || source.source_video_id || "").trim();
+    if (filename && id && !byFilename.has(filename)) byFilename.set(filename, id);
+  });
+
+  const remap = new Map();
+  const notes = [];
+  const addMap = (from, to, reason) => {
+    const safeFrom = String(from || "").trim();
+    const safeTo = String(to || "").trim();
+    if (!safeFrom || !safeTo || safeFrom === safeTo) return;
+    if (remap.has(safeFrom) && remap.get(safeFrom) !== safeTo) {
+      notes.push(`source id conflict: ${safeFrom} -> ${remap.get(safeFrom)} / ${safeTo}`);
+      return;
+    }
+    remap.set(safeFrom, safeTo);
+    notes.push(`source id remap: ${safeFrom} -> ${safeTo}${reason ? ` (${reason})` : ""}`);
+  };
+
+  (Array.isArray(importedSources) ? importedSources : []).forEach((source, index) => {
+    const imported = normalizeVideoNodeSourceEntry(source, index);
+    const from = String(imported.id || imported.sourceVideoId || imported.source_video_id || "").trim();
+    if (!from || runtimeIds.has(from)) return;
+    const filename = normalizeVideoNodeSourceFilename(imported.filename || imported.name || "");
+    const byName = filename ? byFilename.get(filename) : "";
+    if (byName) addMap(from, byName, "filename");
+    else if (singleRuntime) addMap(from, String(singleRuntime.id || singleRuntime.sourceVideoId || singleRuntime.source_video_id || ""), "single uploaded source");
+  });
+
+  if (singleRuntime) {
+    const singleId = String(singleRuntime.id || singleRuntime.sourceVideoId || singleRuntime.source_video_id || "").trim();
+    addMap("V1", singleId, "single uploaded source");
+  }
+
+  return { remap, notes, runtimeIds };
+}
+
+function remapVideoNodeSourceIdValueV209A(value, remap = new Map(), runtimeIds = new Set(), fallback = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback || "";
+  if (runtimeIds.has(raw)) return raw;
+  if (remap.has(raw)) return remap.get(raw);
+  return fallback || raw;
+}
+
+function stripIllegalGeneratedSourceFieldsV209A(item = {}) {
+  const out = { ...item };
+  out.sourceVideoId = null;
+  out.source_video_id = null;
+  out.selectedSourceVideoId = null;
+  out.selected_source_video_id = null;
+  out.sourceVideoStartSec = null;
+  out.source_video_start_sec = null;
+  out.sourceVideoEndSec = null;
+  out.source_video_end_sec = null;
+  out.selectedSourceStartSec = null;
+  out.selected_source_start_sec = null;
+  out.selectedSourceEndSec = null;
+  out.selected_source_end_sec = null;
+  out.video_t0 = null;
+  out.video_t1 = null;
+  out.fixedClipBinding = undefined;
+  out.fixed_clip_binding = undefined;
+  return out;
+}
+
+function remapVideoNodeSourceFieldsV209A(item = {}, remap = new Map(), runtimeIds = new Set(), fallbackId = "") {
+  if (!item || typeof item !== "object") return item;
+  if (isVideoNodeGeneratedPlaceholderLikeV209A(item)) return stripIllegalGeneratedSourceFieldsV209A(item);
+  const current = String(item.sourceVideoId || item.source_video_id || item.selectedSourceVideoId || item.selected_source_video_id || "").trim();
+  const mapped = remapVideoNodeSourceIdValueV209A(current, remap, runtimeIds, fallbackId);
+  const out = {
+    ...item,
+    sourceVideoId: mapped || null,
+    source_video_id: mapped || null,
+    selectedSourceVideoId: mapped || null,
+    selected_source_video_id: mapped || null,
+  };
+  if (Array.isArray(item.candidates)) {
+    out.candidates = item.candidates.map((candidate) => remapVideoNodeSourceFieldsV209A(candidate, remap, runtimeIds, mapped));
+  }
+  const selected = item.selected_candidate || item.selectedCandidate;
+  if (selected && typeof selected === "object") {
+    out.selected_candidate = remapVideoNodeSourceFieldsV209A(selected, remap, runtimeIds, mapped);
+    out.selectedCandidate = out.selected_candidate;
+  }
+  return out;
+}
+
+function buildVideoNodeImportValidationReportV209A(matchSegments = [], videoBlocks = [], sourceVideos = [], remapNotes = []) {
+  const segments = Array.isArray(matchSegments) ? matchSegments : [];
+  const blocks = Array.isArray(videoBlocks) ? videoBlocks : [];
+  const sourceCutIds = segments.filter(isVideoNodeSourceCutLikeV209A).map((seg) => String(seg.audioSceneId || seg.audio_scene_id || seg.id || "").trim()).filter(Boolean);
+  const generatedIds = segments.filter(isVideoNodeGeneratedPlaceholderLikeV209A).map((seg) => String(seg.audioSceneId || seg.audio_scene_id || seg.id || "").trim()).filter(Boolean);
+  const fixedBlocks = blocks.filter((block) => hasVideoNodeFixedClipBindingV209A(block));
+  const fixedResolved = fixedBlocks.filter((block) => Boolean(getVideoNodeFixedClipPathForAssemblyV209A(block)));
+  const warnings = [];
+  if (remapNotes.length) warnings.push(...remapNotes);
+  const illegalGenerated = segments.filter((seg) => isVideoNodeGeneratedPlaceholderLikeV209A(seg) && String(seg.sourceVideoId || seg.source_video_id || seg.selectedSourceVideoId || "").trim());
+  if (illegalGenerated.length) warnings.push(`generated scenes still have source ids: ${illegalGenerated.map((seg) => seg.audioSceneId || seg.id).join(", ")}`);
+  const missingFixed = fixedBlocks.filter((block) => !getVideoNodeFixedClipPathForAssemblyV209A(block));
+  if (missingFixed.length) warnings.push(`fixed clips require backend binding/upload: ${missingFixed.map((block) => block.audioSceneId || block.segmentId || block.id).join(", ")}`);
+  const durationIssues = blocks
+    .map((block) => {
+      const target = Math.max(0, Number(block.targetEndSec || 0) - Number(block.targetStartSec || 0));
+      const range = Math.max(0, Number(block.sourceVideoEndSec || 0) - Number(block.sourceVideoStartSec || 0));
+      const fixed = Number(normalizeVideoNodeFixedClipBindingV209A(block).validated_duration_sec || normalizeVideoNodeFixedClipBindingV209A(block).validatedDurationSec || 0) || 0;
+      const duration = fixed > 0 ? fixed : range;
+      const delta = Math.abs(target - duration);
+      return { id: block.audioSceneId || block.segmentId || block.id, target, duration, delta };
+    })
+    .filter((item) => item.target > 0 && item.duration > 0 && item.delta > 0.03);
+  if (durationIssues.length) warnings.push(`source duration mismatch >0.03s: ${durationIssues.map((item) => `${item.id} Δ${item.delta.toFixed(3)}s`).join(", ")}`);
+  return {
+    schema: "video_node_import_validation_v209a",
+    source_video_bound: (Array.isArray(sourceVideos) ? sourceVideos : []).some((source) => Boolean(getVideoNodeSourceAssemblyPathValue(source) || source.assetId || source.asset_id || source.assetApiPath || source.asset_api_path)),
+    runtime_source_ids: (Array.isArray(sourceVideos) ? sourceVideos : []).map((source) => String(source.id || source.sourceVideoId || source.source_video_id || "").trim()).filter(Boolean),
+    scenes_count: segments.length,
+    source_cut_scene_count: sourceCutIds.length,
+    source_cut_scene_ids: sourceCutIds,
+    generated_placeholder_count: generatedIds.length,
+    fixed_clips_detected: fixedBlocks.length,
+    fixed_clips_bound: fixedResolved.length,
+    duration_validation_tolerance_sec: 0.03,
+    warnings,
+    ok: warnings.length === 0,
+  };
+}
+
+function remapVideoNodeImportBindingsV209A({ matchSegments = [], videoBlocks = [], sourceVideos = [], importedSourceVideos = [], project = {} } = {}) {
+  const { remap, notes, runtimeIds } = buildVideoNodeSourceIdRemapV209A(importedSourceVideos, sourceVideos);
+  const fallbackSource = (Array.isArray(sourceVideos) ? sourceVideos : []).find((source) => Boolean(getVideoNodeSourceAssemblyPathValue(source) || source.assetId || source.asset_id || source.assetApiPath || source.asset_api_path)) || null;
+  const fallbackId = String(fallbackSource?.id || fallbackSource?.sourceVideoId || fallbackSource?.source_video_id || "").trim();
+  const remappedSegments = (Array.isArray(matchSegments) ? matchSegments : []).map((segment) => remapVideoNodeSourceFieldsV209A(segment, remap, runtimeIds, fallbackId));
+  const remappedBlocks = (Array.isArray(videoBlocks) ? videoBlocks : []).map((block) => remapVideoNodeSourceFieldsV209A(block, remap, runtimeIds, fallbackId));
+  const validation = buildVideoNodeImportValidationReportV209A(remappedSegments, remappedBlocks, sourceVideos, notes);
+  return { matchSegments: remappedSegments, videoBlocks: remappedBlocks, validation, warnings: validation.warnings || [] };
+}
+
 
 function mergeVideoNodeSourceEntry(existing = [], nextEntry = {}) {
   const normalizedExisting = (Array.isArray(existing) ? existing : []).map(normalizeVideoNodeSourceEntry);
@@ -637,6 +872,43 @@ async function fetchVideoNodeWorkspaceProject(projectId = "") {
   return null;
 }
 
+
+// AVA_VIDEO_NODE_HARD_CLEAR_SNAPSHOT_GUARD_V209B:
+// Manual "Очистить" must be a real hard reset, not a visual clear that can be
+// revived by a late backend hydrate/autosave. Save an explicit destructive
+// backend snapshot and ignore in-flight stale restores after the user clears.
+async function hardClearVideoNodeBackendSnapshotsV209B(projectId = "") {
+  const cleanProjectId = String(projectId || "").trim();
+  const body = JSON.stringify({
+    data: {},
+    client_version: "workflow-stage-controls-clear-video-node-v209b",
+    guard_mode: "replace",
+  });
+  const endpoints = [];
+  if (cleanProjectId) endpoints.push({ kind: "project", url: `${API_BASE}/api/projects/${encodeURIComponent(cleanProjectId)}/snapshots/video_node` });
+  endpoints.push({ kind: "workspace", url: `${API_BASE}/api/workspace/snapshots/video_node` });
+
+  const results = [];
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint.url, {
+        method: "POST",
+        credentials: "include",
+        headers: getVideoNodeAuthHeaders(),
+        body,
+      });
+      const data = await response.json().catch(() => null);
+      results.push({ kind: endpoint.kind, ok: response.ok, status: response.status, saved: data?.saved, hardCleared: data?.hard_cleared, reason: data?.reason || "" });
+    } catch (error) {
+      results.push({ kind: endpoint.kind, ok: false, status: 0, error: String(error?.message || error) });
+    }
+  }
+  console.info("[VIDEO NODE HARD CLEAR BACKEND V209B]", { projectId: cleanProjectId, results });
+  if (!results.some((item) => item.ok)) {
+    throw new Error(results.map((item) => item.error || `${item.kind}:${item.status}`).filter(Boolean).join("; ") || "video_node_clear_failed");
+  }
+  return results;
+}
 async function saveVideoNodeWorkspaceProject(project = {}, nodeId = "default", projectId = "") {
   // V80: save to project snapshot and workspace snapshot. Before this, a project route
   // could save only to /projects/:id/snapshots/video_node, while another computer opened
@@ -826,21 +1098,67 @@ function extractBoardGeneratedClips(boardSnapshot = {}) {
     .filter(Boolean);
 }
 
+
+function getVideoNodeCanonicalSceneKeyV209F(value = "") {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  const segMatch = raw.match(/\bseg[_-]?0*([0-9]{1,4})\b/);
+  if (segMatch) return `seg_${String(Number(segMatch[1])).padStart(2, "0")}`;
+  const plainMatch = raw.match(/^0*([0-9]{1,4})$/);
+  if (plainMatch) return `seg_${String(Number(plainMatch[1])).padStart(2, "0")}`;
+  return raw;
+}
+
+function getVideoNodeStrictSceneKeysV209F(item = {}) {
+  if (!item || typeof item !== "object") return [];
+  const primaryValues = [
+    item.id,
+    item.scene_id,
+    item.sceneId,
+    item.audio_scene_id,
+    item.audioSceneId,
+    item.segmentId,
+    item.segment_id,
+    item.timingSceneId,
+    item.timing_scene_id,
+    item.boardSceneId,
+    item.board_scene_id,
+    item.boardAudioSceneId,
+    item.board_audio_scene_id,
+  ];
+
+  const canonical = primaryValues
+    .map(getVideoNodeCanonicalSceneKeyV209F)
+    .filter(Boolean)
+    .filter((value) => /^seg_[0-9]{2,4}$/.test(value));
+
+  if (canonical.length) return Array.from(new Set(canonical));
+
+  return Array.from(new Set(
+    primaryValues
+      .map(normalizeSceneMatchKey)
+      .filter(Boolean),
+  ));
+}
+
 function findBoardClipForSegment(segment = {}, boardClips = []) {
   if (!segment || !Array.isArray(boardClips) || !boardClips.length) return null;
-  const segmentKeys = [
-    segment.id,
-    segment.audioSceneId,
-    segment.audio_scene_id,
-    segment.scene_id,
-    segment.sceneId,
-    segment.segmentId,
-    segment.segment_id,
-    segment.user_scene_label,
-    segment.userSceneLabel,
-  ].map(normalizeSceneMatchKey).filter(Boolean);
+
+  const segmentKeys = getVideoNodeStrictSceneKeysV209F(segment);
   if (!segmentKeys.length) return null;
-  return boardClips.find((clip) => (clip.keys || []).some((key) => segmentKeys.includes(key))) || null;
+
+  return boardClips.find((clip) => {
+    const clipKeys = getVideoNodeStrictSceneKeysV209F({
+      id: clip.id,
+      scene_id: clip.sceneId,
+      sceneId: clip.sceneId,
+      audio_scene_id: clip.audioSceneId,
+      audioSceneId: clip.audioSceneId,
+      segmentId: clip.segmentId,
+      segment_id: clip.segment_id,
+    });
+    return clipKeys.some((key) => segmentKeys.includes(key));
+  }) || null;
 }
 
 function isBoardClipCandidate(candidate = {}) {
@@ -911,8 +1229,9 @@ async function fetchBoardGeneratedClipsFromWorkspace(projectId = "") {
   const cleanProjectId = String(projectId || "").trim();
   if (cleanProjectId) {
     endpoints.push(`${API_BASE}/api/projects/${encodeURIComponent(cleanProjectId)}/snapshots/board`);
+  } else {
+    endpoints.push(`${API_BASE}/api/workspace/snapshots/board`);
   }
-  endpoints.push(`${API_BASE}/api/workspace/snapshots/board`);
 
   const collected = [];
   let lastError = null;
@@ -1071,6 +1390,7 @@ export default function VideoMatchBoardPage() {
   const backendHydratedRef = useRef(false);
   const backendSaveTimerRef = useRef(null);
   const backendSaveSignatureRef = useRef("");
+  const backendClearEpochRefV209B = useRef(0);
   const [workflowPreset, setWorkflowPreset] = useState(WORKFLOW_PRESETS[0].id);
   const [workflowStep, setWorkflowStep] = useState(WORKFLOW_PRESETS[0].steps[0]);
 
@@ -1329,9 +1649,11 @@ export default function VideoMatchBoardPage() {
 
   const runtimeSourceVideoUrlRef = useRef(String(initialProject?.sourceVideoUrl || "").startsWith("blob:") ? String(initialProject?.sourceVideoUrl || "") : "");
   const runtimeAudioPreviewUrlRef = useRef(String(initialProject?.audioPreviewUrl || "").startsWith("blob:") ? String(initialProject?.audioPreviewUrl || "") : "");
+  const scenePreviewTokenRef = useRef(0);
+  const audioPlayTokenRef = useRef(0);
   const effectiveAudioPreviewUrl = String(
-    project.audioPreviewUrl
-    || runtimeAudioPreviewUrlRef.current
+    runtimeAudioPreviewUrlRef.current
+    || project.audioPreviewUrl
     || project.audioPreviewBackendUrl
     || project.audioPreviewMeta?.backendUrl
     || project.audioPreviewMeta?.url
@@ -1363,6 +1685,48 @@ export default function VideoMatchBoardPage() {
   const selectedSegment = matchSegments.find((segment) => segment.id === project.selectedSegmentId || segment.audioSceneId === project.selectedSegmentId) || matchSegments[0] || null;
   const selectedSegmentCandidates = Array.isArray(selectedSegment?.candidates) ? selectedSegment.candidates : [];
   const selectedBoardClip = useMemo(() => findBoardClipForSegment(selectedSegment, boardGeneratedClips), [selectedSegment, boardGeneratedClips]);
+  const selectedSegmentBoardCandidate = useMemo(() => {
+    const candidates = Array.isArray(selectedSegment?.candidates) ? selectedSegment.candidates : [];
+    const boardCandidate = candidates.find((candidate) => isBoardClipCandidate(candidate));
+    if (!boardCandidate) return null;
+    if (!selectedBoardClip) return boardCandidate;
+    const candidateSceneKeys = getVideoNodeStrictSceneKeysV209F(boardCandidate);
+    const boardSceneKeys = getVideoNodeStrictSceneKeysV209F({
+      id: selectedBoardClip.id,
+      scene_id: selectedBoardClip.sceneId,
+      sceneId: selectedBoardClip.sceneId,
+      audio_scene_id: selectedBoardClip.audioSceneId,
+      audioSceneId: selectedBoardClip.audioSceneId,
+    });
+    if (!candidateSceneKeys.length || !boardSceneKeys.length) return boardCandidate;
+    return candidateSceneKeys.some((key) => boardSceneKeys.includes(key)) ? boardCandidate : null;
+  }, [selectedSegment, selectedBoardClip]);
+  const selectedSegmentBoardCandidateKey = getCandidateKey(selectedSegmentBoardCandidate || {});
+  const selectedSegmentSelectedCandidateKey = String(selectedSegment?.selectedCandidateId || selectedSegment?.selected_candidate_id || "").trim();
+  const selectedSegmentBoardCandidateApplied = Boolean(selectedSegmentBoardCandidateKey && selectedSegmentBoardCandidateKey === selectedSegmentSelectedCandidateKey);
+  const boardClipsAreChecking = String(boardGeneratedClipsStatus || "").includes("Проверяю");
+  const boardTakeButtonDisabled = !selectedSegment || boardClipsAreChecking || selectedSegmentBoardCandidateApplied || !selectedBoardClip;
+  const boardTakeButtonTitle = !selectedSegment
+    ? "Сначала выберите сцену"
+    : (selectedSegmentBoardCandidateApplied
+      ? "Эта сцена уже заменена клипом из Доски"
+      : (selectedBoardClip
+        ? `Взять видео из Доски только для сцены ${selectedBoardClip.sceneId || getSegmentKey(selectedSegment)}`
+        : "В Доске нет готового видео с таким же scene_id"));
+  const boardTakeButtonLabel = boardClipsAreChecking
+    ? "⏳ Проверяю Доску..."
+    : (selectedSegmentBoardCandidateApplied
+      ? "✓ Применено из Доски"
+      : (selectedBoardClip ? "➕ Взять с Доски" : "Нет видео в Доске"));
+  const boardTakeStatusForSelected = selectedSegment
+    ? (selectedSegmentBoardCandidateApplied
+      ? `Применено из Доски только для ${getSegmentKey(selectedSegment)}.`
+      : (selectedSegmentBoardCandidate
+        ? `Вариант из Доски добавлен для ${getSegmentKey(selectedSegment)}. Нажмите ✓, если нужно снова выбрать его.`
+        : (selectedBoardClip
+          ? `В Доске найден готовый клип для ${getSegmentKey(selectedSegment)}.`
+          : `Для ${getSegmentKey(selectedSegment)} нет готового видео в Доске.`)))
+    : "";
   const currentPlayingBlockId = videoBlocks.find((block) => {
     const { clipStart, clipEnd } = getBlockClipRange(block);
     return currentTimeSec >= clipStart && currentTimeSec < clipEnd;
@@ -1492,7 +1856,15 @@ export default function VideoMatchBoardPage() {
   });
 
   const onSelectBlock = (block = {}) => {
-    patchProject(getSelectionPatchForBlock(block), { lastGood: false });
+    const selectionPatch = getSelectionPatchForBlock(block);
+    setProject((prev) => ({
+      ...prev,
+      ...selectionPatch,
+      nodeId,
+      sourceNodeId: nodeId,
+      previewSelectionOnlyV209G: true,
+      previewSelectionUpdatedAtV209G: Date.now(),
+    }));
   };
 
   useEffect(() => {
@@ -1515,6 +1887,7 @@ export default function VideoMatchBoardPage() {
 
   useEffect(() => {
     const onBeforeUnload = () => {
+      if (manuallyClearedNodeRef.current) return;
       try {
         writeVideoMatchEmergencyProject(nodeId, project);
       } catch {}
@@ -1531,7 +1904,7 @@ export default function VideoMatchBoardPage() {
 
     fetchVideoNodeWorkspaceProject(projectId)
       .then((workspaceProject) => {
-        if (cancelled || !workspaceProject) return;
+        if (cancelled || !workspaceProject || manuallyClearedNodeRef.current) return;
         const currentStats = getVideoMatchProjectStats(project);
         const backendStats = getVideoMatchProjectStats(workspaceProject);
         const currentUpdatedAt = Number(project?.updatedAt || 0);
@@ -1595,7 +1968,12 @@ export default function VideoMatchBoardPage() {
     backendSaveSignatureRef.current = signature;
 
     if (backendSaveTimerRef.current) clearTimeout(backendSaveTimerRef.current);
+    const saveClearEpochV209B = backendClearEpochRefV209B.current;
     backendSaveTimerRef.current = setTimeout(() => {
+      if (manuallyClearedNodeRef.current || backendClearEpochRefV209B.current !== saveClearEpochV209B) {
+        console.info("[VIDEO MATCH BACKEND WORKSPACE SAVE SKIPPED AFTER CLEAR V209B]", { nodeId, projectId });
+        return;
+      }
       saveVideoNodeWorkspaceProject(project, nodeId, projectId)
         .then((result) => console.info("[VIDEO MATCH BACKEND WORKSPACE SAVED]", { nodeId, projectId, stats, result }))
         .catch((error) => console.warn("[VIDEO MATCH BACKEND WORKSPACE SAVE_FAILED]", { nodeId, projectId, error: String(error?.message || error) }));
@@ -1667,6 +2045,10 @@ export default function VideoMatchBoardPage() {
 
   const stopPlayback = () => {
     stopAssemblyAudioSyncTimer();
+    clearSceneAutoPreviewStopTimer();
+    clearSceneExactPreviewStopTimer();
+    scenePreviewTokenRef.current = (scenePreviewTokenRef.current || 0) + 1;
+    audioPlayTokenRef.current = (audioPlayTokenRef.current || 0) + 1;
     playbackRef.current = null;
     setIsAssemblyPlaying(false);
     setIsPlaybackActive(false);
@@ -2017,7 +2399,10 @@ export default function VideoMatchBoardPage() {
     return blobUrl;
   };
 
-  const playOverrideRange = async (block = {}, { muted = false } = {}) => {
+  const playOverrideRange = async (block = {}, { muted = false, previewToken = null } = {}) => {
+    const hasPreviewTokenV209G = previewToken !== null && previewToken !== undefined;
+    const previewTokenNumberV209G = Number(previewToken || 0);
+    const isPreviewTokenCurrentV209G = () => !hasPreviewTokenV209G || scenePreviewTokenRef.current === previewTokenNumberV209G;
     const overrideUrl = getResolvedOverrideUrl(block);
     if (!overrideUrl || !videoRef.current) return false;
     const requestToken = (videoPlayTokenRef.current || 0) + 1;
@@ -2028,12 +2413,17 @@ export default function VideoMatchBoardPage() {
     videoPlayTokenRef.current = requestToken;
     try {
       const playableOverrideUrl = await fetchVideoNodeOverridePreviewUrl(overrideUrl);
+      if (!isPreviewTokenCurrentV209G()) return false;
       if (!playableOverrideUrl) return false;
       logVideoPlayerAction("src_change", "override_src_set", { src: overrideUrl, playable: playableOverrideUrl.startsWith("blob:") ? "blob" : "direct", sceneId: block?.id || "" });
       videoRef.current.src = playableOverrideUrl;
       videoRef.current.currentTime = 0;
       videoRef.current.load();
       await waitForVideoReady(videoRef.current);
+      if (!isPreviewTokenCurrentV209G()) {
+        safePauseVideo(videoRef.current, "override_preview_token_cancelled_v209g");
+        return false;
+      }
       if (videoPlayTokenRef.current !== requestToken) {
         console.info("[VIDEO PLAYER REQUEST CANCELLED BEFORE PLAY]", { reason: "token_changed_before_play", sceneId: block?.id || "" });
         return false;
@@ -2057,7 +2447,10 @@ export default function VideoMatchBoardPage() {
     }
   };
 
-  const playSourceRange = async (start = 0, end = 0, { muted = false, sourceVideoId = "src_01" } = {}) => {
+  const playSourceRange = async (start = 0, end = 0, { muted = false, sourceVideoId = "src_01", previewToken = null } = {}) => {
+    const hasPreviewTokenV209G = previewToken !== null && previewToken !== undefined;
+    const previewTokenNumberV209G = Number(previewToken || 0);
+    const isPreviewTokenCurrentV209G = () => !hasPreviewTokenV209G || scenePreviewTokenRef.current === previewTokenNumberV209G;
     const safeSourceVideoId = String(sourceVideoId || "src_01").trim() || "src_01";
     const expectedSrc = getSourceVideoRuntimeUrl(safeSourceVideoId);
 
@@ -2081,6 +2474,7 @@ export default function VideoMatchBoardPage() {
     })();
 
     try {
+      if (!isPreviewTokenCurrentV209G()) return false;
       safePauseVideo(video, "scene_exact_prepare_source");
       if (currentSrc !== expectedSrc && currentSrc !== resolvedExpectedSrc) {
         video.src = expectedSrc;
@@ -2098,6 +2492,7 @@ export default function VideoMatchBoardPage() {
         video.addEventListener("canplay", done, { once: true });
         window.setTimeout(done, 900);
       });
+      if (!isPreviewTokenCurrentV209G()) return false;
 
       try {
         const duration = Number(video.duration || 0);
@@ -2111,8 +2506,13 @@ export default function VideoMatchBoardPage() {
         sourceVideoId: safeSourceVideoId,
       });
 
+      if (!isPreviewTokenCurrentV209G()) return false;
       const playPromise = video.play();
       if (playPromise && typeof playPromise.then === "function") await playPromise;
+      if (!isPreviewTokenCurrentV209G()) {
+        safePauseVideo(video, "scene_exact_source_play_cancelled_v209g");
+        return false;
+      }
 
       logVideoPlayerAction("play", "scene_exact_source_play", {
         sourceVideoId: safeSourceVideoId,
@@ -2130,7 +2530,12 @@ export default function VideoMatchBoardPage() {
     }
   };
 
-  const playAudioFrom = async (start = 0) => {
+  const playAudioFrom = async (start = 0, expectedToken = null) => {
+    const tokenV209G = Number.isFinite(Number(expectedToken))
+      ? Number(expectedToken)
+      : ((audioPlayTokenRef.current || 0) + 1);
+    audioPlayTokenRef.current = tokenV209G;
+    const isAudioTokenCurrentV209G = () => audioPlayTokenRef.current === tokenV209G;
     const resolvedAudioUrl = String(
       project.audioPreviewUrl
       || runtimeAudioPreviewUrlRef.current
@@ -2158,6 +2563,7 @@ export default function VideoMatchBoardPage() {
     })();
 
     try {
+      if (!isAudioTokenCurrentV209G()) return false;
       if (currentSrc !== resolvedAudioUrl && currentSrc !== expectedSrc) {
         audio.pause();
         audio.src = resolvedAudioUrl;
@@ -2175,6 +2581,7 @@ export default function VideoMatchBoardPage() {
         audio.addEventListener("canplay", done, { once: true });
         window.setTimeout(done, 900);
       });
+      if (!isAudioTokenCurrentV209G()) return false;
 
       const timelineSec = Math.max(0, Number(start || 0));
       // Video Match targetStartSec/targetEndSec are already in the loaded master audio timeline.
@@ -2202,8 +2609,13 @@ export default function VideoMatchBoardPage() {
         duration: Number(audio.duration || 0),
       });
 
+      if (!isAudioTokenCurrentV209G()) return false;
       const playPromise = audio.play();
       if (playPromise && typeof playPromise.then === "function") await playPromise;
+      if (!isAudioTokenCurrentV209G()) {
+        audio.pause();
+        return false;
+      }
 
       console.info("[VIDEO MATCH AUDIO PLAY OK]", {
         currentTime: Number(audio.currentTime || 0),
@@ -2211,6 +2623,7 @@ export default function VideoMatchBoardPage() {
       });
       return true;
     } catch (error) {
+      if (!isAudioTokenCurrentV209G()) return false;
       console.warn("[VIDEO MATCH AUDIO PLAY FAILED]", {
         message: String(error?.message || error),
         name: String(error?.name || ""),
@@ -2242,7 +2655,15 @@ export default function VideoMatchBoardPage() {
   const startAudioSyncedBlock = async (block = {}, reason = "scene_click") => {
     if (!block) return false;
 
+    const previewTokenV209G = (scenePreviewTokenRef.current || 0) + 1;
+    scenePreviewTokenRef.current = previewTokenV209G;
+    audioPlayTokenRef.current = previewTokenV209G;
+    stopAssemblyAudioSyncTimer();
+    clearSceneAutoPreviewStopTimer();
     clearSceneExactPreviewStopTimer();
+    if (audioRef.current) audioRef.current.pause();
+    if (backgroundAudioRef.current) backgroundAudioRef.current.pause();
+    if (videoRef.current) safePauseVideo(videoRef.current, "scene_exact_before_new_preview_v209g");
 
     const targetStart = Math.max(0, Number(getBlockTargetStart(block) || 0));
     const targetEnd = Math.max(targetStart + 0.05, Number(getBlockTargetEnd(block) || 0));
@@ -2293,6 +2714,7 @@ export default function VideoMatchBoardPage() {
       targetEnd,
       end: clipEnd,
       currentBlockId: String(previewBlock.id || previewBlock.audioSceneId || previewBlock.segmentId || ""),
+      previewToken: previewTokenV209G,
       reason,
     };
 
@@ -2316,12 +2738,14 @@ export default function VideoMatchBoardPage() {
     });
 
     const didStartVideo = (isOverrideBlock(previewBlock) && previewBlock.overrideVideoUrl)
-      ? await playOverrideRange(previewBlock, { muted: shouldMute })
-      : await playSourceRange(clipStart, clipEnd, { muted: shouldMute, sourceVideoId });
+      ? await playOverrideRange(previewBlock, { muted: shouldMute, previewToken: previewTokenV209G })
+      : await playSourceRange(clipStart, clipEnd, { muted: shouldMute, sourceVideoId, previewToken: previewTokenV209G });
+
+    if (scenePreviewTokenRef.current !== previewTokenV209G) return false;
 
     let didStartAudio = false;
     if (hasAudioForPreview && audioRef.current) {
-      didStartAudio = await playAudioFrom(targetStart);
+      didStartAudio = await playAudioFrom(targetStart, previewTokenV209G);
     } else if (audioRef.current) {
       audioRef.current.pause();
     }
@@ -2333,13 +2757,18 @@ export default function VideoMatchBoardPage() {
 
     sceneExactPreviewStopTimerRef.current = window.setTimeout(() => {
       const playback = playbackRef.current;
-      if (!playback || playback.currentBlockId !== String(previewBlock.id || previewBlock.audioSceneId || previewBlock.segmentId || "")) return;
+      if (!playback || playback.previewToken !== previewTokenV209G || scenePreviewTokenRef.current !== previewTokenV209G) return;
+      if (playback.currentBlockId !== String(previewBlock.id || previewBlock.audioSceneId || previewBlock.segmentId || "")) return;
       if (videoRef.current) {
         safePauseVideo(videoRef.current, "scene_exact_preview_stop");
         try { videoRef.current.currentTime = clipEnd; } catch {}
         setCurrentTimeSec(clipEnd);
       }
-      if (audioRef.current) audioRef.current.pause();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        try { audioRef.current.currentTime = targetEnd; } catch {}
+        setAudioCurrentTimeSec(targetEnd);
+      }
       if (backgroundAudioRef.current) backgroundAudioRef.current.pause();
       playbackRef.current = null;
       setIsPlaybackActive(false);
@@ -2456,11 +2885,14 @@ export default function VideoMatchBoardPage() {
     const segmentKey = getSegmentKey(segment);
     const block = buildSelectedBlockForSegmentV25(segment);
     const candidateKey = getCandidateKey(block) || String(segment.selectedCandidateId || segment.selected_candidate_id || "").trim();
-    patchProject({
+    setProject((prev) => ({
+      ...prev,
       selectedSegmentId: segmentKey,
       selectedCandidateId: candidateKey,
       selectedBlockId: block?.id || "",
-    }, { lastGood: false });
+      previewSelectionOnlyV209G: true,
+      previewSelectionUpdatedAtV209G: Date.now(),
+    }));
     void startAudioSyncedBlock(block, reason);
   };
 
@@ -2640,8 +3072,25 @@ export default function VideoMatchBoardPage() {
 
     if (playback.mode === "audio_range") {
       const targetEnd = Number(playback.targetEnd || 0);
-      if (targetEnd > 0 && timelineAudioTime >= targetEnd) {
-        stopPlayback();
+      const token = Number(playback.previewToken || 0);
+      if (token && scenePreviewTokenRef.current !== token) return;
+      if (targetEnd > 0 && timelineAudioTime >= targetEnd - 0.015) {
+        if (videoRef.current) {
+          safePauseVideo(videoRef.current, "audio_range_reached_scene_end_v209g");
+          const currentBlock = playback.blocks?.[playback.index] || selectedBlock;
+          const sourceEnd = (isOverrideBlock(currentBlock) && currentBlock.overrideVideoUrl) ? getOverrideBlockEndSec(currentBlock) : getBlockClipRange(currentBlock).clipEnd;
+          try { videoRef.current.currentTime = sourceEnd; } catch {}
+          setCurrentTimeSec(sourceEnd);
+        }
+        if (audioRef.current) {
+          audioRef.current.pause();
+          try { audioRef.current.currentTime = targetEnd; } catch {}
+        }
+        if (backgroundAudioRef.current) backgroundAudioRef.current.pause();
+        playbackRef.current = null;
+        setAudioCurrentTimeSec(targetEnd);
+        setIsPlaybackActive(false);
+        setIsAssemblyPlaying(false);
       }
       return;
     }
@@ -2919,50 +3368,76 @@ export default function VideoMatchBoardPage() {
 
     if (!boardClip) {
       patchProject({
-        jsonError: "Для этой сцены нет готового видео на Доске. Проверь, что в Доске у этой же scene_id есть готовое видео.",
+        jsonError: `Для ${segmentId} нет готового видео на Доске. Видео Node не должен подставлять клип от другой сцены.`,
       }, { lastGood: false });
-      setBoardGeneratedClipsStatus("В Доске не найдено видео для выбранной сцены.");
+      setBoardGeneratedClipsStatus(`В Доске не найдено видео для ${segmentId}.`);
       return;
     }
 
-    const boardCandidate = buildBoardClipCandidate(selectedSegment, boardClip);
     const nextSegments = matchSegments.map((segment) => {
       if (getSegmentKey(segment) !== segmentId) return segment;
+
       const oldCandidates = Array.isArray(segment.candidates) ? segment.candidates : [];
       const baseCandidates = oldCandidates.filter((candidate) => !isBoardClipCandidate(candidate));
-      const currentCandidateId = String(segment.selectedCandidateId || segment.selected_candidate_id || getCandidateKey(baseCandidates[0] || oldCandidates[0]) || "").trim();
-      const currentSelectedCandidate = baseCandidates.find((candidate) => getCandidateKey(candidate) === currentCandidateId)
-        || oldCandidates.find((candidate) => getCandidateKey(candidate) === currentCandidateId)
-        || segment.selectedCandidate
-        || segment.selected_candidate
-        || null;
+      const existingBoardCandidate = oldCandidates.find((candidate) => {
+        if (!isBoardClipCandidate(candidate)) return false;
+        const candidateKeys = getVideoNodeStrictSceneKeysV209F(candidate);
+        const boardKeys = getVideoNodeStrictSceneKeysV209F({
+          id: boardClip.id,
+          scene_id: boardClip.sceneId,
+          sceneId: boardClip.sceneId,
+          audio_scene_id: boardClip.audioSceneId,
+          audioSceneId: boardClip.audioSceneId,
+        });
+        return candidateKeys.length && boardKeys.length
+          ? candidateKeys.some((key) => boardKeys.includes(key))
+          : true;
+      });
+
+      const boardCandidate = existingBoardCandidate || buildBoardClipCandidate(segment, boardClip);
+      const boardCandidateId = getCandidateKey(boardCandidate);
+
       return {
         ...segment,
         candidates: [...baseCandidates, boardCandidate],
-        selectedCandidateId: currentCandidateId,
-        selected_candidate_id: currentCandidateId,
-        selectedCandidate: currentSelectedCandidate || undefined,
-        selected_candidate: currentSelectedCandidate || undefined,
+        selectedCandidateId: boardCandidateId,
+        selected_candidate_id: boardCandidateId,
+        selectedCandidate: boardCandidate,
+        selected_candidate: boardCandidate,
       };
     });
 
     const nextBlocks = buildVideoBlocksFromMatchSegments(nextSegments, sourceVideoUrl);
-    const selectedStill = nextBlocks.find((block) => getSegmentKey(block) === segmentId && getCandidateKey(block) === (selectedSegment?.selectedCandidateId || selectedSegment?.selected_candidate_id))
-      || nextBlocks.find((block) => getSegmentKey(block) === segmentId)
-      || null;
+    const selectedBoardBlock = nextBlocks.find((block) => (
+      getSegmentKey(block) === segmentId
+      && isBoardClipCandidate(block)
+    )) || nextBlocks.find((block) => getSegmentKey(block) === segmentId) || null;
+
+    const appliedCandidateId = String(
+      selectedBoardBlock?.candidateId
+      || selectedBoardBlock?.candidate_id
+      || selectedBoardBlock?.id
+      || "",
+    ).trim();
 
     patchProject({
       matchSegments: nextSegments,
       videoBlocks: nextBlocks,
       selectedSegmentId: segmentId,
-      selectedCandidateId: project.selectedCandidateId || selectedSegment?.selectedCandidateId || selectedSegment?.selected_candidate_id || "",
-      selectedBlockId: selectedStill?.id || project.selectedBlockId || "",
+      selectedCandidateId: appliedCandidateId,
+      selectedBlockId: selectedBoardBlock?.id || "",
       jsonError: "",
     }, { lastGood: false });
 
-    setPreviewCandidateId(boardCandidate.id);
-    setBoardGeneratedClipsStatus(`Добавлен вариант с Доски: ${boardClip.sceneId || segmentId}. Нажмите ✓ на кандидате, чтобы применить.`);
-    console.info("[VIDEO MATCH TAKE_FROM_BOARD_ADDED_CANDIDATE_V31]", { segmentId, boardClip, candidateId: boardCandidate.id, hasLocalPath: Boolean(boardCandidate.overrideVideoPath) });
+    setPreviewCandidateId(appliedCandidateId);
+    setBoardGeneratedClipsStatus(`Применено из Доски только для ${segmentId}: ${boardClip.sceneId || segmentId}.`);
+    console.info("[VIDEO MATCH TAKE_FROM_BOARD_APPLIED_SCENE_ONLY_V209F]", {
+      segmentId,
+      boardSceneId: boardClip.sceneId || "",
+      candidateId: appliedCandidateId,
+      hasLocalPath: Boolean(selectedBoardBlock?.overrideVideoPath || selectedBoardBlock?.override_video_path),
+      hasUrl: Boolean(selectedBoardBlock?.overrideVideoUrl || selectedBoardBlock?.override_video_url),
+    });
   };
 
   const onVideoFileChange = async (file, sourceVideoId = "src_01") => {
@@ -3103,9 +3578,16 @@ export default function VideoMatchBoardPage() {
     const url = URL.createObjectURL(file);
     objectUrlRef.current = url;
     runtimeSourceVideoUrlRef.current = url;
+    // V209C: keep local browser blob as the fast preview source even after backend upload finishes.
+    // Backend URL/path is only for persistence and MP4 assembly; preview should not switch to slow server streaming.
+    sourceVideoObjectUrlByIdRef.current = {
+      ...(sourceVideoObjectUrlByIdRef.current || {}),
+      [normalizedSourceId]: url,
+      src_01: url,
+    };
     setVideoDurationSec(0);
     setCurrentTimeSec(0);
-    setSourceVideoLoadMessage("Загружаю V1 на backend для preview и MP4-сборки...");
+    setSourceVideoLoadMessage("Видео сразу доступно в preview. Фоном загружаю на backend для MP4-сборки...");
     stopPlayback();
     patchProject({
       sourceVideoUrl: url,
@@ -3178,8 +3660,11 @@ export default function VideoMatchBoardPage() {
         size: file.size || 0,
       });
       const mergedSources = mergeVideoNodeSourceEntry(sourceVideos, backendEntry);
+      const fastPreviewSourceUrlV209C = String(runtimeSourceVideoUrlRef.current || url || backendSourceVideoUrl || "");
       patchProject({
-        sourceVideoUrl: String(backendSourceVideoUrl || ""),
+        sourceVideoUrl: fastPreviewSourceUrlV209C,
+        sourceVideoBackendUrl: String(backendSourceVideoUrl || ""),
+        source_video_backend_url: String(backendSourceVideoUrl || ""),
         sourceVideoPath: String(data.sourceVideoPathForAssembly || ""),
         sourceVideoPathForAssembly: String(data.sourceVideoPathForAssembly || ""),
         uploadedSourceVideoPath: String(data.sourceVideoPathForAssembly || ""),
@@ -3208,6 +3693,10 @@ export default function VideoMatchBoardPage() {
           has_audio_stream: Boolean(data.has_audio_stream),
           type: file.type || "video/mp4",
           size: file.size || 0,
+          previewUrl: fastPreviewSourceUrlV209C,
+          sourceVideoUrl: fastPreviewSourceUrlV209C,
+          sourceVideoBackendUrl: String(backendSourceVideoUrl || ""),
+          source_video_backend_url: String(backendSourceVideoUrl || ""),
         },
         source_video: {
           ...(project.source_video || {}),
@@ -3223,9 +3712,13 @@ export default function VideoMatchBoardPage() {
           video_node_source_needs_relink_v206b: false,
           filename: data.filename || file.name || "source.mp4",
           duration_sec: Number(data.duration_sec || 0),
+          previewUrl: fastPreviewSourceUrlV209C,
+          sourceVideoUrl: fastPreviewSourceUrlV209C,
+          sourceVideoBackendUrl: String(backendSourceVideoUrl || ""),
+          source_video_backend_url: String(backendSourceVideoUrl || ""),
         },
       });
-      setSourceVideoLoadMessage(`V1 загружено для preview и MP4-сборки: ${data.filename || file.name || "source.mp4"}`);
+      setSourceVideoLoadMessage(`Видео готово: preview играет локально, backend path готов для MP4-сборки: ${data.filename || file.name || "source.mp4"}`);
     } catch (error) {
       setSourceVideoLoadMessage(`Не удалось загрузить source video на backend: ${String(error?.message || error)}`);
     }
@@ -3237,6 +3730,7 @@ export default function VideoMatchBoardPage() {
     const url = URL.createObjectURL(file);
     audioObjectUrlRef.current = url;
     runtimeAudioPreviewUrlRef.current = url;
+    const fastAudioPreviewUrlV209C = url;
     if (audioRef.current) {
       try {
         audioRef.current.pause();
@@ -3248,7 +3742,7 @@ export default function VideoMatchBoardPage() {
     }
     setAudioDurationSec(0);
     setAudioCurrentTimeSec(0);
-    setAudioLoadMessage("Загружаю аудио на backend для MP4-сборки...");
+    setAudioLoadMessage("Аудио сразу доступно для preview. Фоном загружаю на backend для MP4-сборки...");
     setAssembleAudioPath("");
     const baseAudioMeta = {
       filename: file.name || "audio.mp3",
@@ -3257,7 +3751,9 @@ export default function VideoMatchBoardPage() {
       size: file.size || 0,
     };
     patchProject({
-      audioPreviewUrl: url,
+      audioPreviewUrl: fastAudioPreviewUrlV209C,
+      audioPreviewLocalUrl: fastAudioPreviewUrlV209C,
+      audio_preview_local_url: fastAudioPreviewUrlV209C,
       audioPreviewMeta: baseAudioMeta,
       assembleAudioPath: "",
       audioPathForAssembly: "",
@@ -3287,12 +3783,20 @@ export default function VideoMatchBoardPage() {
       patchProject({
         assembleAudioPath: backendAudioPath,
         audioPathForAssembly: backendAudioPath,
-        audioPreviewUrl: String(runtimeAudioPreviewUrlRef.current || project.audioPreviewUrl || backendAudioUrl || ""),
+        audioPreviewUrl: String(runtimeAudioPreviewUrlRef.current || fastAudioPreviewUrlV209C || project.audioPreviewUrl || backendAudioUrl || ""),
+        audioPreviewLocalUrl: String(runtimeAudioPreviewUrlRef.current || fastAudioPreviewUrlV209C || ""),
+        audio_preview_local_url: String(runtimeAudioPreviewUrlRef.current || fastAudioPreviewUrlV209C || ""),
         audioPreviewBackendUrl: backendAudioUrl,
         audioPreviewMeta: {
           ...baseAudioMeta,
           backendPath: backendAudioPath,
           backendUrl: backendAudioUrl,
+          audioPathForAssembly: backendAudioPath,
+          audio_path_for_assembly: backendAudioPath,
+          path: backendAudioPath,
+          previewUrl: String(runtimeAudioPreviewUrlRef.current || fastAudioPreviewUrlV209C || ""),
+          localPreviewUrl: String(runtimeAudioPreviewUrlRef.current || fastAudioPreviewUrlV209C || ""),
+          backendPreviewUrl: backendAudioUrl,
           duration_sec: backendDuration || 0,
         },
         timingContext: {
@@ -3303,7 +3807,7 @@ export default function VideoMatchBoardPage() {
         },
         useAudioPreview: true,
       });
-      setAudioLoadMessage("Аудио загружено на backend и готово для MP4-сборки.");
+      setAudioLoadMessage("Аудио готово: preview играет локально, backend path готов для MP4-сборки.");
     } catch (error) {
       setAssembleAudioPath("");
       patchProject({ assembleAudioPath: "", audioPathForAssembly: "" }, { lastGood: false });
@@ -3397,7 +3901,8 @@ export default function VideoMatchBoardPage() {
   };
 
   const onLoadedAudioMetadata = () => {
-    setAudioLoadMessage("");
+    // V209C: local metadata loaded does not mean backend upload finished.
+    setAudioLoadMessage((prev) => String(prev || "").includes("Фоном загружаю") ? prev : "");
     const duration = Number(audioRef.current?.duration || 0);
     if (!Number.isFinite(duration) || duration <= 0) return;
     setAudioDurationSec(duration);
@@ -3491,9 +3996,16 @@ export default function VideoMatchBoardPage() {
   const clearNodeState = (reason = "manual_reset", options = {}) => {
     const keepRuntimeMedia = Boolean(options?.keepRuntimeMedia);
     stopPlayback();
+    if (backendSaveTimerRef.current) {
+      clearTimeout(backendSaveTimerRef.current);
+      backendSaveTimerRef.current = null;
+    }
+    const clearEpochV209B = Date.now();
+    backendClearEpochRefV209B.current = clearEpochV209B;
+    backendSaveSignatureRef.current = `cleared:${clearEpochV209B}`;
     setImportWarnings([]);
     setPendingImportResult(null);
-    setSourceVideoLoadMessage("");
+    setSourceVideoLoadMessage("Video Node очищен. Стираю backend snapshot…");
     setAudioLoadMessage("");
     setAssembleError("");
     setAssembledPreview(null);
@@ -3506,26 +4018,54 @@ export default function VideoMatchBoardPage() {
     if (!keepRuntimeMedia) {
       if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = ""; }
       if (audioObjectUrlRef.current) { URL.revokeObjectURL(audioObjectUrlRef.current); audioObjectUrlRef.current = ""; }
+      if (overrideVideoObjectUrlRef.current) { try { URL.revokeObjectURL(overrideVideoObjectUrlRef.current); } catch {}; overrideVideoObjectUrlRef.current = ""; }
+      Object.values(sourceVideoObjectUrlByIdRef.current || {}).forEach((url) => { if (url) { try { URL.revokeObjectURL(url); } catch {} } });
+      sourceVideoObjectUrlByIdRef.current = {};
       runtimeSourceVideoUrlRef.current = "";
       runtimeAudioPreviewUrlRef.current = "";
     }
-    const next = getDefaultVideoMatchBoardProject(nodeId);
+    if (videoRef.current) {
+      safePauseVideo(videoRef.current, "video_node_hard_clear_v209b");
+      try { videoRef.current.removeAttribute("src"); videoRef.current.load(); } catch {}
+    }
+    if (audioRef.current) {
+      try { audioRef.current.pause(); audioRef.current.removeAttribute("src"); audioRef.current.load(); } catch {}
+    }
+    if (backgroundAudioRef.current) {
+      try { backgroundAudioRef.current.pause(); backgroundAudioRef.current.removeAttribute("src"); backgroundAudioRef.current.load(); } catch {}
+    }
+    const next = getDefaultVideoMatchBoardProject(nodeId, {
+      status: "cleared",
+      video_node_hard_cleared_v209b: true,
+      videoNodeHardClearedV209B: true,
+      video_node_cleared_at_ms: clearEpochV209B,
+      videoNodeClearedAtMs: clearEpochV209B,
+      jsonError: "",
+    });
     if (keepRuntimeMedia) {
       next.sourceVideoUrl = String(project.sourceVideoUrl || runtimeSourceVideoUrlRef.current || "");
       next.audioPreviewUrl = String(project.audioPreviewUrl || runtimeAudioPreviewUrlRef.current || "");
     }
     clearVideoMatchBoardProjectStorage(nodeId);
     setProject(next);
-    persistVideoMatchBoardProject(next, { forceReplace: true, allowMaterialLoss: true, explicitReset: true });
+    persistVideoMatchBoardProject(next, { forceReplace: true, allowMaterialLoss: true, explicitReset: true, lastGood: false });
     setStateOrigin(reason);
+    void hardClearVideoNodeBackendSnapshotsV209B(projectId)
+      .then(() => {
+        if (backendClearEpochRefV209B.current !== clearEpochV209B) return;
+        setSourceVideoLoadMessage("Video Node очищен полностью. Старый backend snapshot удалён.");
+      })
+      .catch((error) => {
+        if (backendClearEpochRefV209B.current !== clearEpochV209B) return;
+        setSourceVideoLoadMessage(`Video Node очищен локально, но backend snapshot не очистился: ${String(error?.message || error)}`);
+      });
   };
 
   const applyImportedResult = (result, extraWarnings = [], applyOptions = {}) => {
-    const warningText = extraWarnings.filter(Boolean).join("\n");
-    setImportWarnings(extraWarnings.filter(Boolean));
+    const importWarningListV209A = extraWarnings.filter(Boolean);
     setPendingImportResult(null);
-    const safeVideoBlocks = Array.isArray(result.videoBlocks) ? result.videoBlocks : [];
-    const safeMatchSegments = Array.isArray(result.matchSegments) ? result.matchSegments : [];
+    let safeVideoBlocks = Array.isArray(result.videoBlocks) ? result.videoBlocks : [];
+    let safeMatchSegments = Array.isArray(result.matchSegments) ? result.matchSegments : [];
     const jsonDurationSec = getValidDurationSec(result.sourceVideo?.duration_sec);
     const normalizedSourceVideo = normalizeVideoMatchSourceVideo({ ...result, sourceVideo: result.sourceVideo });
     const normalizedPath = String(normalizedSourceVideo.path || "").trim();
@@ -3533,6 +4073,18 @@ export default function VideoMatchBoardPage() {
       ? result.sourceVideos
       : (Array.isArray(result.source_videos) ? result.source_videos : []);
     const mergedSourceVideos = mergeImportedVideoNodeSourcesWithUploaded(importedSourceList, project, sourceVideos);
+    const remappedImportV209A = remapVideoNodeImportBindingsV209A({
+      matchSegments: safeMatchSegments,
+      videoBlocks: safeVideoBlocks,
+      sourceVideos: mergedSourceVideos,
+      importedSourceVideos: importedSourceList,
+      project,
+    });
+    safeMatchSegments = remappedImportV209A.matchSegments;
+    safeVideoBlocks = remappedImportV209A.videoBlocks;
+    importWarningListV209A.push(...(remappedImportV209A.warnings || []));
+    setImportWarnings(importWarningListV209A.filter(Boolean));
+    const warningText = importWarningListV209A.filter(Boolean).join("\n");
     const primaryMergedSource = mergedSourceVideos.find((source) => String(source.id || source.sourceVideoId || source.source_video_id || "") === "src_01")
       || mergedSourceVideos[0]
       || {};
@@ -3619,6 +4171,8 @@ export default function VideoMatchBoardPage() {
       audioDurationSec: Number(importedTimingContext?.audioDurationSec || result?.audioDurationSec || result?.raw?.audio_duration_sec || 0),
       matchSegments: safeMatchSegments,
       videoBlocks: safeVideoBlocks,
+      importValidationReport: remappedImportV209A.validation,
+      import_validation_report: remappedImportV209A.validation,
       selectedSegmentId: result.selectedSegmentId,
       selectedCandidateId: result.selectedCandidateId,
       selectedBlockId: safeVideoBlocks[0]?.id || "",
@@ -3892,29 +4446,55 @@ export default function VideoMatchBoardPage() {
         const effectiveOriginalVideoVolume = forceMuteVideoAudio ? 0 : globalOriginalVideoVolume;
         const blockSourceVideoId = typeof getVideoNodeSourceVideoId === "function" ? getVideoNodeSourceVideoId(block) : String(block.sourceVideoId || block.source_video_id || "src_01");
         const blockSourceEntry = getSourceVideoEntryById(blockSourceVideoId) || {};
+        const fixedClipPathV209A = getVideoNodeFixedClipPathForAssemblyV209A(block);
+        const fixedClipBindingV209A = normalizeVideoNodeFixedClipBindingV209A(block);
+        const retimeSpecV209A = normalizeVideoNodeRetimeSpecV209A(block);
+        const fixedClipDurationV209A = Number(fixedClipBindingV209A.validated_duration_sec || fixedClipBindingV209A.validatedDurationSec || 0) || 0;
+        const hasFixedClipV209A = hasVideoNodeFixedClipBindingV209A(block);
         const blockSourceVideoPath = String(
-          getVideoNodeSourcePathForAssembly(blockSourceEntry)
+          fixedClipPathV209A
+          || getVideoNodeSourcePathForAssembly(blockSourceEntry)
           || sourcePathById[blockSourceVideoId]
           || (blockSourceVideoId === "src_01" ? sourceVideoPath : "")
           || block.sourceVideoPath
           || block.source_video_path
           || ""
         ).trim();
+        const effectiveClipStartV209A = fixedClipPathV209A ? 0 : clipStart;
+        const effectiveClipEndV209A = fixedClipPathV209A ? Math.max(0.05, fixedClipDurationV209A || (Number(block.targetEndSec || 0) - Number(block.targetStartSec || 0)) || (clipEnd - clipStart)) : clipEnd;
         return {
           ...block,
           sourceVideoId: blockSourceVideoId,
           source_video_id: blockSourceVideoId,
           sourceVideoPath: blockSourceVideoPath,
           source_video_path: blockSourceVideoPath,
-          clipSourceStartSec: clipStart,
-          clipSourceEndSec: clipEnd,
-          sourceVideoStartSec: clipStart,
-          sourceVideoEndSec: clipEnd,
+          assemblyMediaMode: block.assemblyMediaMode || block.assembly_media_mode || (hasFixedClipV209A ? "fixed_clip_preferred" : "source_range"),
+          assembly_media_mode: block.assembly_media_mode || block.assemblyMediaMode || (hasFixedClipV209A ? "fixed_clip_preferred" : "source_range"),
+          fixedClipBinding: fixedClipBindingV209A,
+          fixed_clip_binding: fixedClipBindingV209A,
+          retimeSpec: retimeSpecV209A,
+          retime_spec: retimeSpecV209A,
+          fixedClipResolvedForAssembly: Boolean(fixedClipPathV209A),
+          fixed_clip_resolved_for_assembly: Boolean(fixedClipPathV209A),
+          fixedClipMissingForAssembly: Boolean(hasFixedClipV209A && !fixedClipPathV209A),
+          fixed_clip_missing_for_assembly: Boolean(hasFixedClipV209A && !fixedClipPathV209A),
+          fixedClipHumanPath: getVideoNodeFixedClipHumanPathV209A(block),
+          fixed_clip_human_path: getVideoNodeFixedClipHumanPathV209A(block),
+          clipSourceStartSec: effectiveClipStartV209A,
+          clipSourceEndSec: effectiveClipEndV209A,
+          sourceVideoStartSec: effectiveClipStartV209A,
+          sourceVideoEndSec: effectiveClipEndV209A,
           forceMuteVideoAudio,
           force_mute_video_audio: forceMuteVideoAudio,
           effectiveOriginalVideoVolume,
         };
       });
+      const missingFixedClipBlocksV209A = assemblyBlocksForExport.filter((block) => block.fixedClipMissingForAssembly || block.fixed_clip_missing_for_assembly);
+      if (missingFixedClipBlocksV209A.length) {
+        setAssembleError(`Fixed source_cut clips need backend binding/upload before assembly: ${missingFixedClipBlocksV209A.map((block) => `${block.audioSceneId || block.segmentId || block.id}${block.fixedClipHumanPath ? ` (${block.fixedClipHumanPath})` : ""}`).join(", ")}`);
+        setIsAssemblingMp4(false);
+        return;
+      }
       console.info("[VIDEO MATCH AUDIO VOLUME DEBUG]", assemblyBlocksForExport.map((b) => ({
         id: b.id,
         audioSceneId: b.audioSceneId,
@@ -3968,6 +4548,14 @@ export default function VideoMatchBoardPage() {
               clipSourceEndSec: Number(block.clipSourceEndSec || 0),
               candidateType: block.candidateType || "",
               sourceKind: block.sourceKind || "",
+              assemblyMediaMode: block.assemblyMediaMode || block.assembly_media_mode || "",
+              assembly_media_mode: block.assembly_media_mode || block.assemblyMediaMode || "",
+              fixedClipBinding: block.fixedClipBinding || block.fixed_clip_binding || {},
+              fixed_clip_binding: block.fixed_clip_binding || block.fixedClipBinding || {},
+              retimeSpec: block.retimeSpec || block.retime_spec || {},
+              retime_spec: block.retime_spec || block.retimeSpec || {},
+              fixedClipResolvedForAssembly: Boolean(block.fixedClipResolvedForAssembly || block.fixed_clip_resolved_for_assembly),
+              fixed_clip_resolved_for_assembly: Boolean(block.fixed_clip_resolved_for_assembly || block.fixedClipResolvedForAssembly),
               overrideVideoPath: block.overrideVideoPath || "",
               overrideVideoUrl: block.overrideVideoUrl || "",
               requiresOverrideVideo: Boolean(block.requiresOverrideVideo || block.requires_override_video),
@@ -4823,7 +5411,7 @@ Codex must return selected_clips_manifest.json, candidate_manifest.json, final_p
             onTimeUpdate={onAudioTimeUpdate}
             onEnded={onAudioEnded}
             onError={onAudioError}
-            preload="metadata"
+            preload="auto"
           />
           {sourceVideoLoadMessage ? <div className="videoMatchError">{sourceVideoLoadMessage}</div> : null}
           {audioLoadMessage ? <div className={`videoMatchAudioNotice ${audioLoadMessageTone || "isInfo"}`}>{audioLoadMessage}</div> : null}
@@ -5142,15 +5730,15 @@ Codex must return selected_clips_manifest.json, candidate_manifest.json, final_p
           <input ref={overrideUploadInputRef} type="file" accept="video/*" hidden onChange={(event) => { onUploadOverrideVideo(event.target.files?.[0]); event.target.value = ""; }} />
           <button className="clipSB_btn clipSB_btnSecondary videoMatchOverrideUploadBtn videoMatchBtnReplaceVideo" type="button" disabled={!selectedSegment} onClick={() => overrideUploadInputRef.current?.click()}>🎭 Заменить видео</button>
           <button
-            className={`clipSB_btn clipSB_btnSecondary videoMatchOverrideUploadBtn videoMatchTakeBoardBtnV32 ${String(boardGeneratedClipsStatus || "").includes("Проверяю") ? "isChecking" : ""} ${String(boardGeneratedClipsStatus || "").includes("Добавлен вариант") ? "isAdded" : ""} ${(String(boardGeneratedClipsStatus || "").includes("не найден") || String(boardGeneratedClipsStatus || "").includes("нет готов")) ? "isMissing" : ""}`}
+            className={`clipSB_btn clipSB_btnSecondary videoMatchOverrideUploadBtn videoMatchTakeBoardBtnV32 ${boardClipsAreChecking ? "isChecking" : ""} ${selectedSegmentBoardCandidateApplied ? "isAdded" : ""} ${selectedSegment && !selectedBoardClip ? "isMissing" : ""}`}
             type="button"
-            disabled={!selectedSegment}
-            title={selectedSegment ? (selectedBoardClip ? `Взять видео из Доски: ${selectedBoardClip.sceneId}` : "Проверить Доску и добавить клип этой сцены") : "Сначала выберите сцену"}
+            disabled={boardTakeButtonDisabled}
+            title={boardTakeButtonTitle}
             onClick={onUseBoardClipForSelectedSegment}
           >
-            {String(boardGeneratedClipsStatus || "").includes("Проверяю") ? "⏳ Проверяю Доску..." : (String(boardGeneratedClipsStatus || "").includes("Добавлен вариант") ? "✓ Вариант добавлен" : "➕ Взять с доски")}
+            {boardTakeButtonLabel}
           </button>
-          {boardGeneratedClipsStatus ? <div className="videoMatchWarnings">{boardGeneratedClipsStatus}</div> : null}
+          {boardTakeStatusForSelected ? <div className="videoMatchWarnings">{boardTakeStatusForSelected}</div> : null}
           {selectedSegment ? (
             <>
               <div className="videoMatchSceneInfo">

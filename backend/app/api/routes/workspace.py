@@ -1,3 +1,4 @@
+import time
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.deps import get_current_user
 from app.core.snapshot_media import media_refs_summary, preserve_media_refs, sanitize_snapshot_runtime_media
@@ -174,6 +175,102 @@ def get_workspace_snapshot(stage: str, user: dict = Depends(get_current_user)):
     return store.update(op)
 
 
+
+# AVA_VIDEO_NODE_HARD_CLEAR_SNAPSHOT_GUARD_V209B
+# A Video Node manual clear must beat old in-flight autosaves/hydration restores.
+# The clear stores a small tombstone snapshot. Later safe_merge saves whose updatedAt/importedAt
+# is older than the clear are rejected, so the old source video/layout cannot resurrect.
+def _ava_video_node_epoch_ms_v209b(value) -> int:
+    if value in (None, ""):
+        return 0
+    try:
+        return int(float(value))
+    except Exception:
+        return 0
+
+
+def _ava_video_node_clear_ms_v209b(data: dict) -> int:
+    if not isinstance(data, dict):
+        return 0
+    return _ava_video_node_epoch_ms_v209b(
+        data.get("videoNodeClearedAtMs")
+        or data.get("video_node_cleared_at_ms")
+        or data.get("hardClearedAtMs")
+        or data.get("hard_cleared_at_ms")
+    )
+
+
+def _ava_video_node_data_ms_v209b(data: dict) -> int:
+    if not isinstance(data, dict):
+        return 0
+    values = [
+        data.get("updatedAt"),
+        data.get("updated_at"),
+        data.get("importedAt"),
+        data.get("imported_at"),
+        data.get("savedAt"),
+        data.get("saved_at"),
+    ]
+    return max(_ava_video_node_epoch_ms_v209b(value) for value in values)
+
+
+def _ava_video_node_has_materials_v209b(data: dict) -> bool:
+    if not isinstance(data, dict):
+        return False
+    for key in ("matchSegments", "segments", "videoBlocks", "sourceVideos", "source_videos"):
+        value = data.get(key)
+        if isinstance(value, list) and len(value) > 0:
+            return True
+    return bool(
+        data.get("sourceVideoUrl")
+        or data.get("sourceVideoPath")
+        or data.get("sourceVideoPathForAssembly")
+        or data.get("uploadedSourceVideoPath")
+        or data.get("importSignature")
+    )
+
+
+def _ava_video_node_clear_tombstone_v209b(client_version: str = "") -> dict:
+    now_ms = int(time.time() * 1000)
+    now_text = now_iso()
+    return {
+        "schema": "video_match_board_v2",
+        "status": "cleared",
+        "sourceVideo": {"filename": "", "duration_sec": 0},
+        "source_video": {"filename": "", "duration_sec": 0},
+        "sourceVideoUrl": "",
+        "sourceVideos": [],
+        "source_videos": [],
+        "timingContext": {},
+        "audioMap": {},
+        "matchSegments": [],
+        "videoBlocks": [],
+        "selectedSegmentId": "",
+        "selectedCandidateId": "",
+        "selectedBlockId": "",
+        "jsonInput": "",
+        "jsonError": "",
+        "video_node_hard_cleared_v209b": True,
+        "videoNodeHardClearedV209B": True,
+        "video_node_cleared_at": now_text,
+        "videoNodeClearedAt": now_text,
+        "video_node_cleared_at_ms": now_ms,
+        "videoNodeClearedAtMs": now_ms,
+        "clearClientVersion": str(client_version or ""),
+        "updatedAt": now_ms,
+    }
+
+
+def _ava_video_node_should_block_stale_save_after_clear_v209b(current_data: dict, incoming_data: dict) -> bool:
+    clear_ms = _ava_video_node_clear_ms_v209b(current_data)
+    if not clear_ms:
+        return False
+    if not _ava_video_node_has_materials_v209b(incoming_data):
+        return False
+    incoming_ms = _ava_video_node_data_ms_v209b(incoming_data)
+    # If incoming has no timestamp or it is not newer than the clear tombstone, it is an old
+    # hydrate/autosave trying to resurrect previous Video Node state.
+    return incoming_ms <= clear_ms
 @router.post('/snapshots/{stage}')
 def save_workspace_snapshot(stage: str, payload: SnapshotSaveRequest, user: dict = Depends(get_current_user)):
     if stage not in STAGES:
@@ -192,6 +289,25 @@ def save_workspace_snapshot(stage: str, payload: SnapshotSaveRequest, user: dict
         if is_destructive_clear:
             cleanup = cleanup_workspace_stage_media(db, workspace['id'], stage, user_id=user.get('id'))
         incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
+        if stage == 'video_node' and is_destructive_clear:
+            incoming_data = _ava_video_node_clear_tombstone_v209b(payload.client_version or '')
+        if stage == 'video_node' and payload.guard_mode == 'safe_merge' and current:
+            current_data_v209b = current.get('data') if isinstance(current, dict) else {}
+            if _ava_video_node_should_block_stale_save_after_clear_v209b(current_data_v209b, incoming_data):
+                print('[WORKSPACE VIDEO_NODE STALE SAVE BLOCKED AFTER CLEAR V209B]', {
+                    'workspace_id': workspace['id'],
+                    'stage': stage,
+                    'incoming_client_version': payload.client_version,
+                    'clearMs': _ava_video_node_clear_ms_v209b(current_data_v209b),
+                    'incomingMs': _ava_video_node_data_ms_v209b(incoming_data),
+                    **media_refs_summary(incoming_data),
+                })
+                return {
+                    'saved': False,
+                    'reason': 'video_node_stale_save_blocked_after_clear_v209b',
+                    'snapshot': current,
+                    '_skip_store_write_v200c': True,
+                }
         preserved_media_refs = 0
         if payload.guard_mode == 'safe_merge' and current:
             old_score = state_richness_v206b(current.get('data') or {})

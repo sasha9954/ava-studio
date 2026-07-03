@@ -618,6 +618,28 @@ export function getDefaultVideoMatchBoardProject(nodeId = "", extra = {}) {
   };
 }
 
+
+// AVA_VIDEO_NODE_UNIVERSAL_SOURCE_CUT_IMPORT_GUARD_V209A:
+// Keep source_cut metadata from Codex repair packages. The actual V1 -> src_01 remap
+// happens in VideoMatchBoardPage after runtime uploads are known, but the domain parser
+// must not drop fixedClipBinding/retimeSpec/assemblyMediaMode while normalizing JSON.
+function cloneVideoNodeJsonObjectV209A(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return { ...value };
+  }
+}
+
+function pickVideoNodeAssemblyMediaModeV209A(source = {}) {
+  return String(source.assemblyMediaMode || source.assembly_media_mode || source.mediaMode || source.media_mode || "").trim();
+}
+
+function pickVideoNodeSourceOrGeneratedV209A(source = {}) {
+  return String(source.source_or_generated || source.sourceOrGenerated || source.media_role || source.mediaRole || "").trim();
+}
+
 export function normalizeVideoMatchCandidate(candidate = {}, segment = {}, sourceVideoUrl = "", index = 0) {
   const source = candidate && typeof candidate === "object" ? candidate : {};
   const segmentId = String(segment.id || segment.audioSceneId || segment.audio_scene_id || `segment_${String(index + 1).padStart(3, "0")}`).trim();
@@ -706,6 +728,14 @@ export function normalizeVideoMatchCandidate(candidate = {}, segment = {}, sourc
     lip_id: String(source.lip_id || source.ls_id || "").trim(),
     sourceVideoReferenceOnly: source.sourceVideoReferenceOnly || source.source_video_reference_only || {},
     source_video_reference_only: source.source_video_reference_only || source.sourceVideoReferenceOnly || {},
+    assemblyMediaMode: pickVideoNodeAssemblyMediaModeV209A(source),
+    assembly_media_mode: pickVideoNodeAssemblyMediaModeV209A(source),
+    fixedClipBinding: cloneVideoNodeJsonObjectV209A(source.fixedClipBinding || source.fixed_clip_binding || source.fixedClip || source.fixed_clip),
+    fixed_clip_binding: cloneVideoNodeJsonObjectV209A(source.fixed_clip_binding || source.fixedClipBinding || source.fixed_clip || source.fixedClip),
+    retimeSpec: cloneVideoNodeJsonObjectV209A(source.retimeSpec || source.retime_spec || source.retime),
+    retime_spec: cloneVideoNodeJsonObjectV209A(source.retime_spec || source.retimeSpec || source.retime),
+    source_or_generated: pickVideoNodeSourceOrGeneratedV209A(source),
+    sourceOrGenerated: pickVideoNodeSourceOrGeneratedV209A(source),
   };
 }
 
@@ -826,6 +856,14 @@ export function normalizeVideoMatchSegment(segment = {}, index = 0, sourceVideoU
     selected_candidate: rawSelectedCandidate,
     selectedCandidateId,
     selected_candidate_id: selectedCandidateId,
+    assemblyMediaMode: pickVideoNodeAssemblyMediaModeV209A(source),
+    assembly_media_mode: pickVideoNodeAssemblyMediaModeV209A(source),
+    fixedClipBinding: cloneVideoNodeJsonObjectV209A(source.fixedClipBinding || source.fixed_clip_binding || rawSelectedCandidate.fixedClipBinding || rawSelectedCandidate.fixed_clip_binding),
+    fixed_clip_binding: cloneVideoNodeJsonObjectV209A(source.fixed_clip_binding || source.fixedClipBinding || rawSelectedCandidate.fixed_clip_binding || rawSelectedCandidate.fixedClipBinding),
+    retimeSpec: cloneVideoNodeJsonObjectV209A(source.retimeSpec || source.retime_spec || rawSelectedCandidate.retimeSpec || rawSelectedCandidate.retime_spec),
+    retime_spec: cloneVideoNodeJsonObjectV209A(source.retime_spec || source.retimeSpec || rawSelectedCandidate.retime_spec || rawSelectedCandidate.retimeSpec),
+    source_or_generated: pickVideoNodeSourceOrGeneratedV209A(source),
+    sourceOrGenerated: pickVideoNodeSourceOrGeneratedV209A(source),
     candidates,
   };
 }
@@ -869,6 +907,14 @@ export function normalizeVideoBlock(match = {}, sourceVideoUrl = "") {
     source_video_filename: String(match.source_video_filename || match.sourceVideoFilename || "").trim(),
     sourceVideoPath: String(match.sourceVideoPath || match.source_video_path || "").trim(),
     source_video_path: String(match.source_video_path || match.sourceVideoPath || "").trim(),
+    assemblyMediaMode: pickVideoNodeAssemblyMediaModeV209A(match),
+    assembly_media_mode: pickVideoNodeAssemblyMediaModeV209A(match),
+    fixedClipBinding: cloneVideoNodeJsonObjectV209A(match.fixedClipBinding || match.fixed_clip_binding),
+    fixed_clip_binding: cloneVideoNodeJsonObjectV209A(match.fixed_clip_binding || match.fixedClipBinding),
+    retimeSpec: cloneVideoNodeJsonObjectV209A(match.retimeSpec || match.retime_spec),
+    retime_spec: cloneVideoNodeJsonObjectV209A(match.retime_spec || match.retimeSpec),
+    source_or_generated: pickVideoNodeSourceOrGeneratedV209A(match),
+    sourceOrGenerated: pickVideoNodeSourceOrGeneratedV209A(match),
     targetStartSec: toFiniteNumber(match.target_t0 ?? match.targetStartSec, 0),
     targetEndSec: toFiniteNumber(match.target_t1 ?? match.targetEndSec, 0),
     sourceVideoStartSec: toFiniteNumber(match.video_t0 ?? match.sourceVideoStartSec ?? match.videoStartSec, 0),
@@ -953,6 +999,14 @@ export function buildVideoBlocksFromMatchSegments(matchSegments = [], sourceVide
         source_video_filename: selectedCandidate.source_video_filename || selectedCandidate.sourceVideoFilename || "",
         sourceVideoPath: selectedCandidate.sourceVideoPath || selectedCandidate.source_video_path || "",
         source_video_path: selectedCandidate.source_video_path || selectedCandidate.sourceVideoPath || "",
+        assemblyMediaMode: selectedCandidate.assemblyMediaMode || selectedCandidate.assembly_media_mode || normalizedSegment.assemblyMediaMode || normalizedSegment.assembly_media_mode || "",
+        assembly_media_mode: selectedCandidate.assembly_media_mode || selectedCandidate.assemblyMediaMode || normalizedSegment.assembly_media_mode || normalizedSegment.assemblyMediaMode || "",
+        fixedClipBinding: selectedCandidate.fixedClipBinding || selectedCandidate.fixed_clip_binding || normalizedSegment.fixedClipBinding || normalizedSegment.fixed_clip_binding || {},
+        fixed_clip_binding: selectedCandidate.fixed_clip_binding || selectedCandidate.fixedClipBinding || normalizedSegment.fixed_clip_binding || normalizedSegment.fixedClipBinding || {},
+        retimeSpec: selectedCandidate.retimeSpec || selectedCandidate.retime_spec || normalizedSegment.retimeSpec || normalizedSegment.retime_spec || {},
+        retime_spec: selectedCandidate.retime_spec || selectedCandidate.retimeSpec || normalizedSegment.retime_spec || normalizedSegment.retimeSpec || {},
+        source_or_generated: selectedCandidate.source_or_generated || selectedCandidate.sourceOrGenerated || normalizedSegment.source_or_generated || normalizedSegment.sourceOrGenerated || "",
+        sourceOrGenerated: selectedCandidate.sourceOrGenerated || selectedCandidate.source_or_generated || normalizedSegment.sourceOrGenerated || normalizedSegment.source_or_generated || "",
         matchReason: selectedCandidate.matchReason,
         confidence: selectedCandidate.confidence,
         candidateType: selectedCandidate.candidateType,
