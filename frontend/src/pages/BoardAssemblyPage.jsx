@@ -3,6 +3,7 @@
 // AVA_ASSEMBLY_FORCE_POST_XFADE_PAYLOAD_V134F: send transition checkbox as the real backend switch.
 // AVA_ASSEMBLY_FORCE_TRANSITION_PAYLOAD_V134E: send transition checkbox to backend even when UI says mode is blocked.
 // AVA_ASSEMBLY_COMPACT_TRANSITIONS_V134B: compact right-panel transition control, safe after stats initialization.
+// V209I_ASSEMBLY_SKIP_MISSING_GUARD: Montage builds ready scenes only by default; black placeholders require explicit backend flag.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { ArrowLeft, Clapperboard, Download, ExternalLink, Music, RefreshCcw, SlidersHorizontal, UploadCloud, Volume2, Wand2 } from 'lucide-react'
@@ -1249,7 +1250,9 @@ export default function BoardAssemblyPage() {
     const hasOriginalAudio = Boolean(originalAudio.url || originalAudio.assetId)
     const stauCount = stauBlocksV204H3.length
     const stauEnabled = Boolean(stauEnabledV204H3 && stauCount)
-    const canAssemble = total > 0 && (ready > 0 || hasOriginalAudio)
+    // V209I: do not allow MP4 assembly when only master audio exists but no ready videos.
+    // Otherwise Montage can render a long black/placeholder timeline that looks like a broken result.
+    const canAssemble = total > 0 && ready > 0
     return { total, ready, withSound, missing, duration, hasOriginalAudio, canAssemble, stauCount, stauEnabled }
   }, [sceneItems, board, stauBlocksV204H3, stauEnabledV204H3])
 
@@ -1442,9 +1445,9 @@ export default function BoardAssemblyPage() {
     if (!stats.total) list.push('В Board пока нет сцен.')
     // AVA_BOARD_ASSEMBLY_SKIP_MISSING_WARNING_V202B
     if (stats.missing > 0) {
-      list.push(skipMissing
-        ? `Нет видео у ${stats.missing} сцен — они будут пропущены, монтаж соберётся только из готовых видео.`
-        : `Нет видео у ${stats.missing} сцен — они будут собраны как пустые участки / black frame.`)
+      list.push((skipMissing || (stats.ready > 0 && stats.missing > 0))
+        ? `Нет видео у ${stats.missing} сцен — они будут пропущены, монтаж соберётся только из ${stats.ready} готовых видео.`
+        : `Нет видео у ${stats.missing} сцен — сборка заблокирована, чтобы не получить black placeholder timeline.`)
     }
     if (stats.total > 0 && stats.ready === 0 && !stats.hasOriginalAudio) list.push('Нет master audio и нет готовых video-сцен для сборки.')
     if (!generatorAssemblyBoard && !stats.hasOriginalAudio && ['original_only', 'original_plus_scene', 'original_plus_music_scene', 'original_plus_music'].includes(audioMode)) {
@@ -2069,6 +2072,11 @@ function clearBoardAssemblyWorkflowEntryV200O() {
   }
 
   function buildAssemblyPayload() {
+    // V209I_ASSEMBLY_SKIP_MISSING_GUARD:
+    // If only some scenes have videos, build a compact ready-only preview by default.
+    // This prevents a 48-scene Board timeline from silently becoming 43 black placeholders.
+    const effectiveSkipMissingV209I = Boolean(skipMissing || (stats.missing > 0 && stats.ready > 0))
+    const autoSkipMissingV209I = Boolean(effectiveSkipMissingV209I && !skipMissing && stats.missing > 0 && stats.ready > 0)
     // AVA_BOARD_ASSEMBLY_SKIP_MISSING_COMPACT_V202B:
     // When "Пропускать сцены без видео" is enabled, send only ready video
     // scenes to backend and compact their timeline. Previously the frontend
@@ -2078,15 +2086,15 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     const sourceItemsV202B = sceneItems
       .slice()
       .sort((a, b) => (a.start - b.start) || (a.index - b.index))
-      .filter((item) => !skipMissing || item.hasVideo)
+      .filter((item) => !effectiveSkipMissingV209I || item.hasVideo)
 
     const items = sourceItemsV202B
       .map((item) => {
         const raw = item.raw || {}
         const usesMmaudioVideo = preferMmaudio && Boolean(raw.mmaudio_video_api_path || raw.mmaudioVideoApiPath || raw.mmaudio_video_url || raw.mmaudioVideoUrl)
-        const assemblyStartV202B = skipMissing ? compactCursorV202B : item.start
-        const assemblyEndV202B = skipMissing ? compactCursorV202B + item.duration : item.end
-        if (skipMissing) compactCursorV202B = assemblyEndV202B
+        const assemblyStartV202B = effectiveSkipMissingV209I ? compactCursorV202B : item.start
+        const assemblyEndV202B = effectiveSkipMissingV209I ? compactCursorV202B + item.duration : item.end
+        if (effectiveSkipMissingV209I) compactCursorV202B = assemblyEndV202B
         return {
           scene_id: item.id,
           sceneId: item.id,
@@ -2140,7 +2148,10 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       original_audio_url: originalAudio.url,
       original_audio_asset_id: originalAudio.assetId,
       original_audio_name: originalAudio.name,
-      skip_missing: skipMissing,
+      skip_missing: effectiveSkipMissingV209I,
+      auto_skip_missing_v209i: autoSkipMissingV209I,
+      ready_scene_count_v209i: stats.ready,
+      missing_scene_count_v209i: stats.missing,
       prefer_mmaudio: preferMmaudio,
       width: assemblyOutputSpec.width,
       height: assemblyOutputSpec.height,
@@ -2154,8 +2165,8 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       fitMode: lockedAssemblyFitModeV200O,
       output_fit_mode: lockedAssemblyFitModeV200O,
       outputFitMode: lockedAssemblyFitModeV200O,
-      duration_sec: skipMissing ? compactCursorV202B : stats.duration,
-      timeline_duration_sec: skipMissing ? compactCursorV202B : stats.duration,
+      duration_sec: effectiveSkipMissingV209I ? compactCursorV202B : stats.duration,
+      timeline_duration_sec: effectiveSkipMissingV209I ? compactCursorV202B : stats.duration,
       volumes: {
         original: originalVolume / 100,
         scene: sceneVolume / 100,
@@ -2290,6 +2301,14 @@ function clearBoardAssemblyWorkflowEntryV200O() {
 
     try {
       const payload = buildAssemblyPayload()
+      if (!Array.isArray(payload.items) || payload.items.length === 0) {
+        setAssemblyRunning(false)
+        setStatus('Нет готовых видео для сборки: Montage больше не собирает пустые placeholder-сцены.')
+        return
+      }
+      if (payload.auto_skip_missing_v209i) {
+        setStatus(`Готово видео ${stats.ready}/${stats.total}. Собираю компактный preview только из готовых сцен, пустые ${stats.missing} пропущены.`)
+      }
       console.log('[BOARD ASSEMBLY FINAL PAYLOAD SUMMARY]', {
         totalItems: payload.items.length,
         videoItems: payload.items.filter((item) => item.video_url || item.video_api_path).length,
@@ -2475,7 +2494,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
               <p className="avaEyebrow">scene strip</p>
               <h3>Сцены для сборки</h3>
             </div>
-            <span>{skipMissing ? 'без пустых' : 'все сцены'}</span>
+            <span>{(skipMissing || (stats.missing > 0 && stats.ready > 0)) ? 'без пустых' : 'все сцены'}</span>
           </div>
 
           {/* AVA_ASSEMBLY_STAU_SCENE_COLOR_ONLY_V204H6: STAU block is shown by coloring the scene cards, no extra strip. */}
@@ -2570,7 +2589,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
                 {assemblyRunning
                   ? 'FFmpeg собирает финальный файл…'
                   : stats.canAssemble
-                    ? 'Сцены, звук и музыка уйдут в один MP4. Watermark будет запечён в финальный MP4 с учётом формата проекта.'
+                    ? (stats.missing > 0 ? `Готово ${stats.ready}/${stats.total}: соберём только готовые сцены, пустые пропустим.` : 'Сцены, звук и музыка уйдут в один MP4. Watermark будет запечён в финальный MP4 с учётом формата проекта.')
                     : 'Сначала подготовь хотя бы одну сцену с видео.'}
               </span>
             </div>

@@ -1,3 +1,4 @@
+# AVA_BOARD_QUEUE_SOURCECUT_VISIBILITY_LIPSYNC_PRIORITY_V209P: lip-sync contract wins over stale source_cut flags.
 from typing import Any
 # AVA_PROJECT_SERVER_REVIEW_EVENT_MEMORY_V136E: server remembers newest per-scene review event and blocks stale autosave revival.
 # AVA_PROJECT_V132Z_DO_NOT_CLEAR_INCOMING_REVIEW_V136C: V132Z clear/accept cannot win when incoming still has bad/needs_review.
@@ -24,6 +25,7 @@ from app.core.storage import store
 from app.core.media_cleanup import cleanup_project_media, cleanup_project_stage_media
 from app.schemas import ProjectCreateRequest, ProjectUpdateRequest, SnapshotSaveRequest
 import copy
+import time
 from copy import deepcopy
 
 router = APIRouter(prefix='/projects', tags=['projects'])
@@ -3115,6 +3117,421 @@ def _ava_project_preserve_board_assembly_final_v200p(current_data: Any, incoming
         merged["assemblyFinalPreservedV200P"] = True
     return merged, changed
 
+
+# AVA_VIDEO_NODE_HARD_CLEAR_SNAPSHOT_GUARD_V209B
+# A Video Node manual clear must beat old in-flight autosaves/hydration restores.
+# The clear stores a small tombstone snapshot. Later safe_merge saves whose updatedAt/importedAt
+# is older than the clear are rejected, so the old source video/layout cannot resurrect.
+def _ava_video_node_epoch_ms_v209b(value) -> int:
+    if value in (None, ""):
+        return 0
+    try:
+        return int(float(value))
+    except Exception:
+        return 0
+
+
+def _ava_video_node_clear_ms_v209b(data: dict) -> int:
+    if not isinstance(data, dict):
+        return 0
+    return _ava_video_node_epoch_ms_v209b(
+        data.get("videoNodeClearedAtMs")
+        or data.get("video_node_cleared_at_ms")
+        or data.get("hardClearedAtMs")
+        or data.get("hard_cleared_at_ms")
+    )
+
+
+def _ava_video_node_data_ms_v209b(data: dict) -> int:
+    if not isinstance(data, dict):
+        return 0
+    values = [
+        data.get("updatedAt"),
+        data.get("updated_at"),
+        data.get("importedAt"),
+        data.get("imported_at"),
+        data.get("savedAt"),
+        data.get("saved_at"),
+    ]
+    return max(_ava_video_node_epoch_ms_v209b(value) for value in values)
+
+
+def _ava_video_node_has_materials_v209b(data: dict) -> bool:
+    if not isinstance(data, dict):
+        return False
+    for key in ("matchSegments", "segments", "videoBlocks", "sourceVideos", "source_videos"):
+        value = data.get(key)
+        if isinstance(value, list) and len(value) > 0:
+            return True
+    return bool(
+        data.get("sourceVideoUrl")
+        or data.get("sourceVideoPath")
+        or data.get("sourceVideoPathForAssembly")
+        or data.get("uploadedSourceVideoPath")
+        or data.get("importSignature")
+    )
+
+
+def _ava_video_node_clear_tombstone_v209b(client_version: str = "") -> dict:
+    now_ms = int(time.time() * 1000)
+    now_text = now_iso()
+    return {
+        "schema": "video_match_board_v2",
+        "status": "cleared",
+        "sourceVideo": {"filename": "", "duration_sec": 0},
+        "source_video": {"filename": "", "duration_sec": 0},
+        "sourceVideoUrl": "",
+        "sourceVideos": [],
+        "source_videos": [],
+        "timingContext": {},
+        "audioMap": {},
+        "matchSegments": [],
+        "videoBlocks": [],
+        "selectedSegmentId": "",
+        "selectedCandidateId": "",
+        "selectedBlockId": "",
+        "jsonInput": "",
+        "jsonError": "",
+        "video_node_hard_cleared_v209b": True,
+        "videoNodeHardClearedV209B": True,
+        "video_node_cleared_at": now_text,
+        "videoNodeClearedAt": now_text,
+        "video_node_cleared_at_ms": now_ms,
+        "videoNodeClearedAtMs": now_ms,
+        "clearClientVersion": str(client_version or ""),
+        "updatedAt": now_ms,
+    }
+
+
+def _ava_video_node_should_block_stale_save_after_clear_v209b(current_data: dict, incoming_data: dict) -> bool:
+    clear_ms = _ava_video_node_clear_ms_v209b(current_data)
+    if not clear_ms:
+        return False
+    if not _ava_video_node_has_materials_v209b(incoming_data):
+        return False
+    incoming_ms = _ava_video_node_data_ms_v209b(incoming_data)
+    # If incoming has no timestamp or it is not newer than the clear tombstone, it is an old
+    # hydrate/autosave trying to resurrect previous Video Node state.
+    return incoming_ms <= clear_ms
+
+
+# AVA_PROJECT_BOARD_IMAGE_UPLOAD_BATCH_ISOLATION_V209K
+# One-scene image upload must not mutate other Board scenes while a server batch is/was active.
+# The browser can send an old ava-shell autosave after ltx_board has written a server-batch snapshot.
+# This guard keeps lip-sync/source-cut contracts and consumes accidental image-change reset flags only
+# for scenes that were not actually edited.
+_BOARD_CONTRACT_KEYS_V209K = (
+    "route", "planned_route", "plannedRoute", "workflow_key", "workflowKey", "workflow", "selectedWorkflow",
+    "model_route", "modelRoute", "source_or_generated", "sourceOrGenerated",
+    "contains_vocal", "containsVocal", "lip_sync_required", "lipSyncRequired", "lipsync_required", "lipsyncRequired",
+    "is_lipsync", "isLipsync", "ia2v_audio_required", "ia2vAudioRequired", "audio_driven", "audioDriven",
+    "audio_url", "audioUrl", "audio_api_path", "audioApiPath", "audio_asset_id", "audioAssetId",
+    "audio_slice_url", "audioSliceUrl", "audio_slice_api_path", "audioSliceApiPath", "audio_slice_asset_id", "audioSliceAssetId",
+    "audio_range", "audioRange", "audio_start_sec", "audioStartSec", "audio_end_sec", "audioEndSec",
+    "audio_duration_sec", "audioDurationSec", "scene_audio_url", "sceneAudioUrl", "scene_audio_api_path", "sceneAudioApiPath",
+    "voice_audio_url", "voiceAudioUrl", "voice_audio_api_path", "voiceAudioApiPath", "vocal_audio_url", "vocalAudioUrl",
+    "source_phrase_ids", "sourcePhraseIds", "source_word_ids", "sourceWordIds",
+    "video_node_role", "videoNodeRole", "skip_board_generation", "skipBoardGeneration",
+    "fixedClipBinding", "fixed_clip_binding", "retimeSpec", "retime_spec", "assemblyMediaMode", "assembly_media_mode",
+)
+
+_BOARD_ROUTE_KEYS_V209K = (
+    "route", "planned_route", "plannedRoute", "workflow_key", "workflowKey", "workflow", "selectedWorkflow",
+    "model_route", "modelRoute", "source_or_generated", "sourceOrGenerated",
+)
+
+_BOARD_REVIEW_IMAGE_RESET_KEYS_V209K = (
+    "video_review_reset_on_image_change_v133b", "videoReviewResetOnImageChangeV133B",
+)
+
+_BOARD_REVIEW_IMAGE_CLEAR_KEYS_V209K = (
+    "video_review_clear_reason", "videoReviewClearReason",
+    "video_review_cleared_at", "videoReviewClearedAt",
+    "video_review_accept_token_v132z", "videoReviewAcceptTokenV132Z",
+    "video_review_clear_token_v132y", "videoReviewClearTokenV132Y",
+)
+
+_BOARD_STRONG_IMAGE_KEYS_V209K = (
+    "image_asset_id", "imageAssetId", "image_api_path", "imageApiPath", "image_url", "imageUrl",
+    "photo_asset_id", "photoAssetId", "photo_api_path", "photoApiPath", "photo_url", "photoUrl",
+    "first_image_asset_id", "firstImageAssetId", "first_image_api_path", "firstImageApiPath", "first_image_url", "firstImageUrl",
+    "start_image_asset_id", "startImageAssetId", "start_image_api_path", "startImageApiPath", "start_image_url", "startImageUrl",
+    "media_asset_id", "mediaAssetId", "media_api_path", "mediaApiPath", "media_url", "mediaUrl",
+)
+
+_BOARD_STRONG_IMAGE_OBJECT_KEYS_V209K = (
+    "image", "photo", "media", "first_image", "firstImage", "start_image", "startImage", "source_image", "sourceImage",
+)
+
+
+def _ava_project_scene_id_v209k(scene, index=0):
+    try:
+        if "_ava_board_scene_id_v131q2" in globals():
+            return _ava_board_scene_id_v131q2(scene, index)
+    except Exception:
+        pass
+    if isinstance(scene, dict):
+        return str(scene.get("scene_id") or scene.get("sceneId") or scene.get("id") or f"scene_{index + 1}")
+    return f"scene_{index + 1}"
+
+
+def _ava_project_board_batch_guard_active_v209k(current_snapshot) -> bool:
+    if not isinstance(current_snapshot, dict):
+        return False
+    client_version = str(current_snapshot.get("client_version") or "").strip()
+    if client_version.startswith("board-server-video-batch"):
+        return True
+    data = current_snapshot.get("data") if isinstance(current_snapshot.get("data"), dict) else {}
+    for key in ("video_batch", "videoBatch", "board_video_batch", "boardVideoBatch", "video_queue", "videoQueue"):
+        value = data.get(key)
+        if isinstance(value, dict) and value:
+            status = str(value.get("status") or value.get("state") or value.get("batch_status") or "").strip().lower()
+            if status in {"queued", "running", "processing", "finished", "finished_with_errors", "done", "complete", "completed"}:
+                return True
+            if value.get("batch_id") or value.get("batchId") or value.get("id"):
+                return True
+    return False
+
+
+def _ava_project_scene_route_key_v209k(scene) -> str:
+    if not isinstance(scene, dict):
+        return ""
+    raw = str(
+        scene.get("route") or scene.get("planned_route") or scene.get("plannedRoute") or
+        scene.get("model_route") or scene.get("modelRoute") or scene.get("workflow_key") or scene.get("workflowKey") or ""
+    ).strip().lower()
+    raw = raw.replace("-", "_").replace(" ", "_")
+    if "source_cut" in raw or "video_cut" in raw or "нарез" in raw:
+        return "source_cut"
+    if "lip" in raw or "lipsync" in raw or "lip_sync" in raw:
+        return "ia2v_lipsync"
+    if raw in {"ia2v", "i2v", "i2v_sound", "i2v_text", "first_last", "first_last_sound", "ia2v_instrumental"}:
+        return raw
+    return raw
+
+
+def _ava_project_scene_is_lipsync_v209k(scene) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    route = _ava_project_scene_route_key_v209k(scene)
+    return bool(
+        route in {"ia2v", "ia2v_lipsync", "lipsync", "lip_sync"}
+        or scene.get("lip_sync_required") is True or scene.get("lipSyncRequired") is True
+        or scene.get("lipsync_required") is True or scene.get("lipsyncRequired") is True
+        or scene.get("contains_vocal") is True or scene.get("containsVocal") is True
+        or scene.get("is_lipsync") is True or scene.get("isLipsync") is True
+        or scene.get("ia2v_audio_required") is True or scene.get("ia2vAudioRequired") is True
+        or bool(scene.get("audio_slice_url") or scene.get("audioSliceUrl") or scene.get("audio_slice_api_path") or scene.get("audioSliceApiPath"))
+    )
+
+
+def _ava_project_scene_is_source_cut_v209k(scene) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    route = _ava_project_scene_route_key_v209k(scene)
+    role = str(scene.get("video_node_role") or scene.get("videoNodeRole") or "").strip().lower()
+
+    # V209P: a scene with explicit lip-sync/audio contract must not be treated
+    # as source_cut only because stale skip_board_generation/video_node_role leaked in.
+    try:
+        if _ava_project_scene_is_lipsync_v209k(scene):
+            return False
+    except Exception:
+        pass
+
+    return bool(
+        route == "source_cut"
+        or role in {"source_cut", "video_node_source_cut"}
+        or scene.get("skip_board_generation") is True
+        or scene.get("skipBoardGeneration") is True
+    )
+
+
+def _ava_project_selected_scene_id_v209k(data) -> str:
+    if not isinstance(data, dict):
+        return ""
+    for key in (
+        "selectedSceneId", "selected_scene_id", "activeSceneId", "active_scene_id", "currentSceneId", "current_scene_id",
+        "editedSceneId", "edited_scene_id", "lastEditedSceneId", "last_edited_scene_id", "imageUploadSceneId", "image_upload_scene_id",
+    ):
+        value = str(data.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _ava_project_strong_ref_value_v209k(value) -> set[str]:
+    refs = set()
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw and raw.lower() not in {"null", "none", "undefined", "blob:"}:
+            refs.add(raw)
+    elif isinstance(value, (int, float)):
+        # Do NOT include mutation epochs here. This strong-ref check is only durable media identity.
+        pass
+    elif isinstance(value, dict):
+        for key in (
+            "asset_id", "assetId", "image_asset_id", "imageAssetId", "photo_asset_id", "photoAssetId",
+            "api_path", "apiPath", "image_api_path", "imageApiPath", "photo_api_path", "photoApiPath",
+            "url", "src", "path", "image_url", "imageUrl", "photo_url", "photoUrl",
+        ):
+            refs.update(_ava_project_strong_ref_value_v209k(value.get(key)))
+    return refs
+
+
+def _ava_project_scene_strong_image_refs_v209k(scene) -> set[str]:
+    refs = set()
+    if not isinstance(scene, dict):
+        return refs
+    for key in _BOARD_STRONG_IMAGE_KEYS_V209K:
+        refs.update(_ava_project_strong_ref_value_v209k(scene.get(key)))
+    for key in _BOARD_STRONG_IMAGE_OBJECT_KEYS_V209K:
+        refs.update(_ava_project_strong_ref_value_v209k(scene.get(key)))
+    return refs
+
+
+def _ava_project_scene_strong_image_changed_v209k(current_scene, incoming_scene) -> bool:
+    current_refs = _ava_project_scene_strong_image_refs_v209k(current_scene)
+    incoming_refs = _ava_project_scene_strong_image_refs_v209k(incoming_scene)
+    return bool(current_refs and incoming_refs and current_refs.isdisjoint(incoming_refs))
+
+
+def _ava_project_scene_has_reset_v209k(scene) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    return any(scene.get(key) is True for key in _BOARD_REVIEW_IMAGE_RESET_KEYS_V209K)
+
+
+def _ava_project_clear_accidental_review_reset_v209k(scene) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    changed = False
+    for key in _BOARD_REVIEW_IMAGE_RESET_KEYS_V209K:
+        if scene.get(key) is True:
+            scene[key] = False
+            changed = True
+    reason = str(scene.get("video_review_clear_reason") or scene.get("videoReviewClearReason") or "").strip().lower()
+    if reason == "source_image_changed_v133b":
+        for key in _BOARD_REVIEW_IMAGE_CLEAR_KEYS_V209K:
+            if scene.get(key) not in (None, "", False):
+                scene[key] = ""
+                changed = True
+    return changed
+
+
+def _ava_project_copy_contract_fields_v209k(current_scene, incoming_scene) -> int:
+    if not isinstance(current_scene, dict) or not isinstance(incoming_scene, dict):
+        return 0
+    changed = 0
+    current_is_lipsync = _ava_project_scene_is_lipsync_v209k(current_scene)
+    current_is_source_cut = _ava_project_scene_is_source_cut_v209k(current_scene) and not current_is_lipsync
+    if not current_is_lipsync and not current_is_source_cut:
+        return 0
+
+    incoming_route = _ava_project_scene_route_key_v209k(incoming_scene)
+    current_route = _ava_project_scene_route_key_v209k(current_scene)
+    route_downgraded = bool(
+        (current_is_lipsync and incoming_route not in {"ia2v", "ia2v_lipsync", "lipsync", "lip_sync"})
+        or (current_is_source_cut and incoming_route != "source_cut")
+    )
+
+    for key in _BOARD_CONTRACT_KEYS_V209K:
+        if key not in current_scene:
+            continue
+        current_value = current_scene.get(key)
+        incoming_value = incoming_scene.get(key)
+        force_route = key in _BOARD_ROUTE_KEYS_V209K and route_downgraded
+        missing_incoming = incoming_value in (None, "", False, [], {})
+        audio_or_flag_key = any(token in key.lower() for token in ("audio", "vocal", "voice", "lip", "source_phrase", "source_word"))
+        source_cut_key = key in {"video_node_role", "videoNodeRole", "skip_board_generation", "skipBoardGeneration", "source_or_generated", "sourceOrGenerated"}
+        should_copy = force_route or missing_incoming or (current_is_lipsync and audio_or_flag_key) or (current_is_source_cut and source_cut_key)
+        if should_copy and incoming_value != current_value:
+            incoming_scene[key] = copy.deepcopy(current_value)
+            changed += 1
+
+    if current_is_lipsync:
+        # Normalize aliases so the frontend cannot accidentally treat the scene as plain i2v.
+        incoming_scene["route"] = current_scene.get("route") or current_scene.get("planned_route") or current_scene.get("plannedRoute") or "ia2v"
+        incoming_scene["planned_route"] = incoming_scene["route"]
+        incoming_scene["plannedRoute"] = incoming_scene["route"]
+        incoming_scene["contains_vocal"] = True
+        incoming_scene["containsVocal"] = True
+        incoming_scene["lip_sync_required"] = True
+        incoming_scene["lipSyncRequired"] = True
+        changed += 1
+    if current_is_source_cut:
+        incoming_scene["route"] = "source_cut"
+        incoming_scene["planned_route"] = "source_cut"
+        incoming_scene["plannedRoute"] = "source_cut"
+        incoming_scene["source_or_generated"] = "source"
+        incoming_scene["sourceOrGenerated"] = "source"
+        incoming_scene["video_node_role"] = "source_cut"
+        incoming_scene["videoNodeRole"] = "source_cut"
+        incoming_scene["skip_board_generation"] = True
+        incoming_scene["skipBoardGeneration"] = True
+        changed += 1
+    return changed
+
+
+def _ava_project_board_image_upload_batch_isolation_v209k(current_snapshot, incoming_data, payload_client_version=""):
+    if not isinstance(current_snapshot, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, 0
+    if not _ava_project_board_batch_guard_active_v209k(current_snapshot):
+        return incoming_data, 0
+    if str(payload_client_version or "").startswith("board-server-video-batch"):
+        return incoming_data, 0
+
+    current_data = current_snapshot.get("data") if isinstance(current_snapshot.get("data"), dict) else {}
+    current_scenes = _ava_board_scenes_v131q2(current_data) if "_ava_board_scenes_v131q2" in globals() else []
+    incoming_scenes = _ava_board_scenes_v131q2(incoming_data) if "_ava_board_scenes_v131q2" in globals() else []
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, 0
+
+    selected_scene_id = _ava_project_selected_scene_id_v209k(incoming_data)
+    current_by_id = {
+        _ava_project_scene_id_v209k(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+
+    next_data = copy.deepcopy(incoming_data)
+    next_scenes = _ava_board_scenes_v131q2(next_data) if "_ava_board_scenes_v131q2" in globals() else []
+    changed = 0
+    contract_scene_ids = []
+    reset_scene_ids = []
+
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _ava_project_scene_id_v209k(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict):
+            continue
+
+        copied = _ava_project_copy_contract_fields_v209k(current_scene, scene)
+        if copied:
+            changed += copied
+            contract_scene_ids.append(scene_id)
+
+        strong_changed = _ava_project_scene_strong_image_changed_v209k(current_scene, scene)
+        is_selected_scene = bool(selected_scene_id and scene_id == selected_scene_id)
+        if _ava_project_scene_has_reset_v209k(scene) and not is_selected_scene and not strong_changed:
+            if _ava_project_clear_accidental_review_reset_v209k(scene):
+                changed += 1
+                reset_scene_ids.append(scene_id)
+
+    if changed:
+        next_data["scenes"] = next_scenes
+        print("[PROJECT BOARD IMAGE UPLOAD BATCH ISOLATION V209K]", {
+            "client_version": payload_client_version,
+            "selectedSceneId": selected_scene_id,
+            "contractScenes": contract_scene_ids[:30],
+            "clearedAccidentalImageResetScenes": reset_scene_ids[:30],
+            "changed": changed,
+        }, flush=True)
+        return next_data, changed
+    return incoming_data, 0
+
 @router.post('/{project_id}/snapshots/{stage}')
 def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depends(ensure_project_access)):
     if project.get('status') == 'deleted':
@@ -3135,7 +3552,34 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
         if is_destructive_clear:
             cleanup = cleanup_project_stage_media(db, project_id, stage, user_id=project.get('user_id'))
         incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
-        if payload.guard_mode == 'safe_merge' and current:
+        if stage == 'video_node' and is_destructive_clear:
+            incoming_data = _ava_video_node_clear_tombstone_v209b(payload.client_version or '')
+        if stage == 'video_node' and payload.guard_mode == 'safe_merge' and current:
+            current_data_v209b = current.get('data') if isinstance(current, dict) else {}
+            if _ava_video_node_should_block_stale_save_after_clear_v209b(current_data_v209b, incoming_data):
+                print('[PROJECT VIDEO_NODE STALE SAVE BLOCKED AFTER CLEAR V209B]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'incoming_client_version': payload.client_version,
+                    'clearMs': _ava_video_node_clear_ms_v209b(current_data_v209b),
+                    'incomingMs': _ava_video_node_data_ms_v209b(incoming_data),
+                    **media_refs_summary(incoming_data),
+                })
+                return {
+                    'saved': False,
+                    'reason': 'video_node_stale_save_blocked_after_clear_v209b',
+                    'snapshot': current,
+                    '_skip_store_write_v200c': True,
+                }
+        if stage == 'board' and current and not is_destructive_clear:
+            incoming_data, isolated_scene_contracts_v209k = _ava_project_board_image_upload_batch_isolation_v209k(
+                current,
+                incoming_data,
+                payload.client_version,
+            )
+            if isolated_scene_contracts_v209k:
+                preserved_media_refs = 0
+
             old_score = state_richness(current.get('data') or {})
             new_score = state_richness(incoming_data)
             if old_score > 10 and new_score < max(3, old_score // 4):

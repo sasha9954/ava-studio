@@ -181,6 +181,70 @@ def _asset_path(asset: dict | None) -> Path | None:
     return _resolve_under_allowed_roots(raw)
 
 
+# AVA_MASTER_AUDIO_CLEANUP_GUARD_V209L
+# Full mixed song audio is a project-level dependency for Board lip-sync autoslice.
+# Do not remove it during stage cleanup just because a UI workflow was cleared.
+# Vocal-only ASR stems are not enough for lip-sync; the mixed/master audio must survive.
+def _asset_is_master_audio_protected_v209l(asset: dict | None) -> bool:
+    if not isinstance(asset, dict):
+        return False
+
+    stage = str(
+        asset.get('stage')
+        or asset.get('asset_stage')
+        or asset.get('assetStage')
+        or ''
+    ).strip().lower()
+
+    kind = str(
+        asset.get('kind')
+        or asset.get('media_kind')
+        or asset.get('mediaKind')
+        or asset.get('type')
+        or asset.get('mime_type')
+        or asset.get('mimeType')
+        or ''
+    ).strip().lower()
+
+    name_blob = " ".join(str(asset.get(key) or '') for key in (
+        'name', 'filename', 'fileName', 'original_name', 'originalName',
+        'audio_name', 'audioName', 'storage_path', 'storagePath',
+        'asset_api_path', 'assetApiPath',
+    )).strip().lower()
+
+    stage_is_audio_owner = (
+        stage in {
+            'manual_timing',
+            'manual_timing_audio',
+            'manual_timing_master',
+            'project_audio',
+            'project_master_audio',
+            'master_audio',
+            'timing_audio',
+            'source_audio',
+        }
+        or stage.startswith('manual_timing')
+        or stage.startswith('project_audio')
+        or stage.startswith('project_master_audio')
+        or stage.startswith('master_audio')
+    )
+
+    looks_audio = (
+        'audio' in kind
+        or 'mp3' in kind
+        or 'wav' in kind
+        or name_blob.endswith(('.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'))
+        or '.mp3' in name_blob
+        or '.wav' in name_blob
+        or '.m4a' in name_blob
+    )
+
+    if stage_is_audio_owner and looks_audio:
+        return True
+
+    return False
+
+
 def _safe_unlink(path: Path, stats: dict) -> None:
     roots = _settings_roots()
     try:
@@ -253,6 +317,14 @@ def _finalize(stats: dict) -> dict:
 def _delete_asset_records(db: dict, asset_ids: set[str], paths: set[Path], stats: dict) -> None:
     assets = db.setdefault('assets', {})
     for asset_id in sorted(list(asset_ids)):
+        asset = assets.get(asset_id)
+        if not asset:
+            continue
+
+        if _asset_is_master_audio_protected_v209l(asset):
+            stats.setdefault('protected_master_audio_assets_v209l', []).append(asset_id)
+            continue
+
         asset = assets.pop(asset_id, None)
         if not asset:
             continue

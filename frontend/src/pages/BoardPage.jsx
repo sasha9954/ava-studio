@@ -1,3 +1,9 @@
+/* AVA_BOARD_BATCH_LIVE_SET_REPLACES_RUNTIME_V210A: live server-batch IDs replace stale runtime overlays. */
+/* AVA_BOARD_COMPLETED_RUNTIME_CLEAR_FLEX_V209Z2: completed batch scenes leave runtime overlays immediately. */
+/* AVA_BOARD_SERVER_BATCH_RUNTIME_OVERLAY_V209R: explicit server-batch runtime overlay keeps Board statuses stable while backend owns generation. */
+/* AVA_BOARD_SERVER_BATCH_STATUS_AUTHORITY_V209Q: server batch is the single UI/status authority; block legacy local starts and stale global Board jobs. */
+/* AVA_BOARD_QUEUE_SOURCECUT_VISIBILITY_LIPSYNC_PRIORITY_V209P: show source_cut skipped scenes and make lip-sync classification win over stale source_cut flags. */
+/* AVA_BOARD_ACTIVE_REGEN_UI_LATCH_V209O: keep queued/running overlay for active server regenerations even when old ready video refs exist. */
 /* AVA_BOARD_AUDIO_STUDIO_CONFIRM_MODAL_V204D2: custom Board -> Audio Studio confirm/progress modal. */
 /* AVA_BOARD_AUDIO_STUDIO_CONFIRM_PARSE_V204D1A: safe confirm string for Board -> Audio Studio. */
 /* AVA_BOARD_TRIM_COMPACT_LAYOUT_V201E: compact media actions + trim before duration slider. */
@@ -16,6 +22,7 @@
 /* AVA_BOARD_RELOAD_SAVE_GUARD_V132W: prevent F5/re-enter from losing server video refs; merge backend snapshot again after Board build and protect durable cache writes. */
 /* AVA_BOARD_RELOAD_VIDEO_REHYDRATE_V132T: after F5/re-enter always merge server video/result/review refs over stale local durable cache. */
 /* AVA_BOARD_STATUS_REHYDRATE_COMBINED_V132V: fixes V132U syntax issue, V132S isError crash, and combines V132S status flow with V132T reload video rehydrate. */
+/* AVA_BOARD_BATCH_PREPARE_STATUS_AUTHORITY_V209X: server batch prepare/status authority. */
 /* AVA_BOARD_BATCH_STATUS_FLOW_V132S: precise Board server-batch states: submitting -> running/queued -> ready. */
 /* AVA_BOARD_BATCH_READY_WITHOUT_VIDEO_GUARD_V143B: completed batch scenes without real video refs stay busy, not falsely ready. */
 /* AVA_BOARD_BATCH_BUSY_REVIEW_V132R: server batch immediately marks scenes busy and keeps old preview overlay during bad-review regeneration. */
@@ -207,12 +214,44 @@ function isBoardSourceCutRouteV208L(value = '') {
   return normalizeBoardRouteValueV154A(value) === 'source_cut'
 }
 
+function isBoardSceneClearlyLipSyncV209P(scene = {}) {
+  const route = normalizeBoardRouteValueV154A(
+    scene?.route || scene?.planned_route || scene?.plannedRoute || scene?.video_route || scene?.videoRoute || scene?.model_route || scene?.modelRoute || ''
+  )
+  const workflowKey = String(scene?.workflow_key || scene?.workflowKey || '').toLowerCase()
+  return Boolean(
+    route === 'ia2v' ||
+    route === 'ia2v_lipsync' ||
+    route === 'lip_sync' ||
+    route === 'lipsync' ||
+    scene?.lip_sync_required === true ||
+    scene?.lipSyncRequired === true ||
+    scene?.lipsync_required === true ||
+    scene?.lipsyncRequired === true ||
+    scene?.contains_vocal === true ||
+    scene?.containsVocal === true ||
+    scene?.is_lipsync === true ||
+    scene?.isLipsync === true ||
+    scene?.ia2v_audio_required === true ||
+    scene?.ia2vAudioRequired === true ||
+    Boolean(scene?.audio_slice_url || scene?.audioSliceUrl || scene?.audio_slice_api_path || scene?.audioSliceApiPath) ||
+    workflowKey.includes('lipsink') ||
+    workflowKey.includes('lipsync')
+  )
+}
+
 function isBoardSourceCutSceneV208L(scene = {}) {
   const route = normalizeBoardRouteValueV154A(
     scene?.route || scene?.planned_route || scene?.plannedRoute || scene?.video_route || scene?.videoRoute || scene?.model_route || scene?.modelRoute || ''
   )
   const role = String(scene?.video_node_role || scene?.videoNodeRole || scene?.video_match_role || scene?.videoMatchRole || '').trim().toLowerCase()
   const sourceKind = String(scene?.source_or_generated || scene?.sourceOrGenerated || scene?.source_kind || scene?.sourceKind || '').trim().toLowerCase()
+
+  // V209P: lip-sync/ia2v wins over stale source_cut flags.
+  // This prevents ready lip-sync scenes such as seg_05 from disappearing
+  // from the "Сгенерировать все" plan when skip_board_generation leaked in.
+  if (isBoardSceneClearlyLipSyncV209P(scene)) return false
+
   return Boolean(
     route === 'source_cut'
     || role === 'source_cut'
@@ -2765,19 +2804,50 @@ function boardSceneHasServerVideoJobV130F(scene) {
 }
 
 function boardSceneVideoUiStatusV130F(scene) {
-  // AVA_BOARD_BAD_REGEN_RUNTIME_STATUS_V136I:
-  // Runtime-only bad-review regeneration status must win over old ready video refs.
-  // This lets cards/preview show отправляется/в очереди/видео делается while keeping
-  // queued/submitting out of the persisted project snapshot.
+  // AVA_BOARD_BATCH_PREPARE_STATUS_AUTHORITY_V209X:
+  // Status priority must be: live server batch > fresh submitting runtime > ready/review.
+  // A ready/needs_review scene can be regenerated while old video refs stay visible; in that
+  // case stale "посмотри/готово/плохое" must never beat the live backend batch.
+  const sceneIdV209X = String(scene?.id || scene?.scene_id || scene?.sceneId || '').trim()
+  const rawStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+  const queueSourceV136I = String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase()
+  const hasCurrentVideoV209X = Boolean(
+    typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)
+  )
+
+  const serverRuntimeV209X = (typeof window !== 'undefined' && sceneIdV209X)
+    ? ((window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {})[sceneIdV209X] || null)
+    : null
+  const serverRuntimeStatusV209X = String(serverRuntimeV209X?.status || '').toLowerCase()
+  if (serverRuntimeStatusV209X && isVideoBusyStatus(serverRuntimeStatusV209X)) return serverRuntimeStatusV209X
+  if (serverRuntimeStatusV209X === 'error' || serverRuntimeStatusV209X === 'failed') return 'error'
+
   const runtimeStatusV136I = String(
     scene?.video_runtime_status_v136i ||
     scene?.videoRuntimeStatusV136I ||
     ''
   ).toLowerCase()
-  if (runtimeStatusV136I && isVideoBusyStatus(runtimeStatusV136I)) return runtimeStatusV136I
+  const runtimeSourceV209X = String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase()
+  const runtimeStartedMsV209X = Date.parse(
+    scene?.video_runtime_updated_at_v136i ||
+    scene?.videoRuntimeUpdatedAtV136I ||
+    scene?.video_updated_at ||
+    scene?.videoUpdatedAt ||
+    ''
+  )
+  const runtimeAgeMsV209X = Number.isFinite(runtimeStartedMsV209X) ? (Date.now() - runtimeStartedMsV209X) : 0
+  const stickySubmittingV209X = Boolean(
+    ['starting', 'preparing', 'submitting'].includes(runtimeStatusV136I) &&
+    runtimeSourceV209X.includes('server_batch') &&
+    runtimeAgeMsV209X >= 0 &&
+    runtimeAgeMsV209X < 120000
+  )
+  // Local runtime may win over ready video only while the click is still being accepted.
+  // Once backend server runtime disappears, a scene with a current video is ready/review again.
+  if (runtimeStatusV136I && isVideoBusyStatus(runtimeStatusV136I) && (!hasCurrentVideoV209X || stickySubmittingV209X)) {
+    return runtimeStatusV136I
+  }
 
-  const rawStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
-  const queueSourceV136I = String(scene?.video_queue_source || scene?.videoQueueSource || '').toLowerCase()
   const badRegenActiveJobV136I = Boolean(
     isVideoBusyStatus(rawStatus) &&
     boardSceneHasServerVideoJobV130F(scene) &&
@@ -2794,10 +2864,8 @@ function boardSceneVideoUiStatusV130F(scene) {
     return rawStatus === 'queued' ? 'running' : rawStatus
   }
 
-  // AVA_BOARD_READY_VIDEO_WINS_BUSY_STATUS_V133E:
-  // Old local polling can briefly write queued/running after the server already saved a video.
-  // A current video ref must win, otherwise preview is hidden and UI shows "в очереди".
-  if (typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)) return 'ready'
+  // Ready video wins only after live runtime has been checked and accepted-submitting has expired.
+  if (hasCurrentVideoV209X) return 'ready'
   if (rawStatus === 'queued' && boardSceneHasServerVideoJobV130F(scene)) return 'running'
   return rawStatus
 }
@@ -2805,6 +2873,11 @@ function boardSceneVideoUiStatusV130F(scene) {
 
 
 
+
+
+
+
+// AVA_BOARD_BATCH_PREPARE_STATUS_AUTHORITY_V209X2_DANGLING_FUNCTION_HOTFIX
 function boardSceneBusyVideoLabelV132P(scene = {}) {
   const status = String(boardSceneVideoUiStatusV130F(scene) || '').toLowerCase()
   // AVA_BOARD_BATCH_STATUS_FLOW_V132S:
@@ -3068,20 +3141,20 @@ function boardSceneVideoUiIndicatorV132O(scene = {}, { previewLoading = false, h
   const staleVideo = boardSceneRawVideoRefsV129P(scene) && !boardVideoMatchesCurrentImageV129P(scene)
 
   if (busy) {
-    const byStatus = status === 'starting'
-      ? { headerLabel: 'видео отправлено', title: 'Видео отправлено…', hint: 'Создаём job и ждём ответ сервера.' }
+    // AVA_BOARD_QUEUE_IMMEDIATE_SUBMITTING_STATUS_V209U:
+    // Keep UI labels precise: sending != queued != running.
+    const byStatus = (status === 'starting' || status === 'preparing' || status === 'submitting')
+      ? { headerLabel: 'отправляется', title: 'Отправляем видео…', hint: 'Передаём фото, аудио и prompt на backend/Comfy.' }
       : status === 'queued'
-        ? { headerLabel: 'видео делается', title: 'Видео делается…', hint: scene?.video_queue_position ? `Позиция #${scene.video_queue_position}` : 'Ждём свободный слот генерации.' }
-        : (status === 'preparing' || status === 'submitting')
-          ? { headerLabel: 'видео делается', title: 'Видео делается…', hint: 'Передаём фото, аудио и prompt на backend/Comfy.' }
-          : { headerLabel: 'видео делается', title: 'Видео делается…', hint: scene?.video_job_id ? `job · ${scene.video_job_id}` : 'Сервер генерирует видео.' }
+        ? { headerLabel: 'в очереди', title: 'Видео в очереди…', hint: scene?.video_queue_position ? `Позиция #${scene.video_queue_position}` : 'Ждём свободный слот генерации.' }
+        : { headerLabel: 'видео делается', title: 'Видео делается…', hint: scene?.video_job_id ? `job · ${scene.video_job_id}` : 'Сервер генерирует видео.' }
     if (keepOldPreview && hasPreview) {
       return {
-        headerLabel: 'перегенерация',
+        headerLabel: byStatus.headerLabel,
         className: 'isRegenerating',
         showSpinner: true,
         overlay: true,
-        overlayTitle: 'Перегенерация…',
+        overlayTitle: byStatus.title,
         overlayHint: 'Старое видео оставлено на экране, ждём новый результат.',
         emptyTitle: byStatus.title,
         emptyHint: byStatus.hint,
@@ -5021,17 +5094,49 @@ function sceneVideoActionState(scene) {
       }, 0)
     }, 900)
   }
-
-
   function boardServerBatchIsActiveV131M(boardData = null) {
-    // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M:
-    // While backend owns "Сгенерировать все", the browser must not run the old local queue,
-    // direct /clip/video/start, or old status pollers. Otherwise Comfy gets duplicate prompts.
+    // AVA_BOARD_SERVER_BATCH_STATUS_AUTHORITY_V209Q:
+    // During "Сгенерировать все" the backend server batch is the single authority.
+    // The browser must not run the old local queue, direct /clip/video/start, or stale
+    // per-job pollers while there is any live batch marker, runtime overlay, or accepted
+    // server-batch state.
     const source = boardData || boardRef.current || board || {}
     const batch = source.video_batch || source.videoBatch || source.board_video_batch || source.boardVideoBatch || {}
-    const status = String(batch.status || batch.batch_status || batch.video_status || '').toLowerCase()
-    const windowFlag = typeof window !== 'undefined' && Boolean(window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__)
-    return windowFlag || ['queued', 'running', 'starting', 'preparing', 'submitting'].includes(status)
+    const queue = source.video_queue || source.videoQueue || {}
+    const status = String(
+      batch.status || batch.batch_status || batch.video_status ||
+      queue.status || queue.batch_status || ''
+    ).toLowerCase()
+    const activeStatusesV209Q = new Set(['queued', 'running', 'starting', 'preparing', 'submitting', 'processing'])
+    const terminalStatusesV209Q = new Set([
+      '', 'idle', 'ready', 'done', 'completed', 'success', 'finished', 'finished_with_errors',
+      'error', 'failed', 'canceled', 'cancelled', 'stopped', 'interrupted',
+      'interrupted_after_backend_reload', 'orphaned_after_reload', 'backend_reload_orphaned_batch_v150a',
+    ])
+
+    const windowFlagV209Q = typeof window !== 'undefined' && Boolean(window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__)
+    const stateFlagV209Q = Boolean(autoVideoQueueState?.serverBatchActive)
+    const runtimeMapV209Q = (badRegenRuntimeStatusRef && badRegenRuntimeStatusRef.current) || {}
+    const runtimeFlagV209Q = Object.values(runtimeMapV209Q).some((entry) => {
+      const runtimeStatus = String(entry?.status || '').toLowerCase()
+      return activeStatusesV209Q.has(runtimeStatus)
+    })
+
+    if (windowFlagV209Q || stateFlagV209Q || runtimeFlagV209Q) return true
+    if (activeStatusesV209Q.has(status)) return true
+    if (terminalStatusesV209Q.has(status)) return false
+
+    const waitingV209Q = [
+      ...asArray(queue.waitingSceneIds || queue.waiting_scene_ids),
+      ...asArray(batch.waitingSceneIds || batch.waiting_scene_ids || batch.queued || batch.queuedSceneIds || batch.queued_scene_ids),
+    ]
+    const livePointerV209Q = Boolean(
+      waitingV209Q.length ||
+      batch.activeSceneId || batch.active_scene_id || queue.activeSceneId || queue.active_scene_id ||
+      batch.activeJobId || batch.active_job_id || queue.activeJobId || queue.active_job_id ||
+      batch.activeStatusEndpoint || batch.active_status_endpoint || queue.activeStatusEndpoint || queue.active_status_endpoint
+    )
+    return Boolean(status && livePointerV209Q)
   }
 
   function processNextQueuedBoardVideo() {
@@ -5324,9 +5429,9 @@ function sceneVideoActionState(scene) {
     setAutoVideoQueueConfirm({ open: true, plan })
 
     if (!plan.validCount) {
-      setStatus(`Проверка автоочереди: новых сцен нет. Готово: ${plan.readyCount}, не хватает данных: ${plan.invalidCount}.`)
+      setStatus(`Проверка автоочереди: новых сцен нет. Готово: ${plan.readyCount}, нарезка: ${plan.sourceCutCount || 0}, не хватает данных: ${plan.invalidCount}.`)
     } else {
-      setStatus(`Проверка автоочереди: к запуску ${plan.validCount}, готово ${plan.readyCount}, не хватает данных ${plan.invalidCount}.`)
+      setStatus(`Проверка автоочереди: к запуску ${plan.validCount}, готово ${plan.readyCount}, нарезка ${plan.sourceCutCount || 0}, не хватает данных ${plan.invalidCount}.`)
     }
   }
 
@@ -5343,6 +5448,49 @@ function sceneVideoActionState(scene) {
       setStatus('Автоочередь не запущена: нет подходящих сцен.')
       setAutoVideoQueueConfirm({ open: false, plan: null })
       return
+    }
+
+    // AVA_BOARD_QUEUE_IMMEDIATE_SUBMITTING_STATUS_V209U:
+    // Paint selected scenes as "отправляется" immediately after the user confirms the
+    // server batch. Without this, UI waits until backend returns /video-batch/status,
+    // so cards briefly fall back to "фото/промт" or old review state.
+    try {
+      const plannedItemsV209U = Array.isArray(plan?.valid) ? plan.valid : []
+      const plannedIdsV209U = plannedItemsV209U
+        .map((item) => asText(item?.sceneId || item?.scene_id || item?.id || ''))
+        .filter(Boolean)
+      if (plannedIdsV209U.length && typeof patchBadRegenRuntimeStatusesV136I === 'function') {
+        const nowV209U = new Date().toISOString()
+        // AVA_BOARD_SUBMITTING_STICKY_UNTIL_SERVER_ACCEPTS_V209W: same sticky/regeneration hint for confirm-time overlay.
+        const liveScenesByIdV209W = new Map(asSceneArray(boardRef.current?.scenes || board?.scenes).map((scene) => [asText(scene?.id || scene?.scene_id || scene?.sceneId), scene]))
+        patchBadRegenRuntimeStatusesV136I(plannedIdsV209U.map((sceneId, index) => {
+          const planItem = plannedItemsV209U[index] || {}
+          const liveSceneV209W = liveScenesByIdV209W.get(sceneId) || {}
+          const liveReviewV209W = typeof boardSceneVideoReviewStatus === 'function' ? String(boardSceneVideoReviewStatus(liveSceneV209W) || '').toLowerCase() : ''
+          const liveHasVideoV209W = Boolean(typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(liveSceneV209W))
+          return {
+            sceneId,
+            status: 'submitting',
+            queuePosition: index + 1,
+            fromBad: Boolean(planItem.regenerate || planItem.forceBadRegenerate || planItem.forceBadRegenerateV157A || liveReviewV209W === 'bad' || liveReviewV209W === 'needs_review' || liveHasVideoV209W),
+            startedAt: nowV209U,
+            source: 'server_batch_confirm_immediate_submitting_v209u',
+          }
+        }))
+        setAutoVideoQueueState((current) => ({
+          ...(current || {}),
+          active: false,
+          serverBatchActive: true,
+          total: plannedIdsV209U.length,
+          queued: plannedIdsV209U.length,
+          skippedReady: Number(plan?.readyCount || 0) || 0,
+          invalid: Number(plan?.invalidCount || 0) || 0,
+        }))
+        if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = true
+        setStatus(`Серверная очередь: отправляется ${plannedIdsV209U.length} сцен…`)
+      }
+    } catch (error) {
+      console.warn('[BOARD QUEUE IMMEDIATE SUBMITTING V209U] failed', error)
     }
 
     setAutoVideoQueueConfirm({ open: false, plan: null })
@@ -5391,6 +5539,57 @@ function sceneVideoActionState(scene) {
     // Only after projectId is confirmed, mark the server queue as active.
     if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = true
     localVideoQueueRef.current = []
+
+    // AVA_BOARD_SERVER_BATCH_EARLY_SUBMITTING_RUNTIME_V209V:
+    // Paint runtime-only status immediately at the beginning of server-batch start,
+    // before any asset preparation/autoslice/backend awaits. This covers regeneration
+    // of bad/ready scenes too: the old video/review may stay visible, but the card must
+    // say "отправляется" right away instead of falling back to "фото/промт/плохое".
+    try {
+      const immediatePlanV209V = makeAllScenesVideoQueuePlan()
+      const immediateItemsV209V = Array.isArray(immediatePlanV209V?.valid) ? immediatePlanV209V.valid : []
+      const immediateIdsV209V = immediateItemsV209V
+        .map((item) => asText(item?.sceneId || item?.scene_id || item?.id || ''))
+        .filter(Boolean)
+      if (immediateIdsV209V.length && typeof patchBadRegenRuntimeStatusesV136I === 'function') {
+        const nowV209V = new Date().toISOString()
+        // AVA_BOARD_SUBMITTING_STICKY_UNTIL_SERVER_ACCEPTS_V209W: treat ready/bad scenes as regeneration while backend accepts the batch.
+        const liveScenesByIdV209W = new Map(asSceneArray(boardRef.current?.scenes || board?.scenes).map((scene) => [asText(scene?.id || scene?.scene_id || scene?.sceneId), scene]))
+        patchBadRegenRuntimeStatusesV136I(immediateItemsV209V.map((item, index) => {
+          const sceneId = asText(item?.sceneId || item?.scene_id || item?.id || '')
+          const liveSceneV209W = liveScenesByIdV209W.get(sceneId) || {}
+          const liveReviewV209W = typeof boardSceneVideoReviewStatus === 'function' ? String(boardSceneVideoReviewStatus(liveSceneV209W) || '').toLowerCase() : ''
+          const liveHasVideoV209W = Boolean(typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(liveSceneV209W))
+          return {
+            sceneId,
+            status: 'submitting',
+            queuePosition: index + 1,
+            fromBad: Boolean(
+              item?.regenerate || item?.force || item?.forceBadRegenerate || item?.forceBadRegenerateV157A ||
+              liveReviewV209W === 'bad' || liveReviewV209W === 'needs_review' || liveHasVideoV209W
+            ),
+            startedAt: nowV209V,
+            source: 'server_batch_request_early_submitting_v209v',
+          }
+        }).filter((entry) => entry.sceneId))
+        setAutoVideoQueueState((current) => ({
+          ...(current || {}),
+          active: false,
+          serverBatchActive: true,
+          total: immediateIdsV209V.length,
+          queued: immediateIdsV209V.length,
+          skippedReady: Number(immediatePlanV209V?.readyCount || 0) || 0,
+          invalid: Number(immediatePlanV209V?.invalidCount || 0) || 0,
+        }))
+        setStatus(`Серверная очередь: отправляется ${immediateIdsV209V.length} сцен…`)
+        console.log('[BOARD SERVER BATCH EARLY SUBMITTING V209V]', {
+          sceneIds: immediateIdsV209V,
+          regenerate: immediateItemsV209V.filter((item) => item?.regenerate || item?.force || item?.forceBadRegenerate || item?.forceBadRegenerateV157A).map((item) => asText(item?.sceneId || item?.scene_id || item?.id || '')),
+        })
+      }
+    } catch (error) {
+      console.warn('[BOARD SERVER BATCH EARLY SUBMITTING V209V] failed', error)
+    }
 
     async function ensureSceneStartAsset(scene = {}) {
       const sceneId = serverBatchSceneIdV131D(scene)
@@ -5741,6 +5940,7 @@ function sceneVideoActionState(scene) {
     }))
 
     const serverBatchAudioSourceV147A = boardAudioSourcePayloadForBackend()
+    clearAvaGlobalBoardJobsForScenesV209Q(addedIds)
 
     apiRequest(`/projects/${projectId}/board/video-batch/start`, {
       method: 'POST',
@@ -6498,6 +6698,7 @@ function sceneVideoActionState(scene) {
     open: false,
     plan: null,
   })
+  const [serverBatchRuntimeTickV209R, setServerBatchRuntimeTickV209R] = useState(0) // AVA_BOARD_SERVER_BATCH_RUNTIME_OVERLAY_V209R
   const [manualLipSyncAudioUploadingV129A, setManualLipSyncAudioUploadingV129A] = useState({})
   const [manualLipSyncAudioPreviewUrlsV129A, setManualLipSyncAudioPreviewUrlsV129A] = useState({})
   const autoVideoQueueStopRef = useRef(false)
@@ -6552,6 +6753,46 @@ function sceneVideoActionState(scene) {
       }
     })
     setBadRegenRuntimeStatusMapV136I(nextMap)
+
+    // AVA_BOARD_GLOBAL_RUNTIME_PIN_V209Y:
+    // patchBadRegenRuntimeStatusesV136I is the earliest place where the frontend knows
+    // that a server batch was requested. React board snapshots can re-render with old
+    // ready/review state before backend status is accepted, so mirror the runtime map
+    // into the global server-batch overlay read by boardSceneVideoUiStatusV130F.
+    try {
+      if (typeof window !== 'undefined') {
+        const globalMapV209Y = { ...(window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}) }
+        safeEntries.forEach((entry) => {
+          const sceneId = asText(entry.sceneId || entry.scene_id || entry.id)
+          if (!sceneId) return
+          const runtimeEntry = nextMap[sceneId]
+          const runtimeStatus = String(runtimeEntry?.status || '').toLowerCase()
+          if (runtimeEntry && badRegenRuntimeActiveStatusesV136I.has(runtimeStatus)) {
+            globalMapV209Y[sceneId] = {
+              ...(globalMapV209Y[sceneId] || {}),
+              ...runtimeEntry,
+              sceneId,
+              status: runtimeStatus,
+              source: runtimeEntry.source || 'frontend_global_runtime_pin_v209y',
+              updatedAt: runtimeEntry.updatedAt || new Date().toISOString(),
+            }
+          } else {
+            delete globalMapV209Y[sceneId]
+          }
+        })
+        window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ = globalMapV209Y
+        window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = Object.values(globalMapV209Y).some((entry) => {
+          const status = String(entry?.status || '').toLowerCase()
+          return badRegenRuntimeActiveStatusesV136I.has(status)
+        })
+        setServerBatchRuntimeTickV209R((value) => value + 1)
+        console.log('[BOARD GLOBAL RUNTIME PIN V209Y]', {
+          entries: Object.entries(globalMapV209Y).map(([sceneId, entry]) => ({ sceneId, status: entry?.status || '', source: entry?.source || '' })),
+        })
+      }
+    } catch (error) {
+      console.warn('[BOARD GLOBAL RUNTIME PIN V209Y] failed', error)
+    }
   }
 
   function clearBadRegenRuntimeStatusesV136I(sceneIds = []) {
@@ -6569,7 +6810,26 @@ function sceneVideoActionState(scene) {
         changed = true
       }
     })
-    if (changed) setBadRegenRuntimeStatusMapV136I(nextMap)
+    if (changed) {
+      setBadRegenRuntimeStatusMapV136I(nextMap)
+      // AVA_BOARD_GLOBAL_RUNTIME_PIN_CLEAR_V209Y: clear the global mirror together with local runtime.
+      try {
+        if (typeof window !== 'undefined') {
+          const globalMapV209Y = { ...(window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}) }
+          const clearIdsV209Y = ids.length ? ids : Object.keys(globalMapV209Y)
+          clearIdsV209Y.forEach((sceneId) => { delete globalMapV209Y[sceneId] })
+          window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ = globalMapV209Y
+          window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = Object.values(globalMapV209Y).some((entry) => {
+            const status = String(entry?.status || '').toLowerCase()
+            return badRegenRuntimeActiveStatusesV136I.has(status)
+          })
+          setServerBatchRuntimeTickV209R((value) => value + 1)
+          console.log('[BOARD GLOBAL RUNTIME PIN CLEARED V209Y]', { sceneIds: clearIdsV209Y })
+        }
+      } catch (error) {
+        console.warn('[BOARD GLOBAL RUNTIME PIN CLEAR V209Y] failed', error)
+      }
+    }
   }
 
   function boardBatchRuntimePollActiveV200M() {
@@ -6588,6 +6848,133 @@ function sceneVideoActionState(scene) {
       autoVideoQueueState?.serverBatchActive ||
       boardBatchRuntimePollActiveV200M()
     )
+  }
+
+
+  function syncServerBatchRuntimeOverlayV209R(batchStatusData = {}, boardData = {}, source = '') {
+    // AVA_BOARD_SERVER_BATCH_RUNTIME_OVERLAY_V209R:
+    // Convert the backend batch status into a browser-only runtime map. This does not
+    // persist to ava_db.json; it only paints UI badges while the server owns generation.
+    if (typeof window === 'undefined') return
+    const batch = batchStatusData?.batch || batchStatusData?.board_video_batch || boardData?.board_video_batch || boardData?.boardVideoBatch || {}
+    const batchStatus = String(batch?.status || batch?.batch_status || '').toLowerCase()
+    const activeStatuses = new Set(['queued', 'running', 'starting', 'preparing', 'submitting', 'processing'])
+    const terminalStatuses = new Set(['', 'idle', 'finished', 'finished_with_errors', 'failed', 'error', 'canceled', 'cancelled', 'stopped', 'done', 'completed', 'success'])
+    const activeSceneId = asText(batch?.activeSceneId || batch?.active_scene_id)
+    const activeJobId = asText(batch?.activeJobId || batch?.active_job_id)
+    const activeEndpoint = asText(batch?.activeStatusEndpoint || batch?.active_status_endpoint)
+    const waitingIds = asArray(batch?.waitingSceneIds || batch?.waiting_scene_ids || batch?.queuedSceneIds || batch?.queued_scene_ids)
+      .map((id) => asText(id)).filter(Boolean)
+    const completedIds = new Set(asArray(batch?.completedSceneIds || batch?.completed_scene_ids).map((id) => asText(id)).filter(Boolean))
+    const failedIds = new Set(asArray(batch?.failedSceneIds || batch?.failed_scene_ids).map((id) => asText(id)).filter(Boolean))
+
+    const hasLiveBatch = Boolean(
+      activeStatuses.has(batchStatus) ||
+      activeSceneId || activeJobId || activeEndpoint || waitingIds.length
+    )
+
+    const currentMap = window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}
+    let nextMap = { ...currentMap }
+    let changed = false
+    const setEntry = (sceneId, status, extra = {}) => {
+      const safeSceneId = asText(sceneId)
+      if (!safeSceneId) return
+      const nextEntry = {
+        ...(nextMap[safeSceneId] || {}),
+        sceneId: safeSceneId,
+        status,
+        batchId: asText(batch?.batchId || batch?.batch_id || nextMap[safeSceneId]?.batchId || ''),
+        jobId: asText(extra.jobId || nextMap[safeSceneId]?.jobId || ''),
+        statusEndpoint: asText(extra.statusEndpoint || nextMap[safeSceneId]?.statusEndpoint || ''),
+        queuePosition: Number(extra.queuePosition || 0) || 0,
+        updatedAt: new Date().toISOString(),
+        source: source || 'server_batch_runtime_overlay_v209r',
+      }
+      const prev = JSON.stringify(nextMap[safeSceneId] || {})
+      const cur = JSON.stringify(nextEntry)
+      nextMap[safeSceneId] = nextEntry
+      if (prev !== cur) changed = true
+    }
+    const clearEntry = (sceneId) => {
+      const safeSceneId = asText(sceneId)
+      if (safeSceneId && Object.prototype.hasOwnProperty.call(nextMap, safeSceneId)) {
+        delete nextMap[safeSceneId]
+        changed = true
+      }
+    }
+
+    if (hasLiveBatch) {
+      // AVA_BOARD_BATCH_LIVE_SET_REPLACES_RUNTIME_V210A: the live server-batch set is authoritative.
+      // Runtime overlay used to be merge-only, so old active scenes stayed busy
+      // until the entire batch finished. Clear any same-batch/global batch entry
+      // that is no longer active or waiting.
+      const liveServerBatchIdsV210A = new Set([activeSceneId, ...waitingIds]
+        .map((id) => asText(id))
+        .filter(Boolean))
+      const batchIdV210A = asText(batch?.batchId || batch?.batch_id || '')
+      Object.entries(nextMap || {}).forEach(([sceneId, entry]) => {
+        const safeSceneId = asText(sceneId)
+        if (!safeSceneId) return
+        const entryStatus = String(entry?.status || '').toLowerCase()
+        const entryBatchId = asText(entry?.batchId || entry?.batch_id || '')
+        const entrySource = String(entry?.source || '').toLowerCase()
+        const sameBatch = Boolean(batchIdV210A && entryBatchId && entryBatchId === batchIdV210A)
+        const batchRuntimeSource = Boolean(
+          entrySource.includes('server_batch') ||
+          entrySource.includes('frontend_global_runtime_pin') ||
+          entrySource.includes('server_batch_accepted_runtime') ||
+          entrySource.includes('early_submitting') ||
+          entrySource.includes('runtime_v136i')
+        )
+        if ((sameBatch || batchRuntimeSource) && isVideoBusyStatus(entryStatus) && !liveServerBatchIdsV210A.has(safeSceneId)) {
+          clearEntry(safeSceneId)
+        }
+      })
+      // AVA_BOARD_COMPLETED_NOT_BUSY_OVERLAY_V209T: clear completed scenes first so old runtime busy badges cannot survive.
+      completedIds.forEach((sceneId) => clearEntry(sceneId))
+      if (activeSceneId) setEntry(activeSceneId, 'running', { jobId: activeJobId, statusEndpoint: activeEndpoint })
+      waitingIds.forEach((sceneId, index) => {
+        if (sceneId === activeSceneId) return
+        const waitingStatusV209X = (!activeSceneId && ['preparing', 'submitting', 'starting'].includes(batchStatus))
+          ? 'submitting'
+          : 'queued'
+        setEntry(sceneId, waitingStatusV209X, { queuePosition: index + 1 })
+      })
+      failedIds.forEach((sceneId) => setEntry(sceneId, 'error'))
+      // AVA_BOARD_COMPLETED_NOT_BUSY_OVERLAY_V209T:
+      // A server-batch completed scene is no longer busy. Do NOT keep it as
+      // runtime "running" while waiting for React board state to see the fresh
+      // video ref; that makes completed scenes pile up as "видео делается".
+      // The backend already wrote/registered the result, and the normal Board
+      // snapshot/review merge will show "видео готово" or "посмотри".
+      completedIds.forEach((sceneId) => {
+        clearEntry(sceneId)
+      })
+      if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = true
+    } else if (terminalStatuses.has(batchStatus)) {
+      // Clear all entries for this batch; keep unrelated map entries untouched just in case.
+      const idsToClear = new Set([
+        activeSceneId,
+        ...waitingIds,
+        ...Array.from(completedIds),
+        ...Array.from(failedIds),
+        ...Object.keys(currentMap),
+      ].map((id) => asText(id)).filter(Boolean))
+      idsToClear.forEach(clearEntry)
+      if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = false
+    }
+
+    if (changed) {
+      window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ = nextMap
+      setServerBatchRuntimeTickV209R((value) => value + 1)
+      console.log('[BOARD SERVER BATCH RUNTIME OVERLAY V209R]', {
+        source,
+        batchStatus,
+        activeSceneId,
+        waitingIds,
+        entries: Object.entries(nextMap).map(([sceneId, entry]) => ({ sceneId, status: entry.status, queuePosition: entry.queuePosition || 0 })),
+      })
+    }
   }
 
   function reconcileBadRegenRuntimeWithBoardV136I(boardData = {}, options = {}) {
@@ -6609,6 +6996,31 @@ function sceneVideoActionState(scene) {
       const reviewStatus = boardSceneVideoReviewStatus(scene)
       const hasCurrentVideo = boardSceneHasCurrentVideoResultV129P(scene)
       const runtimeWasBad = Boolean(nextMap[sceneId]?.fromBad)
+      // AVA_BOARD_SUBMITTING_STICKY_UNTIL_SERVER_ACCEPTS_V209W:
+      // `submitting` painted by the client before /board/video-batch/start returns is
+      // runtime-only and can be cleared by a stale ready/bad Board snapshot. Keep it
+      // sticky for a short TTL until the backend server-batch status takes over.
+      const runtimeStatusV209W = String(nextMap[sceneId]?.status || '').toLowerCase()
+      const runtimeSourceV209W = String(nextMap[sceneId]?.source || '').toLowerCase()
+      const runtimeStartedMsV209W = Date.parse(nextMap[sceneId]?.startedAt || nextMap[sceneId]?.started_at || nextMap[sceneId]?.updatedAt || nextMap[sceneId]?.updated_at || '')
+      const runtimeAgeMsV209W = Number.isFinite(runtimeStartedMsV209W) ? (Date.now() - runtimeStartedMsV209W) : 0
+      const stickySubmittingUntilServerAcceptsV209W = Boolean(
+        runtimeStatusV209W === 'submitting' &&
+        runtimeSourceV209W.includes('server_batch') &&
+        runtimeAgeMsV209W >= 0 &&
+        runtimeAgeMsV209W < 120000
+      )
+      if (stickySubmittingUntilServerAcceptsV209W) {
+        nextMap[sceneId] = {
+          ...(nextMap[sceneId] || {}),
+          sceneId,
+          status: 'submitting',
+          updatedAt: new Date().toISOString(),
+          source: nextMap[sceneId]?.source || 'server_batch_submitting_sticky_v209w',
+        }
+        changed = true
+        return
+      }
       // AVA_BOARD_BAD_REGEN_STICKY_RUNTIME_V136K:
       // During server bad-review regeneration the project snapshot can still carry
       // the old ready video refs + the old red bad mark until backend binds the new
@@ -6709,6 +7121,50 @@ function sceneVideoActionState(scene) {
       return false
     }
 
+    // AVA_BOARD_BATCH_LIVE_SET_REPLACES_RUNTIME_V210A: clear old runtime entries from this live batch before merging new ones.
+    // If backend advances activeSceneId but does not keep completedSceneIds in the
+    // status payload, the previous active scene must leave the busy overlay anyway.
+    const liveRuntimeIdsV210A = new Set([activeSceneId, ...waitingIds]
+      .map((id) => asText(id))
+      .filter(Boolean))
+    const staleRuntimeIdsV210A = Object.entries(badRegenRuntimeStatusRef.current || {})
+      .filter(([sceneId, runtime]) => {
+        const safeSceneId = asText(sceneId)
+        if (!safeSceneId || liveRuntimeIdsV210A.has(safeSceneId)) return false
+        const runtimeStatus = String(runtime?.status || '').toLowerCase()
+        const runtimeBatchId = asText(runtime?.batchId || runtime?.batch_id || '')
+        const runtimeSource = String(runtime?.source || '').toLowerCase()
+        const sameBatch = Boolean(batchId && runtimeBatchId && runtimeBatchId === batchId)
+        const batchRuntimeSource = Boolean(
+          runtimeSource.includes('server_batch') ||
+          runtimeSource.includes('frontend_global_runtime_pin') ||
+          runtimeSource.includes('server_batch_accepted_runtime') ||
+          runtimeSource.includes('early_submitting') ||
+          runtimeSource.includes('runtime_v136i')
+        )
+        return (sameBatch || batchRuntimeSource) && isVideoBusyStatus(runtimeStatus)
+      })
+      .map(([sceneId]) => asText(sceneId))
+      .filter(Boolean)
+    if (staleRuntimeIdsV210A.length) {
+      clearBadRegenRuntimeStatusesV136I(staleRuntimeIdsV210A)
+      try {
+        if (typeof window !== 'undefined') {
+          const globalMapV210A = { ...(window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}) }
+          staleRuntimeIdsV210A.forEach((sceneId) => { delete globalMapV210A[sceneId] })
+          window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ = globalMapV210A
+          window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = Object.values(globalMapV210A).some((entry) => {
+            const status = String(entry?.status || '').toLowerCase()
+            return badRegenRuntimeActiveStatusesV136I.has(status)
+          })
+          setServerBatchRuntimeTickV209R((value) => value + 1)
+          console.log('[BOARD BATCH LIVE SET CLEARED STALE RUNTIME V210A]', { sceneIds: staleRuntimeIdsV210A, activeSceneId, waitingIds, batchId })
+        }
+      } catch (error) {
+        console.warn('[BOARD BATCH LIVE SET CLEARED STALE RUNTIME V210A] failed', error)
+      }
+    }
+
     const scenesById = new Map(asSceneArray(boardData?.scenes).map((scene) => [asText(scene?.id || scene?.scene_id), scene]))
     const entries = []
 
@@ -6741,7 +7197,18 @@ function sceneVideoActionState(scene) {
       const hasCurrentVideoForRuntimeV148A = Boolean(
         typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)
       )
-      if (hasCurrentVideoForRuntimeV148A && !fromBad) return
+      // AVA_BOARD_ACTIVE_REGEN_UI_LATCH_V209O:
+      // A user can regenerate a ready/needs_review scene while the old video ref is still
+      // intentionally present. In that case the server batch is authoritative and the UI
+      // must keep a runtime queued/running overlay instead of falling back to “ready”.
+      const isActiveServerBatchMemberV209O = Boolean(
+        hasActiveBatch && (
+          safeSceneId === activeSceneId ||
+          waitingIds.includes(safeSceneId) ||
+          (safeSceneId === activeSceneId && (activeJobId || activeStatusEndpoint))
+        )
+      )
+      if (hasCurrentVideoForRuntimeV148A && !fromBad && !isActiveServerBatchMemberV209O) return
       entries.push({
         sceneId: safeSceneId,
         status,
@@ -6758,19 +7225,10 @@ function sceneVideoActionState(scene) {
     waitingIds.forEach((sceneId, index) => {
       addEntry(sceneId, sceneId === activeSceneId ? 'running' : 'queued', index + 1)
     })
-    // AVA_BOARD_BATCH_READY_WITHOUT_VIDEO_GUARD_V143B:
-    // A completed scene without a current video ref is not ready for the UI yet.
-    // This prevents "видео готово" from jumping onto the next queued scene after the
-    // previous scene completes; once the video ref is merged, the normal ready path wins.
-    Array.from(completedIds).forEach((sceneId) => {
-      const safeSceneId = asText(sceneId)
-      if (!safeSceneId || entries.some((entry) => entry.sceneId === safeSceneId)) return
-      const scene = scenesById.get(safeSceneId) || {}
-      const hasCurrentVideoV143B = Boolean(
-        typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)
-      )
-      if (!hasCurrentVideoV143B) addEntry(safeSceneId, 'running', 0)
-    })
+    // AVA_BOARD_BATCH_PREPARE_STATUS_AUTHORITY_V209X:
+    // Completed scenes are no longer runtime-busy. Let the server board snapshot show
+    // ready/needs_review when the asset ref is present instead of piling up "видео делается".
+    Array.from(completedIds).forEach((sceneId) => clearBadRegenRuntimeStatusesV136I([sceneId]))
     if (!entries.length && activeSceneId && activeJobId) addEntry(activeSceneId, 'running', 0)
 
     if (entries.length) {
@@ -6786,52 +7244,28 @@ function sceneVideoActionState(scene) {
       })
     }
 
+    // AVA_BOARD_COMPLETED_RUNTIME_CLEAR_FLEX_V209Z2: completed/failed scenes are terminal for runtime overlays.
     const doneIds = [...Array.from(completedIds), ...Array.from(failedIds)]
-    const doneIdsToClearV136K = doneIds.filter((sceneId) => {
-      const safeSceneId = asText(sceneId)
-      const scene = scenesById.get(safeSceneId) || {}
-      const reviewStatus = boardSceneVideoReviewStatus(scene)
-      const runtime = badRegenRuntimeStatusRef.current?.[safeSceneId]
-      // AVA_BOARD_BATCH_READY_WITHOUT_VIDEO_GUARD_V143B:
-      // Keep the runtime overlay for completed scenes until the actual video ref is present.
-      if (completedIds.has(safeSceneId)) {
-        const hasCurrentVideoV143B = Boolean(
-          typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)
-        )
-        if (!hasCurrentVideoV143B) return false
-      }
-      const keepUntilReviewUpdate = Boolean(
-        runtime?.fromBad &&
-        reviewStatus === 'bad' &&
-        !failedIds.has(safeSceneId)
-      )
-      if (keepUntilReviewUpdate) {
-        // AVA_BOARD_BATCH_COMPLETED_RUNTIME_CLEAR_V200L:
-        // The scene already has the fresh video. Do not keep the runtime overlay
-        // as "видео делается" only because a stale bad review mark has not yet
-        // been replaced by needs_review/посмотри in the local React state.
-        const hasCurrentVideoForCompletedV200L = Boolean(
-          typeof boardSceneHasCurrentVideoResultV129P === 'function' &&
-          boardSceneHasCurrentVideoResultV129P(scene)
-        )
-        if (completedIds.has(safeSceneId) && hasCurrentVideoForCompletedV200L) {
-          console.log('[BOARD BAD REGEN RUNTIME CLEARED V200L] completed video is present', {
-            batchId,
-            sceneId: safeSceneId,
-            reviewStatus,
+      .map((id) => asText(id))
+      .filter(Boolean)
+    if (doneIds.length) {
+      clearBadRegenRuntimeStatusesV136I(doneIds)
+      try {
+        if (typeof window !== 'undefined') {
+          const globalMapV209Z2 = { ...(window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}) }
+          doneIds.forEach((sceneId) => { delete globalMapV209Z2[sceneId] })
+          window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ = globalMapV209Z2
+          window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = Object.values(globalMapV209Z2).some((entry) => {
+            const status = String(entry?.status || '').toLowerCase()
+            return badRegenRuntimeActiveStatusesV136I.has(status)
           })
-          return true
+          setServerBatchRuntimeTickV209R((value) => value + 1)
+          console.log('[BOARD COMPLETED RUNTIME CLEAR FLEX V209Z2]', { sceneIds: doneIds })
         }
-        console.log('[BOARD BAD REGEN STICKY RUNTIME V136K] keep completed scene until review updates', {
-          batchId,
-          sceneId: safeSceneId,
-          reviewStatus,
-        })
-        return false
+      } catch (error) {
+        console.warn('[BOARD COMPLETED RUNTIME CLEAR FLEX V209Z2] failed', error)
       }
-      return true
-    })
-    if (doneIdsToClearV136K.length) clearBadRegenRuntimeStatusesV136I(doneIdsToClearV136K)
+    }
     return Boolean(entries.length)
   }
 
@@ -7315,6 +7749,7 @@ function sceneVideoActionState(scene) {
           console.log('[BOARD SERVER BATCH ORPHAN MERGE V200E]', { projectId })
           return
         }
+        syncServerBatchRuntimeOverlayV209R(batchStatusDataV136J || {}, serverBoardData || {}, 'server_batch_refresh_status_v209r')
         rehydrateBadRegenRuntimeFromServerBatchV136J(
           batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || serverBoardData?.board_video_batch || serverBoardData?.boardVideoBatch || {},
           serverBoardData,
@@ -7672,6 +8107,14 @@ function sceneVideoActionState(scene) {
 
   useEffect(() => {
     if (loading) return undefined
+    // AVA_BOARD_ACTIVE_REGEN_UI_LATCH_V209O:
+    // While backend server batch is active, browser autosave must not publish
+    // stale ava-shell snapshots that can erase the live runtime queue badge.
+    // Server-side batch snapshots/results remain the source of truth.
+    if (typeof boardBatchRefreshShouldRunV200M === 'function' && boardBatchRefreshShouldRunV200M()) {
+      console.log('[BOARD ACTIVE SERVER BATCH AUTOSAVE SKIPPED V209O]', { projectId: projectId || '', workspaceMode })
+      return undefined
+    }
 
     // AVA09C_FAST_LOCAL_BOARD_BACKUP_EFFECT:
     // local backup must be immediate; backend save can still be delayed.
@@ -8261,8 +8704,48 @@ function sceneVideoActionState(scene) {
   }
 
 
+
+  function clearAvaGlobalBoardJobsForScenesV209Q(sceneIds = []) {
+    // AVA_BOARD_SERVER_BATCH_STATUS_AUTHORITY_V209Q:
+    // When backend owns a server batch, old browser/global board jobs for the same scenes
+    // must not keep polling and later write stale results back into the Board snapshot.
+    const ids = new Set(asArray(sceneIds).map((id) => asText(id)).filter(Boolean))
+    if (!ids.size) return
+    try {
+      const currentJobs = readAvaGlobalJobs()
+      const nextJobs = currentJobs.filter((job) => {
+        const jobStage = String(job?.stage || '').toLowerCase()
+        const jobSource = String(job?.source || '').toLowerCase()
+        const jobProjectId = asText(job?.projectId || job?.project_id || '')
+        const jobSceneId = asText(job?.sceneId || job?.scene_id || '')
+        if (jobStage !== 'board' && jobSource !== 'board') return true
+        if (projectId && jobProjectId && jobProjectId !== asText(projectId)) return true
+        return !ids.has(jobSceneId)
+      })
+      if (nextJobs.length !== currentJobs.length) {
+        writeAvaGlobalJobs(nextJobs)
+        console.log('[BOARD GLOBAL JOBS CLEARED FOR SERVER BATCH V209Q]', {
+          projectId: projectId || '',
+          sceneIds: Array.from(ids),
+          removed: currentJobs.length - nextJobs.length,
+        })
+      }
+    } catch (error) {
+      console.warn('[BOARD GLOBAL JOBS CLEAR FAILED V209Q]', error)
+    }
+  }
+
   function registerAvaGlobalJob({ kind = 'video', sceneId = '', jobId = '', statusEndpoint = '' } = {}) {
     if (!jobId || !statusEndpoint) return
+    if (kind === 'video' && !workspaceMode && projectId && boardServerBatchIsActiveV131M()) {
+      console.log('[BOARD GLOBAL JOB REGISTER SKIPPED V209Q]', {
+        projectId: projectId || '',
+        sceneId,
+        jobId,
+        reason: 'server_batch_active',
+      })
+      return
+    }
     if (!workspaceMode && (!projectId || isGeneratorSceneId(sceneId))) {
       console.warn('[BOARD JOB COMPLETED SKIP]', {
         reason: !projectId ? 'projectId null' : 'generator scene',
@@ -11935,7 +12418,9 @@ async function importTimingJson(event) {
     hasPreview: Boolean(selectedPreviewVideoUrl),
     loadError: selectedVideoLoadError,
   })
+  // AVA_BOARD_SERVER_BATCH_RUNTIME_OVERLAY_V209R: read tick so cards recompute after window runtime map changes.
   const boardScenes = asSceneArray(board.scenes).map((scene) => boardSceneWithBadRegenRuntimeV136I(scene))
+  void serverBatchRuntimeTickV209R
   const readiness = {
     total: boardScenes.length,
     prompts: boardScenes.filter((scene) => asText(scene.video_prompt)).length,
@@ -12300,6 +12785,10 @@ async function importTimingJson(event) {
                 <strong>{(autoVideoQueueConfirm.plan?.busyCount || 0) + (autoVideoQueueConfirm.plan?.alreadyQueuedCount || 0)}</strong>
                 <span>уже в работе</span>
               </div>
+              <div className="avaBoardAutoQueueStat isSourceCut">
+                <strong>{autoVideoQueueConfirm.plan?.sourceCutCount || 0}</strong>
+                <span>нарезка</span>
+              </div>
               <div className={`avaBoardAutoQueueStat ${(autoVideoQueueConfirm.plan?.invalidCount || 0) ? 'isWarn' : 'isOk'}`}>
                 <strong>{autoVideoQueueConfirm.plan?.invalidCount || 0}</strong>
                 <span>не хватает</span>
@@ -12307,6 +12796,19 @@ async function importTimingJson(event) {
             </div>
 
             <div className="avaBoardAutoQueueDetails">
+              {(autoVideoQueueConfirm.plan?.sourceCutCount || 0) ? (
+                <div className="avaBoardAutoQueueColumn isSourceCut">
+                  <strong>Пропускаем нарезку</strong>
+                  <div className="avaBoardAutoQueueSceneList">
+                    {(autoVideoQueueConfirm.plan?.sourceCut || []).slice(0, 16).map((item) => (
+                      <span key={`auto-sourcecut-${item.sceneId}`}>{item.sceneId}</span>
+                    ))}
+                    {(autoVideoQueueConfirm.plan?.sourceCut || []).length > 16 ? (
+                      <small>+ ещё {(autoVideoQueueConfirm.plan?.sourceCut || []).length - 16}</small>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               <div className="avaBoardAutoQueueColumn isLaunch">
                 <strong>Будут запущены</strong>
                 <div className="avaBoardAutoQueueSceneList">

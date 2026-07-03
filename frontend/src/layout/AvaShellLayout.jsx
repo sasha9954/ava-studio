@@ -1,3 +1,4 @@
+/* AVA_SHELL_BOARD_JOB_SERVER_BATCH_GUARD_V209Q: AvaShell must not persist stale Board global jobs while server batch owns Board. */
 /* AVA_PROJECT_NEW_ID_GUARD_V12: ignore reserved route id 'new' in shell project routing helpers. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -714,6 +715,68 @@ export default function AvaShellLayout() {
     return () => window.removeEventListener('ava:notify', handleNotify)
   }, [])
 
+
+  function avaShellBoardBatchIsActiveV209Q(boardData = {}) {
+    // AVA_SHELL_BOARD_JOB_SERVER_BATCH_GUARD_V209Q:
+    // The Board page/server batch owns Board snapshot writes while a batch is active.
+    // Shell global-job watcher may still see old direct jobs, but must not persist them.
+    const batch = boardData?.video_batch || boardData?.videoBatch || boardData?.board_video_batch || boardData?.boardVideoBatch || {}
+    const queue = boardData?.video_queue || boardData?.videoQueue || {}
+    const status = String(
+      batch.status || batch.batch_status || batch.video_status ||
+      queue.status || queue.batch_status || ''
+    ).toLowerCase()
+    const active = new Set(['queued', 'running', 'starting', 'preparing', 'submitting', 'processing'])
+    const terminal = new Set([
+      '', 'idle', 'ready', 'done', 'completed', 'success', 'finished', 'finished_with_errors',
+      'error', 'failed', 'canceled', 'cancelled', 'stopped', 'interrupted',
+      'interrupted_after_backend_reload', 'orphaned_after_reload', 'backend_reload_orphaned_batch_v150a',
+    ])
+    if (active.has(status)) return true
+    if (terminal.has(status)) return false
+    const waiting = [
+      ...(Array.isArray(queue.waitingSceneIds) ? queue.waitingSceneIds : []),
+      ...(Array.isArray(queue.waiting_scene_ids) ? queue.waiting_scene_ids : []),
+      ...(Array.isArray(batch.waitingSceneIds) ? batch.waitingSceneIds : []),
+      ...(Array.isArray(batch.waiting_scene_ids) ? batch.waiting_scene_ids : []),
+      ...(Array.isArray(batch.queuedSceneIds) ? batch.queuedSceneIds : []),
+      ...(Array.isArray(batch.queued_scene_ids) ? batch.queued_scene_ids : []),
+    ]
+    return Boolean(status && (
+      waiting.length ||
+      batch.activeSceneId || batch.active_scene_id || queue.activeSceneId || queue.active_scene_id ||
+      batch.activeJobId || batch.active_job_id || queue.activeJobId || queue.active_job_id ||
+      batch.activeStatusEndpoint || batch.active_status_endpoint || queue.activeStatusEndpoint || queue.active_status_endpoint
+    ))
+  }
+
+  function avaShellBoardSceneRejectsJobV209Q(scene = {}, jobId = '') {
+    const safeJobId = String(jobId || '').trim()
+    if (!safeJobId || !scene || typeof scene !== 'object') return false
+
+    const liveJobId = String(scene.video_job_id || scene.videoJobId || scene.job_id || scene.jobId || '').trim()
+    const liveEndpoint = String(scene.video_status_endpoint || scene.videoStatusEndpoint || scene.status_endpoint || scene.statusEndpoint || '').trim()
+    const status = String(scene.video_status || scene.videoStatus || scene.status || '').toLowerCase()
+    const active = new Set(['queued', 'running', 'starting', 'preparing', 'submitting', 'processing', 'queued_no_prompt_id'])
+
+    if (liveJobId && liveJobId !== safeJobId) return true
+    if (liveEndpoint && !liveEndpoint.includes(safeJobId)) return true
+    if (active.has(status) && !liveJobId && !liveEndpoint) return true
+
+    const hasReadyVideo = Boolean(
+      scene.video_asset_id || scene.videoAssetId ||
+      scene.video_api_path || scene.videoApiPath ||
+      scene.video_url || scene.videoUrl ||
+      scene.result_video_asset_id || scene.resultVideoAssetId ||
+      scene.result_video_api_path || scene.resultVideoApiPath ||
+      scene.result_video_url || scene.resultVideoUrl
+    )
+    // If the scene already has a saved video and no live job points to this job, this is
+    // probably an old global job finishing late. Do not let it overwrite server-batch result.
+    if (hasReadyVideo && !liveJobId && !liveEndpoint) return true
+    return false
+  }
+
   async function persistFinishedJobToBoardSnapshot(job, data) {
     const sceneId = job?.sceneId || ''
     if (!sceneId) return
@@ -734,6 +797,29 @@ export default function AvaShellLayout() {
       const current = await apiRequest(endpoint)
       const boardData = current?.snapshot?.data || {}
       const scenes = Array.isArray(boardData.scenes) ? boardData.scenes : []
+
+      if (String(job?.stage || '').toLowerCase() === 'board' && job.kind !== 'mmaudio' && avaShellBoardBatchIsActiveV209Q(boardData)) {
+        console.log('[AVA SHELL BOARD JOB PERSIST SKIPPED V209Q]', {
+          reason: 'active_server_batch',
+          projectId: job?.projectId || '',
+          sceneId,
+          jobId: job?.jobId || job?.job_id || '',
+        })
+        return
+      }
+
+      const targetSceneV209Q = scenes.find((scene) => (scene?.id || scene?.scene_id) === sceneId) || null
+      if (String(job?.stage || '').toLowerCase() === 'board' && job.kind !== 'mmaudio' && avaShellBoardSceneRejectsJobV209Q(targetSceneV209Q, job?.jobId || job?.job_id || '')) {
+        console.log('[AVA SHELL BOARD JOB PERSIST SKIPPED V209Q]', {
+          reason: 'scene_does_not_accept_job',
+          projectId: job?.projectId || '',
+          sceneId,
+          jobId: job?.jobId || job?.job_id || '',
+          liveJobId: targetSceneV209Q?.video_job_id || targetSceneV209Q?.videoJobId || '',
+          liveEndpoint: targetSceneV209Q?.video_status_endpoint || targetSceneV209Q?.videoStatusEndpoint || '',
+        })
+        return
+      }
 
       let changed = false
       const nextScenes = scenes.map((scene) => {

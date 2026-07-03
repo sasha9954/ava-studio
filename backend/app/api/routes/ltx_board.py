@@ -1,3 +1,4 @@
+# AVA_BOARD_BATCH_SERVER_HANG_UNICODE_START_FIX_V209E: safe ffmpeg/ffprobe decoding + normalize first scene start=0 for server batch.
 # V204G13_STAU_VOLUME_DRAFT_APPLY_PREVIEW
 # V204G12B_STAU_VOLUME100_DRAG_SAVE
 # AVA_BOARD_MASTER_AUDIO_MANUAL_SLICE_V199I: manual slice uses project master/mixed audio fallback, rejects vocal-ASR stems.
@@ -68,6 +69,7 @@ DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14 = 7
 
 router = APIRouter(tags=["ltx-board"])
 print("[BOARD ASSEMBLY PATCH ACTIVE] sparse_placeholders_v2", flush=True)
+# V209I_ASSEMBLY_SKIP_MISSING_GUARD: backend refuses black placeholders unless explicitly allowed.
 
 APP_DIR = Path(__file__).resolve().parents[2]
 BACKEND_DIR = APP_DIR.parent
@@ -1367,7 +1369,7 @@ def _run_ffmpeg(args: list[str]) -> None:
     exe = shutil.which("ffmpeg")
     if not exe:
         raise HTTPException(status_code=500, detail="ffmpeg_not_found")
-    result = subprocess.run([exe, *args], text=True, capture_output=True)
+    result = subprocess.run([exe, *args], text=True, capture_output=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         raise HTTPException(
             status_code=500,
@@ -3594,6 +3596,23 @@ def _board_batch_video_payload(scene: dict[str, Any], project_id: str) -> VideoS
     route = str(scene.get("route") or "i2v").strip() or "i2v"
     width, height = _board_batch_size(scene)
     duration = _board_batch_duration(scene)
+
+    def _scene_time_v209e(*keys: str, default: float = 0.0) -> float:
+        for key in keys:
+            try:
+                value = scene.get(key)
+                if value is not None and value != "":
+                    num = float(value)
+                    if math.isfinite(num):
+                        return num
+            except Exception:
+                pass
+        return float(default or 0.0)
+
+    scene_start_v209e = max(0.0, _scene_time_v209e("start", "start_sec", "scene_start_sec", "sceneStartSec", default=0.0))
+    scene_end_v209e = _scene_time_v209e("end", "end_sec", "scene_end_sec", "sceneEndSec", default=scene_start_v209e + duration)
+    if scene_end_v209e <= scene_start_v209e:
+        scene_end_v209e = scene_start_v209e + max(0.05, float(duration or 0.0))
     start_ref = _board_batch_scene_image_ref(scene)
     end_ref = _board_batch_scene_end_image_ref(scene)
     audio_ref = _board_batch_scene_audio_ref(scene)
@@ -3606,8 +3625,8 @@ def _board_batch_video_payload(scene: dict[str, Any], project_id: str) -> VideoS
         "workflowKey": workflow_key,
         "image": start_ref,
         "audio": audio_ref,
-        "start": scene.get("start") or scene.get("scene_start_sec") or scene.get("sceneStartSec"),
-        "end": scene.get("end") or scene.get("scene_end_sec") or scene.get("sceneEndSec"),
+        "start": scene_start_v209e,
+        "end": scene_end_v209e,
         "promptHead": _board_batch_prompt(scene)[:160],
     }, flush=True)
     return VideoStartIn(
@@ -3639,10 +3658,10 @@ def _board_batch_video_payload(scene: dict[str, Any], project_id: str) -> VideoS
         durationSec=duration,
         target_duration_sec=duration,
         targetDurationSec=duration,
-        scene_start_sec=float(scene.get("start") or scene.get("scene_start_sec") or scene.get("sceneStartSec") or 0),
-        sceneStartSec=float(scene.get("start") or scene.get("scene_start_sec") or scene.get("sceneStartSec") or 0),
-        scene_end_sec=float(scene.get("end") or scene.get("scene_end_sec") or scene.get("sceneEndSec") or duration),
-        sceneEndSec=float(scene.get("end") or scene.get("scene_end_sec") or scene.get("sceneEndSec") or duration),
+        scene_start_sec=scene_start_v209e,
+        sceneStartSec=scene_start_v209e,
+        scene_end_sec=scene_end_v209e,
+        sceneEndSec=scene_end_v209e,
     )
 
 
@@ -4049,7 +4068,60 @@ def _board_batch_update_scene(project_id: str, scene_id: str, patch: dict[str, A
 def _board_batch_start_scene(project_id: str, batch_id: str, scene: dict[str, Any], user: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     scene_id = _board_batch_scene_id(scene)
     payload = _board_batch_video_payload(scene, project_id)
-    start_data = start_video(payload, user)
+    # AVA_BOARD_START_SCENE_HARD_DIAGNOSTICS_V210B:
+    # START PAYLOAD is only payload construction. This log proves the moment we actually call /clip/video/start logic.
+    try:
+        print("[BOARD SERVER BATCH START SCENE CALL V210B]", {
+            "project_id": project_id,
+            "batch_id": batch_id,
+            "scene_id": scene_id,
+            "route": getattr(payload, "route", None),
+            "workflowKey": getattr(payload, "workflow_key", None) or getattr(payload, "workflowKey", None),
+            "image": getattr(payload, "image_url", None) or getattr(payload, "imageUrl", None) or getattr(payload, "start_image_url", None) or getattr(payload, "startImageUrl", None),
+            "audio": getattr(payload, "audio_slice_url", None) or getattr(payload, "audioSliceUrl", None),
+            "start": getattr(payload, "scene_start_sec", None) or getattr(payload, "sceneStartSec", None),
+            "end": getattr(payload, "scene_end_sec", None) or getattr(payload, "sceneEndSec", None),
+        }, flush=True)
+    except Exception:
+        pass
+    try:
+        start_data = start_video(payload, user)
+    except Exception as exc:
+        import traceback
+        try:
+            print("[BOARD SERVER BATCH START SCENE EXCEPTION V210B]", {
+                "project_id": project_id,
+                "batch_id": batch_id,
+                "scene_id": scene_id,
+                "route": getattr(payload, "route", None),
+                "workflowKey": getattr(payload, "workflow_key", None) or getattr(payload, "workflowKey", None),
+                "image": getattr(payload, "image_url", None) or getattr(payload, "imageUrl", None) or getattr(payload, "start_image_url", None) or getattr(payload, "startImageUrl", None),
+                "audio": getattr(payload, "audio_slice_url", None) or getattr(payload, "audioSliceUrl", None),
+                "errorType": type(exc).__name__,
+                "statusCode": getattr(exc, "status_code", None),
+                "detail": getattr(exc, "detail", None),
+                "error": str(exc),
+                "tracebackTail": traceback.format_exc()[-5000:],
+            }, flush=True)
+        except Exception as log_exc:
+            print("[BOARD SERVER BATCH START SCENE EXCEPTION LOG FAILED V210B]", {"scene_id": scene_id, "error": str(log_exc)}, flush=True)
+        raise
+    try:
+        print("[BOARD SERVER BATCH START VIDEO RETURN V210B]", {
+            "project_id": project_id,
+            "batch_id": batch_id,
+            "scene_id": scene_id,
+            "ok": start_data.get("ok") if isinstance(start_data, dict) else None,
+            "status": start_data.get("status") if isinstance(start_data, dict) else None,
+            "jobId": (start_data.get("jobId") or start_data.get("job_id")) if isinstance(start_data, dict) else None,
+            "promptId": (start_data.get("promptId") or start_data.get("prompt_id")) if isinstance(start_data, dict) else None,
+            "targetComfyBaseUrl": (start_data.get("targetComfyBaseUrl") or start_data.get("target_comfy_base_url")) if isinstance(start_data, dict) else None,
+            "uploadedMedia": start_data.get("uploadedMedia") if isinstance(start_data, dict) else None,
+            "missing": start_data.get("missing") if isinstance(start_data, dict) else None,
+            "error": start_data.get("error") if isinstance(start_data, dict) else None,
+        }, flush=True)
+    except Exception as log_exc:
+        print("[BOARD SERVER BATCH START VIDEO RETURN LOG FAILED V210B]", {"scene_id": scene_id, "error": str(log_exc)}, flush=True)
     job_id = str(start_data.get("jobId") or start_data.get("job_id") or "").strip()
     if not job_id:
         raise RuntimeError("video_start_returned_no_job_id")
@@ -4289,6 +4361,20 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                 job_id, start_data = _board_batch_start_scene(project_id, batch_id, scene, user)
                 batch.update({"activeJobId": job_id, "activeStatusEndpoint": start_data.get("statusEndpoint") or f"/api/clip/video/status/{job_id}"})
             except Exception as exc:
+                try:
+                    print("[BOARD SERVER BATCH SCENE START FAILED V210B]", {
+                        "project_id": project_id,
+                        "batch_id": batch_id,
+                        "scene_id": scene_id,
+                        "route": scene.get("route"),
+                        "errorType": type(exc).__name__,
+                        "statusCode": getattr(exc, "status_code", None),
+                        "detail": getattr(exc, "detail", None),
+                        "error": str(exc),
+                        "waiting": list(waiting_ids),
+                    }, flush=True)
+                except Exception:
+                    pass
                 failed.append(scene_id)
                 _board_batch_update_scene(project_id, scene_id, _board_batch_error_patch("error", exc), {
                     "batch_id": batch_id,
@@ -4781,6 +4867,131 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     if not scenes:
         raise HTTPException(status_code=400, detail="Board snapshot has no scenes")
 
+    # AVA_BOARD_BATCH_PREPARE_STATUS_AUTHORITY_V209X:
+    # Publish a truthful server-batch marker BEFORE slow autoslice/recut.
+    # Otherwise the browser can briefly reload the old Board snapshot and show
+    # stale "посмотри/готово/плохое" while the backend is already preparing generation.
+    early_batch_id_v209x = ""
+    early_candidate_ids_v209x: list[str] = []
+    try:
+        raw_candidate_ids_v209x = payload.scene_ids or payload.sceneIds or []
+        if raw_candidate_ids_v209x:
+            for item_v209x in raw_candidate_ids_v209x:
+                sid_v209x = str(item_v209x or "").strip()
+                if sid_v209x and sid_v209x not in early_candidate_ids_v209x:
+                    early_candidate_ids_v209x.append(sid_v209x)
+        else:
+            for scene_v209x in scenes:
+                sid_v209x = _board_batch_scene_id(scene_v209x)
+                if sid_v209x and sid_v209x not in early_candidate_ids_v209x:
+                    early_candidate_ids_v209x.append(sid_v209x)
+
+        if early_candidate_ids_v209x:
+            early_batch_id_v209x = f"boardbatch_{uuid4().hex[:14]}"
+            early_now_v209x = _board_batch_now()
+            early_set_v209x = set(early_candidate_ids_v209x)
+            early_scenes_v209x: list[Any] = []
+            for scene_v209x in scenes:
+                if not isinstance(scene_v209x, dict):
+                    early_scenes_v209x.append(scene_v209x)
+                    continue
+                sid_v209x = _board_batch_scene_id(scene_v209x)
+                if sid_v209x in early_set_v209x:
+                    pos_v209x = early_candidate_ids_v209x.index(sid_v209x) + 1
+                    patched_v209x = dict(scene_v209x)
+                    # Keep old video refs visible during regeneration, but make live status win.
+                    patched_v209x.update({
+                        "video_status": "submitting",
+                        "videoStatus": "submitting",
+                        "video_error": "",
+                        "videoError": "",
+                        "video_job_id": "",
+                        "videoJobId": "",
+                        "video_status_endpoint": "",
+                        "videoStatusEndpoint": "",
+                        "video_queue_position": pos_v209x,
+                        "videoQueuePosition": pos_v209x,
+                        "video_queue_source": "server_batch_preparing_v209x",
+                        "videoQueueSource": "server_batch_preparing_v209x",
+                        "server_batch_id": early_batch_id_v209x,
+                        "serverBatchId": early_batch_id_v209x,
+                        "server_batch_status": "preparing",
+                        "serverBatchStatus": "preparing",
+                        "video_updated_at": early_now_v209x,
+                        "videoUpdatedAt": early_now_v209x,
+                    })
+                    early_scenes_v209x.append(patched_v209x)
+                else:
+                    early_scenes_v209x.append(scene_v209x)
+
+            early_batch_v209x = {
+                "batch_id": early_batch_id_v209x,
+                "batchId": early_batch_id_v209x,
+                "project_id": project_id,
+                "projectId": project_id,
+                "status": "preparing",
+                "batch_status": "preparing",
+                "source": "server_batch_preparing_v209x",
+                "mode": mode,
+                "preparingBeforeAcceptV209X": True,
+                "preparing_before_accept_v209x": True,
+                "waitingSceneIds": early_candidate_ids_v209x,
+                "waiting_scene_ids": early_candidate_ids_v209x,
+                "queuedSceneIds": early_candidate_ids_v209x,
+                "queued_scene_ids": early_candidate_ids_v209x,
+                "completedSceneIds": [],
+                "completed_scene_ids": [],
+                "failedSceneIds": [],
+                "failed_scene_ids": [],
+                "activeSceneId": "",
+                "active_scene_id": "",
+                "activeJobId": "",
+                "active_job_id": "",
+                "activeStatusEndpoint": "",
+                "active_status_endpoint": "",
+                "createdAt": early_now_v209x,
+                "created_at": early_now_v209x,
+                "updatedAt": early_now_v209x,
+                "updated_at": early_now_v209x,
+            }
+            BOARD_VIDEO_BATCHES[early_batch_id_v209x] = early_batch_v209x
+            early_board_data_v209x = copy.deepcopy(board_data)
+            early_board_data_v209x["scenes"] = early_scenes_v209x
+            early_board_data_v209x["board_video_batch"] = early_batch_v209x
+            early_board_data_v209x["boardVideoBatch"] = early_batch_v209x
+            early_board_data_v209x["video_batch"] = early_batch_v209x
+            early_board_data_v209x["videoBatch"] = early_batch_v209x
+            early_board_data_v209x["video_queue"] = {
+                **(early_board_data_v209x.get("video_queue") if isinstance(early_board_data_v209x.get("video_queue"), dict) else {}),
+                "status": "preparing",
+                "batch_status": "preparing",
+                "batchId": early_batch_id_v209x,
+                "batch_id": early_batch_id_v209x,
+                "activeSceneId": "",
+                "active_scene_id": "",
+                "activeJobId": "",
+                "active_job_id": "",
+                "activeStatusEndpoint": "",
+                "active_status_endpoint": "",
+                "waitingSceneIds": early_candidate_ids_v209x,
+                "waiting_scene_ids": early_candidate_ids_v209x,
+                "source": "server_batch_preparing_v209x",
+                "updatedAt": early_now_v209x,
+                "updated_at": early_now_v209x,
+            }
+            early_board_data_v209x["videoQueue"] = early_board_data_v209x["video_queue"]
+            early_board_data_v209x["updatedAt"] = early_now_v209x
+            early_board_data_v209x["updated_at"] = early_now_v209x
+            _board_batch_save_snapshot(project_id, early_board_data_v209x, client_version="board-server-video-batch-preparing-v209x")
+            print("[BOARD SERVER BATCH PREPARING V209X]", {
+                "project_id": project_id,
+                "batch_id": early_batch_id_v209x,
+                "sceneIds": early_candidate_ids_v209x,
+            }, flush=True)
+    except Exception as exc:
+        print("[BOARD SERVER BATCH PREPARING V209X ERROR]", {"project_id": project_id, "error": str(exc)}, flush=True)
+        early_batch_id_v209x = ""
+
     # AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A:
     # Cut missing per-scene audio slices before input validation. This makes
     # "Сгенерировать все" work for Timing-imported ia2v/lip-sync scenes without
@@ -4807,6 +5018,9 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
         waiting_ids.append(scene_id)
 
     if not waiting_ids:
+        if early_batch_id_v209x:
+            BOARD_VIDEO_BATCHES.pop(early_batch_id_v209x, None)
+            BOARD_VIDEO_BATCH_THREADS.pop(early_batch_id_v209x, None)
         reason_v152a = "autoslice_failed" if auto_slice_failed_v147a else "nothing_to_queue"
         board_data = _board_batch_clear_not_started_state_v152a(
             board_data,
@@ -4834,7 +5048,149 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
             "board": board_data,
         }
 
-    batch_id = f"boardbatch_{uuid4().hex[:14]}"
+    # AVA_BOARD_BATCH_CREDIT_PREFLIGHT_STOP_V210C2:
+    # Stop the batch before creating/running fake server-batch state when credits are not enough.
+    # Previously start_video raised HTTP 402 scene-by-scene, so the UI showed queued/running
+    # but no Comfy job was actually sent.
+    credit_details_v210c2 = []
+    required_credits_v210c2 = 0
+    waiting_set_v210c2 = set(waiting_ids)
+    for scene_v210c2 in scenes:
+        scene_id_v210c2 = _board_batch_scene_id(scene_v210c2)
+        if scene_id_v210c2 not in waiting_set_v210c2:
+            continue
+        route_v210c2 = str((scene_v210c2 or {}).get("route") or "i2v").strip() or "i2v"
+        try:
+            cost_v210c2 = int(_video_credit_cost_for_payload(route_v210c2, scene_v210c2) or 1)
+        except Exception:
+            try:
+                cost_v210c2 = int(VIDEO_ROUTE_CREDIT_COSTS.get(route_v210c2, 1) or 1)
+            except Exception:
+                cost_v210c2 = 1
+        cost_v210c2 = max(1, int(cost_v210c2 or 1))
+        required_credits_v210c2 += cost_v210c2
+        credit_details_v210c2.append({
+            "sceneId": scene_id_v210c2,
+            "scene_id": scene_id_v210c2,
+            "route": route_v210c2,
+            "cost": cost_v210c2,
+        })
+    try:
+        available_credits_v210c2 = int((user or {}).get("credits_balance", 0) or 0)
+    except Exception:
+        available_credits_v210c2 = 0
+    if required_credits_v210c2 > 0 and available_credits_v210c2 < required_credits_v210c2:
+        now_v210c2 = _board_batch_now()
+        message_v210c2 = f"Недостаточно кредитов: нужно {required_credits_v210c2}, доступно {available_credits_v210c2}"
+        waiting_set_mark_v210c2 = {str(item or "").strip() for item in waiting_ids if str(item or "").strip()}
+        next_scenes_v210c2 = []
+        for scene_mark_v210c2 in scenes:
+            if not isinstance(scene_mark_v210c2, dict):
+                next_scenes_v210c2.append(scene_mark_v210c2)
+                continue
+            scene_id_mark_v210c2 = _board_batch_scene_id(scene_mark_v210c2)
+            if scene_id_mark_v210c2 not in waiting_set_mark_v210c2:
+                next_scenes_v210c2.append(scene_mark_v210c2)
+                continue
+            patched_scene_v210c2 = {
+                **scene_mark_v210c2,
+                "video_status": "error",
+                "videoStatus": "error",
+                "video_error": message_v210c2,
+                "videoError": message_v210c2,
+                "video_job_id": "",
+                "videoJobId": "",
+                "video_status_endpoint": "",
+                "videoStatusEndpoint": "",
+                "server_batch_job_id": "",
+                "serverBatchJobId": "",
+                "server_batch_status_endpoint": "",
+                "serverBatchStatusEndpoint": "",
+                "video_queue_position": 0,
+                "videoQueuePosition": 0,
+                "video_queue_source": "",
+                "videoQueueSource": "",
+                "video_batch_active_v132r": False,
+                "videoBatchActiveV132R": False,
+                "video_updated_at": now_v210c2,
+                "videoUpdatedAt": now_v210c2,
+            }
+            next_scenes_v210c2.append(patched_scene_v210c2)
+        board_data["scenes"] = next_scenes_v210c2
+        batch_error_v210c2 = {
+            "status": "insufficient_credits",
+            "batch_status": "insufficient_credits",
+            "source": "batch_credit_preflight_v210c2",
+            "reason": "insufficient_credits_v210c2",
+            "error": message_v210c2,
+            "creditRequired": required_credits_v210c2,
+            "credit_required": required_credits_v210c2,
+            "creditAvailable": available_credits_v210c2,
+            "credit_available": available_credits_v210c2,
+            "creditDetails": credit_details_v210c2,
+            "credit_details": credit_details_v210c2,
+            "activeSceneId": "",
+            "active_scene_id": "",
+            "activeJobId": "",
+            "active_job_id": "",
+            "activeStatusEndpoint": "",
+            "active_status_endpoint": "",
+            "waitingSceneIds": [],
+            "waiting_scene_ids": [],
+            "completedSceneIds": [],
+            "completed_scene_ids": [],
+            "failedSceneIds": list(waiting_set_mark_v210c2),
+            "failed_scene_ids": list(waiting_set_mark_v210c2),
+            "updatedAt": now_v210c2,
+            "updated_at": now_v210c2,
+        }
+        board_data["board_video_batch"] = batch_error_v210c2
+        board_data["boardVideoBatch"] = dict(batch_error_v210c2)
+        board_data["video_batch"] = dict(batch_error_v210c2)
+        board_data["videoBatch"] = dict(batch_error_v210c2)
+        current_queue_v210c2 = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
+        board_data["video_queue"] = {
+            **current_queue_v210c2,
+            "activeSceneId": "",
+            "activeJobId": "",
+            "activeStatusEndpoint": "",
+            "waitingSceneIds": [],
+            "waiting_scene_ids": [],
+            "source": "batch_credit_preflight_v210c2",
+            "error": message_v210c2,
+            "updatedAt": now_v210c2,
+        }
+        board_data["videoQueue"] = dict(board_data["video_queue"])
+        board_data["updatedAt"] = now_v210c2
+        board_data["updated_at"] = now_v210c2
+        _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-insufficient-credits-v210c2")
+        print("[BOARD SERVER BATCH NOT STARTED INSUFFICIENT CREDITS V210C2]", {
+            "project_id": project_id,
+            "required": required_credits_v210c2,
+            "available": available_credits_v210c2,
+            "queued": waiting_ids,
+            "details": credit_details_v210c2,
+        }, flush=True)
+        return {
+            "ok": False,
+            "status": "insufficient_credits",
+            "error": message_v210c2,
+            "creditRequired": required_credits_v210c2,
+            "credit_required": required_credits_v210c2,
+            "creditAvailable": available_credits_v210c2,
+            "credit_available": available_credits_v210c2,
+            "queued": [],
+            "invalid": invalid,
+            "creditDetails": credit_details_v210c2,
+            "credit_details": credit_details_v210c2,
+            "autoAudioSliceSceneIds": auto_sliced_scene_ids_v147a,
+            "auto_audio_slice_scene_ids": auto_sliced_scene_ids_v147a,
+            "autoAudioSliceFailed": auto_slice_failed_v147a,
+            "auto_audio_slice_failed": auto_slice_failed_v147a,
+            "board": board_data,
+        }
+
+    batch_id = early_batch_id_v209x or f"boardbatch_{uuid4().hex[:14]}"
     now_value = _board_batch_now()
     waiting_set = set(waiting_ids)
     bad_review_waiting_ids_v132b = [
@@ -5601,10 +5957,21 @@ def _run_mmaudio_submit_job(job_id: str) -> None:
         job["status"] = "error"
         job["error"] = exc.detail
         job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+        print("[BOARD ASSEMBLY ERROR V210D]", {
+            "job_id": job_id,
+            "errorType": "HTTPException",
+            "detail": exc.detail,
+            "statusCode": getattr(exc, "status_code", None),
+        }, flush=True)
     except Exception as exc:
         job["status"] = "error"
         job["error"] = str(exc)
         job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+        print("[BOARD ASSEMBLY ERROR V210D]", {
+            "job_id": job_id,
+            "errorType": type(exc).__name__,
+            "error": str(exc),
+        }, flush=True)
 
 
 @router.post("/clip/mmaudio/start")
@@ -5912,7 +6279,7 @@ def _ffprobe_json(args: list[str]) -> dict[str, Any]:
     exe = shutil.which("ffprobe")
     if not exe:
         return {}
-    result = subprocess.run([exe, *args], text=True, capture_output=True)
+    result = subprocess.run([exe, *args], text=True, capture_output=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         return {}
     try:
@@ -8069,7 +8436,7 @@ def _assembly_probe_video_size_v200p(path: Path) -> tuple[int, int]:
             "-of", "json",
             str(path),
         ]
-        proc = _subprocess.run(cmd, capture_output=True, text=True, check=False)
+        proc = _subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         data = _json.loads(proc.stdout or "{}")
         streams = data.get("streams") or []
         if not streams:
@@ -8092,7 +8459,7 @@ def _assembly_probe_video_size_v200p(path: Path) -> tuple[int, int]:
             "-of", "json",
             str(path),
         ]
-        proc = _subprocess.run(cmd, capture_output=True, text=True, check=False)
+        proc = _subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         data = _json.loads(proc.stdout or "{}")
         streams = data.get("streams") or []
         if not streams:
@@ -8355,6 +8722,420 @@ def _assembly_payload_merge_board_video_trims_v201b(payload_data: dict[str, Any]
     }, flush=True)
     return next_payload
 
+# AVA_BOARD_ASSEMBLY_FAST_STRICT_CONCAT_MASTER_AUDIO_V210E: use faster strict concat renderer and master-audio mux for original_plus_scene.
+
+# AVA_BOARD_ASSEMBLY_EXACT_TIMELINE_AUDIO_AND_SNAPSHOT_V210F:
+# V210E proved that the fast strict visual concat path creates the final MP4 reliably,
+# but muxing the raw master MP3 on top can reintroduce player/MP3-priming drift.
+# V210F builds a fresh exact timeline WAV from the original/master audio using the
+# same prepared Board item start/end ranges as the visual strict concat, then muxes
+# that WAV with the visual MP4. This keeps the fast video path but restores exact
+# scene-level audio authority.
+def _assembly_build_master_timeline_audio_v210f(
+    original_audio_path: Path,
+    prepared_items: list[dict[str, Any]],
+    work_dir: Path,
+    job_id: str,
+    *,
+    target_duration: float,
+    volume: float = 1.0,
+) -> dict[str, Any]:
+    safe_volume = max(0.0, float(volume or 0.0))
+    safe_target_duration = max(0.04, float(target_duration or 0.0))
+    original_audio_duration = _ffprobe_duration(original_audio_path) if original_audio_path else 0.0
+    audio_dir = work_dir / f"{job_id}_timeline_audio_v210f"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    rows: list[dict[str, Any]] = []
+    segment_paths: list[Path] = []
+    cursor = 0.0
+
+    def make_silence(out_path: Path, duration: float) -> None:
+        _run_ffmpeg([
+            "-y",
+            "-f", "lavfi",
+            "-t", f"{max(0.04, duration):.6f}",
+            "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-af", f"atrim=duration={max(0.04, duration):.6f},asetpts=PTS-STARTPTS,volume={safe_volume:.4f}",
+            "-c:a", "pcm_s16le",
+            "-ar", "48000",
+            "-ac", "2",
+            str(out_path),
+        ])
+
+    for index, item in enumerate(prepared_items or []):
+        if not isinstance(item, dict):
+            continue
+        scene_id = str(item.get("sceneId") or item.get("scene_id") or item.get("id") or f"item_{index + 1}")
+        start = _assembly_float(item.get("targetStartSec") or item.get("start_sec") or item.get("startSec") or item.get("start"), cursor)
+        end = _assembly_float(item.get("targetEndSec") or item.get("end_sec") or item.get("endSec") or item.get("end"), 0.0)
+        duration = _assembly_float(item.get("targetDurationSecV196B") or item.get("durationSec") or item.get("duration_sec"), 0.0)
+        if end > start + 0.001:
+            duration = end - start
+        duration = max(0.04, float(duration or 0.0))
+        if safe_target_duration > 0.0:
+            # Do not let rounding from prepared items overshoot the final timeline by much.
+            remaining = max(0.04, safe_target_duration - cursor)
+            duration = min(duration, remaining) if cursor + duration > safe_target_duration + 0.02 else duration
+
+        seg_path = audio_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}.wav"
+        if original_audio_path and original_audio_path.exists() and start < max(0.0, original_audio_duration - 0.005):
+            # Decode from the master into a fresh PCM segment. apad+atrim makes the segment
+            # exact even if the requested tail extends slightly beyond the source audio.
+            _run_ffmpeg([
+                "-y",
+                "-ss", f"{max(0.0, start):.6f}",
+                "-i", str(original_audio_path),
+                "-filter:a", (
+                    f"aresample=48000,apad,"
+                    f"atrim=duration={duration:.6f},"
+                    f"asetpts=PTS-STARTPTS,volume={safe_volume:.4f}"
+                ),
+                "-t", f"{duration:.6f}",
+                "-c:a", "pcm_s16le",
+                "-ar", "48000",
+                "-ac", "2",
+                str(seg_path),
+            ])
+            source = "master_slice"
+        else:
+            make_silence(seg_path, duration)
+            source = "silence_tail"
+
+        segment_paths.append(seg_path)
+        rows.append({
+            "index": index,
+            "scene_id": scene_id,
+            "start_sec": round(float(start), 6),
+            "duration_sec": round(float(duration), 6),
+            "cursor_sec": round(float(cursor), 6),
+            "source": source,
+            "exists": bool(seg_path.exists()),
+            "size": int(seg_path.stat().st_size) if seg_path.exists() else 0,
+        })
+        cursor += duration
+        if cursor >= safe_target_duration - 0.005:
+            break
+
+    if cursor < safe_target_duration - 0.02:
+        tail_duration = safe_target_duration - cursor
+        tail_path = audio_dir / f"{len(segment_paths) + 1:04d}_tail_silence.wav"
+        make_silence(tail_path, tail_duration)
+        segment_paths.append(tail_path)
+        rows.append({
+            "index": len(rows),
+            "scene_id": "tail_silence_v210f",
+            "start_sec": round(float(cursor), 6),
+            "duration_sec": round(float(tail_duration), 6),
+            "cursor_sec": round(float(cursor), 6),
+            "source": "silence_pad_to_target",
+            "exists": bool(tail_path.exists()),
+            "size": int(tail_path.stat().st_size) if tail_path.exists() else 0,
+        })
+        cursor = safe_target_duration
+
+    concat_file = audio_dir / "audio_concat_v210f.txt"
+    _write_concat_file(segment_paths, concat_file)
+    timeline_audio_path = work_dir / f"{job_id}_exact_timeline_audio_v210f.wav"
+    _run_ffmpeg([
+        "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", str(concat_file),
+        "-c:a", "pcm_s16le",
+        "-ar", "48000",
+        "-ac", "2",
+        str(timeline_audio_path),
+    ])
+    actual_duration = _ffprobe_duration(timeline_audio_path) or 0.0
+    result = {
+        "applied": True,
+        "path": str(timeline_audio_path),
+        "exists": bool(timeline_audio_path.exists()),
+        "size": int(timeline_audio_path.stat().st_size) if timeline_audio_path.exists() else 0,
+        "targetDurationSec": safe_target_duration,
+        "actualDurationSec": actual_duration,
+        "durationDeltaSec": actual_duration - safe_target_duration,
+        "segments": len(segment_paths),
+        "originalAudioDurationSec": original_audio_duration,
+        "rowsPreview": rows[:6] + ([{"omittedRows": max(0, len(rows) - 12)}] if len(rows) > 12 else []) + (rows[-6:] if len(rows) > 12 else []),
+    }
+    print("[BOARD ASSEMBLY EXACT TIMELINE AUDIO BUILT V210F]", {"job_id": job_id, **result}, flush=True)
+    return result
+
+
+
+
+# AVA_BOARD_ASSEMBLY_FRAME_EXACT_MASTER_AUDIO_QUALITY_V210G:
+# Final correction after V210E/V210F:
+# - visual timeline is built by frame authority, not summed seconds;
+# - each scene gets frames = round(end*fps) - round(start*fps), so a 147.024s/30fps
+#   board produces 4411 visual frames instead of drifting to 4409 after mux;
+# - music/master audio is NOT sliced into 48 pieces, so there are no audible joins;
+# - final mux never uses -shortest, because -shortest was dropping frames on Windows players.
+def _render_board_exact_frame_concat_v210g(
+    paths: list[Path],
+    prepared_items: list[dict[str, Any]],
+    target: Path,
+    *,
+    width: int,
+    height: int,
+    fps: int,
+    job_id: str,
+) -> dict[str, Any]:
+    if not paths:
+        return {"applied": False, "reason": "no_paths_v210g"}
+
+    safe_fps = max(1, int(fps or 30))
+    args = ["-y"]
+    filters: list[str] = []
+    labels: list[str] = []
+    rows: list[dict[str, Any]] = []
+    total_frames = 0
+
+    for index, path in enumerate(paths):
+        args.extend(["-i", str(path)])
+        item = prepared_items[index] if index < len(prepared_items) and isinstance(prepared_items[index], dict) else {}
+        scene_id = str(item.get("sceneId") or item.get("scene_id") or item.get("id") or f"scene_{index + 1:02d}")
+        start_sec = _assembly_float(item.get("targetStartSec") or item.get("target_start_sec") or item.get("start_sec") or item.get("startSec") or item.get("start"), 0.0)
+        end_sec = _assembly_float(item.get("targetEndSec") or item.get("target_end_sec") or item.get("end_sec") or item.get("endSec") or item.get("end"), 0.0)
+        fallback = _assembly_float(item.get("targetDurationSecV196B") or item.get("durationSec") or item.get("duration_sec"), 0.0)
+        if end_sec <= start_sec:
+            end_sec = start_sec + max(0.04, float(fallback or 0.1))
+
+        start_frame = int(round(float(start_sec) * safe_fps))
+        end_frame = int(round(float(end_sec) * safe_fps))
+        if end_frame <= start_frame:
+            fallback_frames = int(round(max(0.04, float(fallback or 0.1)) * safe_fps))
+            end_frame = start_frame + max(1, fallback_frames)
+        frames = max(1, int(end_frame - start_frame))
+        duration_by_frames = frames / float(safe_fps)
+        total_frames += frames
+
+        label = f"v210g_{index}"
+        filters.append(
+            f"[{index}:v:0]"
+            f"setpts=PTS-STARTPTS,"
+            f"fps={safe_fps},"
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+            f"setsar=1,"
+            f"tpad=stop_mode=clone:stop_duration=2.000,"
+            f"trim=start_frame=0:end_frame={frames},"
+            f"setpts=N/{safe_fps}/TB,"
+            f"format=yuv420p"
+            f"[{label}]"
+        )
+        labels.append(f"[{label}]")
+        rows.append({
+            "index": index,
+            "scene_id": scene_id,
+            "start_sec": round(float(start_sec), 6),
+            "end_sec": round(float(end_sec), 6),
+            "start_frame": start_frame,
+            "end_frame": end_frame,
+            "frames": frames,
+            "duration_by_frames": round(duration_by_frames, 6),
+        })
+
+    if total_frames <= 0:
+        return {"applied": False, "reason": "no_frames_v210g"}
+
+    timeline_duration = total_frames / float(safe_fps)
+    silence_index = len(paths)
+    args.extend([
+        "-f", "lavfi",
+        "-t", f"{timeline_duration:.9f}",
+        "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+    ])
+
+    filters.append(
+        "".join(labels)
+        + f"concat=n={len(labels)}:v=1:a=0[v210gcat];"
+        + f"[v210gcat]fps={safe_fps},setpts=N/{safe_fps}/TB,format=yuv420p[v210gout]"
+    )
+
+    expected_last_end = 0.0
+    try:
+        if prepared_items and isinstance(prepared_items[-1], dict):
+            expected_last_end = _assembly_float(
+                prepared_items[-1].get("targetEndSec") or prepared_items[-1].get("target_end_sec") or prepared_items[-1].get("end_sec") or prepared_items[-1].get("endSec") or prepared_items[-1].get("end"),
+                0.0,
+            )
+    except Exception:
+        expected_last_end = 0.0
+
+    print("[BOARD ASSEMBLY FRAME EXACT CONCAT START V210G]", {
+        "job_id": job_id,
+        "items": len(paths),
+        "fps": safe_fps,
+        "totalFrames": total_frames,
+        "frameDurationSec": round(timeline_duration, 9),
+        "expectedBoardEndSec": round(float(expected_last_end or 0.0), 9),
+        "expectedBoardEndFrames": int(round(float(expected_last_end or 0.0) * safe_fps)) if expected_last_end else 0,
+        "rowsPreview": rows[:4] + ([{"omittedRows": max(0, len(rows) - 8)}] if len(rows) > 8 else []) + (rows[-4:] if len(rows) > 8 else []),
+    }, flush=True)
+
+    _run_ffmpeg([
+        *args,
+        "-filter_complex", ";".join(filters),
+        "-map", "[v210gout]",
+        "-map", f"{silence_index}:a:0",
+        "-frames:v", str(total_frames),
+        "-c:v", "libx264",
+        "-preset", AVA_BOARD_ASSEMBLY_PRESET,
+        "-crf", AVA_BOARD_ASSEMBLY_CRF,
+        "-pix_fmt", "yuv420p",
+        "-r", str(safe_fps),
+        "-video_track_timescale", "90000",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-ar", "48000",
+        "-ac", "2",
+        "-movflags", "+faststart",
+        str(target),
+    ])
+
+    actual = _ffprobe_duration(target) or 0.0
+    result = {
+        "applied": True,
+        "reason": "frame_exact_concat_v210g",
+        "items": len(paths),
+        "fps": safe_fps,
+        "expectedFrames": total_frames,
+        "expectedDurationSec": timeline_duration,
+        "actualDurationSec": actual,
+        "durationDeltaSec": actual - timeline_duration,
+        "qualityCrf": AVA_BOARD_ASSEMBLY_CRF,
+        "preset": AVA_BOARD_ASSEMBLY_PRESET,
+        "rowsPreview": rows[:4] + ([{"omittedRows": max(0, len(rows) - 8)}] if len(rows) > 8 else []) + (rows[-4:] if len(rows) > 8 else []),
+    }
+    print("[BOARD ASSEMBLY FRAME EXACT CONCAT DONE V210G]", {"job_id": job_id, **result}, flush=True)
+    return result
+
+def _assembly_persist_final_snapshot_v210f(job: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(job, dict):
+        return {"saved": False, "reason": "job_not_dict"}
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    project_id = _clean_project_id(
+        job.get("project_id") or job.get("projectId") or payload.get("project_id") or payload.get("projectId")
+    )
+    if not project_id:
+        return {"saved": False, "reason": "missing_project_id"}
+
+    video_url = str(job.get("videoUrl") or job.get("video_url") or "").strip()
+    video_api_path = str(job.get("videoApiPath") or job.get("video_api_path") or "").strip()
+    video_name = str(job.get("videoName") or job.get("video_name") or "board-assembly.mp4").strip()
+    local_path = str(job.get("localPath") or job.get("local_path") or "").strip()
+    final_playable_url = video_url or video_api_path
+    if not final_playable_url:
+        return {"saved": False, "reason": "missing_final_url"}
+
+    def op(db):
+        snapshots = db.setdefault("snapshots", {}).setdefault(project_id, {})
+        current = snapshots.get("board_assembly") if isinstance(snapshots.get("board_assembly"), dict) else {}
+        current_data = current.get("data") if isinstance(current.get("data"), dict) else {}
+        data = copy.deepcopy(current_data) if isinstance(current_data, dict) else {}
+
+        current_final = str(
+            data.get("finalVideoUrl") or data.get("finalUrl") or data.get("videoUrl") or data.get("video_url") or ""
+        ).strip()
+        already_same = bool(current_final and current_final == final_playable_url and data.get("finalDirty") is False)
+        if already_same:
+            return {"saved": False, "reason": "final_already_in_snapshot_v210f", "_skip_store_write_v200c": True}
+
+        final_record = {
+            "jobId": job.get("jobId") or job.get("job_id") or "",
+            "job_id": job.get("job_id") or job.get("jobId") or "",
+            "videoUrl": video_url,
+            "video_url": video_url,
+            "videoApiPath": video_api_path,
+            "video_api_path": video_api_path,
+            "finalVideoUrl": final_playable_url,
+            "finalPlayableUrl": final_playable_url,
+            "videoName": video_name,
+            "video_name": video_name,
+            "localPath": local_path,
+            "durationSec": job.get("durationSec") or job.get("duration_sec") or 0,
+            "createdAt": now_iso(),
+            "source": "board_assembly_server_final_v210f",
+        }
+
+        results = data.get("assemblyResults") if isinstance(data.get("assemblyResults"), list) else []
+        deduped = []
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("jobId") or item.get("job_id") or "") == str(final_record.get("jobId") or ""):
+                continue
+            if str(item.get("videoUrl") or item.get("video_url") or item.get("finalVideoUrl") or "") == final_playable_url:
+                continue
+            deduped.append(item)
+
+        data.update({
+            "stage": "board_assembly",
+            "source": "board_assembly_server_final_v210f",
+            "assemblyJob": None,
+            "job": None,
+            "jobId": final_record["jobId"],
+            "job_id": final_record["job_id"],
+            "assemblyUrl": final_playable_url,
+            "finalVideoUrl": final_playable_url,
+            "finalUrl": final_playable_url,
+            "outputUrl": final_playable_url,
+            "resultUrl": final_playable_url,
+            "downloadUrl": final_playable_url,
+            "videoUrl": video_url or final_playable_url,
+            "video_url": video_url or final_playable_url,
+            "final_playable_url": final_playable_url,
+            "finalPlayableUrl": final_playable_url,
+            "final_static_url": final_playable_url,
+            "finalStaticUrl": final_playable_url,
+            "assembly_api_path": video_api_path,
+            "assemblyApiPath": video_api_path,
+            "video_api_path": video_api_path,
+            "videoApiPath": video_api_path,
+            "video_name": video_name,
+            "videoName": video_name,
+            "localPath": local_path,
+            "durationSec": job.get("durationSec") or data.get("durationSec") or 0,
+            "audioMode": job.get("audioMode") or payload.get("audio_mode") or payload.get("audioMode") or data.get("audioMode") or "",
+            "finalDirty": False,
+            "updatedAt": now_iso(),
+            "serverFinalPersistedV210F": True,
+            "assemblyResults": [final_record, *deduped[:19]],
+        })
+
+        snapshot = {
+            "stage": "board_assembly",
+            "data": data,
+            "client_version": "board-assembly-server-final-v210f",
+            "updated_at": now_iso(),
+        }
+        snapshots["board_assembly"] = snapshot
+        if isinstance(db.get("projects"), dict) and isinstance(db["projects"].get(project_id), dict):
+            db["projects"][project_id]["updated_at"] = now_iso()
+        print("[BOARD ASSEMBLY FINAL SNAPSHOT SAVED V210F]", {
+            "project_id": project_id,
+            "job_id": final_record["jobId"],
+            "finalVideoUrl": final_playable_url,
+            "videoApiPath": video_api_path,
+            "videoName": video_name,
+        }, flush=True)
+        return {"saved": True, "snapshot": snapshot}
+
+    try:
+        return store.update(op)
+    except Exception as exc:
+        print("[BOARD ASSEMBLY FINAL SNAPSHOT SAVE ERROR V210F]", {
+            "project_id": project_id,
+            "job_id": job.get("jobId") or job.get("job_id"),
+            "error": str(exc),
+        }, flush=True)
+        return {"saved": False, "reason": str(exc)}
+
+
+# AVA_BOARD_ASSEMBLY_EXACT_TIMELINE_AUDIO_AND_SNAPSHOT_V210F2
 def _run_board_assembly_job(job_id: str) -> None:
     job = BOARD_ASSEMBLY_JOBS.get(job_id)
     if not job:
@@ -8370,6 +9151,14 @@ def _run_board_assembly_job(job_id: str) -> None:
             raise HTTPException(status_code=400, detail="items_must_be_list")
 
         skip_missing = bool(payload.get("skip_missing") or payload.get("skipMissing"))
+        allow_black_placeholders_v209i = bool(
+            payload.get("allow_black_placeholders")
+            or payload.get("allowBlackPlaceholders")
+            or payload.get("allow_placeholders")
+            or payload.get("allowPlaceholders")
+            or payload.get("draft_black_placeholders")
+            or payload.get("draftBlackPlaceholders")
+        )
         audio_mode = str(payload.get("audio_mode") or payload.get("audioMode") or "scene_only")
         volumes = payload.get("volumes") if isinstance(payload.get("volumes"), dict) else {}
         scene_volume = _assembly_float(volumes.get("scene"), 1.0)
@@ -8481,6 +9270,20 @@ def _run_board_assembly_job(job_id: str) -> None:
 
             if is_placeholder_item:
                 missing_items.append({"sceneId": scene_id, "reason": "missing_video_url"})
+                if not allow_black_placeholders_v209i:
+                    _log_board_assembly("[BOARD ASSEMBLY PLACEHOLDER BLOCKED V209I]", {
+                        "scene_id": scene_id,
+                        "start_sec": target_start,
+                        "duration_sec": duration,
+                        "skip_missing": skip_missing,
+                        "allow_black_placeholders": allow_black_placeholders_v209i,
+                    })
+                    raise HTTPException(status_code=400, detail={
+                        "code": "assembly_missing_video_placeholders_blocked_v209i",
+                        "sceneId": scene_id,
+                        "message": "Assembly received placeholder scenes. Enable skip_missing / ready-only assembly, or explicitly allow black placeholders.",
+                        "missing": missing_items,
+                    })
                 _log_board_assembly("[BOARD ASSEMBLY PLACEHOLDER ACCEPTED]", {
                     "scene_id": scene_id,
                     "start_sec": target_start,
@@ -8513,6 +9316,20 @@ def _run_board_assembly_job(job_id: str) -> None:
                 missing_items.append({"sceneId": scene_id, "reason": "missing_video_url"})
                 if _assembly_item_claims_video(item):
                     raise HTTPException(status_code=400, detail={"code": "scene_missing_video", "sceneId": scene_id})
+                if not allow_black_placeholders_v209i:
+                    _log_board_assembly("[BOARD ASSEMBLY MISSING VIDEO BLOCKED V209I]", {
+                        "scene_id": scene_id,
+                        "start_sec": target_start,
+                        "duration_sec": duration,
+                        "skip_missing": skip_missing,
+                        "allow_black_placeholders": allow_black_placeholders_v209i,
+                    })
+                    raise HTTPException(status_code=400, detail={
+                        "code": "assembly_missing_video_blocked_v209i",
+                        "sceneId": scene_id,
+                        "message": "Assembly received a scene without video. Enable skip_missing / ready-only assembly, or explicitly allow black placeholders.",
+                        "missing": missing_items,
+                    })
                 _log_board_assembly("[BOARD ASSEMBLY PLACEHOLDER ACCEPTED]", {
                     "scene_id": scene_id,
                     "start_sec": target_start,
@@ -8663,7 +9480,8 @@ def _run_board_assembly_job(job_id: str) -> None:
                 "has_original_audio_path": bool(original_audio_path),
                 "items": len(normalized_paths),
             })
-            strict_timeline_result_v199v = _render_board_absolute_frame_timeline_concat_v199ab(
+            print("[BOARD ASSEMBLY FRAME EXACT CONCAT SELECT V210G]", {"job_id": job_id, "reason": "use_round_start_end_frame_formula", "items": len(normalized_paths)}, flush=True)
+            strict_timeline_result_v199v = _render_board_exact_frame_concat_v210g(
                 normalized_paths,
                 prepared_items,
                 scene_concat_path,
@@ -8672,6 +9490,13 @@ def _run_board_assembly_job(job_id: str) -> None:
                 fps=fps,
                 job_id=job_id,
             )
+            print("[BOARD ASSEMBLY STRICT CONCAT RETURN V210G]", {
+                "job_id": job_id,
+                "sceneConcatPath": str(scene_concat_path),
+                "sceneConcatExists": bool(scene_concat_path.exists()),
+                "sceneConcatSize": int(scene_concat_path.stat().st_size) if scene_concat_path.exists() else 0,
+                "strictTimeline": strict_timeline_result_v199v,
+            }, flush=True)
         else:
             _run_ffmpeg([
                 "-y",
@@ -8823,6 +9648,44 @@ def _run_board_assembly_job(job_id: str) -> None:
                 "-shortest",
                 str(out_path),
             ])
+        elif audio_mode == "original_plus_scene" and use_original_audio and not use_music_audio:
+            # V210G: use ONE continuous master audio file, not 48 slices.
+            # The visual track is now frame-exact, so slicing the song is unnecessary and
+            # creates audible joins. Also do not use -shortest, because it dropped video frames.
+            print("[BOARD ASSEMBLY ORIGINAL MASTER FRAME SAFE MUX V210G]", {
+                "job_id": job_id,
+                "audio_mode": audio_mode,
+                "sceneConcatPath": str(scene_concat_path),
+                "sceneConcatExists": bool(scene_concat_path.exists()),
+                "sceneConcatDurationSec": _ffprobe_duration(scene_concat_path) if scene_concat_path.exists() else 0,
+                "sceneConcatStrictTimeline": locals().get("strict_timeline_result_v199v") or {},
+                "originalAudioPath": str(original_audio_path),
+                "originalAudioDurationSec": _ffprobe_duration(original_audio_path) if original_audio_path and original_audio_path.exists() else 0,
+                "targetPath": str(out_path),
+                "reason": "continuous_master_audio_no_slices_no_shortest_v210g",
+            }, flush=True)
+            _run_ffmpeg([
+                "-y",
+                "-i", str(scene_concat_path),
+                "-i", str(original_audio_path),
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "256k",
+                "-ar", "48000",
+                "-ac", "2",
+                "-af", f"volume={max(0.0, float(original_volume)):.4f}",
+                "-movflags", "+faststart",
+                str(out_path),
+            ])
+            print("[BOARD ASSEMBLY ORIGINAL MASTER FRAME SAFE MUX DONE V210G]", {
+                "job_id": job_id,
+                "targetPath": str(out_path),
+                "exists": bool(out_path.exists()),
+                "size": int(out_path.stat().st_size) if out_path.exists() else 0,
+                "durationSec": _ffprobe_duration(out_path) if out_path.exists() else 0,
+            }, flush=True)
         elif use_original_audio or use_music_audio:
             mix_args = ["-y", "-i", str(scene_concat_path)]
             input_index = 1
@@ -8953,6 +9816,15 @@ def _run_board_assembly_job(job_id: str) -> None:
 
         urls = _public_static_url(f"assets/board_assembly/{out_path.name}")
         final_duration = _ffprobe_duration(out_path)
+        print("[BOARD ASSEMBLY FINAL READY V210E]", {
+            "job_id": job_id,
+            "path": str(out_path),
+            "exists": bool(out_path.exists()),
+            "size": int(out_path.stat().st_size) if out_path.exists() else 0,
+            "durationSec": final_duration,
+            "url": urls.get("url"),
+            "apiPath": urls.get("apiPath"),
+        }, flush=True)
 
         job.update({
             "status": "completed",
@@ -8998,7 +9870,20 @@ def _run_board_assembly_job(job_id: str) -> None:
             "missingItems": missing_items,
             "updatedAt": datetime.utcnow().isoformat() + "Z",
         })
+        print("[BOARD ASSEMBLY FINAL READY V210D]", {
+            "job_id": job_id,
+            "status": job.get("status"),
+            "videoUrl": job.get("videoUrl") or job.get("video_url"),
+            "videoApiPath": job.get("videoApiPath") or job.get("video_api_path"),
+            "videoName": job.get("videoName") or job.get("video_name"),
+            "localPath": job.get("localPath"),
+            "exists": bool(out_path.exists()),
+            "size": out_path.stat().st_size if out_path.exists() else 0,
+            "durationSec": job.get("durationSec"),
+        }, flush=True)
         _ava_credit_charge_assembly_job_if_ready(job)
+        snapshot_save_result_v210f = _assembly_persist_final_snapshot_v210f(job)
+        job["snapshotSaveV210F"] = snapshot_save_result_v210f
         try:
             assembly_scene_count_v140b = 0
             if isinstance(raw_items, list):
@@ -9033,10 +9918,23 @@ def _run_board_assembly_job(job_id: str) -> None:
                 "telegramNotificationError": str(exc),
             })
     except HTTPException as exc:
+        print("[BOARD ASSEMBLY ERROR V210E]", {
+            "job_id": job_id,
+            "errorType": "HTTPException",
+            "statusCode": getattr(exc, "status_code", None),
+            "detail": exc.detail,
+        }, flush=True)
         job["status"] = "error"
         job["error"] = exc.detail
         job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
     except Exception as exc:
+        import traceback
+        print("[BOARD ASSEMBLY ERROR V210E]", {
+            "job_id": job_id,
+            "errorType": type(exc).__name__,
+            "error": str(exc),
+            "tracebackTail": "".join(traceback.format_exc().splitlines(True)[-12:]),
+        }, flush=True)
         job["status"] = "error"
         job["error"] = str(exc)
         job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
@@ -9107,13 +10005,112 @@ def start_board_assembly(payload: dict[str, Any], user: dict = Depends(get_curre
 
 
 
+
+
+# AVA_BOARD_ASSEMBLY_FINAL_URL_REHYDRATE_V210D
+def _board_assembly_rehydrate_final_url_v210d(job_id: str, job: dict) -> dict:
+    """Attach final static MP4 URL to completed Assembly jobs if it was lost."""
+    try:
+        if not isinstance(job, dict):
+            return job
+        existing_url = (
+            job.get("videoUrl")
+            or job.get("video_url")
+            or job.get("videoApiPath")
+            or job.get("video_api_path")
+            or job.get("finalVideoUrl")
+            or job.get("final_video_url")
+            or job.get("assemblyUrl")
+            or job.get("outputUrl")
+            or job.get("resultUrl")
+            or job.get("downloadUrl")
+        )
+        if existing_url:
+            return job
+
+        status = str(job.get("status") or job.get("assembly_status") or "").strip().lower()
+        if status not in {"completed", "ready", "done", "finished", "success", "succeeded"}:
+            return job
+
+        target_dir = _settings_static_path() / "assets" / "board_assembly"
+        try:
+            candidates = [
+                path for path in target_dir.glob(f"{job_id}_*.mp4")
+                if path.is_file() and path.stat().st_size > 0
+            ]
+        except Exception as scan_exc:
+            print("[BOARD ASSEMBLY FINAL URL SCAN ERROR V210D]", {
+                "job_id": job_id,
+                "target_dir": str(target_dir),
+                "error": str(scan_exc),
+            }, flush=True)
+            return job
+
+        if not candidates:
+            print("[BOARD ASSEMBLY FINAL URL MISSING V210D]", {
+                "job_id": job_id,
+                "status": status,
+                "target_dir": str(target_dir),
+                "knownVideoUrl": bool(existing_url),
+            }, flush=True)
+            return job
+
+        candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+        out_path = candidates[0]
+        urls = _public_static_url(f"assets/board_assembly/{out_path.name}")
+        duration = 0.0
+        try:
+            duration = _ffprobe_duration(out_path)
+        except Exception:
+            duration = 0.0
+
+        job.update({
+            "videoUrl": urls.get("url") or "",
+            "video_url": urls.get("url") or "",
+            "videoApiPath": urls.get("apiPath") or "",
+            "video_api_path": urls.get("apiPath") or "",
+            "finalVideoUrl": urls.get("url") or "",
+            "finalUrl": urls.get("url") or "",
+            "assemblyUrl": urls.get("url") or "",
+            "outputUrl": urls.get("url") or "",
+            "resultUrl": urls.get("url") or "",
+            "downloadUrl": urls.get("url") or "",
+            "videoName": out_path.name,
+            "video_name": out_path.name,
+            "localPath": str(out_path),
+            "durationSec": duration,
+            "finalUrlRehydratedV210D": True,
+            "updatedAt": datetime.utcnow().isoformat() + "Z",
+        })
+        print("[BOARD ASSEMBLY FINAL URL REHYDRATED V210D]", {
+            "job_id": job_id,
+            "path": str(out_path),
+            "size": out_path.stat().st_size,
+            "url": urls.get("url"),
+            "apiPath": urls.get("apiPath"),
+            "durationSec": duration,
+        }, flush=True)
+    except Exception as exc:
+        print("[BOARD ASSEMBLY FINAL URL REHYDRATE ERROR V210D]", {
+            "job_id": job_id,
+            "error": str(exc),
+        }, flush=True)
+    return job
+
+
+
 @router.get("/board-assembly/status/{job_id}")
 def board_assembly_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     job = BOARD_ASSEMBLY_JOBS.get(job_id)
     if not job:
         return {"ok": False, "status": "not_found", "code": "BOARD_ASSEMBLY_JOB_NOT_FOUND", "jobId": job_id}
     _ava_credit_ensure_job_owner(job, user)
+    job = _board_assembly_rehydrate_final_url_v210d(job_id, job)
+    BOARD_ASSEMBLY_JOBS[job_id] = job
     _ava_credit_charge_assembly_job_if_ready(job)
+    if str(job.get("status") or "").lower() in {"completed", "complete", "ready", "done", "finished", "success", "succeeded"}:
+        status_snapshot_save_v210f = _assembly_persist_final_snapshot_v210f(job)
+        job["statusSnapshotSaveV210F2"] = status_snapshot_save_v210f
     return {"ok": True, **job}
 
 
@@ -10037,8 +11034,8 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
 # This is cleaner than CRF 18/veryfast, without going into huge lossless files.
 # ---------------------------------------------------------------------
 
-AVA_BOARD_ASSEMBLY_CRF = "18"
-AVA_BOARD_ASSEMBLY_PRESET = "veryfast"
+AVA_BOARD_ASSEMBLY_CRF = "16"
+AVA_BOARD_ASSEMBLY_PRESET = "fast"
 
 
 def _normalize_assembly_clip(
@@ -10348,8 +11345,8 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
 # - keep dynamic watermark mode.
 # ---------------------------------------------------------------------
 
-AVA_BOARD_ASSEMBLY_CRF = "18"
-AVA_BOARD_ASSEMBLY_PRESET = "veryfast"
+AVA_BOARD_ASSEMBLY_CRF = "16"
+AVA_BOARD_ASSEMBLY_PRESET = "fast"
 
 
 def _ava_stage612c_color_args():
@@ -10592,8 +11589,8 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
 # - always write +faststart for playable browser preview.
 # ---------------------------------------------------------------------
 
-AVA_BOARD_ASSEMBLY_CRF = "22"
-AVA_BOARD_ASSEMBLY_PRESET = "superfast"
+AVA_BOARD_ASSEMBLY_CRF = "16"
+AVA_BOARD_ASSEMBLY_PRESET = "fast"
 
 
 def _ava_stage613_escape_drawtext(value: Any) -> str:
