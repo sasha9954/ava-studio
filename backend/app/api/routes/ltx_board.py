@@ -12502,12 +12502,57 @@ _stable_audio_mode_label_v211z = _stable_audio_mode_label_v211z2
 def _stable_audio_patch_workflow_v204g6(workflow: dict[str, Any], *, prompt: str, mode: str, request_duration_sec: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     patched = copy.deepcopy(workflow)
     mode_choice, mode_index = _stable_audio_mode_api_v204g6(mode)
-    # V211Z2_TRUE_SFX_PROMPT_GUARD: SFX must not drift into music/melody.
+
+    # V212Y_STABLE_AUDIO_MODE_AUTHORITY:
+    # Do not trust hard-coded mode indexes if workflow options change.
+    # Node 52:43 is the workflow category combo: option1=Music, option2=Instrument, option3=SFX.
+    combo_inputs_v212y = {}
+    try:
+        combo_inputs_v212y = (patched.get("52:43") or {}).get("inputs") or {}
+        for idx_v212y in range(1, 6):
+            option_v212y = str(combo_inputs_v212y.get(f"option{idx_v212y}") or "").strip()
+            if option_v212y.lower() == str(mode_choice).strip().lower():
+                mode_index = idx_v212y - 1
+                mode_choice = option_v212y
+                break
+    except Exception:
+        combo_inputs_v212y = {}
+
+    # V211Z2/V212Y TRUE SFX PROMPT GUARD: SFX must not drift into music/melody.
+    prompt_guarded_v212y = False
     if mode_choice == "SFX":
         clean_prompt_v211z2 = str(prompt or "").strip()
-        sfx_prefix_v211z2 = "sound effects only, foley only, ambience only, no music, no melody, no song, no vocals"
+        sfx_prefix_v211z2 = (
+            "sound effects only, foley only, ambience only, environmental audio only, "
+            "no music, no melody, no song, no score, no soundtrack, no rhythm, no beat, no vocals"
+        )
         if sfx_prefix_v211z2.lower() not in clean_prompt_v211z2.lower():
             prompt = f"{sfx_prefix_v211z2}. {clean_prompt_v211z2}".strip()
+            prompt_guarded_v212y = True
+
+    negative_prompt_v212y = ""
+    if mode_choice == "SFX":
+        negative_prompt_v212y = "music, melody, song, score, soundtrack, rhythm, beat, drums, vocals, singing, lyrics"
+    elif mode_choice == "Instrument":
+        negative_prompt_v212y = "vocals, singing, lyrics, speech, dialogue, narration"
+
+    print("[AUDIO STUDIO STABLE WORKFLOW MODE AUTHORITY V212Y]", {
+        "requestedMode": str(mode),
+        "effectiveMode": mode_choice,
+        "effectiveIndex": int(mode_index),
+        "workflowNode52_43": {
+            "option1": combo_inputs_v212y.get("option1"),
+            "option2": combo_inputs_v212y.get("option2"),
+            "option3": combo_inputs_v212y.get("option3"),
+            "option4": combo_inputs_v212y.get("option4"),
+            "originalChoice": combo_inputs_v212y.get("choice"),
+            "originalIndex": combo_inputs_v212y.get("index"),
+        },
+        "promptGuarded": prompt_guarded_v212y,
+        "negativePrompt": negative_prompt_v212y[:120],
+        "finalPromptPreview": str(prompt)[:240],
+    }, flush=True)
+
     patches: list[dict[str, Any]] = []
 
     def patch(node_id: str, key: str, value: Any, reason: str) -> None:
@@ -12525,7 +12570,7 @@ def _stable_audio_patch_workflow_v204g6(workflow: dict[str, Any], *, prompt: str
     patch("52:43", "choice", mode_choice, "stable_audio_mode_choice_52_43")
     patch("52:43", "index", int(mode_index), "stable_audio_mode_index_52_43")
     patch("52:35", "value", True, "stable_audio_enable_reprompt_52_35")
-    patch("52:7", "text", "", "stable_audio_negative_empty_52_7")
+    patch("52:7", "text", negative_prompt_v212y, "stable_audio_negative_mode_guard_52_7_v212y")
     patch("52:3", "seed", random.randint(1, 999999999999999), "stable_audio_random_seed_52_3")
     patch("19", "filename_prefix", f"audio/stable_audio_3_{uuid4().hex[:8]}", "stable_audio_output_prefix_19")
     return patched, patches
@@ -12763,6 +12808,7 @@ def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerate
         "patchCount": len(patches),
         "mode": mode_choice,
         "modeIndex": int(mode_index),
+        "modePatchesV212Y": [p for p in patches if p.get("nodeId") == "52:43" or p.get("nodeId") == "52:7"],
         "exactDurationSec": round(float(exact_duration_f), 3),
         "requestDurationSec": request_duration_i,
     }, flush=True)

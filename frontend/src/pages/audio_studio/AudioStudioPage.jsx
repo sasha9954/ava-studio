@@ -2311,6 +2311,9 @@ export default function AudioStudioPage() {
   const [stableDraftPromptV204F7, setStableDraftPromptV204F7] = useState('')
   const [stableDraftNegativePromptV204F7, setStableDraftNegativePromptV204F7] = useState(STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7)
   const [stableDraftModeV204F7, setStableDraftModeV204F7] = useState('Music')
+  // V212Y: React state can lag if user clicks SFX/Instrument and immediately clicks Generate.
+  // Keep the last clicked Stable Audio mode in a synchronous ref used by the generate payload.
+  const stableDraftModeLiveRefV212Y = useRef('Music')
   const [stableDraftVolumeV204F7, setStableDraftVolumeV204F7] = useState(16)
   const [stableDraftFadeInSecV204F7, setStableDraftFadeInSecV204F7] = useState(0.35)
   const [stableDraftFadeOutSecV204F7, setStableDraftFadeOutSecV204F7] = useState(0.8)
@@ -3728,7 +3731,9 @@ export default function AudioStudioPage() {
     const stableAudio = block?.stableAudio || {}
     setStableDraftPromptV204F7(firstText(stableAudio.prompt, block?.prompt, ''))
     setStableDraftNegativePromptV204F7(firstText(stableAudio.negativePrompt, block?.negativePrompt, STABLE_AUDIO_DEFAULT_NEGATIVE_V204F7))
-    setStableDraftModeV204F7(stableAudioModeApiValueV204F7(stableAudio.mode || block?.mode || 'Music'))
+    const selectedStableModeV212Y = stableAudioModeApiValueV204F7(stableAudio.mode || block?.mode || 'Music')
+    stableDraftModeLiveRefV212Y.current = selectedStableModeV212Y
+    setStableDraftModeV204F7(selectedStableModeV212Y)
     setStableDraftVolumeV204F7(stableAudioVolumeV204F7(stableAudio.volume ?? block?.volume ?? 100))
     setStableDraftFadeInSecV204F7(stableAudioFadeV204F7(stableAudio.fadeInSec ?? block?.fadeInSec ?? 0.35))
     setStableDraftFadeOutSecV204F7(stableAudioFadeV204F7(stableAudio.fadeOutSec ?? block?.fadeOutSec ?? 0.8))
@@ -3785,6 +3790,7 @@ export default function AudioStudioPage() {
 
   const updateStableModeV204F7 = useCallback((value) => {
     const mode = stableAudioModeApiValueV204F7(value)
+    stableDraftModeLiveRefV212Y.current = mode
     setStableDraftModeV204F7(mode)
     patchStableBlockSettingsV204F7({ mode }, 'stable_audio_mode_v204f7')
   }, [patchStableBlockSettingsV204F7])
@@ -3825,8 +3831,8 @@ export default function AudioStudioPage() {
     endSec: toNumber(selectedSavedStableBlockV204F4?.endSec, selectedStableBlockDurationV204F1),
     durationSec: selectedStableBlockDurationV204F1,
     requestDurationSec: selectedStableBlockRequestDurationV204F1,
-    mode: stableAudioModeApiValueV204F7(stableDraftModeV204F7),
-    modeLabel: stableAudioModeUiLabelV204F7(stableDraftModeV204F7),
+    mode: stableAudioModeApiValueV204F7(stableDraftModeLiveRefV212Y.current || stableDraftModeV204F7),
+    modeLabel: stableAudioModeUiLabelV204F7(stableDraftModeLiveRefV212Y.current || stableDraftModeV204F7),
     prompt: stableEffectivePromptV204G10,
     negativePrompt: stableDraftNegativePromptV204F7,
   }), [selectedSavedStableBlockV204F4, selectedStableBlockDurationV204F1, selectedStableBlockRequestDurationV204F1, selectedStableBlockSceneIdsV204F1, stableDisplayBlockTitleV204F3, stableDraftModeV204F7, stableDraftNegativePromptV204F7, stableEffectivePromptV204G10])
@@ -3871,6 +3877,13 @@ export default function AudioStudioPage() {
       workflow_key: 'Stable_Audio_3_Medium_CLEAN.json',
       source: 'audio_studio_stable_audio_generate_v204g6',
     }
+    console.info('[AUDIO STUDIO STABLE PAYLOAD MODE V212Y]', {
+      blockId: payload.blockId,
+      stateMode: stableDraftModeV204F7,
+      liveMode: stableDraftModeLiveRefV212Y.current,
+      payloadMode: payload.mode,
+      payloadModeLabel: payload.modeLabel,
+    })
     setError('')
     stableAudioGenerateBusyRefV211S.current = true
     if (autosaveTimerRef.current) {

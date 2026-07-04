@@ -8904,3 +8904,183 @@ body select option:disabled {
   color: rgba(184, 203, 220, 0.38) !important;
 }
 
+/* BOARD_COMPACT_VIDEO_SETUP_V212W_START */
+/* Compact Board video setup toolbar + lighter prompt typography. UI-only patch. */
+.avaBoardVideoSetupPanelV212W {
+  padding: 14px 16px 16px;
+}
+
+.avaBoardVideoSetupTopbarV212W {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(120, 147, 221, 0.14);
+}
+
+.avaBoardVideoSetupTitleV212W h3 {
+  margin: 0;
+  color: #f4f7ff;
+  text-shadow: 0 0 16px rgba(120, 180, 255, 0.10);
+}
+
+.avaBoardVideoSetupControlsV212W {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: min(100%, 420px);
+}
+
+.avaBoardCompactSelectV212W {
+  display: grid;
+  gap: 5px;
+  min-width: 156px;
+  color: rgba(218, 236, 255, 0.88);
+  font-weight: 560;
+}
+
+.avaBoardCompactSelectV212W.isFormatV212W {
+  min-width: 132px;
+}
+
+.avaBoardCompactSelectV212W > span {
+  font-size: 10.5px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(174, 214, 255, 0.76);
+  font-weight: 680;
+}
+
+.avaBoardCompactSelectV212W select {
+  width: 100%;
+  height: 38px;
+  border-radius: 14px;
+  border: 1px solid rgba(115, 190, 255, 0.22);
+  background: rgba(3, 8, 20, 0.92);
+  color: #f4f8ff;
+  padding: 0 32px 0 12px;
+  outline: none;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.avaBoardCompactSelectV212W select option {
+  background: #070b19;
+  color: #f4f8ff;
+  font-weight: 500;
+}
+
+.avaBoardSetupPillV212W {
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(164, 143, 255, 0.26);
+  background: linear-gradient(135deg, rgba(80, 57, 180, 0.22), rgba(10, 22, 42, 0.72));
+  color: rgba(230, 226, 255, 0.92);
+  font-size: 12px;
+  font-weight: 640;
+  white-space: nowrap;
+}
+
+.avaBoardVideoPromptGridV212W {
+  margin-top: 0;
+  grid-template-columns: minmax(280px, 1.08fr) minmax(240px, 0.92fr);
+  gap: 12px;
+}
+
+.avaBoardVideoSetupPanelV212W .avaBoardPromptFieldV212W,
+.avaBoardVideoSetupPanelV212W .avaBoardNoteFieldV212W {
+  padding: 10px 11px 11px;
+  gap: 7px;
+  font-weight: 560;
+}
+
+.avaBoardVideoSetupPanelV212W .avaBoardPromptFieldV212W > span,
+.avaBoardVideoSetupPanelV212W .avaBoardNoteFieldV212W > span {
+  color: rgba(220, 235, 255, 0.90);
+  font-size: 13px;
+  font-weight: 640;
+  letter-spacing: 0.01em;
+}
+
+.avaBoardVideoSetupPanelV212W .avaBoardPromptFieldV212W.isNegativeV212W > span {
+  color: rgba(228, 222, 255, 0.90);
+}
+
+.avaBoardVideoSetupPanelV212W .avaBoardPromptFieldV212W textarea,
+.avaBoardVideoSetupPanelV212W .avaBoardNoteFieldV212W textarea {
+  font-size: 13.5px;
+  font-weight: 430 !important;
+  line-height: 1.5;
+  letter-spacing: 0.002em;
+  padding: 12px 13px;
+  border-radius: 15px;
+}
+
+.avaBoardVideoSetupPanelV212W .avaBoardPromptFieldV212W textarea::placeholder,
+.avaBoardVideoSetupPanelV212W .avaBoardNoteFieldV212W textarea::placeholder {
+  color: rgba(210, 220, 245, 0.52);
+  font-weight: 430;
+}
+
+.avaBoardVideoSetupPanelV212W .avaBoardPromptFieldV212W textarea {
+  min-height: 154px;
+}
+
+.avaBoardVideoSetupPanelV212W .avaBoardNoteFieldV212W {
+  margin-top: 12px;
+}
+
+.avaBoardVideoSetupPanelV212W .avaBoardNoteFieldV212W textarea {
+  min-height: 92px;
+  max-height: 280px;
+}
+
+.avaBoardSourceCutCompactV212W {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+}
+
+.avaBoardSourceCutCompactV212W p {
+  margin: 4px 0 0;
+  font-weight: 460;
+}
+
+@media (max-width: 1180px) {
+  .avaBoardVideoSetupTopbarV212W {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .avaBoardVideoSetupControlsV212W {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 920px) {
+  .avaBoardVideoPromptGridV212W {
+    grid-template-columns: 1fr;
+  }
+
+  .avaBoardCompactSelectV212W,
+  .avaBoardCompactSelectV212W.isFormatV212W {
+    min-width: 150px;
+    flex: 1 1 150px;
+  }
+
+  .avaBoardSetupPillV212W {
+    flex: 1 1 120px;
+  }
+}
+/* BOARD_COMPACT_VIDEO_SETUP_V212W_END */
+

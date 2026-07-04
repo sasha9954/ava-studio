@@ -4612,6 +4612,211 @@ async function avaLoadManualTimingSnapshotForBoardV212S4C({ workspaceMode, proje
   }
 }
 
+
+// AVA_BOARD_TIMING_AUTHORITY_USER_EDIT_GUARD_V212U:
+// V212S fixed stale Timing -> Board durations, but applying Timing authority on every
+// Board mismatch also treated real Board edits (clear board, +scene) as stale Timing.
+// Auto-authority is allowed only for the same scene set/id, where it is truly a timing
+// correction. If scene count/id differs, the user is editing Board and we must not collapse it.
+
+// AVA_BOARD_MANUAL_EDIT_MARKER_GUARD_V212V:
+// V212U skipped Timing authority when scene count changed, but the first +Scene save
+// is still one manual scene (seg_01 0..6). That has the same scene count/id as Timing,
+// so V212S2 could collapse it back to Manual Timing. Detect explicit manual Board scene
+// markers and never auto-apply Timing authority over them.
+function avaBoardHasUserEditMarkersV212V(boardData = {}) {
+  const scenes = asSceneArray(boardData?.scenes || boardData?.board?.scenes)
+  if (!scenes.length) return false
+  return scenes.some((scene = {}) => {
+    const markerText = [
+      scene?.source,
+      scene?.importedFrom,
+      scene?.source_kind,
+      scene?.sourceKind,
+      scene?.scene_type,
+      scene?.sceneType,
+      scene?.durationSource,
+      scene?.duration_source,
+      scene?.timingSource,
+      scene?.timing_source,
+    ].map((value) => asText(value).toLowerCase()).join(' ')
+    if (markerText.includes('manual_board') || markerText.includes('manual_board_scene')) return true
+    if (scene?.manual === true || scene?.isManual === true || scene?.is_manual === true) return true
+    return false
+  })
+}
+
+// AVA_BOARD_FAST_MANUAL_ENTRY_V212X:
+// Manual Board should open like a normal board, not like a Timing-import flow.
+// These helpers skip redundant Timing authority checks for explicit manual Board scenes,
+// avoid probing video-batch status when no batch is active, and make review reset flags one-shot locally.
+const AVA_BOARD_REVIEW_RESET_KEYS_V212X = [
+  'video_review_reset_on_image_change_v133b',
+  'videoReviewResetOnImageChangeV133B',
+]
+
+function avaBoardObjectHasOwnTrueV212X(value = {}, keys = []) {
+  if (!value || typeof value !== 'object') return false
+  return keys.some((key) => value?.[key] === true)
+}
+
+function avaBoardPayloadHasReviewResetV212X(boardData = {}) {
+  return asSceneArray(boardData?.scenes || boardData?.board?.scenes).some((scene) => (
+    avaBoardObjectHasOwnTrueV212X(scene, AVA_BOARD_REVIEW_RESET_KEYS_V212X)
+  ))
+}
+
+function avaBoardClearReviewResetFlagsV212X(boardData = {}) {
+  const scenes = asSceneArray(boardData?.scenes || boardData?.board?.scenes)
+  if (!scenes.length) return boardData
+  let changed = false
+  const nextScenes = scenes.map((scene = {}) => {
+    if (!avaBoardPayloadHasReviewResetV212X({ scenes: [scene] })) return scene
+    changed = true
+    return {
+      ...scene,
+      video_review_reset_on_image_change_v133b: false,
+      videoReviewResetOnImageChangeV133B: false,
+    }
+  })
+  if (!changed) return boardData
+  if (boardData?.board && Array.isArray(boardData.board.scenes)) {
+    return { ...boardData, board: { ...boardData.board, scenes: nextScenes }, updatedAt: new Date().toISOString() }
+  }
+  return { ...boardData, scenes: nextScenes, updatedAt: new Date().toISOString() }
+}
+
+function avaBoardHasActiveVideoWorkV212X(boardData = {}) {
+  const scenes = asSceneArray(boardData?.scenes || boardData?.board?.scenes)
+  return scenes.some((scene = {}) => {
+    const status = asText(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+    const hasJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint)
+    const activeStatuses = new Set(['queued', 'starting', 'preparing', 'submitting', 'running', 'processing', 'queued_no_prompt_id'])
+    return hasJob || activeStatuses.has(status)
+  })
+}
+
+function avaBoardShouldProbeVideoBatchStatusV212X(boardData = {}, options = {}) {
+  if (boardServerBatchActiveInfoV200E(boardData)) return true
+  if (avaBoardHasActiveVideoWorkV212X(boardData)) return true
+  if (options?.autoVideoQueueState?.serverBatchActive) return true
+  if (options?.autoVideoQueueState?.active) return true
+  if (options?.runtimeStatusMap && Object.keys(options.runtimeStatusMap || {}).length) return true
+  return false
+}
+
+
+function avaBoardCanAutoApplyTimingAuthorityV212U(manualSig = [], boardSig = [], source = '', boardData = {}) {
+  if (avaBoardHasUserEditMarkersV212V(boardData)) return false
+  if (!Array.isArray(manualSig) || !Array.isArray(boardSig)) return false
+  if (!manualSig.length || !boardSig.length) return false
+  if (manualSig.length !== boardSig.length) return false
+  for (let index = 0; index < manualSig.length; index += 1) {
+    if (String(manualSig[index]?.[0] || '') !== String(boardSig[index]?.[0] || '')) return false
+  }
+  return true
+}
+
+function avaBoardTimingAuthoritySkipReasonV212U(manualSig = [], boardSig = [], boardData = {}) {
+  if (avaBoardHasUserEditMarkersV212V(boardData)) return 'manual_board_user_edit_marker_v212v'
+  if (!Array.isArray(boardSig) || !boardSig.length) return 'empty_or_cleared_board_user_state'
+  if (!Array.isArray(manualSig) || !manualSig.length) return 'missing_manual_timing_signature'
+  if (manualSig.length !== boardSig.length) return 'scene_count_changed_by_board_user_edit'
+  for (let index = 0; index < manualSig.length; index += 1) {
+    if (String(manualSig[index]?.[0] || '') !== String(boardSig[index]?.[0] || '')) return 'scene_ids_changed_by_board_user_edit'
+  }
+  return 'unknown'
+}
+
+const AVA_BOARD_IMAGE_MEDIA_KEYS_V212U = [
+  'image_asset_id', 'imageAssetId', 'image_api_path', 'imageApiPath', 'image_url', 'imageUrl',
+  'image_name', 'imageName', 'image_status', 'imageStatus', 'mediaUrl', 'media_url',
+  'first_frame_url', 'firstFrameUrl', 'first_image_asset_id', 'firstImageAssetId', 'first_image_api_path', 'firstImageApiPath', 'first_image_url', 'firstImageUrl', 'first_image_name', 'firstImageName',
+  'start_image_asset_id', 'startImageAssetId', 'start_image_api_path', 'startImageApiPath', 'start_image_url', 'startImageUrl', 'start_image_name', 'startImageName',
+  'last_frame_url', 'lastFrameUrl', 'last_image_asset_id', 'lastImageAssetId', 'last_image_api_path', 'lastImageApiPath', 'last_image_url', 'lastImageUrl', 'last_image_name', 'lastImageName',
+  'end_image_asset_id', 'endImageAssetId', 'end_image_api_path', 'endImageApiPath', 'end_image_url', 'endImageUrl', 'end_image_name', 'endImageName',
+]
+
+const AVA_BOARD_VIDEO_MEDIA_KEYS_V212U = [
+  'video_asset_id', 'videoAssetId', 'video_api_path', 'videoApiPath', 'video_url', 'videoUrl',
+  'video_static_url', 'videoStaticUrl', 'video_path', 'videoPath', 'video_name', 'videoName',
+  'result_video_asset_id', 'resultVideoAssetId', 'result_video_api_path', 'resultVideoApiPath', 'result_video_url', 'resultVideoUrl',
+  'video_result', 'videoResult', 'resultUrl', 'result_url', 'original_video_url', 'originalVideoUrl',
+  'video_status', 'videoStatus', 'video_ready_at', 'videoReadyAt', 'video_error', 'videoError',
+  'video_review_status', 'videoReviewStatus', 'review_status', 'reviewStatus',
+  'last_video_job_id', 'lastVideoJobId', 'video_job_id', 'videoJobId', 'video_status_endpoint', 'videoStatusEndpoint',
+]
+
+function avaBoardHasValueV212U(value) {
+  if (value === null || value === undefined || value === '' || value === false) return false
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function avaBoardSceneHasAnyKeyV212U(scene = {}, keys = []) {
+  return keys.some((key) => avaBoardHasValueV212U(scene?.[key]))
+}
+
+function avaBoardCopyMissingKeysV212U(target = {}, source = {}, keys = []) {
+  let copied = 0
+  keys.forEach((key) => {
+    if (avaBoardHasValueV212U(target?.[key])) return
+    if (!avaBoardHasValueV212U(source?.[key])) return
+    target[key] = source[key]
+    copied += 1
+  })
+  return copied
+}
+
+function avaBoardMediaTimeV212U(scene = {}) {
+  const start = avaRoundSecV212S4C(scene?.timing_start_sec ?? scene?.timingStartSec ?? scene?.start_sec ?? scene?.start ?? scene?.target_t0 ?? 0)
+  let end = Number(scene?.timing_end_sec ?? scene?.timingEndSec ?? scene?.end_sec ?? scene?.end ?? scene?.target_t1)
+  let duration = Number(scene?.timing_duration_sec ?? scene?.timingDurationSec ?? scene?.duration_sec ?? scene?.durationSec ?? scene?.duration)
+  if (!Number.isFinite(end)) end = start
+  if (!Number.isFinite(duration)) duration = Math.max(0, end - start)
+  if (duration > 0 && Math.abs(Math.max(0, end - start) - duration) > 0.05) end = start + duration
+  return { start: avaRoundSecV212S4C(start), end: avaRoundSecV212S4C(end), duration: avaRoundSecV212S4C(duration) }
+}
+
+function avaBoardVideoTimingCompatibleV212U(previousScene = {}, nextScene = {}) {
+  const previous = avaBoardMediaTimeV212U(previousScene)
+  const next = avaBoardMediaTimeV212U(nextScene)
+  if (previous.duration <= 0 || next.duration <= 0) return false
+  return Math.abs(previous.duration - next.duration) <= 0.85 && Math.abs(previous.end - next.end) <= 0.85
+}
+
+function avaPreserveBoardMediaAfterTimingAuthorityV212U(nextBoard = {}, previousBoard = {}) {
+  const nextScenes = asSceneArray(nextBoard?.scenes)
+  const previousScenes = asSceneArray(previousBoard?.scenes || previousBoard?.board?.scenes)
+  if (!nextScenes.length || !previousScenes.length) return nextBoard
+  const previousById = new Map(previousScenes.map((scene, index) => [asText(scene?.scene_id || scene?.id || `seg_${String(index + 1).padStart(2, '0')}`), scene]))
+  let imagePreserved = 0
+  let videoPreserved = 0
+  const mergedScenes = nextScenes.map((scene, index) => {
+    const sceneId = asText(scene?.scene_id || scene?.id || `seg_${String(index + 1).padStart(2, '0')}`)
+    const previous = previousById.get(sceneId)
+    if (!previous) return scene
+    const merged = { ...scene }
+    if (!avaBoardSceneHasAnyKeyV212U(merged, AVA_BOARD_IMAGE_MEDIA_KEYS_V212U) && avaBoardSceneHasAnyKeyV212U(previous, AVA_BOARD_IMAGE_MEDIA_KEYS_V212U)) {
+      if (avaBoardCopyMissingKeysV212U(merged, previous, AVA_BOARD_IMAGE_MEDIA_KEYS_V212U)) imagePreserved += 1
+    }
+    if (!avaBoardSceneHasAnyKeyV212U(merged, AVA_BOARD_VIDEO_MEDIA_KEYS_V212U) && avaBoardSceneHasAnyKeyV212U(previous, AVA_BOARD_VIDEO_MEDIA_KEYS_V212U) && avaBoardVideoTimingCompatibleV212U(previous, merged)) {
+      if (avaBoardCopyMissingKeysV212U(merged, previous, AVA_BOARD_VIDEO_MEDIA_KEYS_V212U)) videoPreserved += 1
+    }
+    if (imagePreserved || videoPreserved) merged.boardMediaPreservedAfterTimingAuthorityV212U = true
+    return merged
+  })
+  if (!imagePreserved && !videoPreserved) return nextBoard
+  console.log('[BOARD TIMING AUTHORITY MEDIA PRESERVED V212U]', { imagePreserved, videoPreserved, sceneCount: mergedScenes.length })
+  return {
+    ...nextBoard,
+    scenes: mergedScenes,
+    boardMediaPreservedAfterTimingAuthorityV212U: true,
+    boardMediaPreservedCountsV212U: { imagePreserved, videoPreserved },
+  }
+}
+
 function avaBuildBoardFromManualTimingAuthorityV212S4C(boardData = {}, timingData = {}, options = {}) {
   const normalizedTiming = avaNormalizeTimingScenesForBoardV212S4C(timingData)
   const manualSig = avaTimingSignatureV212S4C(normalizedTiming)
@@ -4622,7 +4827,18 @@ function avaBuildBoardFromManualTimingAuthorityV212S4C(boardData = {}, timingDat
     return { board: boardData, changed: false, manualSig, boardSig }
   }
 
-  const cleanBoard = buildCleanBoardFromTimingV14B(normalizedTiming)
+  if (!avaBoardCanAutoApplyTimingAuthorityV212U(manualSig, boardSig, options.source || '', boardData)) {
+    console.log('[BOARD TIMING AUTHORITY AUTO SKIPPED V212U]', {
+      source: options.source || '',
+      reason: avaBoardTimingAuthoritySkipReasonV212U(manualSig, boardSig, boardData),
+      manualSig,
+      boardSig,
+    })
+    return { board: boardData, changed: false, manualSig, boardSig, skippedByUserBoardEditV212U: true }
+  }
+
+  const cleanBoardRawV212U = buildCleanBoardFromTimingV14B(normalizedTiming)
+  const cleanBoard = avaPreserveBoardMediaAfterTimingAuthorityV212U(cleanBoardRawV212U, boardData)
   const nextBoard = {
     ...cleanBoard,
     source: 'manual_timing_frontend_authority_v212s4c',
@@ -8032,31 +8248,49 @@ function sceneVideoActionState(scene) {
         // AVA09D2_STANDALONE_BOARD_DOES_NOT_PULL_TIMING
         let nextBoard = buildBoardFromTiming(timingData, boardData)
 
-        const timingStageDataV212S4C = await avaLoadManualTimingSnapshotForBoardV212S4C({ workspaceMode, projectId, loadWorkspaceStage, loadStage })
-
-        const timingAuthorityV212S4C = avaBuildBoardFromManualTimingAuthorityV212S4C(nextBoard, timingStageDataV212S4C || timingData, { source: 'board_load_v212s4c' })
-
-        if (timingAuthorityV212S4C.changed) {
-
-          nextBoard = timingAuthorityV212S4C.board
-
-          console.log('[BOARD FRONTEND TIMING AUTHORITY APPLIED V212S4C]', {
-
+        // V212X: explicit manual Board scenes are already user-authored. Do not spend
+        // another Manual Timing fetch/rebuild pass on every direct Board entry.
+        const boardManualUserEditV212X = avaBoardHasUserEditMarkersV212V(boardData)
+        if (boardManualUserEditV212X) {
+          console.log('[BOARD LOAD TIMING AUTHORITY SKIPPED MANUAL V212X]', {
             projectId: projectId || '',
-
-            source: 'board_load_v212s4c',
-
-            manualSig: timingAuthorityV212S4C.manualSig,
-
-            previousSig: timingAuthorityV212S4C.boardSig,
-
-            sceneCount: asSceneArray(nextBoard.scenes).length,
-
+            sceneCount: asSceneArray(boardData?.scenes || boardData?.board?.scenes).length,
           })
+        } else {
+          const timingStageDataV212S4C = (fullTimingDataV212S && Object.keys(fullTimingDataV212S).length)
+            ? fullTimingDataV212S
+            : await avaLoadManualTimingSnapshotForBoardV212S4C({ workspaceMode, projectId, loadWorkspaceStage, loadStage })
 
+          const timingAuthorityV212S4C = avaBuildBoardFromManualTimingAuthorityV212S4C(nextBoard, timingStageDataV212S4C || timingData, { source: 'board_load_v212s4c' })
+
+          if (timingAuthorityV212S4C.changed) {
+
+            nextBoard = timingAuthorityV212S4C.board
+
+            console.log('[BOARD FRONTEND TIMING AUTHORITY APPLIED V212S4C]', {
+
+              projectId: projectId || '',
+
+              source: 'board_load_v212s4c',
+
+              manualSig: timingAuthorityV212S4C.manualSig,
+
+              previousSig: timingAuthorityV212S4C.boardSig,
+
+              sceneCount: asSceneArray(nextBoard.scenes).length,
+
+            })
+
+          }
         }
         let timingAuthorityReplacedBoardV212S = false
-        if (boardHasManualTimingDriftV212S(fullTimingDataV212S, boardData)) {
+        const timingAuthorityCanAutoApplyV212U = !boardManualUserEditV212X && avaBoardCanAutoApplyTimingAuthorityV212U(
+          avaTimingSignatureV212S4C(fullTimingDataV212S),
+          avaBoardSceneSignatureV212S4C(boardData),
+          'board_load_v212s',
+          boardData
+        )
+        if (timingAuthorityCanAutoApplyV212U && boardHasManualTimingDriftV212S(fullTimingDataV212S, boardData)) {
           const timingAuthorityBoardV212S = boardBuildFromManualTimingAuthorityV212S(fullTimingDataV212S, activeProjectFormatV177B)
           if (asSceneArray(timingAuthorityBoardV212S.scenes).length) {
             nextBoard = {
@@ -8146,7 +8380,7 @@ function sceneVideoActionState(scene) {
           nextBoard,
           { source: 'initial_snapshot_load_v136j' }
         )
-        if (!timingAuthorityReplacedBoardV212S && !workspaceMode && projectId) {
+        if (!timingAuthorityReplacedBoardV212S && !workspaceMode && projectId && avaBoardShouldProbeVideoBatchStatusV212X(nextBoard, { autoVideoQueueState, runtimeStatusMap: badRegenRuntimeStatusRef.current })) {
           apiRequest(`/projects/${projectId}/board/video-batch/status`)
             .then((batchStatusDataV136J) => {
               if (!active) return
@@ -8943,7 +9177,26 @@ function sceneVideoActionState(scene) {
         ? await saveWorkspaceStage(STAGE, payload)
         : await saveStage(projectId, STAGE, payload, boardGuardModeV145A)
       const serverCorrectedBoardV212S4C = saveResult?.snapshot?.data || saveResult?.data || null
-      if (!workspaceMode && avaBoardShouldAcceptServerCorrectionV212S4C(payload, serverCorrectedBoardV212S4C)) {
+      let serverBoardAcceptedV212X = false
+      const payloadHadReviewResetV212X = avaBoardPayloadHasReviewResetV212X(payload)
+      if (payloadHadReviewResetV212X) {
+        const acceptedBoardV212X = (serverCorrectedBoardV212S4C && Array.isArray(serverCorrectedBoardV212S4C.scenes))
+          ? normalizeLoadedBoardVideoStatuses({
+              ...serverCorrectedBoardV212S4C,
+              updatedAt: serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
+            })
+          : avaBoardClearReviewResetFlagsV212X(payload)
+        boardRef.current = acceptedBoardV212X
+        skipNextBoardAutosaveRefV145A.current = true
+        setBoard(acceptedBoardV212X)
+        writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), acceptedBoardV212X)
+        serverBoardAcceptedV212X = true
+        console.log('[BOARD REVIEW RESET FLAGS ACCEPTED V212X]', {
+          projectId: projectId || '',
+          sceneCount: asSceneArray(acceptedBoardV212X.scenes).length,
+        })
+      }
+      if (!serverBoardAcceptedV212X && !workspaceMode && avaBoardShouldAcceptServerCorrectionV212S4C(payload, serverCorrectedBoardV212S4C)) {
         const acceptedBoardV212S4C = normalizeLoadedBoardVideoStatuses({
           ...serverCorrectedBoardV212S4C,
           updatedAt: serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
@@ -13591,75 +13844,73 @@ async function importTimingJson(event) {
               )}
             </section>
 
-            <section className="avaBoardGenerationPanel">
-              <div className="avaBoardSectionHead">
-                <div>
+            <section className="avaBoardGenerationPanel avaBoardVideoSetupPanelV212W">
+              <div className="avaBoardVideoSetupTopbarV212W">
+                <div className="avaBoardVideoSetupTitleV212W">
                   <p className="avaEyebrow">video setup</p>
                   <h3>Настройки видео</h3>
                 </div>
-                <span>{selectedScene.route || 'i2v'} · {selectedEffectiveFormat}</span>
-              </div>
 
-              <div className="avaBoardSetupGrid">
-                <label className="avaBoardSelectField">
-                  <span>Режим видео</span>
-                  <select
-                    value={normalizeBoardRouteValueV154A(selectedScene.route) || 'i2v'}
-                    onChange={(event) => {
-                      const nextRoute = event.target.value
-                      const sourceCut = nextRoute === 'source_cut'
-                      updateScene(selectedScene.id, {
-                        route: nextRoute,
-                        planned_route: nextRoute,
-                        plannedRoute: nextRoute,
-                        workflow_key: sourceCut ? '' : boardWorkflowKeyForRoute(nextRoute),
-                        workflowKey: sourceCut ? '' : boardWorkflowKeyForRoute(nextRoute),
-                        source_or_generated: sourceCut ? 'source' : selectedScene.source_or_generated,
-                        sourceOrGenerated: sourceCut ? 'source' : selectedScene.sourceOrGenerated,
-                        video_node_role: sourceCut ? 'source_cut' : selectedScene.video_node_role,
-                        videoNodeRole: sourceCut ? 'source_cut' : selectedScene.videoNodeRole,
-                        skip_board_generation: sourceCut ? true : false,
-                        skipBoardGeneration: sourceCut ? true : false,
-                      })
-                    }}
-                  >
-                    {ROUTE_OPTIONS.map((route) => (
-                      <option key={route.value} value={route.value}>{route.label}</option>
-                    ))}
-                  </select>
-                  <small>{ROUTE_OPTIONS.find((route) => route.value === normalizeBoardRouteValueV154A(selectedScene.route))?.hint || 'Выбери режим генерации видео'}</small>
-                  {isBoardSourceCutSceneV208L(selectedScene) ? (
-                    <em className="avaBoardSourceCutNoticeV208L">VIDEO NODE · source_cut · Board генерация отключена</em>
-                  ) : null}
-                </label>
+                <div className="avaBoardVideoSetupControlsV212W">
+                  <label className="avaBoardCompactSelectV212W">
+                    <span>Режим</span>
+                    <select
+                      value={normalizeBoardRouteValueV154A(selectedScene.route) || 'i2v'}
+                      onChange={(event) => {
+                        const nextRoute = event.target.value
+                        const sourceCut = nextRoute === 'source_cut'
+                        updateScene(selectedScene.id, {
+                          route: nextRoute,
+                          planned_route: nextRoute,
+                          plannedRoute: nextRoute,
+                          workflow_key: sourceCut ? '' : boardWorkflowKeyForRoute(nextRoute),
+                          workflowKey: sourceCut ? '' : boardWorkflowKeyForRoute(nextRoute),
+                          source_or_generated: sourceCut ? 'source' : selectedScene.source_or_generated,
+                          sourceOrGenerated: sourceCut ? 'source' : selectedScene.sourceOrGenerated,
+                          video_node_role: sourceCut ? 'source_cut' : selectedScene.video_node_role,
+                          videoNodeRole: sourceCut ? 'source_cut' : selectedScene.videoNodeRole,
+                          skip_board_generation: sourceCut ? true : false,
+                          skipBoardGeneration: sourceCut ? true : false,
+                        })
+                      }}
+                    >
+                      {ROUTE_OPTIONS.map((route) => (
+                        <option key={route.value} value={route.value}>{route.label}</option>
+                      ))}
+                    </select>
+                  </label>
 
-                <label className="avaBoardSelectField">
-                  <span>Разрешение / формат</span>
-                  <select
-                    value={selectedEffectiveFormat}
-                    onChange={(event) => updateScene(selectedScene.id, {
-                      format: event.target.value,
-                      aspect_ratio: event.target.value,
-                    })}
-                  >
-                    {FORMAT_OPTIONS.map((format) => (
-                      <option key={format.value} value={format.value}>{format.label}</option>
-                    ))}
-                  </select>
-                  <small>Формат применяется к выбранной сцене. Формат проекта не меняется автоматически.</small>
-                </label>
+                  <label className="avaBoardCompactSelectV212W isFormatV212W">
+                    <span>Формат</span>
+                    <select
+                      value={selectedEffectiveFormat}
+                      onChange={(event) => updateScene(selectedScene.id, {
+                        format: event.target.value,
+                        aspect_ratio: event.target.value,
+                      })}
+                    >
+                      {FORMAT_OPTIONS.map((format) => (
+                        <option key={format.value} value={format.value}>{format.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <span className="avaBoardSetupPillV212W">
+                    {normalizeBoardRouteValueV154A(selectedScene.route) || 'i2v'} · {selectedEffectiveFormat}
+                  </span>
+                </div>
               </div>
 
               {isBoardSourceCutSceneV208L(selectedScene) ? (
-                <div className="avaBoardSourceCutPanelV208L">
+                <div className="avaBoardSourceCutPanelV208L avaBoardSourceCutCompactV212W">
                   <strong>Видео нарезка / Video Node</strong>
                   <p>Эта сцена не генерируется в Board. Она остаётся тайминг-слотом и позже заменяется source range в Video Node.</p>
                 </div>
               ) : null}
 
-              <div className="avaBoardVideoPromptGrid">
-                <label className="avaBoardWideField">
-                  Positive video prompt
+              <div className="avaBoardVideoPromptGrid avaBoardVideoPromptGridV212W">
+                <label className="avaBoardWideField avaBoardPromptFieldV212W">
+                  <span>Positive video prompt</span>
                   <textarea
                     value={selectedScene.video_prompt || ''}
                     onChange={(event) => {
@@ -13676,8 +13927,8 @@ async function importTimingJson(event) {
                   />
                 </label>
 
-                <label className="avaBoardWideField">
-                  Negative prompt
+                <label className="avaBoardWideField avaBoardPromptFieldV212W isNegativeV212W">
+                  <span>Negative prompt</span>
                   <textarea
                     value={selectedScene.negative_prompt || ''}
                     onChange={(event) => updateScene(selectedScene.id, { negative_prompt: event.target.value })}
@@ -13686,8 +13937,8 @@ async function importTimingJson(event) {
                 </label>
               </div>
 
-              <label className="avaBoardNoteField">
-                Заметка сцены
+              <label className="avaBoardNoteField avaBoardNoteFieldV212W">
+                <span>Заметка сцены</span>
                 <textarea
                   value={selectedScene.note || ''}
                   onChange={(event) => updateScene(selectedScene.id, { note: event.target.value })}

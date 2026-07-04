@@ -499,6 +499,176 @@ def _ava_v212s2_apply_manual_scene_timing(saved_scene, manual_scene, index, clea
     return base
 
 
+
+# AVA_SERVER_BOARD_TIMING_AUTHORITY_USER_EDIT_GUARD_V212U
+# Manual Timing authority should repair stale timing for the same scene set, but it
+# must not overwrite actual Board edits such as clear board or +scene. If scene count
+# or ids differ, treat it as Board user state and do not collapse it to Manual Timing.
+
+# AVA_SERVER_BOARD_MANUAL_EDIT_MARKER_GUARD_V212V
+# V212U handled clear / scene-count changes. This handles the first +Scene save:
+# it can still be one scene with the same id as Manual Timing, but it is explicitly
+# a manual Board scene. Timing authority must never collapse manual Board edits.
+def _ava_v212v_board_has_user_edit_markers(data):
+    try:
+        scenes = _ava_v212s2_scenes(data or {})
+    except Exception:
+        scenes = []
+    if not scenes:
+        return False
+    marker_keys = (
+        'source', 'importedFrom', 'imported_from', 'source_kind', 'sourceKind',
+        'scene_type', 'sceneType', 'durationSource', 'duration_source',
+        'timingSource', 'timing_source',
+    )
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            continue
+        marker_text = ' '.join(str(scene.get(key) or '').lower() for key in marker_keys)
+        if 'manual_board' in marker_text or 'manual_board_scene' in marker_text:
+            return True
+        if scene.get('manual') is True or scene.get('isManual') is True or scene.get('is_manual') is True:
+            return True
+    return False
+
+
+def _ava_v212v_skip_reason_for_data(data, manual_sig, board_sig):
+    if _ava_v212v_board_has_user_edit_markers(data):
+        return 'manual_board_user_edit_marker_v212v'
+    return _ava_v212u_skip_reason(manual_sig, board_sig)
+
+def _ava_v212u_can_apply_manual_timing_authority(manual_sig, board_sig):
+    if not manual_sig or not board_sig:
+        return False
+    if len(manual_sig) != len(board_sig):
+        return False
+    try:
+        for index, manual_item in enumerate(manual_sig):
+            if str(manual_item[0] if manual_item else '') != str(board_sig[index][0] if board_sig[index] else ''):
+                return False
+    except Exception:
+        return False
+    return True
+
+
+def _ava_v212u_skip_reason(manual_sig, board_sig):
+    if not board_sig:
+        return 'empty_or_cleared_board_user_state'
+    if not manual_sig:
+        return 'missing_manual_timing_signature'
+    if len(manual_sig) != len(board_sig):
+        return 'scene_count_changed_by_board_user_edit'
+    try:
+        for index, manual_item in enumerate(manual_sig):
+            if str(manual_item[0] if manual_item else '') != str(board_sig[index][0] if board_sig[index] else ''):
+                return 'scene_ids_changed_by_board_user_edit'
+    except Exception:
+        return 'signature_compare_failed'
+    return 'unknown'
+
+
+_AVA_V212U_IMAGE_MEDIA_KEYS = (
+    'image_asset_id', 'imageAssetId', 'image_api_path', 'imageApiPath', 'image_url', 'imageUrl',
+    'image_name', 'imageName', 'image_status', 'imageStatus', 'mediaUrl', 'media_url',
+    'first_frame_url', 'firstFrameUrl', 'first_image_asset_id', 'firstImageAssetId', 'first_image_api_path', 'firstImageApiPath', 'first_image_url', 'firstImageUrl', 'first_image_name', 'firstImageName',
+    'start_image_asset_id', 'startImageAssetId', 'start_image_api_path', 'startImageApiPath', 'start_image_url', 'startImageUrl', 'start_image_name', 'startImageName',
+    'last_frame_url', 'lastFrameUrl', 'last_image_asset_id', 'lastImageAssetId', 'last_image_api_path', 'lastImageApiPath', 'last_image_url', 'lastImageUrl', 'last_image_name', 'lastImageName',
+    'end_image_asset_id', 'endImageAssetId', 'end_image_api_path', 'endImageApiPath', 'end_image_url', 'endImageUrl', 'end_image_name', 'endImageName',
+)
+
+_AVA_V212U_VIDEO_MEDIA_KEYS = (
+    'video_asset_id', 'videoAssetId', 'video_api_path', 'videoApiPath', 'video_url', 'videoUrl',
+    'video_static_url', 'videoStaticUrl', 'video_path', 'videoPath', 'video_name', 'videoName',
+    'result_video_asset_id', 'resultVideoAssetId', 'result_video_api_path', 'resultVideoApiPath', 'result_video_url', 'resultVideoUrl',
+    'video_result', 'videoResult', 'resultUrl', 'result_url', 'original_video_url', 'originalVideoUrl',
+    'video_status', 'videoStatus', 'video_ready_at', 'videoReadyAt', 'video_error', 'videoError',
+    'video_review_status', 'videoReviewStatus', 'review_status', 'reviewStatus',
+    'last_video_job_id', 'lastVideoJobId', 'video_job_id', 'videoJobId', 'video_status_endpoint', 'videoStatusEndpoint',
+)
+
+
+def _ava_v212u_has_value(value):
+    if value is None or value == '' or value is False:
+        return False
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    return True
+
+
+def _ava_v212u_scene_has_any(scene, keys):
+    if not isinstance(scene, dict):
+        return False
+    return any(_ava_v212u_has_value(scene.get(key)) for key in keys)
+
+
+def _ava_v212u_copy_missing_media_keys(target, source, keys):
+    if not isinstance(target, dict) or not isinstance(source, dict):
+        return 0
+    copied = 0
+    for key in keys:
+        if _ava_v212u_has_value(target.get(key)):
+            continue
+        if not _ava_v212u_has_value(source.get(key)):
+            continue
+        target[key] = deepcopy(source.get(key))
+        copied += 1
+    return copied
+
+
+def _ava_v212u_video_timing_compatible(current_scene, next_scene):
+    try:
+        current_start, current_end, current_duration = _ava_v212s2_scene_times(current_scene or {}, 0)
+        next_start, next_end, next_duration = _ava_v212s2_scene_times(next_scene or {}, 0)
+        if current_duration <= 0 or next_duration <= 0:
+            return False
+        return abs(current_duration - next_duration) <= 0.85 and abs(current_end - next_end) <= 0.85
+    except Exception:
+        return False
+
+
+def _ava_v212u_preserve_board_media_after_timing_authority(current_data, incoming_data):
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, 0
+    current_scenes = _ava_v212s2_scenes(current_data)
+    incoming_scenes = _ava_v212s2_scenes(incoming_data)
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, 0
+    current_by_id = {
+        _ava_v212s2_scene_id(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+    next_data = deepcopy(incoming_data)
+    next_scenes = _ava_v212s2_scenes(next_data)
+    preserved_images = 0
+    preserved_videos = 0
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _ava_v212s2_scene_id(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict):
+            continue
+        if not _ava_v212u_scene_has_any(scene, _AVA_V212U_IMAGE_MEDIA_KEYS) and _ava_v212u_scene_has_any(current_scene, _AVA_V212U_IMAGE_MEDIA_KEYS):
+            if _ava_v212u_copy_missing_media_keys(scene, current_scene, _AVA_V212U_IMAGE_MEDIA_KEYS):
+                preserved_images += 1
+        if (
+            not _ava_v212u_scene_has_any(scene, _AVA_V212U_VIDEO_MEDIA_KEYS)
+            and _ava_v212u_scene_has_any(current_scene, _AVA_V212U_VIDEO_MEDIA_KEYS)
+            and _ava_v212u_video_timing_compatible(current_scene, scene)
+        ):
+            if _ava_v212u_copy_missing_media_keys(scene, current_scene, _AVA_V212U_VIDEO_MEDIA_KEYS):
+                preserved_videos += 1
+        if preserved_images or preserved_videos:
+            scene['boardMediaPreservedAfterTimingAuthorityV212U'] = True
+            scene['board_media_preserved_after_timing_authority_v212u'] = True
+    total = preserved_images + preserved_videos
+    if total:
+        next_data['boardMediaPreservedAfterTimingAuthorityV212U'] = True
+        next_data['boardMediaPreservedCountsV212U'] = {'images': preserved_images, 'videos': preserved_videos}
+    return next_data, total
+
+
 def _ava_v212s2_apply_manual_timing_to_board(board_data, manual_data, clear_stale_media=False):
     if not isinstance(manual_data, dict):
         return board_data, False, 'no_manual_data'
@@ -663,9 +833,25 @@ def _ava_v212s2_board_snapshot_with_manual_authority(db, project_id, snapshot, p
     changed, manual_sig, board_sig = _ava_v212s2_signatures_differ(manual_data or {}, board_data or {})
     if not changed:
         return snapshot, False, {'reason': 'no_drift', 'manualSig': manual_sig[:3], 'boardSig': board_sig[:3]}
+    if _ava_v212v_board_has_user_edit_markers(board_data or {}) or not _ava_v212u_can_apply_manual_timing_authority(manual_sig, board_sig):
+        return snapshot, False, {
+            'reason': _ava_v212v_skip_reason_for_data(board_data or {}, manual_sig, board_sig),
+            'manualSig': manual_sig[:3],
+            'boardSig': board_sig[:3],
+            'skippedByUserBoardEditV212U': True,
+            'skippedByManualBoardMarkerV212V': _ava_v212v_board_has_user_edit_markers(board_data or {}),
+        }
     next_data, applied, reason = _ava_v212s2_apply_manual_timing_to_board(board_data or {}, manual_data or {}, clear_stale_media=True)
     if not applied:
         return snapshot, False, {'reason': reason, 'manualSig': manual_sig[:3], 'boardSig': board_sig[:3]}
+    next_data, preserved_v212u = _ava_v212u_preserve_board_media_after_timing_authority(board_data or {}, next_data or {})
+    if preserved_v212u:
+        print('[BOARD TIMING AUTHORITY GET MEDIA PRESERVED V212U]', {
+            'project_id': project_id,
+            'preservedMediaRefs': preserved_v212u,
+            'manualSig': manual_sig[:3],
+            'boardSig': board_sig[:3],
+        }, flush=True)
     next_snapshot = {
         **(snapshot or {}),
         'stage': 'board',
@@ -3989,12 +4175,32 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
             manual_data_v212s2 = manual_snapshot_v212s2.get('data') if isinstance(manual_snapshot_v212s2, dict) else {}
             drift_v212s2, manual_sig_v212s2, board_sig_v212s2 = _ava_v212s2_signatures_differ(manual_data_v212s2 or {}, incoming_data or {})
             if drift_v212s2:
-                incoming_data, applied_v212s2, reason_v212s2 = _ava_v212s2_apply_manual_timing_to_board(incoming_data or {}, manual_data_v212s2 or {}, clear_stale_media=True)
-                if applied_v212s2:
-                    timing_authority_forced_replace_v212s2 = True
-                    # Do not let old current Board preservation resurrect stale 3-second media/timing.
-                    current = None
-                    print('[BOARD TIMING AUTHORITY SAVE APPLIED V212S2]', {
+                if _ava_v212v_board_has_user_edit_markers(incoming_data or {}) or not _ava_v212u_can_apply_manual_timing_authority(manual_sig_v212s2, board_sig_v212s2):
+                    print('[BOARD TIMING AUTHORITY SAVE SKIPPED USER EDIT V212U]', {
+                        'project_id': project_id,
+                        'reason': _ava_v212v_skip_reason_for_data(incoming_data or {}, manual_sig_v212s2, board_sig_v212s2),
+                        'manualSig': manual_sig_v212s2[:3],
+                        'incomingSig': board_sig_v212s2[:3],
+                        'manualBoardMarkerV212V': _ava_v212v_board_has_user_edit_markers(incoming_data or {}),
+                    }, flush=True)
+                else:
+                    incoming_data, applied_v212s2, reason_v212s2 = _ava_v212s2_apply_manual_timing_to_board(incoming_data or {}, manual_data_v212s2 or {}, clear_stale_media=True)
+                    if applied_v212s2:
+                        timing_authority_forced_replace_v212s2 = True
+                        incoming_data, preserved_v212u = _ava_v212u_preserve_board_media_after_timing_authority(
+                            current.get('data') if isinstance(current, dict) else {},
+                            incoming_data or {},
+                        )
+                        if preserved_v212u:
+                            print('[BOARD TIMING AUTHORITY SAVE MEDIA PRESERVED V212U]', {
+                                'project_id': project_id,
+                                'preservedMediaRefs': preserved_v212u,
+                                'manualSig': manual_sig_v212s2[:3],
+                                'incomingSig': board_sig_v212s2[:3],
+                            }, flush=True)
+                        # Do not let generic old current Board preservation resurrect stale 3-second media/timing.
+                        current = None
+                        print('[BOARD TIMING AUTHORITY SAVE APPLIED V212S2]', {
                         'project_id': project_id,
                         'reason': reason_v212s2,
                         'manualSig': manual_sig_v212s2[:3],
