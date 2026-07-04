@@ -570,15 +570,93 @@ function firstAssemblyTextV204H3(...values) {
   return ''
 }
 
+// AVA_ASSEMBLY_STAU_IMPORT_FROM_AUDIO_STUDIO_V212A: Assembly must not require a separate appliedStableAudioBlocks array.
+// If Audio Studio has a Stable/SFX variant selected/applied inside stableBlocks, build the STAU layer here.
 function assemblyStauAppliedAudioV204H3(block = {}) {
   const stableAudio = block?.stableAudio || block?.stable_audio || {}
-  return block?.appliedStableAudio
+  const direct = block?.appliedStableAudio
     || block?.applied_stable_audio
     || stableAudio?.appliedAudio
     || stableAudio?.applied_audio
     || stableAudio?.assembly
     || (String(block?.kind || '').includes('stable_audio') ? block : null)
     || null
+  if (direct) return direct
+
+  const variants = asArray(stableAudio?.variants)
+  const wantedVariantId = firstAssemblyTextV204H3(
+    stableAudio?.appliedVariantId,
+    stableAudio?.applied_variant_id,
+    block?.appliedStableAudioVariantId,
+    block?.applied_stable_audio_variant_id,
+    stableAudio?.selectedVariantId,
+    stableAudio?.selected_variant_id,
+  )
+  const variant = (
+    wantedVariantId
+      ? variants.find((item) => firstAssemblyTextV204H3(item?.id, item?.variantId, item?.variant_id) === wantedVariantId)
+      : null
+  ) || variants.find((item) => item?.applied === true) || variants.find((item) => item?.selected === true) || variants[0] || null
+
+  const ref = firstAssemblyTextV204H3(
+    variant?.ref,
+    variant?.apiPath,
+    variant?.api_path,
+    variant?.assetApiPath,
+    variant?.asset_api_path,
+    variant?.audioApiPath,
+    variant?.audio_api_path,
+    variant?.url,
+    variant?.assetUrl,
+    variant?.asset_url,
+  )
+  if (!ref) return null
+
+  const sceneIds = asArray(block?.sceneIds || block?.scene_ids || block?.scenes)
+    .map((item) => String(typeof item === 'string' ? item : (item?.id || item?.sceneId || item?.scene_id || '')).trim())
+    .filter(Boolean)
+  const startSec = toNumber(block?.startSec ?? block?.start_sec, 0)
+  const durationSec = toNumber(block?.durationSec ?? block?.duration_sec ?? variant?.durationSec ?? variant?.duration_sec ?? variant?.exactDurationSec ?? variant?.exact_duration_sec, 0)
+  const endSec = toNumber(block?.endSec ?? block?.end_sec, durationSec > 0 ? startSec + durationSec : 0)
+  const volume = clampNumber(
+    variant?.volumePercent ?? variant?.volume_percent ?? variant?.volume ?? stableAudio?.appliedVolume ?? stableAudio?.applied_volume ?? stableAudio?.volume ?? block?.volume,
+    0,
+    150,
+    30,
+  )
+  const blockId = firstAssemblyTextV204H3(block?.id, block?.blockId, block?.block_id, `stau_block_${Math.random().toString(16).slice(2, 8)}`)
+  const variantId = firstAssemblyTextV204H3(variant?.id, variant?.variantId, variant?.variant_id, wantedVariantId)
+
+  return {
+    kind: 'stable_audio_block_bed',
+    source: 'audio_studio_stable_variant_auto_import_v212a',
+    blockId,
+    block_id: blockId,
+    variantId,
+    variant_id: variantId,
+    ref,
+    apiPath: firstAssemblyTextV204H3(variant?.apiPath, variant?.api_path, variant?.assetApiPath, variant?.asset_api_path, ref),
+    url: firstAssemblyTextV204H3(variant?.url, variant?.assetUrl, variant?.asset_url, ref),
+    assetId: firstAssemblyTextV204H3(variant?.assetId, variant?.asset_id),
+    volume,
+    volumePercent: volume,
+    sceneIds,
+    scene_ids: sceneIds,
+    startSec,
+    start_sec: startSec,
+    endSec: endSec || (durationSec > 0 ? startSec + durationSec : 0),
+    end_sec: endSec || (durationSec > 0 ? startSec + durationSec : 0),
+    durationSec,
+    duration_sec: durationSec,
+    exactDurationSec: durationSec,
+    exact_duration_sec: durationSec,
+    mode: firstAssemblyTextV204H3(variant?.modeLabel, variant?.mode, stableAudio?.mode, block?.mode),
+    prompt: firstAssemblyTextV204H3(variant?.prompt, stableAudio?.prompt, block?.prompt),
+    assemblyReady: true,
+    assembly_ready: true,
+    sendToAssembly: true,
+    send_to_assembly: true,
+  }
 }
 
 function normalizeAssemblyStauBlockV204H3(raw = {}, index = 0) {
@@ -708,6 +786,356 @@ function mergeAudioStudioStauIntoBoardV204H3(board = {}, audioStudioRaw = {}) {
     stau_blocks: blocks,
     audioStudioStableImportedV204H3: Boolean(blocks.length),
     audioStudioStableImportedAtV204H3: new Date().toISOString(),
+  }
+}
+
+
+
+
+// AVA_ASSEMBLY_STRICT_MMAUDIO_MEDIA_AUTHORITY_V212M:
+// Do not let Audio Studio baseline/currentVideo refs overwrite the current Board video.
+// Only real, explicitly applied MMAudio variants may replace scene video in Assembly.
+// If Board video has changed after MMAudio was applied, the old MMAudio is considered stale.
+function assemblyRefKeyV212M(...values) {
+  const raw = firstAssemblyTextV204H3(...values)
+  if (!raw) return ''
+  const normalized = normalizeAssetFileUrl(raw)
+  if (normalized.assetId) return `asset:${String(normalized.assetId).trim().toLowerCase()}`
+  return String(normalized.apiPath || raw || '')
+    .trim()
+    .replace(/^https?:\/\/[^/]+/i, '')
+    .replace(/^\/api/i, '')
+    .split('#')[0]
+    .split('?')[0]
+    .toLowerCase()
+}
+
+function assemblyMmaudioVariantIsRealV212M(scene = {}, variant = {}, wantedVariantId = '') {
+  const variantId = firstAssemblyTextV204H3(variant?.id, variant?.variantId, variant?.variant_id, wantedVariantId)
+  const lowerId = String(variantId || '').trim().toLowerCase()
+  if (!variant || typeof variant !== 'object') return false
+  if (!lowerId) return false
+  if (lowerId.startsWith('board_source_')) return false
+  if (variant?.sourceBaseline || variant?.fromBoardBaseline || variant?.kind === 'source_video') return false
+  if (variant?.fromBoard && !variant?.jobId && !variant?.rawMode && !lowerId.startsWith('mmaudio_')) return false
+  const hasMmaMedia = Boolean(
+    variant?.appliedVideo || variant?.applied_video ||
+    variant?.appliedApiPath || variant?.applied_api_path || variant?.appliedUrl || variant?.applied_url ||
+    variant?.apiPath || variant?.api_path || variant?.url || variant?.assetApiPath || variant?.asset_api_path ||
+    scene?.mmaudio_video_api_path || scene?.mmaudioVideoApiPath || scene?.mmaudio_video_url || scene?.mmaudioVideoUrl
+  )
+  return Boolean(
+    lowerId.startsWith('mmaudio_') ||
+    variant?.kind === 'mmaudio_video' ||
+    variant?.jobId ||
+    variant?.rawMode ||
+    (hasMmaMedia && String(scene?.mmaudio_status || scene?.mmaudioStatus || scene?.audio_studio_status || scene?.audioStudioStatus || '').toLowerCase().includes('mmaudio'))
+  )
+}
+
+function assemblyMmaudioSourceMatchesBoardSceneV212M(media = {}, scene = {}) {
+  const appliedKey = assemblyRefKeyV212M(media.apiPath, media.url, media.assetId)
+  const sceneMmaKey = assemblyRefKeyV212M(
+    scene?.mmaudio_video_api_path,
+    scene?.mmaudioVideoApiPath,
+    scene?.mmaudio_video_url,
+    scene?.mmaudioVideoUrl,
+    scene?.mmaudio_video_asset_id,
+    scene?.mmaudioVideoAssetId,
+  )
+  // Board already points to this exact MMAudio video: safe.
+  if (appliedKey && sceneMmaKey && appliedKey === sceneMmaKey) return true
+
+  const sourceKey = assemblyRefKeyV212M(media.sourceApiPath, media.sourceUrl, media.sourceAssetId)
+  if (!sourceKey) return true
+
+  const boardCurrentVideoKey = assemblyRefKeyV212M(
+    scene?.video_api_path,
+    scene?.videoApiPath,
+    scene?.video_url,
+    scene?.videoUrl,
+    scene?.result_video_api_path,
+    scene?.resultVideoApiPath,
+    scene?.result_video_url,
+    scene?.resultVideoUrl,
+    scene?.video_asset_id,
+    scene?.videoAssetId,
+    scene?.result_video_asset_id,
+    scene?.resultVideoAssetId,
+  )
+  if (!boardCurrentVideoKey) return true
+  return sourceKey === boardCurrentVideoKey
+}
+
+// AVA_ASSEMBLY_MMAUDIO_IMPORT_FROM_AUDIO_STUDIO_V212I/V212M:
+// Assembly can restore an old board_assembly snapshot, while Audio Studio has newer applied MMAudio scenes.
+// MMAudio is not a separate audio layer like STAU; it may replace scene video only when it is a real applied MMAudio variant.
+function assemblyMmaudioAppliedMediaV212I(scene = {}) {
+  const variants = asArray(scene?.variants)
+  const wantedVariantId = firstAssemblyTextV204H3(
+    scene?.appliedVariantId,
+    scene?.applied_variant_id,
+    scene?.audioStudioAppliedVariantId,
+    scene?.audio_studio_applied_variant_id,
+    scene?.selectedVariantId,
+    scene?.selected_variant_id,
+  )
+  const wantedLower = String(wantedVariantId || '').trim().toLowerCase()
+  if (wantedLower.startsWith('board_source_')) return null
+
+  const variant = (
+    wantedVariantId
+      ? variants.find((item) => firstAssemblyTextV204H3(item?.id, item?.variantId, item?.variant_id) === wantedVariantId)
+      : null
+  ) || variants.find((item) => item?.applied === true && assemblyMmaudioVariantIsRealV212M(scene, item, firstAssemblyTextV204H3(item?.id, item?.variantId, item?.variant_id))) || null
+
+  const isRealMma = assemblyMmaudioVariantIsRealV212M(scene, variant, wantedVariantId)
+  if (!isRealMma) return null
+
+  const applied = scene?.mmaudioAppliedVideo
+    || scene?.mmaudio_applied_video
+    || variant?.appliedVideo
+    || variant?.applied_video
+    || scene?.currentVideo
+    || scene?.current_video
+    || null
+
+  const appliedObj = applied && typeof applied === 'object' ? applied : {}
+  const apiPath = firstAssemblyTextV204H3(
+    appliedObj?.apiPath,
+    appliedObj?.api_path,
+    appliedObj?.assetApiPath,
+    appliedObj?.asset_api_path,
+    scene?.mmaudio_video_api_path,
+    scene?.mmaudioVideoApiPath,
+    variant?.appliedApiPath,
+    variant?.applied_api_path,
+    variant?.apiPath,
+    variant?.api_path,
+    variant?.assetApiPath,
+    variant?.asset_api_path,
+  )
+  const url = firstAssemblyTextV204H3(
+    appliedObj?.url,
+    appliedObj?.assetUrl,
+    appliedObj?.asset_url,
+    scene?.mmaudio_video_url,
+    scene?.mmaudioVideoUrl,
+    variant?.appliedUrl,
+    variant?.applied_url,
+    variant?.url,
+    variant?.assetUrl,
+    variant?.asset_url,
+    apiPath,
+  )
+  const ref = firstAssemblyTextV204H3(apiPath, url)
+  const appliedStatus = String(scene?.mmaudio_status || scene?.mmaudioStatus || scene?.audio_studio_status || scene?.audioStudioStatus || '').toLowerCase()
+  const hasAppliedFlag = Boolean(scene?.has_mmaudio || scene?.hasMmaudio || appliedStatus.includes('applied') || appliedStatus.includes('mmaudio') || variant?.applied === true)
+  if (!ref || !hasAppliedFlag) return null
+
+  const assetId = firstAssemblyTextV204H3(
+    appliedObj?.assetId,
+    appliedObj?.asset_id,
+    scene?.mmaudio_video_asset_id,
+    scene?.mmaudioVideoAssetId,
+    variant?.appliedAssetId,
+    variant?.applied_asset_id,
+    variant?.assetId,
+    variant?.asset_id,
+  )
+  const originalObj = scene?.originalSourceVideo || scene?.mmaudioOriginalSourceVideo || scene?.mmaudioSourceVideo || scene?.sourceOriginalVideo || null
+  const sourceApiPath = firstAssemblyTextV204H3(
+    originalObj?.apiPath,
+    originalObj?.api_path,
+    scene?.mmaudio_source_video_api_path,
+    scene?.mmaudioSourceVideoApiPath,
+    scene?.original_source_video_api_path,
+    scene?.originalSourceVideoApiPath,
+  )
+  const sourceUrl = firstAssemblyTextV204H3(
+    originalObj?.url,
+    originalObj?.assetUrl,
+    originalObj?.asset_url,
+    scene?.mmaudio_source_video_url,
+    scene?.mmaudioSourceVideoUrl,
+    scene?.original_source_video_url,
+    scene?.originalSourceVideoUrl,
+    sourceApiPath,
+  )
+  const sourceAssetId = firstAssemblyTextV204H3(
+    originalObj?.assetId,
+    originalObj?.asset_id,
+    scene?.mmaudio_source_video_asset_id,
+    scene?.mmaudioSourceVideoAssetId,
+    scene?.original_source_video_asset_id,
+    scene?.originalSourceVideoAssetId,
+  )
+  return {
+    apiPath,
+    url: url || apiPath,
+    assetId,
+    sourceApiPath,
+    sourceUrl,
+    sourceAssetId,
+    variantId: firstAssemblyTextV204H3(variant?.id, variant?.variantId, variant?.variant_id, wantedVariantId),
+    volume: clampNumber(scene?.mmaudioVolume ?? scene?.mmaudio_volume ?? variant?.volume ?? variant?.volumePercent ?? variant?.volume_percent, 0, 200, 100),
+    prompt: firstAssemblyTextV204H3(scene?.mmaudio_prompt, scene?.mmaudioPrompt, variant?.prompt),
+    negativePrompt: firstAssemblyTextV204H3(scene?.mmaudio_negative_prompt, scene?.mmaudioNegativePrompt, variant?.negativePrompt, variant?.negative_prompt),
+  }
+}
+
+function extractAudioStudioMmaudioScenesV212I(audioStudioRaw = {}) {
+  const audioStudio = audioStudioRaw?.data && typeof audioStudioRaw.data === 'object' ? audioStudioRaw.data : (audioStudioRaw || {})
+  return asArray(audioStudio?.scenes)
+    .map((scene) => {
+      const sceneId = firstAssemblyTextV204H3(scene?.id, scene?.sceneId, scene?.scene_id)
+      const media = assemblyMmaudioAppliedMediaV212I(scene)
+      return sceneId && media ? { sceneId, media, sourceScene: scene } : null
+    })
+    .filter(Boolean)
+}
+
+function assemblyMmaudioSceneCountV212I(board = {}) {
+  return asArray(board?.scenes).filter((scene) => Boolean(
+    scene?.assembly_mmaudio_source_v212i === 'audio_studio_applied_mmaudio' ||
+    scene?.assemblyMmaudioSourceV212I === 'audio_studio_applied_mmaudio' ||
+    (scene?.has_mmaudio && (scene?.mmaudio_video_api_path || scene?.mmaudioVideoApiPath || scene?.mmaudio_video_url || scene?.mmaudioVideoUrl))
+  )).length
+}
+
+function mergeAudioStudioMmaudioIntoBoardV212I(board = {}, audioStudioRaw = {}) {
+  const appliedScenes = extractAudioStudioMmaudioScenesV212I(audioStudioRaw)
+  if (!appliedScenes.length) return board || {}
+  const appliedBySceneId = new Map(appliedScenes.map((item) => [String(item.sceneId), item.media]))
+  let replaced = 0
+  let skippedStale = 0
+  const scenes = asArray(board?.scenes).map((scene) => {
+    const sceneId = firstAssemblyTextV204H3(scene?.id, scene?.sceneId, scene?.scene_id)
+    const media = appliedBySceneId.get(sceneId)
+    if (!media) return scene
+    if (!assemblyMmaudioSourceMatchesBoardSceneV212M(media, scene)) {
+      skippedStale += 1
+      return scene
+    }
+    replaced += 1
+    const appliedUrl = firstAssemblyTextV204H3(media.url, media.apiPath)
+    return {
+      ...scene,
+      video_url: appliedUrl,
+      videoUrl: appliedUrl,
+      video_api_path: media.apiPath || '',
+      videoApiPath: media.apiPath || '',
+      video_asset_id: media.assetId || '',
+      videoAssetId: media.assetId || '',
+      output_video_url: appliedUrl,
+      outputVideoUrl: appliedUrl,
+      output_video_api_path: media.apiPath || '',
+      outputVideoApiPath: media.apiPath || '',
+      result_video_url: appliedUrl,
+      resultVideoUrl: appliedUrl,
+      result_video_api_path: media.apiPath || '',
+      resultVideoApiPath: media.apiPath || '',
+      mmaudio_video_url: appliedUrl,
+      mmaudioVideoUrl: appliedUrl,
+      mmaudio_video_api_path: media.apiPath || '',
+      mmaudioVideoApiPath: media.apiPath || '',
+      mmaudio_video_asset_id: media.assetId || '',
+      mmaudioVideoAssetId: media.assetId || '',
+      has_mmaudio: true,
+      hasMmaudio: true,
+      has_sound: true,
+      hasSound: true,
+      mmaudio_status: 'applied',
+      mmaudioStatus: 'applied',
+      audio_studio_status: 'mmaudio_applied',
+      audioStudioStatus: 'mmaudio_applied',
+      audio_studio_applied_variant_id: media.variantId || scene?.audio_studio_applied_variant_id || scene?.audioStudioAppliedVariantId || '',
+      audioStudioAppliedVariantId: media.variantId || scene?.audioStudioAppliedVariantId || scene?.audio_studio_applied_variant_id || '',
+      mmaudio_volume: media.volume,
+      mmaudioVolume: media.volume,
+      mmaudio_prompt: media.prompt || scene?.mmaudio_prompt || scene?.mmaudioPrompt || '',
+      mmaudioPrompt: media.prompt || scene?.mmaudioPrompt || scene?.mmaudio_prompt || '',
+      mmaudio_negative_prompt: media.negativePrompt || scene?.mmaudio_negative_prompt || scene?.mmaudioNegativePrompt || '',
+      mmaudioNegativePrompt: media.negativePrompt || scene?.mmaudioNegativePrompt || scene?.mmaudio_negative_prompt || '',
+      assembly_mmaudio_source_v212i: 'audio_studio_applied_mmaudio',
+      assemblyMmaudioSourceV212I: 'audio_studio_applied_mmaudio',
+      assembly_mmaudio_imported_at_v212i: new Date().toISOString(),
+      assemblyMmaudioImportedAtV212I: new Date().toISOString(),
+    }
+  })
+  if (replaced || skippedStale) {
+    console.log('[AVA ASSEMBLY STRICT MMAUDIO IMPORT V212M]', { replaced, skippedStale, audioStudioApplied: appliedScenes.length })
+  }
+  return {
+    ...(board || {}),
+    scenes,
+    audioStudioMmaudioImportedV212I: replaced > 0,
+    audioStudioMmaudioImportedCountV212I: replaced,
+    audioStudioMmaudioSkippedStaleV212M: skippedStale,
+    audioStudioMmaudioImportedAtV212I: new Date().toISOString(),
+  }
+}
+
+
+function assemblySceneMediaOverlayFromCurrentBoardV212M(scene = {}) {
+  const keys = [
+    'video_url', 'videoUrl', 'video_api_path', 'videoApiPath', 'video_asset_id', 'videoAssetId',
+    'output_video_url', 'outputVideoUrl', 'output_video_api_path', 'outputVideoApiPath',
+    'result_video_url', 'resultVideoUrl', 'result_video_api_path', 'resultVideoApiPath', 'result_video_asset_id', 'resultVideoAssetId',
+    'video_name', 'videoName', 'video_status', 'videoStatus', 'video_ready_at', 'videoReadyAt',
+    'image_url', 'imageUrl', 'image_api_path', 'imageApiPath', 'image_asset_id', 'imageAssetId',
+    'first_image_url', 'firstImageUrl', 'first_image_api_path', 'firstImageApiPath', 'first_image_asset_id', 'firstImageAssetId',
+    'first_frame_url', 'firstFrameUrl', 'first_frame_api_path', 'firstFrameApiPath', 'first_frame_asset_id', 'firstFrameAssetId',
+    'start_image_url', 'startImageUrl', 'start_image_api_path', 'startImageApiPath', 'start_image_asset_id', 'startImageAssetId',
+    'last_image_url', 'lastImageUrl', 'last_image_api_path', 'lastImageApiPath', 'last_image_asset_id', 'lastImageAssetId',
+    'last_frame_url', 'lastFrameUrl', 'last_frame_api_path', 'lastFrameApiPath', 'last_frame_asset_id', 'lastFrameAssetId',
+    'end_image_url', 'endImageUrl', 'end_image_api_path', 'endImageApiPath', 'end_image_asset_id', 'endImageAssetId',
+    'image_mutation_epoch', 'imageMutationEpoch', 'image_mutation_at', 'imageMutationAt',
+    'source_image_changed_at', 'sourceImageChangedAt',
+    'mmaudio_video_url', 'mmaudioVideoUrl', 'mmaudio_video_api_path', 'mmaudioVideoApiPath', 'mmaudio_video_asset_id', 'mmaudioVideoAssetId',
+    'mmaudio_status', 'mmaudioStatus', 'has_mmaudio', 'hasMmaudio', 'audio_studio_status', 'audioStudioStatus',
+    'audio_studio_applied_variant_id', 'audioStudioAppliedVariantId',
+  ]
+  const out = {}
+  keys.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(scene || {}, key)) out[key] = scene[key]
+  })
+  return out
+}
+
+function mergeCurrentBoardMediaIntoAssemblyV212M(assemblyBoard = {}, currentBoard = {}) {
+  const currentScenes = asArray(currentBoard?.scenes)
+  if (!currentScenes.length) return assemblyBoard || {}
+  const currentById = new Map(currentScenes.map((scene) => [String(firstAssemblyTextV204H3(scene?.id, scene?.sceneId, scene?.scene_id)), scene]))
+  let refreshed = 0
+  const scenes = asArray(assemblyBoard?.scenes).map((scene) => {
+    const sceneId = String(firstAssemblyTextV204H3(scene?.id, scene?.sceneId, scene?.scene_id))
+    const current = currentById.get(sceneId)
+    if (!current) return scene
+    refreshed += 1
+    return {
+      ...scene,
+      ...assemblySceneMediaOverlayFromCurrentBoardV212M(current),
+      id: scene?.id || current?.id || sceneId,
+      scene_id: scene?.scene_id || current?.scene_id || sceneId,
+      sceneId: scene?.sceneId || current?.sceneId || sceneId,
+      start_sec: scene?.start_sec ?? scene?.startSec ?? current?.start_sec ?? current?.startSec,
+      startSec: scene?.startSec ?? scene?.start_sec ?? current?.startSec ?? current?.start_sec,
+      end_sec: scene?.end_sec ?? scene?.endSec ?? current?.end_sec ?? current?.endSec,
+      endSec: scene?.endSec ?? scene?.end_sec ?? current?.endSec ?? current?.end_sec,
+      duration_sec: scene?.duration_sec ?? scene?.durationSec ?? current?.duration_sec ?? current?.durationSec,
+      durationSec: scene?.durationSec ?? scene?.duration_sec ?? current?.durationSec ?? current?.duration_sec,
+      assembly_media_refreshed_from_board_v212m: true,
+      assemblyMediaRefreshedFromBoardV212M: true,
+    }
+  })
+  if (refreshed) console.log('[AVA ASSEMBLY CURRENT BOARD MEDIA REFRESH V212M]', { refreshed, boardScenes: currentScenes.length })
+  return {
+    ...(assemblyBoard || {}),
+    scenes,
+    assemblyCurrentBoardMediaRefreshV212M: true,
+    assemblyCurrentBoardMediaRefreshCountV212M: refreshed,
+    assemblyCurrentBoardMediaRefreshAtV212M: new Date().toISOString(),
   }
 }
 
@@ -1747,7 +2175,33 @@ function clearBoardAssemblyWorkflowEntryV200O() {
         const assemblyScenes = boardAssemblyScenesV11(assemblyData)
         const assemblyItems = boardAssemblyItemsV11(assemblyData)
         if (assemblyScenes.length || assemblyItems.length) {
-          const restoredBoard = boardFromAssemblySnapshotV11(assemblyData)
+          let restoredBoard = boardFromAssemblySnapshotV11(assemblyData)
+          try {
+            const currentBoardForMediaV212M = workspaceMode ? await loadWorkspaceStage('board') : await loadStage(projectId, 'board')
+            restoredBoard = mergeCurrentBoardMediaIntoAssemblyV212M(restoredBoard, normalizeBoard(currentBoardForMediaV212M))
+          } catch (error) {
+            console.warn('[AVA ASSEMBLY CURRENT BOARD MEDIA REFRESH V212M FAILED]', error?.message || error)
+          }
+          // V212A: even when restoring an old board_assembly snapshot, pull fresh STAU blocks from Audio Studio.
+          // This fixes the case where the user enters Assembly and sees 'нет применённых блоков' while Audio Studio has generated/selected STAU.
+          let restoredStauBlocksV212A = extractAssemblyStauBlocksV204H3(assemblyData)
+          try {
+            const audioStudioRawV212A = workspaceMode ? await loadWorkspaceStage('audio_studio') : await loadStage(projectId, 'audio_studio')
+            const beforeMmaCountV212I = assemblyMmaudioSceneCountV212I(restoredBoard)
+            restoredBoard = mergeAudioStudioMmaudioIntoBoardV212I(restoredBoard, audioStudioRawV212A)
+            const afterMmaCountV212I = assemblyMmaudioSceneCountV212I(restoredBoard)
+            if (afterMmaCountV212I > beforeMmaCountV212I) {
+              console.log('[AVA ASSEMBLY IMPORT MMAUDIO FROM AUDIO STUDIO V212I]', { scenes: afterMmaCountV212I, restoredAssemblyHadMma: beforeMmaCountV212I })
+            }
+            const audioStudioBlocksV212A = extractAssemblyStauBlocksV204H3(audioStudioRawV212A)
+            if (audioStudioBlocksV212A.length) {
+              restoredBoard = mergeAudioStudioStauIntoBoardV204H3(restoredBoard, audioStudioRawV212A)
+              restoredStauBlocksV212A = extractAssemblyStauBlocksV204H3(restoredBoard)
+              console.log('[AVA ASSEMBLY IMPORT STAU FROM AUDIO STUDIO V212A]', { blocks: restoredStauBlocksV212A.length, restoredAssemblyHadBlocks: extractAssemblyStauBlocksV204H3(assemblyData).length })
+            }
+          } catch (error) {
+            console.warn('[AVA ASSEMBLY IMPORT AUDIO STUDIO MEDIA V212I FAILED]', error?.message || error)
+          }
           setBoard(restoredBoard)
           const firstSceneId = assemblyData.selectedSceneId || restoredBoard.scenes?.[0]?.id || restoredBoard.scenes?.[0]?.scene_id || assemblyItems?.[0]?.id || ''
           setSelectedSceneId(firstSceneId)
@@ -1776,7 +2230,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
             150,
             localUiSettingsV197F.hasMusicVolumeV200N ? localUiSettingsV197F.musicVolume : 15,
           ))
-          const restoredStauBlocksV204H3 = extractAssemblyStauBlocksV204H3(assemblyData)
+          const restoredStauBlocksV204H3 = restoredStauBlocksV212A
           setStauEnabledV204H3(Boolean(assemblyData.stauEnabledV204H3 ?? assemblyData.stauEnabled ?? assemblyData.stau?.enabled ?? restoredStauBlocksV204H3.length))
           setStauVolumeV204H3(clampNumber(
             assemblyData.stauVolumeV204H3 ?? assemblyData.stauVolume ?? assemblyData.stau?.volumePercent ?? (Number(assemblyData.stau?.volume) * 100),
@@ -1815,9 +2269,21 @@ function clearBoardAssemblyWorkflowEntryV200O() {
         : await loadStage(projectId, 'board')
 
       let nextBoard = normalizeBoard(data)
+      let audioStudioRawForAssemblyV212I = null
+      try {
+        audioStudioRawForAssemblyV212I = workspaceMode ? await loadWorkspaceStage('audio_studio') : await loadStage(projectId, 'audio_studio')
+        const beforeMmaCountV212I = assemblyMmaudioSceneCountV212I(nextBoard)
+        nextBoard = mergeAudioStudioMmaudioIntoBoardV212I(nextBoard, audioStudioRawForAssemblyV212I)
+        const afterMmaCountV212I = assemblyMmaudioSceneCountV212I(nextBoard)
+        if (afterMmaCountV212I > beforeMmaCountV212I) {
+          console.log('[AVA ASSEMBLY IMPORT MMAUDIO FROM AUDIO STUDIO V212I]', { scenes: afterMmaCountV212I, boardHadMma: beforeMmaCountV212I })
+        }
+      } catch (error) {
+        console.warn('[AVA ASSEMBLY IMPORT MMAUDIO FROM AUDIO STUDIO V212I FAILED]', error?.message || error)
+      }
       if (fromAudioStudioForceV204C4) {
         try {
-          const audioStudioRawV204H3 = workspaceMode ? await loadWorkspaceStage('audio_studio') : await loadStage(projectId, 'audio_studio')
+          const audioStudioRawV204H3 = audioStudioRawForAssemblyV212I || (workspaceMode ? await loadWorkspaceStage('audio_studio') : await loadStage(projectId, 'audio_studio'))
           nextBoard = mergeAudioStudioStauIntoBoardV204H3(nextBoard, audioStudioRawV204H3)
           const importedBlocksV204H3 = extractAssemblyStauBlocksV204H3(nextBoard)
           setStauEnabledV204H3(Boolean(importedBlocksV204H3.length))
@@ -2128,6 +2594,11 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           video_status_endpoint: item.videoStatusEndpoint || '',
           videoStatusEndpoint: item.videoStatusEndpoint || '',
           source_is_mmaudio: usesMmaudioVideo,
+          sourceIsMmaudio: usesMmaudioVideo,
+          video_source: usesMmaudioVideo ? 'audio_studio_mmaudio_applied_v212i' : 'board_video',
+          videoSource: usesMmaudioVideo ? 'audio_studio_mmaudio_applied_v212i' : 'board_video',
+          mmaudio_video_api_path: raw.mmaudio_video_api_path || raw.mmaudioVideoApiPath || '',
+          mmaudioVideoApiPath: raw.mmaudioVideoApiPath || raw.mmaudio_video_api_path || '',
           has_sound: item.hasSound || item.hasMmaudio,
           placeholder: !item.hasVideo,
           missing_video: !item.hasVideo,

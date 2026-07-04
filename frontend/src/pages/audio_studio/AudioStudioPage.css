@@ -2109,3 +2109,401 @@
   box-shadow: 0 0 0 1px rgba(34, 211, 238, .45);
 }
 
+
+
+/* AVA_AUDIO_STUDIO_PREVIEW_MAP_NOTES_V211D */
+.avaAudioWorkbench.isPreviewMapV211D { align-items: stretch; }
+.avaAudioPreviewMapNotesPanelV211D,
+.avaAudioPreviewMapVideoPanelV211D,
+.avaAudioPreviewMapParsedPanelV211D { min-height: 520px; }
+.avaAudioPreviewMapFieldV211D textarea { min-height: 230px; resize: vertical; font-size: 14px; line-height: 1.55; white-space: pre; }
+.avaAudioPreviewMapActionsV211D,
+.avaAudioPreviewMapBuildRowV211D { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.avaAudioPreviewMapHintV211D { margin-top: 12px; padding: 10px 12px; border: 1px dashed rgba(148,163,184,.28); border-radius: 14px; color: rgba(226,232,240,.72); font-size: 12px; line-height: 1.45; background: rgba(15,23,42,.45); }
+.avaAudioPreviewMapVideoWrapV211D { position: relative; border-radius: 18px; overflow: hidden; background: #020617; min-height: 380px; display: grid; place-items: center; }
+.avaAudioPreviewMapVideoV211D { width: 100%; height: 100%; max-height: 520px; object-fit: contain; }
+.avaAudioPreviewMapOverlayV211D { position: absolute; top: 14px; right: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 10px 12px; border-radius: 14px; background: rgba(2,6,23,.76); border: 1px solid rgba(34,211,238,.42); box-shadow: 0 14px 32px rgba(0,0,0,.35); color: #bbf7d0; pointer-events: none; }
+.avaAudioPreviewMapOverlayV211D strong { font-size: 28px; line-height: 1; color: #4ade80; text-shadow: 0 0 16px rgba(74,222,128,.45); }
+.avaAudioPreviewMapOverlayV211D span { font-size: 12px; color: #e0f2fe; }
+.avaAudioPreviewMapOverlayV211D small { font-size: 11px; color: rgba(226,232,240,.78); }
+.avaAudioPreviewMapSceneMiniRailV211D { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; max-height: 120px; overflow: auto; padding: 10px; border: 1px solid rgba(148,163,184,.16); border-radius: 16px; background: rgba(15,23,42,.42); }
+.avaAudioPreviewMapSceneMiniRailV211D button { border: 1px solid rgba(125,211,252,.2); background: rgba(15,23,42,.72); color: rgba(226,232,240,.84); border-radius: 12px; padding: 7px 9px; display: flex; flex-direction: column; gap: 1px; min-width: 52px; cursor: pointer; }
+.avaAudioPreviewMapSceneMiniRailV211D button.isActive { border-color: rgba(74,222,128,.78); background: rgba(22,101,52,.34); box-shadow: 0 0 0 1px rgba(74,222,128,.2); }
+.avaAudioPreviewMapSceneMiniRailV211D strong { color: #7dd3fc; font-size: 14px; }
+.avaAudioPreviewMapSceneMiniRailV211D span { font-size: 10px; color: rgba(226,232,240,.68); }
+.avaAudioPreviewMapParsedListV211D { display: grid; gap: 10px; margin-top: 14px; max-height: 310px; overflow: auto; }
+.avaAudioPreviewMapParsedListV211D article { display: grid; grid-template-columns: minmax(42px, auto) 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(15,23,42,.56); border: 1px solid rgba(148,163,184,.15); }
+.avaAudioPreviewMapParsedListV211D article strong { color: #93c5fd; }
+.avaAudioPreviewMapParsedListV211D article span { color: rgba(226,232,240,.88); font-size: 13px; }
+.avaAudioPreviewMapParsedListV211D article em { font-style: normal; font-size: 11px; padding: 4px 7px; border-radius: 999px; background: rgba(59,130,246,.16); color: #bfdbfe; }
+.avaAudioPreviewMapParsedListV211D article.isMMA em { background: rgba(168,85,247,.18); color: #e9d5ff; }
+.avaAudioPreviewMapParsedListV211D article.isSFX em { background: rgba(249,115,22,.18); color: #fed7aa; }
+.avaAudioPreviewMapEmptyV211D { padding: 14px; color: rgba(226,232,240,.62); border: 1px dashed rgba(148,163,184,.2); border-radius: 14px; background: rgba(15,23,42,.35); }
+
+
+/* AVA_AUDIO_STUDIO_PREVIEW_FULL_PROJECT_MAP_V211E */
+.avaAudioWorkbench.isPreviewMapV211D {
+  grid-template-columns: minmax(320px, 0.85fr) minmax(520px, 1.45fr) !important;
+}
+.avaAudioWorkbench.isPreviewMapV211D .avaAudioPreviewMapParsedPanelV211D {
+  display: none !important;
+}
+.avaAudioWorkbench.isPreviewMapV211D .avaAudioPreviewMapVideoPanelV211D {
+  min-height: 620px;
+}
+.avaAudioWorkbench.isPreviewMapV211D .avaAudioPreviewMapVideoWrapV211D {
+  min-height: 500px;
+}
+.avaAudioWorkbench.isPreviewMapV211D .avaAudioPreviewMapOverlayV211D {
+  top: 18px;
+  right: 18px;
+  transform: scale(1.08);
+  transform-origin: top right;
+}
+.avaAudioWorkbench.isPreviewMapV211D .avaAudioPreviewMapVideoV211D {
+  max-height: 620px;
+}
+
+
+/* AVA_AUDIO_STUDIO_FULL_PREVIEW_MAP_BUILD_V211F */
+.avaAudioWorkbench.isPreviewMapV211D {
+  grid-template-columns: minmax(280px, 0.82fr) minmax(420px, 1.45fr) !important;
+}
+
+.avaAudioWorkbench.isPreviewMapV211D .avaAudioPreviewMapParsedPanelV211D {
+  display: none !important;
+}
+
+.avaAudioWorkbench.isPreviewMapV211D .avaAudioPreviewMapVideoPanelV211D {
+  min-width: 0;
+}
+
+.avaAudioPreviewMapBuildRowV211D .avaAudioStablePreviewActionV204G4 {
+  min-width: 190px;
+}
+
+.avaAudioPreviewMapOverlayV211D {
+  left: auto;
+  right: 14px;
+  top: 14px;
+}
+
+
+/* AVA_AUDIO_STUDIO_GLOBAL_NOTES_PANEL_V211H */
+.avaAudioGlobalNotesPanelV211H {
+  margin: 10px 0 14px;
+  border: 1px solid rgba(34, 211, 238, 0.20);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(34, 211, 238, 0.10), transparent 38%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.58));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 10px 28px rgba(0,0,0,0.16);
+  padding: 12px;
+}
+.avaAudioGlobalNotesPanelV211H.isEmpty { border-style: dashed; opacity: 0.82; }
+.avaAudioGlobalNotesHeadV211H {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.avaAudioGlobalNotesHeadV211H div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.avaAudioGlobalNotesHeadV211H strong { color: #e0f2fe; font-size: 13px; letter-spacing: 0.01em; }
+.avaAudioGlobalNotesHeadV211H span { color: rgba(226, 232, 240, 0.58); font-size: 11px; }
+.avaAudioGlobalNotesHeadV211H button {
+  border: 1px solid rgba(125, 211, 252, 0.20);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(15, 23, 42, 0.62);
+  color: rgba(226, 232, 240, 0.82);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.avaAudioGlobalNotesListV211H {
+  display: grid;
+  gap: 7px;
+  max-height: 168px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.avaAudioGlobalNotesListV211H article {
+  display: grid;
+  grid-template-columns: minmax(42px, auto) 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 13px;
+  background: rgba(2, 6, 23, 0.38);
+  border: 1px solid rgba(148, 163, 184, 0.13);
+}
+.avaAudioGlobalNotesListV211H article em { font-style: normal; color: #7dd3fc; font-weight: 900; font-size: 12px; }
+.avaAudioGlobalNotesListV211H article span { color: rgba(226, 232, 240, 0.90); font-size: 12px; line-height: 1.35; }
+.avaAudioGlobalNotesListV211H article b {
+  font-size: 10px;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.18);
+}
+.avaAudioGlobalNotesListV211H article.isMMA b { color: #e9d5ff; background: rgba(168, 85, 247, 0.24); }
+.avaAudioGlobalNotesListV211H article.isSTAU b { color: #bae6fd; background: rgba(14, 165, 233, 0.22); }
+.avaAudioGlobalNotesListV211H article.isSFX b { color: #fed7aa; background: rgba(249, 115, 22, 0.24); }
+.avaAudioGlobalNotesEmptyV211H {
+  color: rgba(226, 232, 240, 0.64);
+  font-size: 12px;
+  line-height: 1.48;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(148, 163, 184, 0.20);
+  background: rgba(15, 23, 42, 0.35);
+}
+.avaAudioStablePromptPanelV204F1 .avaAudioGlobalNotesPanelV211H { margin-bottom: 14px; }
+
+
+/* AVA_AUDIO_STUDIO_NOTES_TEXTAREA_LAYOUT_V211I */
+
+/* Make the shared notes panel a real scrollable text field, not small parsed chips. */
+.avaAudioGlobalNotesPanelV211H.isTextareaV211I {
+  margin: 10px 0 16px;
+  padding: 12px;
+  min-height: 182px;
+  border-radius: 18px;
+}
+
+.avaAudioGlobalNotesPanelV211H.isTextareaV211I .avaAudioGlobalNotesHeadV211H {
+  margin-bottom: 9px;
+}
+
+.avaAudioGlobalNotesTextareaV211I {
+  width: 100%;
+  min-height: 126px;
+  max-height: 190px;
+  resize: vertical;
+  overflow: auto;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.46);
+  color: rgba(226, 232, 240, 0.92);
+  padding: 11px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: inherit;
+  white-space: pre-wrap;
+  outline: none;
+}
+
+.avaAudioGlobalNotesTextareaV211I::placeholder {
+  color: rgba(148, 163, 184, 0.56);
+}
+
+/* Preview editor itself: make multiline writing comfortable. */
+.avaAudioPreviewMapFieldV211D textarea {
+  min-height: 260px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  tab-size: 2;
+}
+
+/* Stable panel: after replacing the old hint with the notes field, keep everything aligned and push controls down cleanly. */
+.avaAudioStablePromptPanelV204F1 .avaAudioGlobalNotesPanelV211H.isTextareaV211I {
+  margin-top: 10px;
+  margin-bottom: 18px;
+}
+
+.avaAudioStablePromptPanelV204F1 .avaAudioStableFieldV204F7 textarea {
+  min-height: 88px;
+}
+
+/* MMAudio panel uses the same shared notes block before Prompt. */
+.avaAudioPromptPanel .avaAudioGlobalNotesPanelV211H.isTextareaV211I {
+  margin-top: 10px;
+  margin-bottom: 16px;
+}
+
+/* Old parsed row layouts may still exist in CSS, but V211I panel should not reserve space for them. */
+.avaAudioGlobalNotesPanelV211H.isTextareaV211I .avaAudioGlobalNotesListV211H,
+.avaAudioGlobalNotesPanelV211H.isTextareaV211I .avaAudioGlobalNotesEmptyV211H {
+  display: none !important;
+}
+
+
+/* AVA_AUDIO_STUDIO_SAFE_PREVIEW_UI_CSS_ONLY_V211Q */
+
+/* One-row compact segmented tabs: MMAudio / Stable / Preview. */
+.avaAudioModeSwitch {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  width: 100% !important;
+  padding: 5px !important;
+  border-radius: 18px !important;
+  border: 1px solid rgba(125, 211, 252, 0.14) !important;
+  background: rgba(15, 23, 42, 0.58) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04) !important;
+}
+
+.avaAudioModeSwitch button {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  height: 36px !important;
+  border-radius: 13px !important;
+  padding: 0 6px !important;
+  display: inline-flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 4px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  font-size: 11.5px !important;
+  line-height: 1 !important;
+  font-weight: 850 !important;
+  border: 1px solid transparent !important;
+  color: rgba(226, 232, 240, 0.78) !important;
+  background: rgba(15, 23, 42, 0.36) !important;
+}
+
+.avaAudioModeSwitch button svg {
+  width: 13px !important;
+  height: 13px !important;
+  flex: 0 0 auto !important;
+}
+
+.avaAudioModeSwitch button.isActive {
+  border-color: rgba(125, 211, 252, 0.46) !important;
+  color: #f8fafc !important;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.34), rgba(124, 58, 237, 0.36)) !important;
+  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.10), inset 0 1px 0 rgba(255,255,255,0.08) !important;
+}
+
+/* Preview: keep only Save button in notes actions; hide fallback "New line". */
+.avaAudioPreviewMapActionsV211D > button:not(.isPrimary) {
+  display: none !important;
+}
+
+/* Preview: keep only first build/update button; hide "В монтажку". */
+.avaAudioPreviewMapBuildRowV211D > button:not(:first-child) {
+  display: none !important;
+}
+
+.avaAudioPreviewMapActionsV211D,
+.avaAudioPreviewMapBuildRowV211D {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  margin-top: 10px !important;
+}
+
+.avaAudioPreviewMapActionsV211D button,
+.avaAudioPreviewMapBuildRowV211D button {
+  min-height: 38px !important;
+  border-radius: 14px !important;
+  padding: 9px 14px !important;
+  font-weight: 850 !important;
+  border: 1px solid rgba(125, 211, 252, 0.22) !important;
+  color: rgba(226, 232, 240, 0.94) !important;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.88), rgba(30, 41, 59, 0.64)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04) !important;
+}
+
+.avaAudioPreviewMapActionsV211D button.isPrimary,
+.avaAudioPreviewMapBuildRowV211D > button:first-child {
+  border-color: rgba(34, 211, 238, 0.34) !important;
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.28), rgba(59, 130, 246, 0.18)) !important;
+}
+
+/* Compact helper below Preview buttons. */
+.avaAudioPreviewMapHintV211D {
+  margin-top: 10px !important;
+  padding: 8px 10px !important;
+  border-radius: 12px !important;
+  opacity: .72 !important;
+}
+
+/* MMAudio/Stable notes: simple framed readonly textarea, no header/open button. */
+.avaAudioGlobalNotesPanelV211H.isTextareaV211I {
+  min-height: 145px !important;
+  margin: 10px 0 15px !important;
+  padding: 9px !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(34, 211, 238, 0.16) !important;
+  background: rgba(2, 6, 23, 0.26) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03) !important;
+}
+
+.avaAudioGlobalNotesPanelV211H.isTextareaV211I .avaAudioGlobalNotesHeadV211H {
+  display: none !important;
+}
+
+.avaAudioGlobalNotesTextareaV211I {
+  min-height: 126px !important;
+  max-height: 190px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(125, 211, 252, 0.20) !important;
+  background: rgba(2, 6, 23, 0.48) !important;
+  color: rgba(226, 232, 240, 0.94) !important;
+  box-shadow: inset 0 1px 14px rgba(0,0,0,0.20) !important;
+  resize: vertical !important;
+}
+
+.avaAudioStablePromptPanelV204F1 .avaAudioGlobalNotesPanelV211H.isTextareaV211I,
+.avaAudioPromptPanel .avaAudioGlobalNotesPanelV211H.isTextareaV211I {
+  margin-bottom: 13px !important;
+}
+
+
+/* AVA_AUDIO_STUDIO_STABLE_BLOCK_SELECTION_LOGIC_V211V
+   Stable Audio variant selection must be obvious: selected = cyan/blue,
+   applied = green, selected+applied = green badge plus cyan outline. */
+.avaAudioStableVariantCardV204G6.isActive,
+.avaAudioStableVariantCardV204G6.isPickedForBuildV204H18 {
+  border-color: rgba(34, 211, 238, 0.98) !important;
+  background: linear-gradient(135deg, rgba(8, 47, 73, 0.94), rgba(15, 23, 42, 0.78)) !important;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.42), 0 18px 44px rgba(14, 165, 233, 0.28) !important;
+}
+
+.avaAudioStableVariantCardV204G6.isActive .avaAudioStableVariantPickV204G6 strong,
+.avaAudioStableVariantCardV204G6.isPickedForBuildV204H18 .avaAudioStableVariantPickV204G6 strong {
+  color: #e0f7ff !important;
+}
+
+.avaAudioStableVariantCardV204G6.isApplied {
+  border-color: rgba(74, 222, 128, 0.9) !important;
+}
+
+.avaAudioStableVariantCardV204G6.isApplied:not(.isActive):not(.isPickedForBuildV204H18) {
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.62), rgba(15, 23, 42, 0.70)) !important;
+  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.24), 0 14px 34px rgba(22, 163, 74, 0.16) !important;
+}
+
+.avaAudioStableSelectedBadgeV204H18 {
+  border-color: rgba(34, 211, 238, 0.78) !important;
+  background: rgba(8, 145, 178, 0.26) !important;
+  color: #e0f7ff !important;
+}
+
+
+/* V211Z_STABLE_AUDIO_SFX_MODE: three compact mode buttons: Music / Instrumental / SFX */
+.avaAudioStableModeRowV204F7.isSimpleV204F8 > div {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.avaAudioStableModeRowV204F7.isSimpleV204F8 button {
+  min-width: 0;
+  padding: 8px 7px;
+  font-size: 12px;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .avaAudioStableModeRowV204F7.isSimpleV204F8 button {
+    padding: 7px 5px;
+    font-size: 11px;
+  }
+}

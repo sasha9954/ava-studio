@@ -1,3 +1,13 @@
+// AVA_AUDIO_STUDIO_PREVIEW_NOTES_PRESERVE_NEWLINES_V211N: installed
+// AVA_AUDIO_STUDIO_PREVIEW_NOTES_NATIVE_MULTILINE_V211M: installed
+// AVA_AUDIO_STUDIO_PREVIEW_NOTES_REAL_MULTILINE_EDITOR_V211L: installed
+// AVA_AUDIO_STUDIO_PREVIEW_NOTES_ENTER_NEWLINE_V211K: installed
+// AVA_AUDIO_STUDIO_RESTORE_SCENESTRIP_V211J: installed
+// AVA_AUDIO_STUDIO_NOTES_TEXTAREA_LAYOUT_V211I: installed
+// AVA_AUDIO_STUDIO_GLOBAL_NOTES_PANEL_V211H: installed
+// AVA_AUDIO_STUDIO_FULL_PREVIEW_MAP_BUILD_V211F: installed
+// AVA_AUDIO_STUDIO_PREVIEW_FULL_PROJECT_MAP_V211E: installed
+// AVA_AUDIO_STUDIO_PREVIEW_MAP_NOTES_V211D: installed
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -127,6 +137,18 @@ function normalizeRef(value = '') {
     apiPath,
     assetId,
   }
+}
+
+
+// V211N_PREVIEW_NOTES_RAW_TEXT
+// Notes must preserve trailing spaces/newlines. Do NOT use firstText() here,
+// because firstText() goes through cleanId() and trims the text.
+function previewNotesTextV211N(...values) {
+  for (const value of values) {
+    if (typeof value === 'string') return value
+    if (value !== undefined && value !== null) return String(value)
+  }
+  return ''
 }
 
 function firstText(...values) {
@@ -515,6 +537,124 @@ function variantAppliedMediaRefV204C3(variant = {}) {
   }, 'mmaudio_applied.mp4')
 }
 
+
+
+// V211Y2_MMAUDIO_F5_RESTORE_SAFE
+// Restore an already-applied MMAudio video after F5. Some snapshots keep the
+// selected/applied variant asset but lose sourceVideo/currentVideo, so the UI
+// shows "no video" even though /api/assets/.../file still exists.
+function sceneAppliedMmaudioVariantV211Y2(scene = {}) {
+  const appliedId = cleanId(
+    scene.appliedVariantId
+    || scene.applied_variant_id
+    || scene.audioStudioAppliedVariantId
+    || scene.audio_studio_applied_variant_id
+  )
+  const variants = asArray(scene.variants)
+  if (appliedId) {
+    const exact = variants.find((variant) => cleanId(variant?.id || variant?.variantId || variant?.variant_id) === appliedId)
+    if (exact) return exact
+  }
+  return variants.find((variant) => variant?.applied === true && isRealMmaudioVariantV204B6(variant)) || null
+}
+
+function sceneAppliedMmaudioMediaV211Y2(scene = {}) {
+  const directVideo = scene.mmaudioAppliedVideo || scene.mmaudio_applied_video || scene.currentVideo || scene.current_video || null
+  const direct = mediaRefObjectV204B7({
+    apiPath: firstText(
+      directVideo?.apiPath,
+      directVideo?.api_path,
+      scene.mmaudio_video_api_path,
+      scene.mmaudioVideoApiPath,
+      scene.applied_video_api_path,
+      scene.appliedVideoApiPath,
+      scene.video_api_path,
+      scene.videoApiPath,
+    ),
+    url: firstText(
+      directVideo?.url,
+      scene.mmaudio_video_url,
+      scene.mmaudioVideoUrl,
+      scene.applied_video_url,
+      scene.appliedVideoUrl,
+      scene.video_url,
+      scene.videoUrl,
+    ),
+    assetId: firstText(
+      directVideo?.assetId,
+      directVideo?.asset_id,
+      scene.mmaudio_video_asset_id,
+      scene.mmaudioVideoAssetId,
+      scene.applied_video_asset_id,
+      scene.appliedVideoAssetId,
+      scene.video_asset_id,
+      scene.videoAssetId,
+    ),
+    name: firstText(directVideo?.name, scene.mmaudio_video_name, scene.mmaudioVideoName, 'mmaudio_applied.mp4'),
+  }, 'mmaudio_applied.mp4')
+  if (direct.apiPath || direct.url || direct.assetId) return direct
+
+  const variant = sceneAppliedMmaudioVariantV211Y2(scene)
+  if (!variant) return { url: '', apiPath: '', assetId: '', name: 'mmaudio_applied.mp4' }
+  return variantAppliedMediaRefV204C3(variant)
+}
+
+function rehydrateAppliedMmaudioSceneV211Y2(scene = {}) {
+  const appliedId = cleanId(
+    scene.appliedVariantId
+    || scene.applied_variant_id
+    || scene.audioStudioAppliedVariantId
+    || scene.audio_studio_applied_variant_id
+  )
+  if (!appliedId) return scene
+  const media = sceneAppliedMmaudioMediaV211Y2(scene)
+  const mediaRef = firstText(media.apiPath, media.url)
+  if (!mediaRef && !media.assetId) return scene
+  const sourceVideo = mediaRef || media.apiPath || media.url
+  return {
+    ...scene,
+    sourceVideo: media,
+    currentVideo: media,
+    mmaudioAppliedVideo: media,
+    video_url: sourceVideo,
+    videoUrl: sourceVideo,
+    video_api_path: media.apiPath || '',
+    videoApiPath: media.apiPath || '',
+    video_asset_id: media.assetId || '',
+    videoAssetId: media.assetId || '',
+    mmaudio_video_url: sourceVideo,
+    mmaudioVideoUrl: sourceVideo,
+    mmaudio_video_api_path: media.apiPath || '',
+    mmaudioVideoApiPath: media.apiPath || '',
+    mmaudio_video_asset_id: media.assetId || '',
+    mmaudioVideoAssetId: media.assetId || '',
+    has_mmaudio: true,
+    hasMmaudio: true,
+    has_sound: true,
+    hasSound: true,
+    mmaudio_status: 'applied',
+    mmaudioStatus: 'applied',
+    audio_studio_status: 'mmaudio_applied',
+    audioStudioStatus: 'mmaudio_applied',
+    appliedVariantId: appliedId,
+    selectedVariantId: cleanId(scene.selectedVariantId) || appliedId,
+    status: 'applied',
+    variants: asArray(scene.variants).map((variant) => {
+      const id = cleanId(variant?.id || variant?.variantId || variant?.variant_id)
+      if (id !== appliedId) return { ...variant, selected: false, applied: false }
+      return {
+        ...variant,
+        selected: true,
+        applied: true,
+        appliedVideo: variant.appliedVideo || media,
+        appliedApiPath: variant.appliedApiPath || media.apiPath || '',
+        appliedUrl: variant.appliedUrl || sourceVideo || '',
+        appliedAssetId: variant.appliedAssetId || media.assetId || '',
+      }
+    }),
+  }
+}
+
 async function bakeMmaudioVariantVolumeV204C3({ variant = {}, scene = {}, volume = 100, projectId = '' } = {}) {
   const rawMedia = variantRawMediaRefV204C3(variant)
   const percent = Math.max(0, Math.min(150, Number(volume) || 0))
@@ -742,7 +882,10 @@ function sortAudioVariantsV204C5(input = []) {
 }
 
 function sanitizeAudioScene(scene = {}) {
-  const sourceVideo = scene.sourceVideo || {}
+  const appliedMmaudioMediaV211Y2 = sceneAppliedMmaudioMediaV211Y2(scene)
+  const sourceVideo = firstText(appliedMmaudioMediaV211Y2.apiPath, appliedMmaudioMediaV211Y2.url)
+    ? appliedMmaudioMediaV211Y2
+    : (scene.sourceVideo || scene.currentVideo || scene.mmaudioAppliedVideo || {})
   const boardSourceVariant = boardSourceVariantForSceneV204B4(scene)
   const realVariants = asArray(scene.variants)
     .filter(isRealMmaudioVariantV204B6)
@@ -770,13 +913,17 @@ function sanitizeAudioScene(scene = {}) {
     applied: Boolean(appliedVariantId && cleanId(variant.id) === cleanId(appliedVariantId)),
   }))
   const hasSource = Boolean(sourceVideo?.apiPath || sourceVideo?.url)
-  return {
+  const normalizedSceneV211Y2 = {
     ...scene,
+    sourceVideo,
+    currentVideo: appliedVariantId ? sourceVideo : (scene.currentVideo || scene.current_video || sourceVideo),
+    mmaudioAppliedVideo: appliedVariantId ? sourceVideo : (scene.mmaudioAppliedVideo || scene.mmaudio_applied_video || null),
     variants: normalizedVariants,
     selectedVariantId,
     appliedVariantId,
     status: appliedVariantId ? 'applied' : (normalizedVariants.some(isRealMmaudioVariantV204B6) ? 'variants' : (hasSource ? 'ready' : 'no_video')),
   }
+  return rehydrateAppliedMmaudioSceneV211Y2(normalizedSceneV211Y2)
 }
 
 
@@ -1050,12 +1197,27 @@ function pickStableAudioVariantStrictV204H14(variants = [], selectedId = '') {
 
 function stableAudioModeApiValueV204F7(value = 'Music') {
   const clean = cleanId(value).toLowerCase()
-  if (clean === 'instrument' || clean === 'instrumental') return 'Instrument'
+  if (
+    clean === 'sfx' ||
+    clean === 'soundfx' ||
+    clean === 'sound_fx' ||
+    clean === 'sound effects' ||
+    clean === 'soundeffects' ||
+    clean === 'effects' ||
+    clean === 'effect' ||
+    clean === 'fx' ||
+    clean === 'сфх' ||
+    clean === 'эффекты' ||
+    clean === 'звуковые эффекты'
+  ) return 'SFX'
+  if (clean === 'instrument' || clean === 'instrumental' || clean === 'инструмент' || clean === 'инструментал') return 'Instrument'
   return 'Music'
 }
 
 function stableAudioModeUiLabelV204F7(value = 'Music') {
-  return stableAudioModeApiValueV204F7(value) === 'Instrument' ? 'Instrumental' : 'Music'
+  const mode = stableAudioModeApiValueV204F7(value)
+  if (mode === 'SFX') return 'SFX'
+  return mode === 'Instrument' ? 'Instrumental' : 'Music'
 }
 
 function stableAudioVolumeV204F7(value, fallback = DEFAULT_STAU_VOLUME_PERCENT_V204G14) {
@@ -1328,37 +1490,77 @@ function buildManualAudioSceneV204C6(index = 0) {
   }
 }
 
+
+// AVA_AUDIO_STUDIO_DROP_STALE_MMA_ON_BOARD_MEDIA_CHANGE_V212M:
+// When Board video/image is regenerated, old MMAudio variants belong to the old source video.
+// Do not carry old applied MMAudio back into Assembly via Audio Studio.
 function mergeAudioWithFreshBoard(audio = {}, board = {}, projectId = '') {
   const fresh = buildAudioSnapshotFromBoard(board, { projectId, source: 'board_refresh_merge_v204a' })
   const oldScenes = new Map(asArray(audio.scenes).map((scene) => [cleanId(scene.id || scene.sceneId), scene]))
+  let droppedStaleMma = 0
   const scenes = asArray(fresh.scenes).map((freshScene) => {
     const old = oldScenes.get(cleanId(freshScene.id || freshScene.sceneId))
     if (!old) return freshScene
+
+    const oldOriginalSource = sceneOriginalSourceVideoV204B7(old)
+    const oldOriginalHasRef = Boolean(firstText(oldOriginalSource.apiPath, oldOriginalSource.url, oldOriginalSource.assetId))
+    const freshSourceHasRef = Boolean(firstText(freshScene.sourceVideo?.apiPath, freshScene.sourceVideo?.url, freshScene.sourceVideo?.assetId))
+    const sourceChanged = Boolean(oldOriginalHasRef && freshSourceHasRef && !sameMediaRef(oldOriginalSource, freshScene.sourceVideo || {}))
+
     const oldVariants = asArray(old.variants)
     const oldById = new Map(oldVariants.map((variant) => [cleanId(variant.id), variant]))
-    const mergedVariants = [
-      ...oldVariants,
-      ...asArray(freshScene.variants).filter((variant) => !oldById.has(cleanId(variant.id))),
-    ]
+    const mergedVariants = sourceChanged
+      ? asArray(freshScene.variants)
+      : [
+          ...oldVariants,
+          ...asArray(freshScene.variants).filter((variant) => !oldById.has(cleanId(variant.id))),
+        ]
+
+    if (sourceChanged && (old.appliedVariantId || old.audioStudioAppliedVariantId || oldVariants.some(isRealMmaudioVariantV204B6))) {
+      droppedStaleMma += 1
+    }
+
     return {
       ...freshScene,
       prompt: old.prompt || freshScene.prompt,
       negativePrompt: old.negativePrompt || freshScene.negativePrompt,
       mmaudioVolume: toNumber(old.mmaudioVolume, freshScene.mmaudioVolume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14),
-      selectedVariantId: old.selectedVariantId || freshScene.selectedVariantId,
-      appliedVariantId: old.appliedVariantId || freshScene.appliedVariantId,
+      selectedVariantId: sourceChanged ? (freshScene.selectedVariantId || mergedVariants[0]?.id || '') : (old.selectedVariantId || freshScene.selectedVariantId),
+      appliedVariantId: sourceChanged ? '' : (old.appliedVariantId || freshScene.appliedVariantId),
+      audioStudioAppliedVariantId: sourceChanged ? '' : (old.audioStudioAppliedVariantId || freshScene.audioStudioAppliedVariantId || ''),
+      audio_studio_applied_variant_id: sourceChanged ? '' : (old.audio_studio_applied_variant_id || freshScene.audio_studio_applied_variant_id || ''),
+      currentVideo: sourceChanged ? freshScene.sourceVideo : (old.currentVideo || freshScene.currentVideo || freshScene.sourceVideo),
+      mmaudioAppliedVideo: sourceChanged ? null : (old.mmaudioAppliedVideo || old.mmaudio_applied_video || null),
+      mmaudio_applied_video: sourceChanged ? null : (old.mmaudio_applied_video || old.mmaudioAppliedVideo || null),
+      mmaudio_video_url: sourceChanged ? '' : (old.mmaudio_video_url || old.mmaudioVideoUrl || ''),
+      mmaudioVideoUrl: sourceChanged ? '' : (old.mmaudioVideoUrl || old.mmaudio_video_url || ''),
+      mmaudio_video_api_path: sourceChanged ? '' : (old.mmaudio_video_api_path || old.mmaudioVideoApiPath || ''),
+      mmaudioVideoApiPath: sourceChanged ? '' : (old.mmaudioVideoApiPath || old.mmaudio_video_api_path || ''),
+      mmaudio_video_asset_id: sourceChanged ? '' : (old.mmaudio_video_asset_id || old.mmaudioVideoAssetId || ''),
+      mmaudioVideoAssetId: sourceChanged ? '' : (old.mmaudioVideoAssetId || old.mmaudio_video_asset_id || ''),
+      has_mmaudio: sourceChanged ? false : Boolean(old.has_mmaudio || old.hasMmaudio),
+      hasMmaudio: sourceChanged ? false : Boolean(old.hasMmaudio || old.has_mmaudio),
+      mmaudio_status: sourceChanged ? '' : (old.mmaudio_status || old.mmaudioStatus || ''),
+      mmaudioStatus: sourceChanged ? '' : (old.mmaudioStatus || old.mmaudio_status || ''),
+      audio_studio_status: sourceChanged ? '' : (old.audio_studio_status || old.audioStudioStatus || ''),
+      audioStudioStatus: sourceChanged ? '' : (old.audioStudioStatus || old.audio_studio_status || ''),
       variants: mergedVariants,
-      status: old.appliedVariantId ? 'applied' : (mergedVariants.length ? 'variants' : freshScene.status),
+      status: sourceChanged ? (mergedVariants.length ? 'ready' : freshScene.status) : (old.appliedVariantId ? 'applied' : (mergedVariants.length ? 'variants' : freshScene.status)),
+      staleMmaudioDroppedV212M: sourceChanged,
     }
   })
+  if (droppedStaleMma) console.warn('[AUDIO STUDIO DROP STALE MMA ON BOARD MEDIA CHANGE V212M]', { droppedStaleMma })
   return {
     ...audio,
     ...fresh,
     scenes,
     selectedSceneId: audio.selectedSceneId || fresh.selectedSceneId || scenes[0]?.id || '',
+    staleMmaudioDroppedCountV212M: droppedStaleMma,
     updatedAt: nowIso(),
   }
 }
+
+
 
 function isManualAudioSceneV204C7(scene = {}) {
   const route = cleanId(scene.route).toLowerCase()
@@ -1393,7 +1595,14 @@ function canUseManualSceneControlsV204C7(snapshot = {}) {
 }
 
 function sceneStatusLabel(scene = {}) {
-  if (!scene.sourceVideo?.apiPath && !scene.sourceVideo?.url) return 'нет видео'
+  const appliedMediaV211Y2 = sceneAppliedMmaudioMediaV211Y2(scene)
+  const hasVideoV211Y2 = Boolean(
+    scene.sourceVideo?.apiPath || scene.sourceVideo?.url
+    || scene.currentVideo?.apiPath || scene.currentVideo?.url
+    || scene.mmaudioAppliedVideo?.apiPath || scene.mmaudioAppliedVideo?.url
+    || appliedMediaV211Y2.apiPath || appliedMediaV211Y2.url
+  )
+  if (!hasVideoV211Y2) return 'нет видео'
   if (scene.jobId) return 'генерация'
   if (scene.appliedVariantId) return 'мма'
   if (asArray(scene.variants).some((variant) => !variant?.sourceBaseline && variant.kind !== 'source_video')) return 'есть варианты'
@@ -1405,15 +1614,89 @@ function variantRef(variant = {}) {
 }
 
 function audioStudioSceneVideoRefV204F2(scene = {}) {
+  const appliedMediaV211Y2 = sceneAppliedMmaudioMediaV211Y2(scene)
+  const appliedRefV211Y2 = firstText(appliedMediaV211Y2.apiPath, appliedMediaV211Y2.url)
+  if (cleanId(scene?.appliedVariantId || scene?.audioStudioAppliedVariantId) && appliedRefV211Y2) return appliedRefV211Y2
   return firstText(
+    scene?.currentVideo?.apiPath,
+    scene?.currentVideo?.url,
+    scene?.mmaudioAppliedVideo?.apiPath,
+    scene?.mmaudioAppliedVideo?.url,
     scene?.sourceVideo?.apiPath,
     scene?.sourceVideo?.url,
+    scene?.videoApiPath,
+    scene?.videoUrl,
     scene?.video?.apiPath,
     scene?.video?.url,
     scene?.apiPath,
     scene?.url,
     scene?.boardRaw ? boardSourceVideoRef(scene.boardRaw) : '',
   )
+}
+
+// V211E_PREVIEW_FULL_PROJECT_MAP
+function pickFullProjectPreviewVideoV211E(data = {}) {
+  if (!data || typeof data !== 'object') return null
+  const direct = firstText(
+    data.finalVideoApiPath,
+    data.final_video_api_path,
+    data.finalVideoUrl,
+    data.final_video_url,
+    data.finalUrl,
+    data.final_url,
+    data.outputVideoApiPath,
+    data.output_video_api_path,
+    data.outputVideoUrl,
+    data.output_video_url,
+    data.assembledVideoApiPath,
+    data.assembled_video_api_path,
+    data.assembledVideoUrl,
+    data.assembled_video_url,
+    data.videoApiPath,
+    data.video_api_path,
+    data.videoUrl,
+    data.video_url,
+    data.apiPath,
+    data.assetApiPath,
+    data.url,
+  )
+  if (direct) {
+    const ref = normalizeRef(direct)
+    return {
+      apiPath: ref.apiPath || direct,
+      url: ref.url || direct,
+      assetId: ref.assetId || firstText(data.assetId, data.asset_id, data.finalVideoAssetId, data.final_video_asset_id),
+      durationSec: toNumber(data.durationSec ?? data.duration_sec ?? data.finalDurationSec ?? data.final_duration_sec, 0),
+      source: 'board_assembly_direct_v211e',
+      createdAt: firstText(data.updatedAt, data.createdAt) || nowIso(),
+    }
+  }
+
+  const candidates = []
+  const visit = (value, depth = 0) => {
+    if (!value || depth > 5) return
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, depth + 1))
+      return
+    }
+    if (typeof value !== 'object') return
+    const refText = firstText(value.apiPath, value.api_path, value.assetApiPath, value.asset_api_path, value.url, value.videoUrl, value.video_url)
+    const kind = cleanId(value.kind || value.type || value.stage || value.source).toLowerCase()
+    if (refText && (/\.mp4($|\?)/i.test(refText) || /\/assets\/[^/]+\/file/i.test(refText) || kind.includes('video') || kind.includes('assembly'))) {
+      const ref = normalizeRef(refText)
+      candidates.push({
+        apiPath: ref.apiPath || refText,
+        url: ref.url || refText,
+        assetId: ref.assetId || firstText(value.assetId, value.asset_id),
+        durationSec: toNumber(value.durationSec ?? value.duration_sec, 0),
+        source: 'board_assembly_scan_v211e',
+        createdAt: firstText(value.updatedAt, value.createdAt) || nowIso(),
+      })
+    }
+    Object.values(value).forEach((item) => visit(item, depth + 1))
+  }
+  visit(data, 0)
+  return candidates.find((item) => firstText(item.apiPath, item.url)) || null
 }
 
 
@@ -1431,7 +1714,7 @@ function pauseAudioStudioMediaV204H7(exceptNode = null) {
   } catch (_err) {}
 }
 
-function PreviewVideo({ source = '', title = '', className = '', volume = 1, controls = true, autoPlayKey = '' }) {
+function PreviewVideo({ source = '', title = '', className = '', volume = 1, controls = true, autoPlayKey = '', onTimeUpdate = null }) {
   const [blobUrl, setBlobUrl] = useState('')
   const [error, setError] = useState('')
   const videoRef = useRef(null)
@@ -1526,6 +1809,7 @@ function PreviewVideo({ source = '', title = '', className = '', volume = 1, con
       onLoadedMetadata={() => applyPreviewVideoVolumeV204H10()}
       onCanPlay={() => applyPreviewVideoVolumeV204H10()}
       onPlay={() => applyPreviewVideoVolumeV204H10()}
+      onTimeUpdate={onTimeUpdate || undefined}
     />
   )
 }
@@ -1611,11 +1895,63 @@ function PreviewAudio({ source = '', title = 'Аудио тайминга', clas
   )
 }
 
+
+// V211H_GLOBAL_PREVIEW_NOTES_PANEL
+function parsePreviewNotesRowsV211H(notesText = '') {
+  return String(notesText || '')
+    .split(/\r?\n/g)
+    .map((raw, index) => {
+      const line = String(raw || '').trim()
+      if (!line) return null
+      const match = line.match(/^(\d+)(?:\s*[-–—]\s*(\d+))?\s+(.+)$/)
+      const start = match ? Math.max(1, Number(match[1]) || 1) : 0
+      const end = match ? Math.max(start, Number(match[2] || match[1]) || start) : 0
+      const body = match ? match[3].trim() : line
+      const lower = body.toLowerCase()
+      const kind = lower.includes('мма') || lower.includes('mma')
+        ? 'MMA'
+        : (lower.includes('sfx') || lower.includes('сфх') ? 'SFX' : (lower.includes('стейбл') || lower.includes('stable') || lower.includes('stau') ? 'STAU' : 'NOTE'))
+      return { id: `global_note_${index}`, line, start, end, body, kind }
+    })
+    .filter(Boolean)
+}
+
+function AudioStudioGlobalNotesPanelV211H({ notesText = '', onOpenPreview = null }) {
+  const cleanNotes = String(notesText || '')
+  const rows = parsePreviewNotesRowsV211H(cleanNotes)
+  return (
+    <div className={`avaAudioGlobalNotesPanelV211H isTextareaV211I ${cleanNotes.trim() ? 'hasNotes' : 'isEmpty'}`}>
+      <div className="avaAudioGlobalNotesHeadV211H">
+        <div>
+          <strong>Заметки из Preview / Разметка</strong>
+          <span>{rows.length ? `${rows.length} строк · общий список для MMAudio и Stable` : 'пока пусто · пиши в Preview / Разметка'}</span>
+        </div>
+        {onOpenPreview ? (
+          <button type="button" onClick={onOpenPreview}>
+            <Film size={14} /> Открыть разметку
+          </button>
+        ) : null}
+      </div>
+      <textarea
+        className="avaAudioGlobalNotesTextareaV211I"
+        value={cleanNotes}
+        readOnly
+        spellCheck={false}
+        placeholder={`1-4 аплодисменты бурные стейбл
+5 смех мма
+12-16 аплодисменты обычные стейбл`}
+      />
+    </div>
+  )
+}
+
+
+// V211J_RESTORE_SCENESTRIP
 function SceneStrip({ scenes, selectedSceneId, onSelect, stableMode = false, stableBlockSceneIds = [], stableBlockColor = '', stableBlocks = [] }) {
   const stableBlockIdList = asArray(stableBlockSceneIds).map(cleanId).filter(Boolean)
   const stableBlockIds = new Set(stableBlockIdList)
   const stableBlockOrder = new Map(stableBlockIdList.map((sceneId, index) => [sceneId, index + 1]))
-  // V204F9_STABLE_BLOCK_NUMBERS_APPLY
+
   const savedStableSceneByIdV204F6 = new Map()
   if (stableMode) {
     asArray(stableBlocks).forEach((block, blockIndex) => {
@@ -1628,6 +1964,7 @@ function SceneStrip({ scenes, selectedSceneId, onSelect, stableMode = false, sta
       })
     })
   }
+
   return (
     <div className="avaAudioSceneStrip" aria-label="Сцены Audio Studio">
       {asArray(scenes).map((scene, index) => {
@@ -1987,14 +2324,22 @@ export default function AudioStudioPage() {
   const [stableAudioVolumeDraftsV204G13, setStableAudioVolumeDraftsV204G13] = useState({})
   // V204H13_AUDIO_SELECTION_LIVE_REFS: Build/Apply must use latest clicked variant and latest slider value immediately.
   const stableAudioSelectedVariantIdLiveRefV204H13 = useRef('')
+  // AVA_AUDIO_STUDIO_STABLE_BLOCK_SELECTION_LOGIC_V211V: selected STAU variant belongs to one Stable block.
+  const stableAudioSelectedVariantBlockIdLiveRefV211V = useRef('')
   const stableAudioVolumeDraftsLiveRefV204H13 = useRef({})
   const mmaudioSelectedVariantIdLiveRefV204H13 = useRef('')
   const mmaudioVolumeLiveRefV204H13 = useRef(DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14)
+  const mmaudioBusyRefV211Y2 = useRef(false)
   // V204G4_STABLE_PREVIEW_BUTTON_UI_RECOVERY
   const [stableBlockPreviewUiPhaseV204G4, setStableBlockPreviewUiPhaseV204G4] = useState('idle')
   const [stableBlockPreviewUiNonceV204G4, setStableBlockPreviewUiNonceV204G4] = useState(0)
   // V204G9_STABLE_PREVIEW_FLOW_CLEANUP
   const [stableBlockPreviewPlayKeyV204G9, setStableBlockPreviewPlayKeyV204G9] = useState('')
+  // V211D_PREVIEW_MAP_NOTES: live time for scene-number overlay in Preview / Разметка.
+  const [previewMapCurrentTimeV211D, setPreviewMapCurrentTimeV211D] = useState(0)
+  const previewMapNotesTextareaRefV211M = useRef(null)
+  // V211E_PREVIEW_FULL_PROJECT_MAP: full assembly video used as a scene-number map.
+  const [previewFullProjectLoadingV211E, setPreviewFullProjectLoadingV211E] = useState(false)
   // V204G8B_PREVIEW_BUTTON_RESET_NO_ANCHOR
   useEffect(() => {
     if (stableBlockPreviewUiPhaseV204G4 !== 'ready') return undefined
@@ -2010,6 +2355,14 @@ export default function AudioStudioPage() {
   const initialLoadDoneRefV204B = useRef(false)
   const didLoadRef = useRef(false)
   const autosaveTimerRef = useRef(null)
+  // AVA_AUDIO_STUDIO_STABLE_AUDIO_FAST_SUBMIT_V211S
+  // While Stable Audio is being submitted/waited, do not let the 850ms generic
+  // autosave start extra /snapshots/audio_studio POSTs. Those saves were
+  // competing with the generate request and made STAU feel like it was sent late.
+  const stableAudioGenerateBusyRefV211S = useRef(false)
+  // AVA_AUDIO_STUDIO_STABLE_PREVIEW_FAST_422_V211T
+  // Guard Stable block preview build from double-clicks and from autosave races.
+  const stablePreviewBlockBusyRefV211T = useRef(false)
   const importInputRefV204B2 = useRef(null)
   const timingAudioPreparePromisesRefV204E10 = useRef({})
   const timingAudioPlaybackRefV204E10 = useRef(null)
@@ -2127,6 +2480,18 @@ export default function AudioStudioPage() {
   }, [projectId, workspaceMode])
 
   const persistSnapshotSilently = useCallback(async (nextSnapshot, reason = 'autosave_v204a3') => {
+    // AVA_AUDIO_STUDIO_STAU_APPLY_ASSEMBLY_FAST_PREVIEW_V211X
+    // While Stable block preview is assembling, skip noisy autosaves/UI saves.
+    // The final preview save and explicit Apply save are allowed.
+    const reasonTextV211X = String(reason || '')
+    if (stablePreviewBlockBusyRefV211T.current && !['stable_block_preview_v204g5', 'stable_audio_variant_applied_v204h1'].includes(reasonTextV211X)) {
+      console.info('[AUDIO STUDIO SNAPSHOT SKIPPED DURING STABLE PREVIEW V211X]', { reason })
+      return false
+    }
+    if ((stableAudioGenerateBusyRefV211S.current || stablePreviewBlockBusyRefV211T.current) && reasonTextV211X.startsWith('autosave_')) {
+      console.info('[AUDIO STUDIO AUTOSAVE SKIPPED DURING STAU/PREVIEW V211T]', { reason })
+      return false
+    }
     const payload = {
       ...nextSnapshot,
       version: VERSION,
@@ -2148,6 +2513,12 @@ export default function AudioStudioPage() {
 
   useEffect(() => {
     if (loading || !didLoadRef.current) return undefined
+    if (stableAudioGenerateBusyRefV211S.current || stablePreviewBlockBusyRefV211T.current) return undefined
+    if (mmaudioBusyRefV211Y2?.current) {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+      console.info('[AUDIO STUDIO MMAUDIO AUTOSAVE SKIPPED V211Y2]', { reason: 'mmaudio_busy' })
+      return undefined
+    }
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     autosaveTimerRef.current = setTimeout(() => {
       persistSnapshotSilently(sanitizeAudioSnapshot(snapshotRef.current), 'autosave_v204b8')
@@ -2463,6 +2834,7 @@ export default function AudioStudioPage() {
     let ticks = 0
     const stop = () => {
       stopped = true
+      mmaudioBusyRefV211Y2.current = false
       if (pollRef.current) clearInterval(pollRef.current)
       pollRef.current = null
     }
@@ -2538,7 +2910,7 @@ export default function AudioStudioPage() {
       }
     }
     tick()
-    pollRef.current = setInterval(tick, 2200)
+    pollRef.current = setInterval(tick, 1100)
   }, [patchScene, saveSnapshot])
 
   const submitMmaudio = useCallback(async () => {
@@ -2556,6 +2928,10 @@ export default function AudioStudioPage() {
       return
     }
     setError('')
+    mmaudioBusyRefV211Y2.current = true
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    pauseAudioStudioMediaV204H7()
+    console.info('[AUDIO STUDIO MMAUDIO FAST SUBMIT V211Y2]', { sceneId, durationSec: selectedScene.durationSec || 5 })
     setGeneratingSceneId(sceneId)
     patchScene(sceneId, (scene) => ({ ...scene, status: 'starting', jobStatus: 'отправляю в MMAudio…' }))
     try {
@@ -2632,6 +3008,7 @@ export default function AudioStudioPage() {
             : scene),
         }
         await saveSnapshot(next, 'mmaudio_completed_direct_v204a')
+        mmaudioBusyRefV211Y2.current = false
         setGeneratingSceneId('')
         setStatus('MMAudio готово — вариант добавлен в ленту')
         return
@@ -2643,6 +3020,7 @@ export default function AudioStudioPage() {
         throw new Error('MMAudio не вернул job_id')
       }
     } catch (err) {
+      mmaudioBusyRefV211Y2.current = false
       setGeneratingSceneId('')
       patchScene(sceneId, (scene) => ({ ...scene, jobId: '', jobStatus: '', status: 'error' }))
       setError(`Не удалось отправить в MMAudio: ${err?.message || err}`)
@@ -2721,7 +3099,7 @@ export default function AudioStudioPage() {
       })
       const nextBoard = { ...boardData, scenes, selectedSceneId: boardData.selectedSceneId || scene.id, updatedAt: nowIso() }
       if (workspaceMode) await saveWorkspaceStage('board', nextBoard)
-      else await saveStage(projectId, 'board', nextBoard, 'safe_merge')
+      else await saveStage(projectId, 'board', nextBoard, 'replace')
       setStatus('Вариант применён: видео сцены обновлено в Доске и готово для монтажки')
     } catch (err) {
       setStatus(`Вариант применён в Audio Studio, но Доска не обновилась: ${err?.message || err}`)
@@ -2754,6 +3132,10 @@ export default function AudioStudioPage() {
 
     setApplyingVariantId(applyId)
     setError('')
+    mmaudioBusyRefV211Y2.current = true
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    pauseAudioStudioMediaV204H7()
+    console.info('[AUDIO STUDIO MMAUDIO APPLY FAST V211Y2]', { sceneId: sceneForApplyV204H13.id, variantId: variantForApplyV204H13.id })
     setStatus('Применяю MMAudio вариант…')
     try {
       const volume = Math.max(0, Math.min(150, Number(mmaudioVolumeLiveRefV204H13.current ?? sceneForApplyV204H13.mmaudioVolume ?? variantForApplyV204H13.volume ?? DEFAULT_MMAUDIO_VOLUME_PERCENT_V204G14) || 0))
@@ -2797,6 +3179,28 @@ export default function AudioStudioPage() {
             sourceVideo: appliedMedia,
             currentVideo: appliedMedia,
             mmaudioAppliedVideo: appliedMedia,
+            video_url: appliedMedia.url || appliedMedia.apiPath || '',
+            videoUrl: appliedMedia.url || appliedMedia.apiPath || '',
+            video_api_path: appliedMedia.apiPath || '',
+            videoApiPath: appliedMedia.apiPath || '',
+            video_asset_id: appliedMedia.assetId || '',
+            videoAssetId: appliedMedia.assetId || '',
+            mmaudio_video_url: appliedMedia.url || appliedMedia.apiPath || '',
+            mmaudioVideoUrl: appliedMedia.url || appliedMedia.apiPath || '',
+            mmaudio_video_api_path: appliedMedia.apiPath || '',
+            mmaudioVideoApiPath: appliedMedia.apiPath || '',
+            mmaudio_video_asset_id: appliedMedia.assetId || '',
+            mmaudioVideoAssetId: appliedMedia.assetId || '',
+            has_mmaudio: true,
+            hasMmaudio: true,
+            has_sound: true,
+            hasSound: true,
+            mmaudio_status: 'applied',
+            mmaudioStatus: 'applied',
+            audio_studio_status: 'mmaudio_applied',
+            audioStudioStatus: 'mmaudio_applied',
+            audio_studio_applied_variant_id: variantForApplyV204H13.id,
+            audioStudioAppliedVariantId: variantForApplyV204H13.id,
             originalSourceVideo: preservedOriginal,
             mmaudioOriginalSourceVideo: preservedOriginal,
             mmaudio_source_video_api_path: preservedOriginal.apiPath || '',
@@ -2820,6 +3224,7 @@ export default function AudioStudioPage() {
     } catch (err) {
       setError(`Не удалось применить вариант: ${err?.message || err}`)
     } finally {
+      mmaudioBusyRefV211Y2.current = false
       setApplyingVariantId('')
     }
   }, [projectId, saveSnapshot, selectedScene, selectedVariant, syncAppliedToBoard])
@@ -2902,7 +3307,16 @@ export default function AudioStudioPage() {
     }
   }, [projectId, saveSnapshot])
 
-  const sourceVideoRef = firstText(selectedScene?.sourceVideo?.apiPath, selectedScene?.sourceVideo?.url)
+  const selectedAppliedMmaudioMediaV211Y2 = sceneAppliedMmaudioMediaV211Y2(selectedScene || {})
+  const sourceVideoRef = firstText(
+    cleanId(selectedScene?.appliedVariantId || selectedScene?.audioStudioAppliedVariantId) ? firstText(selectedAppliedMmaudioMediaV211Y2.apiPath, selectedAppliedMmaudioMediaV211Y2.url) : '',
+    selectedScene?.currentVideo?.apiPath,
+    selectedScene?.currentVideo?.url,
+    selectedScene?.mmaudioAppliedVideo?.apiPath,
+    selectedScene?.mmaudioAppliedVideo?.url,
+    selectedScene?.sourceVideo?.apiPath,
+    selectedScene?.sourceVideo?.url,
+  )
   const sourceAudioRefForMixV204E5A = firstText(
     selectedScene?.sourceAudio?.apiPath,
     selectedScene?.sourceAudio?.url,
@@ -3016,7 +3430,7 @@ export default function AudioStudioPage() {
       return end > start ? end : start + duration
     })
     return Math.max(0, Math.max(...ends) - Math.min(...starts))
-  }, [selectedStableBlockScenesV204F1])
+  }, [snapshot.scenes])
 
   const selectedStableBlockRequestDurationV204F1 = selectedStableBlockDurationV204F1 > 0
     ? Math.ceil(selectedStableBlockDurationV204F1 + 1)
@@ -3203,7 +3617,7 @@ export default function AudioStudioPage() {
 
   const handleSceneStripSelectV204F2 = useCallback((sceneId, event) => {
     const cleanSceneId = cleanId(sceneId)
-    const isStableMultiClick = audioStudioModeV204F1 === 'stable' && (event?.ctrlKey || event?.metaKey)
+    const isStableMultiClick = (audioStudioModeV204F1 === 'stable' || audioStudioModeV204F1 === 'preview') && (event?.ctrlKey || event?.metaKey)
     if (isStableMultiClick && cleanSceneId) {
       const currentIds = asArray(stableManualSelectionV204F2).map(cleanId).filter(Boolean)
       const savedIds = stableBlockSceneIdsV204F4(selectedSavedStableBlockV204F4)
@@ -3227,7 +3641,7 @@ export default function AudioStudioPage() {
       return
     }
 
-    if (audioStudioModeV204F1 === 'stable' && cleanSceneId) {
+    if ((audioStudioModeV204F1 === 'stable' || audioStudioModeV204F1 === 'preview') && cleanSceneId) {
       const savedBlock = stableSceneBlockByIdV204F4.get(cleanSceneId)
       if (savedBlock) {
         setActiveStableBlockIdV204F4(savedBlock.id || '')
@@ -3354,8 +3768,10 @@ export default function AudioStudioPage() {
     const next = { ...current, stableBlocks: nextBlocks, updatedAt: nowIso() }
     snapshotRef.current = next
     setSnapshot(next)
-    persistSnapshotSilently(next, reason)
-  }, [persistSnapshotSilently, selectedSavedStableBlockV204F4, selectedStableBlockDurationV204F1, selectedStableBlockRequestDurationV204F1])
+    // V211S: do not save immediately on every Stable prompt/mode/volume/fade edit.
+    // The generic debounced autosave handles it once; direct save here doubled POSTs
+    // and sometimes queued before /stable-audio/generate.
+  }, [selectedSavedStableBlockV204F4, selectedStableBlockDurationV204F1, selectedStableBlockRequestDurationV204F1])
 
   const updateStablePromptV204F7 = useCallback((value) => {
     setStableDraftPromptV204F7(value)
@@ -3430,9 +3846,16 @@ export default function AudioStudioPage() {
   const selectedStableAudioVariantStateIdV204H14 = cleanId(selectedStableAudioVariantIdV204G6 || selectedStableAudioVariantV204G6?.id || selectedStableAudioVariantV204G6?.variantId || '')
   useEffect(() => {
     stableAudioSelectedVariantIdLiveRefV204H13.current = selectedStableAudioVariantStateIdV204H14
+    stableAudioSelectedVariantBlockIdLiveRefV211V.current = selectedStableAudioBlockIdV204H14
   }, [selectedStableAudioBlockIdV204H14, selectedStableAudioVariantStateIdV204H14])
 
-  const selectedStableAudioAppliedV204H1 = cleanId(selectedSavedStableBlockV204F4?.stableAudio?.appliedVariantId || selectedSavedStableBlockV204F4?.stableAudio?.applied_variant_id) === cleanId(selectedStableAudioVariantV204G6?.id || selectedStableAudioVariantV204G6?.variantId)
+  const selectedStableAudioVariantIdForUiV211V = cleanId(
+    selectedStableAudioVariantIdV204G6
+    || (cleanId(stableAudioSelectedVariantBlockIdLiveRefV211V.current) === selectedStableAudioBlockIdV204H14 ? stableAudioSelectedVariantIdLiveRefV204H13.current : '')
+    || (stableAudioVariantsV204G6.length === 1 ? stableAudioVariantIdV204H18(stableAudioVariantsV204G6[0]) : '')
+  )
+
+  const selectedStableAudioAppliedV204H1 = cleanId(selectedSavedStableBlockV204F4?.stableAudio?.appliedVariantId || selectedSavedStableBlockV204F4?.stableAudio?.applied_variant_id) === selectedStableAudioVariantIdForUiV211V
 
   const submitStableAudioBlockV204F7 = useCallback(async () => {
     if (!selectedSavedStableBlockV204F4?.id) {
@@ -3449,10 +3872,22 @@ export default function AudioStudioPage() {
       source: 'audio_studio_stable_audio_generate_v204g6',
     }
     setError('')
+    stableAudioGenerateBusyRefV211S.current = true
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
+    pauseAudioStudioMediaV204H7()
     setStableAudioGeneratingV204G6(true)
     // V204G7B_STAU_AUDIO_BLOB_PLAYER_DELETE - keep right preview UI out of generation state
     setStableBlockPreviewLoadingV204G1(false)
-    setStatus(`Stable Audio: генерирую ${payload.modeLabel} на ${payload.requestDurationSec} сек, потом подгоню под ${payload.durationSec?.toFixed ? payload.durationSec.toFixed(2) : payload.durationSec} сек…`)
+    setStatus(`Stable Audio: отправляю запрос в Comfy… ${payload.modeLabel} · ${payload.requestDurationSec} сек`)
+    console.info('[AUDIO STUDIO STABLE FAST SUBMIT V211S]', {
+      blockId: payload.blockId,
+      mode: payload.mode,
+      durationSec: payload.durationSec,
+      requestDurationSec: payload.requestDurationSec,
+    })
     try {
       const data = await apiRequest('/audio-studio/stable-audio/generate', {
         method: 'POST',
@@ -3465,12 +3900,17 @@ export default function AudioStudioPage() {
         ...variantRaw,
         id: variantIdV204H14,
         variantId: variantIdV204H14,
+        // V211Z_STABLE_AUDIO_SFX_VARIANT_LABEL: keep UI mode label separate from workflow choice.
+        mode: stableAudioModeApiValueV204F7(variantRaw.mode || payload.mode),
+        modeLabel: variantRaw.modeLabel || payload.modeLabel || stableAudioModeUiLabelV204F7(payload.mode),
         volume: stableAudioVolumeV204F7(variantRaw.volume ?? selectedSavedStableBlockV204F4?.stableAudio?.volume ?? DEFAULT_STAU_VOLUME_PERCENT_V204G14),
         selected: true,
         applied: false,
       }
-      stableAudioSelectedVariantIdLiveRefV204H13.current = variantIdV204H14
       const blockId = cleanId(selectedSavedStableBlockV204F4.id)
+      stableAudioSelectedVariantIdLiveRefV204H13.current = variantIdV204H14
+      stableAudioSelectedVariantBlockIdLiveRefV211V.current = blockId
+      setActiveStableBlockIdV204F4(blockId)
       const current = sanitizeAudioSnapshot(snapshotRef.current || {})
       const nextBlocks = asArray(current.stableBlocks).map((block) => {
         if (cleanId(block.id) !== blockId) return block
@@ -3516,6 +3956,7 @@ export default function AudioStudioPage() {
       setError(`Stable Audio не сгенерировался: ${err?.message || err}`)
       console.warn('[AUDIO STUDIO STABLE AUDIO GENERATE FAILED V204G6]', err)
     } finally {
+      stableAudioGenerateBusyRefV211S.current = false
       setStableAudioGeneratingV204G6(false)
     }
   }, [buildStableAudioRequestPayloadV204F7, persistSnapshotSilently, projectId, selectedSavedStableBlockV204F4, stableEffectivePromptV204G10])
@@ -3549,11 +3990,25 @@ export default function AudioStudioPage() {
       return
     }
 
+    if (stablePreviewBlockBusyRefV211T.current) {
+      console.info('[AUDIO STUDIO STABLE PREVIEW DOUBLE CLICK SKIPPED V211T]')
+      return
+    }
+    stablePreviewBlockBusyRefV211T.current = true
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
     setError('')
     pauseAudioStudioMediaV204H7()
     setStableBlockPreviewLoadingV204G1(true)
     setStableBlockPreviewUiPhaseV204G4('loading')
     setStatus(`Собираю блок: ${selectedStableBlockScenesV204F1.length} сцен · видео + Timing audio + MMAudio${selectedStableAudioVariantV204G6 ? ' + STAU' : ''}…`)
+    console.info('[AUDIO STUDIO STABLE PREVIEW FAST SUBMIT V211T]', {
+      sceneCount: selectedStableBlockScenesV204F1.length,
+      blockId: selectedSavedStableBlockV204F4?.id || '',
+      includeStableAudio: Boolean(selectedStableAudioVariantV204G6),
+    })
 
     try {
       const preparedScenes = []
@@ -3594,6 +4049,16 @@ export default function AudioStudioPage() {
           preview_video_audio_already_baked_v204h7: alreadyBakedV204H7,
         })
       }
+      const safePreparedScenesV211T = preparedScenes.filter((scene) => scene && typeof scene === 'object' && !Array.isArray(scene))
+      if (safePreparedScenesV211T.length !== preparedScenes.length) {
+        console.warn('[AUDIO STUDIO STABLE PREVIEW BAD SCENES DROPPED V211T]', {
+          before: preparedScenes.length,
+          after: safePreparedScenesV211T.length,
+        })
+      }
+      if (!safePreparedScenesV211T.length) {
+        throw new Error('Нет валидных сцен для сборки Stable-блока. Обнови из Доски и создай блок заново.')
+      }
       // V204H13_AUDIO_SELECTION_LIVE_REFS: Build must use the latest clicked STAU variant
       // and latest slider value, not stale memo state / first generated audio.
       // V204H18_STAU_EXPLICIT_CHOICE_RESET: Build uses one explicit selected STAU only.
@@ -3602,10 +4067,16 @@ export default function AudioStudioPage() {
       const latestBlockForStablePreviewV204H18 = asArray(latestSnapshotForStablePreviewV204H18.stableBlocks).find((block) => cleanId(block.id) === latestBlockIdForStablePreviewV204H18) || null
       const latestStableAudioForPreviewV204H18 = latestBlockForStablePreviewV204H18?.stableAudio || {}
       const latestVariantsForPreviewV204H18 = asArray(latestStableAudioForPreviewV204H18.variants)
+      const liveStableVariantIdForPreviewV211V = cleanId(stableAudioSelectedVariantBlockIdLiveRefV211V.current) === latestBlockIdForStablePreviewV204H18
+        ? stableAudioSelectedVariantIdLiveRefV204H13.current
+        : ''
       const explicitSelectedStableIdV204H18 = cleanId(
-        stableAudioSelectedVariantIdLiveRefV204H13.current
+        liveStableVariantIdForPreviewV211V
         || latestStableAudioForPreviewV204H18.selectedVariantId
         || latestStableAudioForPreviewV204H18.selected_variant_id
+        || latestStableAudioForPreviewV204H18.appliedVariantId
+        || latestStableAudioForPreviewV204H18.applied_variant_id
+        || (latestVariantsForPreviewV204H18.length === 1 ? stableAudioVariantIdV204H18(latestVariantsForPreviewV204H18[0]) : '')
       )
       const stablePreviewVariantV204G6 = explicitSelectedStableIdV204H18
         ? latestVariantsForPreviewV204H18.find((variant) => cleanId(variant.id || variant.variantId || variant.variant_id) === explicitSelectedStableIdV204H18) || null
@@ -3634,6 +4105,13 @@ export default function AudioStudioPage() {
         selectedVariantId: stablePreviewVariantIdV204H18,
         selected_variant_id: stablePreviewVariantIdV204H18,
       } : null
+      console.info('[AUDIO STUDIO STABLE BLOCK LOGIC V211V]', {
+        logic: 'block = selected scenes video + Timing audio slices + applied MMAudio + selected STAU variant',
+        blockId: latestBlockIdForStablePreviewV204H18,
+        sceneCount: preparedScenes.length,
+        selectedVariantId: stablePreviewVariantIdV204H18,
+        includeStableAudio: Boolean(stablePreviewRefV204G6),
+      })
       console.info('[AUDIO STUDIO STAU PREVIEW SINGLE PICK V204H18]', {
         blockId: latestBlockIdForStablePreviewV204H18,
         selectedVariantId: stablePreviewVariantIdV204H18,
@@ -3648,12 +4126,17 @@ export default function AudioStudioPage() {
         project_id: projectId,
         projectId,
         block: selectedSavedStableBlockV204F4 || null,
-        scenes: preparedScenes,
+        scenes: safePreparedScenesV211T,
         includeStableAudio: Boolean(stablePreviewRefV204G6),
         include_stable_audio: Boolean(stablePreviewRefV204G6),
         stableAudio: stablePreviewAudioPayloadV204G6,
         stable_audio: stablePreviewAudioPayloadV204G6,
         stableAudioSelectedVariantIdV204H18: stablePreviewAudioPayloadV204G6?.selectedVariantId || '',
+        // V211X: preview block is a listening/check render, final Assembly stays full quality.
+        draftQuality: 'fast',
+        draft_quality: 'fast',
+        fastPreview: true,
+        fast_preview: true,
         source: 'audio_studio_stable_block_preview_v204g1',
       }
 
@@ -3716,6 +4199,7 @@ export default function AudioStudioPage() {
       setError(`Не удалось собрать preview блока: ${err?.message || err}`)
       console.warn('[AUDIO STUDIO STABLE BLOCK PREVIEW FAILED V204G1]', err)
     } finally {
+      stablePreviewBlockBusyRefV211T.current = false
       setStableBlockPreviewLoadingV204G1(false)
     }
   // V204G1A_FIX_PREVIEW_TDZ
@@ -3732,6 +4216,8 @@ export default function AudioStudioPage() {
     const key = stableAudioVolumeDraftKeyV204G13(blockId, id)
 
     stableAudioSelectedVariantIdLiveRefV204H13.current = id
+    stableAudioSelectedVariantBlockIdLiveRefV211V.current = blockId
+    setActiveStableBlockIdV204F4(blockId)
     stableAudioVolumeDraftsLiveRefV204H13.current = { ...stableAudioVolumeDraftsLiveRefV204H13.current, [key]: volume }
     setStableAudioVolumeDraftsV204G13((prev) => ({ ...prev, [key]: volume }))
 
@@ -3769,6 +4255,8 @@ export default function AudioStudioPage() {
     const id = cleanId(variantId)
     if (!blockId || !id) return
     stableAudioSelectedVariantIdLiveRefV204H13.current = id
+    stableAudioSelectedVariantBlockIdLiveRefV211V.current = blockId
+    setActiveStableBlockIdV204F4(blockId)
     const current = sanitizeAudioSnapshot(snapshotRef.current || {})
     const nextBlocks = asArray(current.stableBlocks).map((block) => {
       if (cleanId(block.id) !== blockId) return block
@@ -3837,8 +4325,11 @@ export default function AudioStudioPage() {
     const targetBlock = asArray(current.stableBlocks).find((block) => cleanId(block.id) === blockId) || selectedSavedStableBlockV204F4 || null
     const targetStableAudio = targetBlock?.stableAudio || selectedSavedStableBlockV204F4?.stableAudio || {}
     const variants = asArray(targetStableAudio.variants)
+    const liveStableVariantIdForApplyV211V = cleanId(stableAudioSelectedVariantBlockIdLiveRefV211V.current) === blockId
+      ? stableAudioSelectedVariantIdLiveRefV204H13.current
+      : ''
     const preferredVariantId = cleanId(
-      stableAudioSelectedVariantIdLiveRefV204H13.current
+      liveStableVariantIdForApplyV211V
       || selectedStableAudioVariantV204G6?.id
       || selectedStableAudioVariantV204G6?.variantId
       || targetStableAudio.selectedVariantId
@@ -3853,7 +4344,7 @@ export default function AudioStudioPage() {
     const ref = stableAudioVariantRefV204G6(variant || {})
 
     if (!blockId || !targetBlock) {
-      setError('Сначала выбери или создай Stable-блок.')
+      setError('Карта строится по всем сценам Audio Studio.')
       return
     }
     if (!variantId || !ref) {
@@ -3984,16 +4475,43 @@ export default function AudioStudioPage() {
         }
       })
 
+      const appliedBlocksForAssemblyV211X = nextBlocks
+        .filter((block) => Boolean(block?.appliedStableAudio || block?.applied_stable_audio || block?.stableAudio?.appliedAudio || block?.stableAudio?.applied_audio))
+        .map((block) => ({
+          ...block,
+          assemblyReady: true,
+          assembly_ready: true,
+          sendToAssembly: true,
+          send_to_assembly: true,
+        }))
+
       const next = {
         ...current,
         stableBlocks: nextBlocks,
+        appliedStableAudioBlocks: appliedBlocksForAssemblyV211X,
+        applied_stable_audio_blocks: appliedBlocksForAssemblyV211X,
+        assemblyStableAudioBlocks: appliedBlocksForAssemblyV211X,
+        stableAudioBlocks: appliedBlocksForAssemblyV211X,
+        stable_audio_blocks: appliedBlocksForAssemblyV211X,
+        stauBlocks: appliedBlocksForAssemblyV211X,
+        stau_blocks: appliedBlocksForAssemblyV211X,
         stableAudio: {
           ...(current.stableAudio || {}),
           enabled: true,
           updatedAt: appliedAt,
+          appliedBlockCountV211X: appliedBlocksForAssemblyV211X.length,
         },
         updatedAt: appliedAt,
       }
+      console.info('[AUDIO STUDIO STAU APPLY ASSEMBLY SNAPSHOT V211X]', {
+        projectId,
+        blockId,
+        variantId,
+        sceneCount: sceneIds.length,
+        appliedBlockCount: appliedBlocksForAssemblyV211X.length,
+        ref,
+        volumePercent: volume,
+      })
       snapshotRef.current = next
       setSnapshot(next)
       await Promise.resolve(persistSnapshotSilently(next, 'stable_audio_variant_applied_v204h1'))
@@ -4336,6 +4854,350 @@ export default function AudioStudioPage() {
     }
   }, [activeVolume, prepareTimingAudioForSceneV204E10, selectedResultRef, selectedScene, selectedTimingAudioRefV204E10, timingAudioMixPlayingV204E10])
 
+
+  // V211D_PREVIEW_MAP_NOTES
+  const previewMapDataV211D = snapshot.previewMapV211D || {}
+  const previewMapNotesV211D = previewNotesTextV211N(previewMapDataV211D.notes, snapshot.previewNotesV211D)
+  const previewMapParsedRowsV211D = useMemo(() => {
+    return String(previewMapNotesV211D || '')
+      .split(/\r?\n/g)
+      .map((raw, index) => {
+        const line = raw.trim()
+        if (!line) return null
+        const match = line.match(/^(\d+)(?:\s*[-–—]\s*(\d+))?\s+(.+)$/)
+        const start = match ? Math.max(1, Number(match[1]) || 1) : 0
+        const end = match ? Math.max(start, Number(match[2] || match[1]) || start) : 0
+        const text = match ? match[3].trim() : line
+        const lower = text.toLowerCase()
+        const kind = lower.includes('мма') || lower.includes('mma')
+          ? 'MMA'
+          : (lower.includes('sfx') || lower.includes('сфх') ? 'SFX' : (lower.includes('стейбл') || lower.includes('stable') || lower.includes('stau') ? 'STAU' : 'NOTE'))
+        return { id: `note_${index}`, line, start, end, text, kind }
+      })
+      .filter(Boolean)
+  }, [previewMapNotesV211D])
+
+  const previewMapTimelineRowsV211D = useMemo(() => {
+    return asArray(snapshot.scenes).map((scene, index) => {
+      const rawStart = scene.startSec ?? scene.start_sec ?? scene.start
+      const duration = Math.max(0.01, toNumber(scene.durationSec ?? scene.duration_sec, durationOf(scene), 0))
+      const start = toNumber(rawStart, index === 0 ? 0 : null)
+      const fallbackStart = index === 0 ? 0 : asArray(snapshot.scenes).slice(0, index).reduce((sum, item) => sum + Math.max(0, toNumber(item.durationSec ?? item.duration_sec, durationOf(item), 0)), 0)
+      const safeStart = Number.isFinite(start) ? start : fallbackStart
+      const explicitEnd = scene.endSec ?? scene.end_sec ?? scene.end
+      const end = explicitEnd !== undefined && explicitEnd !== null && explicitEnd !== '' ? toNumber(explicitEnd, safeStart + duration) : safeStart + duration
+      const number = Number(scene.index ?? index)
+      return {
+        scene,
+        index,
+        sceneId: firstText(scene.id, scene.sceneId, scene.scene_id, `seg_${String(index + 1).padStart(2, '0')}`),
+        displayNumber: Number.isFinite(number) ? number + 1 : index + 1,
+        start: safeStart,
+        end: Math.max(safeStart + 0.01, end),
+        duration: Math.max(0.01, end - safeStart),
+      }
+    })
+  }, [snapshot.scenes])
+
+  const previewMapCurrentSceneV211D = useMemo(() => {
+    const rows = previewMapTimelineRowsV211D
+    if (!rows.length) return null
+    const t = Math.max(0, Number(previewMapCurrentTimeV211D) || 0)
+    return rows.find((row) => t >= row.start && t < row.end) || rows[rows.length - 1]
+  }, [previewMapCurrentTimeV211D, previewMapTimelineRowsV211D])
+
+  const previewMapVideoV211D = previewMapDataV211D.fullVideo || previewMapDataV211D.fullProjectVideo || previewMapDataV211D.previewVideo || null
+  const previewMapVideoSourceV211D = firstText(
+    previewMapVideoV211D?.apiPath,
+    previewMapVideoV211D?.assetApiPath,
+    previewMapVideoV211D?.url,
+    sourceVideoRef,
+  )
+  const previewMapVideoLabelV211D = previewMapVideoV211D
+    ? `полное видео · ${toNumber(previewMapVideoV211D.durationSec, previewMapTimelineRowsV211D.at(-1)?.end || 0).toFixed(2)} сек`
+    : 'полное preview ещё не выбрано'
+  const previewMapBlockLabelV211D = `полная карта · ${asArray(snapshot.scenes).length} сцен`
+
+  const updatePreviewMapNotesV211D = useCallback((value) => {
+    setSnapshot((current) => {
+      const next = {
+        ...current,
+        previewMapV211D: {
+          ...(current.previewMapV211D || {}),
+          notes: value,
+          updatedAt: nowIso(),
+        },
+        previewNotesV211D: value,
+        updatedAt: nowIso(),
+      }
+      snapshotRef.current = next
+      return next
+    })
+  }, [])
+
+
+  // V211M_NATIVE_PREVIEW_NOTES_MULTILINE
+  const insertPreviewMapLineBreakV211M = useCallback((node = previewMapNotesTextareaRefV211M.current) => {
+    if (!node) return
+    const value = String(node.value || '')
+    const start = Number.isFinite(node.selectionStart) ? node.selectionStart : value.length
+    const end = Number.isFinite(node.selectionEnd) ? node.selectionEnd : value.length
+    const lineBreak = String.fromCharCode(10)
+    const nextValue = `${value.slice(0, start)}${lineBreak}${value.slice(end)}`
+    updatePreviewMapNotesV211D(nextValue)
+    window.requestAnimationFrame(() => {
+      try {
+        node.focus()
+        node.selectionStart = start + 1
+        node.selectionEnd = start + 1
+      } catch (_err) {}
+    })
+  }, [updatePreviewMapNotesV211D])
+
+  useEffect(() => {
+    const handler = (event) => {
+      const node = event.target
+      if (!node || node.getAttribute?.('data-preview-notes-editor-v211m') !== '1') return
+      const isEnter = event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter'
+      if (!isEnter) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation()
+      insertPreviewMapLineBreakV211M(node)
+    }
+
+    window.addEventListener('keydown', handler, true)
+    document.addEventListener('keydown', handler, true)
+    return () => {
+      window.removeEventListener('keydown', handler, true)
+      document.removeEventListener('keydown', handler, true)
+    }
+  }, [insertPreviewMapLineBreakV211M])
+
+  const savePreviewMapNotesV211D = useCallback(async () => {
+    const current = snapshotRef.current || snapshot
+    const next = {
+      ...current,
+      previewMapV211D: {
+        ...(current.previewMapV211D || {}),
+        notes: previewNotesTextV211N(current.previewMapV211D?.notes, current.previewNotesV211D),
+        blockId: cleanId(selectedSavedStableBlockV204F4?.id || activeStableBlockIdV204F4),
+        blockTitle: firstText(selectedSavedStableBlockV204F4?.title, stableDraftBlockTitleV204F3),
+        fullVideo: previewMapVideoV211D || current.previewMapV211D?.fullVideo || current.previewMapV211D?.previewVideo || null,
+        previewVideo: previewMapVideoV211D || current.previewMapV211D?.previewVideo || null,
+        updatedAt: nowIso(),
+      },
+      previewNotesV211D: previewNotesTextV211N(current.previewMapV211D?.notes, current.previewNotesV211D),
+      updatedAt: nowIso(),
+    }
+    await saveSnapshot(next, 'preview_map_notes_v211d')
+    setStatus('Preview-разметка сохранена')
+  }, [activeStableBlockIdV204F4, previewMapVideoV211D, saveSnapshot, selectedSavedStableBlockV204F4, snapshot, stableDraftBlockTitleV204F3])
+
+
+  const loadFullProjectPreviewV211E = useCallback(async () => {
+    setPreviewFullProjectLoadingV211E(true)
+    setError('')
+    try {
+      const data = workspaceMode
+        ? await loadWorkspaceStage('board_assembly')
+        : await loadStage(projectId, 'board_assembly')
+      const picked = pickFullProjectPreviewVideoV211E(data || {})
+      if (!picked || !firstText(picked.apiPath, picked.url)) {
+        setStatus('Полное видео ещё не найдено. Сначала собери проект в монтажке, потом вернись в Preview / Разметка.')
+        return
+      }
+      const current = snapshotRef.current || snapshot
+      const next = {
+        ...current,
+        previewMapV211D: {
+          ...(current.previewMapV211D || {}),
+          notes: previewNotesTextV211N(current.previewMapV211D?.notes, current.previewNotesV211D),
+          fullVideo: picked,
+          fullProjectVideo: picked,
+          source: 'board_assembly_full_project_v211e',
+          updatedAt: nowIso(),
+        },
+        previewNotesV211D: previewNotesTextV211N(current.previewMapV211D?.notes, current.previewNotesV211D),
+        updatedAt: nowIso(),
+      }
+      snapshotRef.current = next
+      setSnapshot(next)
+      await persistSnapshotSilently(next, 'preview_full_project_video_v211e')
+      setPreviewMapCurrentTimeV211D(0)
+      setStatus('Полное preview-видео найдено и сохранено в Audio Studio. После F5 оно откроется без пересборки.')
+    } catch (err) {
+      setError(`Не удалось подтянуть полное видео из монтажки: ${err?.message || err}`)
+    } finally {
+      setPreviewFullProjectLoadingV211E(false)
+    }
+  }, [loadStage, loadWorkspaceStage, persistSnapshotSilently, projectId, snapshot, workspaceMode])
+
+
+  // V211F_FULL_PROJECT_PREVIEW_MAP_BUILD
+  const buildFullPreviewMapV211F = useCallback(async () => {
+    const current = sanitizeAudioSnapshot(snapshotRef.current || snapshot || {})
+    const allScenes = asArray(current.scenes)
+    if (!allScenes.length) {
+      setStatus('Нет сцен для карты. Сначала обнови Audio Studio из Доски.')
+      return
+    }
+
+    setError('')
+    setStableBlockPreviewLoadingV204G1(true)
+    setStableBlockPreviewUiPhaseV204G4('loading')
+    setStatus(`Собираю карту сцен: ${allScenes.length} сцен · черновое качество…`)
+
+    try {
+      const preparedScenes = []
+      for (const scene of allScenes) {
+        if (!scene || typeof scene !== 'object' || Array.isArray(scene)) {
+          console.warn('[AUDIO STUDIO FULL PREVIEW BAD SCENE SKIP V211V]', { valueType: typeof scene })
+          continue
+        }
+        let timingRef = audioStudioTimingAudioRefV204E10(scene)
+        try {
+          // Function exists lower in this component. Do not put it into deps: this file already avoids TDZ for it.
+          if (!timingRef && typeof prepareTimingAudioForSceneV204E10 === 'function') {
+            timingRef = await prepareTimingAudioForSceneV204E10(scene, { reason: 'full_preview_map_v211v', silent: true })
+          }
+        } catch (sliceErr) {
+          console.warn('[AUDIO STUDIO FULL PREVIEW TIMING SLICE WARN V211V]', {
+            sceneId: firstText(scene?.id, scene?.sceneId, scene?.scene_id),
+            error: String(sliceErr?.message || sliceErr),
+          })
+        }
+        const sourceAudioBaseV211V = scene.sourceAudio && typeof scene.sourceAudio === 'object' && !Array.isArray(scene.sourceAudio)
+          ? scene.sourceAudio
+          : {}
+        preparedScenes.push(timingRef ? {
+          ...scene,
+          sourceAudio: { ...sourceAudioBaseV211V, apiPath: timingRef, url: timingRef },
+          timingAudioReadyV204E10: true,
+        } : { ...scene })
+      }
+      if (!preparedScenes.length) {
+        throw new Error('Нет валидных сцен для карты. Нажми “Обновить из Доски” и попробуй снова.')
+      }
+
+      const sceneIds = preparedScenes.map((scene, index) => firstText(scene.id, scene.sceneId, scene.scene_id, `seg_${String(index + 1).padStart(2, '0')}`))
+      const startSec = Math.min(...preparedScenes.map((scene) => toNumber(scene.startSec ?? scene.start_sec ?? scene.start, 0)))
+      const endSec = Math.max(...preparedScenes.map((scene) => {
+        const start = toNumber(scene.startSec ?? scene.start_sec ?? scene.start, 0)
+        const end = toNumber(scene.endSec ?? scene.end_sec ?? scene.end, 0)
+        const duration = toNumber(scene.durationSec ?? scene.duration_sec, durationOf(scene), 0)
+        return end > start ? end : start + duration
+      }))
+      const durationSec = Math.max(0, endSec - startSec)
+      const cacheKey = sceneIds.map((sceneId, index) => {
+        const scene = preparedScenes[index] || {}
+        return [
+          sceneId,
+          firstText(scene.sourceVideo?.apiPath, scene.sourceVideo?.url, scene.videoApiPath, scene.videoUrl, scene.boardRaw ? boardSourceVideoRef(scene.boardRaw) : ''),
+          toNumber(scene.startSec ?? scene.start_sec ?? scene.start, 0).toFixed(3),
+          toNumber(scene.endSec ?? scene.end_sec ?? scene.end, 0).toFixed(3),
+          toNumber(scene.durationSec ?? scene.duration_sec, durationOf(scene), 0).toFixed(3),
+          firstText(scene.appliedVariantId, scene.mmaudioVideoApiPath, scene.mmaudio_video_api_path),
+        ].join('@')
+      }).join('|')
+
+      const payload = {
+        project_id: projectId || '',
+        projectId: projectId || '',
+        blockId: 'preview_map_full_project_v211f',
+        block_id: 'preview_map_full_project_v211f',
+        block: {
+          id: 'preview_map_full_project_v211f',
+          title: 'Карта сцен всего проекта',
+          sceneIds,
+          scene_ids: sceneIds,
+          startSec,
+          endSec,
+          durationSec,
+          requestDurationSec: Math.ceil(durationSec || 0),
+          color: '#22D3EE',
+        },
+        scenes: preparedScenes,
+        includeStableAudio: false,
+        include_stable_audio: false,
+        stableAudio: null,
+        stable_audio: null,
+        previewMap: true,
+        preview_map: true,
+        draftQuality: 'low',
+        draft_quality: 'low',
+        source: 'audio_studio_full_preview_map_v211f',
+      }
+
+      console.info('[AUDIO STUDIO FULL PREVIEW MAP REQUEST V211F]', {
+        projectId,
+        sceneCount: preparedScenes.length,
+        durationSec,
+        cacheKeyPreview: cacheKey.slice(0, 160),
+      })
+
+      const data = await apiRequest('/audio-studio/stable-preview/block', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+
+      const previewVideo = {
+        apiPath: firstText(data.previewVideoApiPath, data.preview_video_api_path, data.assetApiPath, data.asset_api_path, data.apiPath, data.api_path),
+        url: firstText(data.previewVideoUrl, data.preview_video_url, data.assetUrl, data.asset_url, data.url),
+        assetId: firstText(data.previewVideoAssetId, data.preview_video_asset_id, data.assetId, data.asset_id),
+        durationSec: toNumber(data.durationSec ?? data.duration_sec, durationSec),
+        sceneCount: toNumber(data.sceneCount ?? data.scene_count, preparedScenes.length),
+        cacheKey,
+        source: 'audio_studio_full_preview_map_v211f',
+        createdAt: nowIso(),
+      }
+
+      if (!firstText(previewVideo.apiPath, previewVideo.url)) {
+        throw new Error('Backend не вернул full preview video.')
+      }
+
+      setStableBlockPreviewVideoV204G1(previewVideo)
+      setStableBlockPreviewLoadingV204G1(false)
+      setStableBlockPreviewUiPhaseV204G4('ready')
+      setStableBlockPreviewPlayKeyV204G9(`${firstText(previewVideo.assetId, previewVideo.apiPath, previewVideo.url)}:${Date.now()}`)
+
+      const next = {
+        ...current,
+        previewMapV211D: {
+          ...(current.previewMapV211D || {}),
+          fullPreviewVideo: previewVideo,
+          fullVideo: previewVideo,
+          projectPreviewVideo: previewVideo,
+          previewVideo,
+          cacheKey,
+          sceneCount: preparedScenes.length,
+          durationSec: previewVideo.durationSec,
+          updatedAt: nowIso(),
+        },
+        updatedAt: nowIso(),
+      }
+      snapshotRef.current = next
+      setSnapshot(next)
+      persistSnapshotSilently(next, 'full_preview_map_v211f')
+
+      console.info('[AUDIO STUDIO FULL PREVIEW MAP READY V211F]', {
+        projectId,
+        sceneCount: previewVideo.sceneCount,
+        durationSec: previewVideo.durationSec,
+        ref: firstText(previewVideo.apiPath, previewVideo.url),
+      })
+      setStatus(`Карта сцен собрана: ${previewVideo.sceneCount || preparedScenes.length} сцен · ${Number(previewVideo.durationSec || durationSec).toFixed(2)} сек`)
+    } catch (err) {
+      setStableBlockPreviewLoadingV204G1(false)
+      setStableBlockPreviewUiPhaseV204G4('error')
+      setError(`Не удалось собрать карту сцен: ${err?.message || err}`)
+      console.warn('[AUDIO STUDIO FULL PREVIEW MAP FAILED V211F]', err)
+    } finally {
+      setStableBlockPreviewLoadingV204G1(false)
+    }
+  // V211F: prepareTimingAudioForSceneV204E10 is intentionally omitted from deps to avoid the existing TDZ pattern in this file.
+  }, [persistSnapshotSilently, projectId, snapshot])
+
   const isGeneratingSelected = generatingSceneId && cleanId(generatingSceneId) === cleanId(selectedScene?.id)
   const isApplyingSelected = Boolean(applyingVariantId && cleanId(applyingVariantId) === cleanId(selectedVariant?.id))
 
@@ -4501,7 +5363,7 @@ export default function AudioStudioPage() {
       <SceneStrip
         scenes={snapshot.scenes}
         selectedSceneId={selectedScene?.id || selectedScene?.sceneId}
-        stableMode={audioStudioModeV204F1 === 'stable'}
+        stableMode={audioStudioModeV204F1 === 'stable' || audioStudioModeV204F1 === 'preview'}
         stableBlockSceneIds={selectedStableBlockSceneIdsV204F1}
         stableBlockColor={selectedStableBlockColorV204F3}
         stableBlocks={stableBlocksV204F4}
@@ -4519,7 +5381,7 @@ export default function AudioStudioPage() {
           </div>
         </section>
       ) : (
-        <main className={`avaAudioWorkbench ${audioStudioModeV204F1 === 'stable' ? 'isStableAudioV204F1' : ''}`}>
+        <main className={`avaAudioWorkbench ${audioStudioModeV204F1 === 'stable' ? 'isStableAudioV204F1' : ''} ${audioStudioModeV204F1 === 'preview' ? 'isPreviewMapV211D' : ''}`}>
           {audioStudioModeV204F1 === 'mmaudio' ? (
             <>
               <section className="avaAudioPanel avaAudioVideoPanel">
@@ -4540,7 +5402,13 @@ export default function AudioStudioPage() {
                 <div className="avaAudioModeSwitch">
                   <button type="button" className="isActive" onClick={() => setAudioStudioModeV204F1('mmaudio')}><AudioLines size={15} /> MMAudio RAW</button>
                   <button type="button" onClick={() => setAudioStudioModeV204F1('stable')}><Sparkles size={15} /> Stable Audio</button>
+                  <button type="button" onClick={() => setAudioStudioModeV204F1('preview')}><Film size={15} /> Preview / Разметка</button>
                 </div>
+
+                <AudioStudioGlobalNotesPanelV211H
+                  notesText={previewNotesTextV211N(snapshot.previewMapV211D?.notes, snapshot.previewNotesV211D)}
+                  onOpenPreview={() => setAudioStudioModeV204F1('preview')}
+                />
 
                 <label className="avaAudioField">
                   <span>Prompt</span>
@@ -4600,6 +5468,156 @@ export default function AudioStudioPage() {
                   <input type="range" min="0" max="150" value={activeVolume} onChange={(event) => updateSelectedVolume(event.target.value)} />
                 </label>
                 <p className="avaAudioVolumeNote">Прослушивание: кнопка при необходимости нарезает аудио тайминга сцены, запускает его на 100% и следом запускает правый MMAudio с этой громкостью. При “Применить” громкость MMAudio запекается для монтажки.</p>
+              </section>
+            </>
+          ) : audioStudioModeV204F1 === 'preview' ? (
+            <>
+              <section className="avaAudioPanel avaAudioPreviewMapNotesPanelV211D">
+                <div className="avaAudioModeSwitch">
+                  <button type="button" onClick={() => setAudioStudioModeV204F1('mmaudio')}><AudioLines size={15} /> MMAudio RAW</button>
+                  <button type="button" onClick={() => setAudioStudioModeV204F1('stable')}><Sparkles size={15} /> Stable Audio</button>
+                  <button type="button" className="isActive" onClick={() => setAudioStudioModeV204F1('preview')}><Film size={15} /> Preview / Разметка</button>
+                </div>
+                <div className="avaAudioPanelTitle">
+                  <span><Save size={17} /> Заметки по звуку</span>
+                  <small>{previewMapParsedRowsV211D.length ? `${previewMapParsedRowsV211D.length} строк` : 'свободная разметка'}</small>
+                </div>
+                <label className="avaAudioField avaAudioPreviewMapFieldV211D">
+                  <span>Пиши диапазоны как человек</span>
+                  <textarea
+                    ref={previewMapNotesTextareaRefV211M}
+                    data-preview-notes-editor-v211m="1"
+                    value={previewMapNotesV211D}
+                    placeholder={`1-4 аплодисменты бурные стейбл\n5 смех мма\n12-16 аплодисменты обычные стейбл\n26 смех мма`}
+                    onChange={(event) => updatePreviewMapNotesV211D(event.target.value)}
+                    onBeforeInput={(event) => {
+                      event.stopPropagation()
+                      const nativeEvent = event.nativeEvent || {}
+                      if (nativeEvent.inputType !== 'insertLineBreak') return
+                      event.preventDefault()
+                      const node = event.currentTarget
+                      const value = node.value || ''
+                      const start = Number.isFinite(node.selectionStart) ? node.selectionStart : value.length
+                      const end = Number.isFinite(node.selectionEnd) ? node.selectionEnd : value.length
+                      const lineBreak = String.fromCharCode(10)
+                      const nextValue = `${value.slice(0, start)}${lineBreak}${value.slice(end)}`
+                      updatePreviewMapNotesV211D(nextValue)
+                      window.requestAnimationFrame(() => {
+                        try {
+                          node.focus()
+                          node.selectionStart = start + 1
+                          node.selectionEnd = start + 1
+                        } catch (_err) {}
+                      })
+                    }}
+                    onKeyDownCapture={(event) => {
+                      event.stopPropagation()
+                      if (event.key !== 'Enter') return
+                      event.preventDefault()
+                      const node = event.currentTarget
+                      const value = node.value || ''
+                      const start = Number.isFinite(node.selectionStart) ? node.selectionStart : value.length
+                      const end = Number.isFinite(node.selectionEnd) ? node.selectionEnd : value.length
+                      const lineBreak = String.fromCharCode(10)
+                      const nextValue = `${value.slice(0, start)}${lineBreak}${value.slice(end)}`
+                      updatePreviewMapNotesV211D(nextValue)
+                      window.requestAnimationFrame(() => {
+                        try {
+                          node.focus()
+                          node.selectionStart = start + 1
+                          node.selectionEnd = start + 1
+                        } catch (_err) {}
+                      })
+                    }}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    onKeyUp={(event) => event.stopPropagation()}
+                    onPaste={(event) => event.stopPropagation()}
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="avaAudioPreviewMapActionsV211D">
+                  <button type="button" onClick={() => insertPreviewMapLineBreakV211M()} title="Вставить новую строку в заметки">
+                    ↵ Новая строка
+                  </button>
+                  <button type="button" className="isPrimary" onClick={savePreviewMapNotesV211D}>
+                    <Save size={16} /> Сохранить заметки
+                  </button>
+                </div>
+                <div className="avaAudioPreviewMapHintV211D">
+                  Эти заметки сохраняются в Audio Studio snapshot и переживают F5. Это просто карта всего видео: смотришь полный клип, а номер сцены показывается поверх плеера.
+                </div>
+              </section>
+
+              <section className="avaAudioPanel avaAudioPreviewMapVideoPanelV211D">
+                <div className="avaAudioPanelTitle">
+                  <span><Film size={17} /> Полное preview видео</span>
+                  <small>{previewMapVideoLabelV211D}</small>
+                </div>
+                <div className="avaAudioPreviewMapVideoWrapV211D">
+                  <PreviewVideo
+                    source={previewMapVideoSourceV211D}
+                    title="Полное preview-видео проекта"
+                    className="avaAudioMainVideo avaAudioPreviewMapVideoV211D"
+                    autoPlayKey={stableBlockPreviewPlayKeyV204G9}
+                    onTimeUpdate={(event) => setPreviewMapCurrentTimeV211D(event.currentTarget?.currentTime || 0)}
+                  />
+                  <div className="avaAudioPreviewMapOverlayV211D">
+                    <strong>{previewMapCurrentSceneV211D ? previewMapCurrentSceneV211D.displayNumber : '—'}</strong>
+                    <span>{previewMapCurrentSceneV211D ? previewMapCurrentSceneV211D.sceneId : 'нет сцены'}</span>
+                    <small>{previewMapCurrentSceneV211D ? `${previewMapCurrentSceneV211D.start.toFixed(1)}–${previewMapCurrentSceneV211D.end.toFixed(1)}с` : '00.0–00.0с'}</small>
+                  </div>
+                </div>
+                <div className="avaAudioPreviewMapBuildRowV211D">
+                  <button
+                    type="button"
+                    className={`avaAudioStablePreviewActionV204G4 ${previewFullProjectLoadingV211E ? 'isLoading' : ''}`}
+                    onClick={loadFullProjectPreviewV211E}
+                    disabled={previewFullProjectLoadingV211E}
+                    title="Подтянуть полную сборку из монтажки и сохранить её как Preview / Разметка. После F5 не пересобирается."
+                  >
+                    {previewFullProjectLoadingV211E ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Play size={16} />}
+                    <span>{previewFullProjectLoadingV211E ? 'Собираю карту сцен…' : previewMapVideoV211D ? 'Обновить полное видео' : 'Собрать карту сцен'}</span>
+                  </button>
+                  <button type="button" onClick={() => navigate(assemblyPath)}>
+                    <Film size={16} /> В монтажку
+                  </button>
+                </div>
+                <div className="avaAudioPreviewMapHintV211D">
+                  Используется полная сборка из монтажки. Номер текущей сцены считается по таймингу Audio Studio и показывается поверх плеера.
+                </div>
+              </section>
+
+              <section className="avaAudioPanel avaAudioPreviewMapParsedPanelV211D">
+                <div className="avaAudioPanelTitle">
+                  <span><AudioLines size={17} /> Карта проекта</span>
+                  <small>{previewMapBlockLabelV211D}</small>
+                </div>
+                <div className="avaAudioPreviewMapSceneMiniRailV211D">
+                  {previewMapTimelineRowsV211D.length ? previewMapTimelineRowsV211D.map((row) => (
+                    <button
+                      key={row.sceneId}
+                      type="button"
+                      className={previewMapCurrentSceneV211D?.sceneId === row.sceneId ? 'isActive' : ''}
+                      onClick={() => handleSceneStripSelectV204F2(row.sceneId)}
+                    >
+                      <strong>{row.displayNumber}</strong>
+                      <span>{row.sceneId}</span>
+                    </button>
+                  )) : <div className="avaAudioPreviewMapEmptyV211D">Нет выбранного блока</div>}
+                </div>
+                <div className="avaAudioPreviewMapParsedListV211D">
+                  {previewMapParsedRowsV211D.length ? previewMapParsedRowsV211D.map((row) => (
+                    <article key={row.id} className={`is${row.kind}`}>
+                      <strong>{row.start ? `${row.start}${row.end && row.end !== row.start ? `–${row.end}` : ''}` : 'note'}</strong>
+                      <span>{row.text}</span>
+                      <em>{row.kind}</em>
+                    </article>
+                  )) : (
+                    <div className="avaAudioPreviewMapEmptyV211D">
+                      Пример: <b>12-16 аплодисменты обычные стейбл</b>
+                    </div>
+                  )}
+                </div>
               </section>
             </>
           ) : (
@@ -4686,14 +5704,12 @@ export default function AudioStudioPage() {
                 <div className="avaAudioModeSwitch">
                   <button type="button" onClick={() => setAudioStudioModeV204F1('mmaudio')}><AudioLines size={15} /> MMAudio RAW</button>
                   <button type="button" className="isActive" onClick={() => setAudioStudioModeV204F1('stable')}><Sparkles size={15} /> Stable Audio</button>
+                  <button type="button" onClick={() => setAudioStudioModeV204F1('preview')}><Film size={15} /> Preview / Разметка</button>
                 </div>
-                <div className="avaAudioStableComingV204F1">
-                  <Sparkles size={22} />
-                  <div>
-                    <strong>Stable Audio Blocks</strong>
-                    <span>Music / Instrumental на весь блок. В Comfy отправляем Music или Instrument, длительность = блок + 1 сек, потом trim/fade до точного тайминга.</span>
-                  </div>
-                </div>
+                <AudioStudioGlobalNotesPanelV211H
+                  notesText={previewNotesTextV211N(snapshot.previewMapV211D?.notes, snapshot.previewNotesV211D)}
+                  onOpenPreview={() => setAudioStudioModeV204F1('preview')}
+                />
                 <label className="avaAudioField avaAudioStableFieldV204F7">
                   <span>Stable prompt</span>
                   <textarea
@@ -4707,6 +5723,8 @@ export default function AudioStudioPage() {
                   <div>
                     <button type="button" className={stableAudioModeApiValueV204F7(stableDraftModeV204F7) === 'Music' ? 'isActive' : ''} onClick={() => updateStableModeV204F7('Music')}>Music</button>
                     <button type="button" className={stableAudioModeApiValueV204F7(stableDraftModeV204F7) === 'Instrument' ? 'isActive' : ''} onClick={() => updateStableModeV204F7('Instrument')}>Instrumental</button>
+
+                    <button type="button" className={stableAudioModeApiValueV204F7(stableDraftModeV204F7) === 'SFX' ? 'isActive' : ''} onClick={() => updateStableModeV204F7('SFX')}>SFX</button>
                   </div>
                 </div>
                 <div className="avaAudioStableSimpleNoteV204F8">
@@ -4721,8 +5739,8 @@ export default function AudioStudioPage() {
                     type="button"
                     className={`avaAudioStablePreviewActionV204G4 ${stableBlockPreviewUiPhaseV204G4 === 'loading' ? 'isLoading' : ''} ${stableBlockPreviewUiPhaseV204G4 === 'ready' ? 'isReady' : ''} ${stableBlockPreviewUiPhaseV204G4 === 'error' ? 'isError' : ''}`}
                     onClick={previewStableAudioBlockV204F7}
-                    disabled={!stableSavedBlockActiveV204F4 || !selectedStableBlockSceneIdsV204F1.length || stableBlockPreviewUiPhaseV204G4 === 'loading'}
-                    title="Собрать или пересобрать весь Stable-блок: видео сцен + Timing audio + applied MMAudio + STAU, если он уже есть"
+                    disabled={!stableSavedBlockActiveV204F4 || !selectedStableBlockScenesV204F1.length || stableBlockPreviewUiPhaseV204G4 === 'loading'}
+                    title="Собрать выбранный Stable-блок: видео всех сцен блока + Timing audio всех сцен + applied MMAudio + выбранный STAU"
                   >
                     {stableBlockPreviewUiPhaseV204G4 === 'loading' ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Play size={16} />}
                     <span>{stableBlockPreviewUiPhaseV204G4 === 'loading' ? 'Собираю блок…' : stableBlockPreviewUiPhaseV204G4 === 'ready' ? 'Блок собран' : 'Собрать блок'}</span>
@@ -4795,7 +5813,8 @@ export default function AudioStudioPage() {
             <div className="avaAudioStableVariantListV204G6">
               {stableAudioVariantsV204G6.map((variant, index) => {
                 const variantId = cleanId(variant.id || variant.variantId || `stable_${index}`)
-                const active = cleanId(selectedStableAudioVariantV204G6?.id || selectedStableAudioVariantV204G6?.variantId) === variantId
+                const pickedVariantIdV211V = cleanId(selectedStableAudioVariantIdForUiV211V || stableAudioSelectedVariantIdLiveRefV204H13.current)
+                const active = pickedVariantIdV211V === variantId
                 const applied = cleanId(selectedSavedStableBlockV204F4?.stableAudio?.appliedVariantId || selectedSavedStableBlockV204F4?.stableAudio?.applied_variant_id) === variantId
                 const ref = stableAudioVariantRefV204G6(variant)
                 const volume = stableAudioVariantVolumeForUiV204G13(variant)
@@ -4816,7 +5835,7 @@ export default function AudioStudioPage() {
                       <strong>{variant.label || `v${index + 1}`}</strong>
                       <span>{variant.modeLabel || stableAudioModeUiLabelV204F7(variant.mode)} · {toNumber(variant.finalDurationSec ?? variant.exactDurationSec, selectedStableBlockDurationV204F1).toFixed(2)} сек {applied ? '· ПРИМЕНЁН' : ''}</span>
                     </button>
-                    {active ? <div className="avaAudioStableSelectedBadgeV204H18">✓ ВЫБРАНО В СБОРКУ</div> : null}
+                    {active ? <div className="avaAudioStableSelectedBadgeV204H18">✓ ВЫБРАНО ДЛЯ СБОРКИ</div> : null}
                     {ref ? <StableAudioAssetPlayerV204G7B source={ref} title={`STAU ${variant.label || `v${index + 1}`}`} className="avaAudioStableAudioPlayerV204G6" volumePercent={volume} /> : <div className="avaAudioStableNoAudioV204G6">нет audio asset</div>}
                     <label className="avaAudioStableVolumeV204G6">
                       <span>Громкость STAU: {volume}%</span>

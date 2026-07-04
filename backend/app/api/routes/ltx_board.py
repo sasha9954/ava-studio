@@ -1,3 +1,4 @@
+# AVA_STABLE_AUDIO_GENERATE_HARD_DIAGNOSTICS_V211C: installed
 # AVA_BOARD_BATCH_SERVER_HANG_UNICODE_START_FIX_V209E: safe ffmpeg/ffprobe decoding + normalize first scene start=0 for server batch.
 # V204G13_STAU_VOLUME_DRAFT_APPLY_PREVIEW
 # V204G12B_STAU_VOLUME100_DRAG_SAVE
@@ -6938,7 +6939,7 @@ def _assembly_apply_stau_layers_v204h3(video_path: Path, target_path: Path, laye
     if not safe_layers:
         return {"applied": False, "reason": "no_existing_layer_files"}
 
-    filters = ["[0:a]anull[basea]"]
+    filters = ["[0:a]aresample=48000,aformat=channel_layouts=stereo,volume=1.0000[basea]"]
     labels = ["[basea]"]
     for input_offset, layer in enumerate(safe_layers, start=1):
         start_sec = max(0.0, float(layer.get("startSec") or 0.0))
@@ -6947,12 +6948,20 @@ def _assembly_apply_stau_layers_v204h3(video_path: Path, target_path: Path, laye
         delay_ms = int(round(start_sec * 1000.0))
         label = f"stau{input_offset}a"
         filters.append(
-            f"[{input_offset}:a]atrim=0:{duration_sec:.3f},asetpts=PTS-STARTPTS,volume={volume:.4f},"
+            f"[{input_offset}:a]atrim=0:{duration_sec:.3f},asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,volume={volume:.4f},"
             f"adelay={delay_ms}:all=1,apad,atrim=0:{base_duration:.3f}[{label}]"
         )
         labels.append(f"[{label}]")
 
-    filter_complex = ";".join(filters) + ";" + "".join(labels) + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0[aout]"
+    filter_complex = ";".join(filters) + ";" + "".join(labels) + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0:normalize=0[aout]"
+    print("[BOARD ASSEMBLY AUDIO MIX MASTER SAFE V212L]", {
+        "job_id": job_id, "kind": "stau",
+        "baseAudioGain": 1.0,
+        "amixNormalize": 0,
+        "ducking": False,
+        "layerCount": len(safe_layers),
+        "layerVolumes": [float(layer.get("volume") or 0.0) for layer in safe_layers],
+    }, flush=True)
     _run_ffmpeg([
         *args,
         "-filter_complex", filter_complex,
@@ -6978,6 +6987,427 @@ def _assembly_apply_stau_layers_v204h3(video_path: Path, target_path: Path, laye
             for layer in safe_layers
         ],
     }
+
+
+# V212J_MMAUDIO_SCENE_AUDIO_MIX:
+# MMAudio confirmation creates/replaces a scene MP4. The visual scene may be selected
+# correctly, but the final Assembly master-audio mux uses the continuous Manual Timing
+# track and discards per-scene MP4 audio. This layer extracts audio from real applied
+# MMAudio scene MP4s and mixes it back on the absolute Board timeline, before STAU.
+def _assembly_mmaudio_item_is_real_applied_v212j(item: dict[str, Any]) -> bool:
+    if not isinstance(item, dict):
+        return False
+    variant_id = str(
+        item.get("audio_studio_applied_variant_id")
+        or item.get("audioStudioAppliedVariantId")
+        or item.get("appliedVariantId")
+        or item.get("applied_variant_id")
+        or ""
+    ).strip()
+    if variant_id.lower().startswith("board_source_"):
+        return False
+
+    prompt_text = str(
+        item.get("mmaudio_prompt")
+        or item.get("mmaudioPrompt")
+        or item.get("prompt")
+        or ""
+    ).strip()
+    source_marker = str(item.get("video_source") or item.get("videoSource") or "").strip().lower()
+    explicit_mma_source = _assembly_bool(item.get("source_is_mmaudio") or item.get("sourceIsMmaudio")) or "mmaudio" in source_marker
+    status_text = " ".join(str(item.get(key) or "") for key in (
+        "mmaudio_status", "mmaudioStatus", "audio_studio_status", "audioStudioStatus", "status"
+    )).strip().lower()
+    has_applied_status = "applied" in status_text or "mmaudio_applied" in status_text
+
+    # The strict positive signal for real user-confirmed MMAudio variants.
+    if variant_id.lower().startswith("mmaudio_"):
+        return True
+
+    # Fallback for old saved projects: real MMA scenes usually carry a non-empty prompt,
+    # are marked as applied, and the Assembly payload says the selected scene video is MMA.
+    if prompt_text and has_applied_status and explicit_mma_source:
+        return True
+
+    return False
+
+
+def _assembly_mmaudio_layer_from_item_v212j(
+    item: dict[str, Any],
+    *,
+    scene_id: str,
+    source_path: Path,
+    start_sec: float,
+    duration_sec: float,
+    index: int,
+    job_id: str,
+) -> dict[str, Any] | None:
+    if not _assembly_mmaudio_item_is_real_applied_v212j(item):
+        return None
+    if not isinstance(source_path, Path) or not source_path.exists():
+        print("[ASSEMBLY MMA AUDIO LAYER SKIP V212J]", {
+            "job_id": job_id,
+            "scene_id": scene_id,
+            "reason": "source_file_missing",
+            "sourcePath": str(source_path),
+        }, flush=True)
+        return None
+    try:
+        if not _ffprobe_has_audio(source_path):
+            print("[ASSEMBLY MMA AUDIO LAYER SKIP V212J]", {
+                "job_id": job_id,
+                "scene_id": scene_id,
+                "reason": "source_has_no_audio",
+                "sourcePath": str(source_path),
+            }, flush=True)
+            return None
+    except Exception as exc:
+        print("[ASSEMBLY MMA AUDIO LAYER SKIP V212J]", {
+            "job_id": job_id,
+            "scene_id": scene_id,
+            "reason": "ffprobe_failed",
+            "error": str(exc),
+            "sourcePath": str(source_path),
+        }, flush=True)
+        return None
+
+    variant_id = str(item.get("audio_studio_applied_variant_id") or item.get("audioStudioAppliedVariantId") or "").strip()
+    ref = str(
+        item.get("mmaudio_video_api_path")
+        or item.get("mmaudioVideoApiPath")
+        or item.get("video_api_path")
+        or item.get("videoApiPath")
+        or item.get("video_url")
+        or item.get("videoUrl")
+        or ""
+    ).strip()
+
+    # Applied MMA video is already volume-baked by Audio Studio when the user confirms it.
+    # Do not apply mmaudioVolume again, otherwise 25%-33% confirmed laughter becomes almost inaudible.
+    volume = 1.0
+    layer = {
+        "index": index,
+        "sceneId": scene_id,
+        "ref": ref,
+        "path": source_path,
+        "startSec": max(0.0, float(start_sec or 0.0)),
+        "durationSec": max(0.05, float(duration_sec or 0.05)),
+        "volume": volume,
+        "variantId": variant_id,
+        "prompt": str(item.get("mmaudio_prompt") or item.get("mmaudioPrompt") or "")[:240],
+    }
+    print("[ASSEMBLY MMA AUDIO LAYER PICK V212J]", {
+        "job_id": job_id,
+        "scene_id": scene_id,
+        "ref": ref,
+        "sourcePath": str(source_path),
+        "startSec": layer["startSec"],
+        "durationSec": layer["durationSec"],
+        "volume": layer["volume"],
+        "variantId": variant_id,
+        "prompt": layer["prompt"],
+    }, flush=True)
+    return layer
+
+
+def _assembly_apply_mmaudio_layers_v212j(video_path: Path, target_path: Path, layers: list[dict[str, Any]], *, timeline_duration: float, job_id: str) -> dict[str, Any]:
+    if not layers:
+        return {"applied": False, "reason": "no_layers"}
+    base_duration = _ffprobe_duration(video_path) or timeline_duration or 0.0
+    if base_duration <= 0:
+        return {"applied": False, "reason": "no_base_duration"}
+
+    args = ["-y", "-i", str(video_path)]
+    safe_layers: list[dict[str, Any]] = []
+    seen: set[tuple[str, float, float]] = set()
+    for layer in layers:
+        path = layer.get("path")
+        if not isinstance(path, Path) or not path.exists():
+            continue
+        start_sec = max(0.0, float(layer.get("startSec") or 0.0))
+        duration_sec = max(0.05, float(layer.get("durationSec") or 0.05))
+        key = (str(layer.get("sceneId") or ""), round(start_sec, 3), round(duration_sec, 3))
+        if key in seen:
+            continue
+        seen.add(key)
+        safe_layers.append(layer)
+        args.extend(["-i", str(path)])
+    if not safe_layers:
+        return {"applied": False, "reason": "no_existing_layer_files"}
+
+    filters = ["[0:a]aresample=48000,aformat=channel_layouts=stereo,volume=1.0000[basea]"]
+    labels = ["[basea]"]
+    for input_offset, layer in enumerate(safe_layers, start=1):
+        start_sec = max(0.0, float(layer.get("startSec") or 0.0))
+        duration_sec = max(0.05, float(layer.get("durationSec") or 0.05))
+        volume = max(0.0, float(layer.get("volume") or 1.0))
+        delay_ms = int(round(start_sec * 1000.0))
+        label = f"mma{input_offset}a"
+        filters.append(
+            f"[{input_offset}:a]"
+            f"atrim=0:{duration_sec:.3f},asetpts=PTS-STARTPTS,"
+            f"aresample=48000,aformat=channel_layouts=stereo,"
+            f"volume={volume:.4f},"
+            f"adelay={delay_ms}:all=1,apad,atrim=0:{base_duration:.3f}"
+            f"[{label}]"
+        )
+        labels.append(f"[{label}]")
+
+    filter_complex = ";".join(filters) + ";" + "".join(labels) + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0:normalize=0[aout]"
+    print("[BOARD ASSEMBLY AUDIO MIX MASTER SAFE V212L]", {
+        "job_id": job_id, "kind": "mmaudio",
+        "baseAudioGain": 1.0,
+        "amixNormalize": 0,
+        "ducking": False,
+        "layerCount": len(safe_layers),
+        "layerVolumes": [float(layer.get("volume") or 0.0) for layer in safe_layers],
+    }, flush=True)
+    _run_ffmpeg([
+        *args,
+        "-filter_complex", filter_complex,
+        "-map", "0:v:0",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "256k",
+        "-ar", "48000",
+        "-ac", "2",
+        "-shortest",
+        str(target_path),
+    ])
+    return {
+        "applied": True,
+        "reason": "mmaudio_scene_audio_mixed_on_board_timeline_v212j",
+        "layerCount": len(safe_layers),
+        "layers": [
+            {
+                "sceneId": str(layer.get("sceneId") or ""),
+                "ref": str(layer.get("ref") or ""),
+                "startSec": float(layer.get("startSec") or 0.0),
+                "durationSec": float(layer.get("durationSec") or 0.0),
+                "volume": float(layer.get("volume") or 0.0),
+                "variantId": str(layer.get("variantId") or ""),
+            }
+            for layer in safe_layers
+        ],
+    }
+
+
+# V212K_MMAUDIO_LAYERS_FROM_AUDIO_STUDIO_SNAPSHOT:
+# V212J could be connected after the Assembly payload had already lost the real
+# Audio Studio variant id / prompt fields. The scene video pick logs can still show
+# source_is_mmaudio, but V212J sees no reliable layer metadata and prints
+# disabled_or_no_layers. V212K reads the authoritative audio_studio snapshot by
+# project_id + scene_id and builds MMA audio layers from real applied mmaudio_* variants.
+def _assembly_audio_studio_mmaudio_index_v212k(project_id: str) -> dict[str, dict[str, Any]]:
+    pid = str(project_id or "").strip()
+    if not pid:
+        print("[ASSEMBLY MMA AUDIO INDEX V212K]", {"project_id": pid, "count": 0, "reason": "no_project_id"}, flush=True)
+        return {}
+    try:
+        db = store.get_db()
+    except Exception as exc:
+        print("[ASSEMBLY MMA AUDIO INDEX V212K]", {"project_id": pid, "count": 0, "reason": "db_read_failed", "error": str(exc)}, flush=True)
+        return {}
+
+    snap = (((db.get("snapshots") or {}).get(pid) or {}).get("audio_studio") or {})
+    data = snap.get("data") if isinstance(snap, dict) else None
+    if not isinstance(data, dict):
+        print("[ASSEMBLY MMA AUDIO INDEX V212K]", {"project_id": pid, "count": 0, "reason": "no_audio_studio_snapshot"}, flush=True)
+        return {}
+    scenes = data.get("scenes") if isinstance(data.get("scenes"), list) else []
+    result: dict[str, dict[str, Any]] = {}
+
+    def _txt(*values: Any) -> str:
+        for value in values:
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return ""
+
+    def _variant(scene: dict[str, Any]) -> dict[str, Any]:
+        variants = scene.get("variants") if isinstance(scene.get("variants"), list) else []
+        wanted = _txt(
+            scene.get("audio_studio_applied_variant_id"),
+            scene.get("audioStudioAppliedVariantId"),
+            scene.get("appliedVariantId"),
+            scene.get("applied_variant_id"),
+            scene.get("selectedVariantId"),
+            scene.get("selected_variant_id"),
+        )
+        if wanted:
+            for item in variants:
+                if isinstance(item, dict) and _txt(item.get("id"), item.get("variantId"), item.get("variant_id")) == wanted:
+                    return item
+        for item in variants:
+            if isinstance(item, dict) and item.get("applied") is True:
+                return item
+        return {}
+
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _txt(scene.get("scene_id"), scene.get("sceneId"), scene.get("id"))
+        if not scene_id:
+            continue
+        variant = _variant(scene)
+        variant_id = _txt(
+            scene.get("audio_studio_applied_variant_id"),
+            scene.get("audioStudioAppliedVariantId"),
+            scene.get("appliedVariantId"),
+            scene.get("applied_variant_id"),
+            variant.get("id") if isinstance(variant, dict) else "",
+            variant.get("variantId") if isinstance(variant, dict) else "",
+            variant.get("variant_id") if isinstance(variant, dict) else "",
+        )
+        variant_id_lower = variant_id.lower()
+        if variant_id_lower.startswith("board_source_"):
+            continue
+
+        status_text = " ".join(_txt(scene.get(key)) for key in (
+            "mmaudio_status", "mmaudioStatus", "audio_studio_status", "audioStudioStatus", "status"
+        )).lower()
+        prompt = _txt(
+            scene.get("mmaudio_prompt"),
+            scene.get("mmaudioPrompt"),
+            variant.get("prompt") if isinstance(variant, dict) else "",
+        )
+        is_real_mma = variant_id_lower.startswith("mmaudio_") or (prompt and ("applied" in status_text or "mmaudio" in status_text))
+        if not is_real_mma:
+            continue
+
+        applied = scene.get("mmaudioAppliedVideo") or scene.get("mmaudio_applied_video") or scene.get("currentVideo") or scene.get("current_video") or {}
+        if not isinstance(applied, dict):
+            applied = {}
+        applied_variant_video = {}
+        if isinstance(variant, dict):
+            av = variant.get("appliedVideo") or variant.get("applied_video") or {}
+            if isinstance(av, dict):
+                applied_variant_video = av
+
+        api_path = _txt(
+            applied.get("apiPath"), applied.get("api_path"), applied.get("assetApiPath"), applied.get("asset_api_path"),
+            scene.get("mmaudio_video_api_path"), scene.get("mmaudioVideoApiPath"),
+            applied_variant_video.get("apiPath"), applied_variant_video.get("api_path"), applied_variant_video.get("assetApiPath"), applied_variant_video.get("asset_api_path"),
+            variant.get("appliedApiPath") if isinstance(variant, dict) else "",
+            variant.get("applied_api_path") if isinstance(variant, dict) else "",
+            variant.get("apiPath") if isinstance(variant, dict) else "",
+            variant.get("api_path") if isinstance(variant, dict) else "",
+            variant.get("assetApiPath") if isinstance(variant, dict) else "",
+            variant.get("asset_api_path") if isinstance(variant, dict) else "",
+        )
+        url = _txt(
+            applied.get("url"), applied.get("assetUrl"), applied.get("asset_url"),
+            scene.get("mmaudio_video_url"), scene.get("mmaudioVideoUrl"),
+            applied_variant_video.get("url"), applied_variant_video.get("assetUrl"), applied_variant_video.get("asset_url"),
+            variant.get("appliedUrl") if isinstance(variant, dict) else "",
+            variant.get("applied_url") if isinstance(variant, dict) else "",
+            variant.get("url") if isinstance(variant, dict) else "",
+            variant.get("assetUrl") if isinstance(variant, dict) else "",
+            variant.get("asset_url") if isinstance(variant, dict) else "",
+            api_path,
+        )
+        ref = _txt(api_path, url)
+        if not ref:
+            continue
+
+        result[scene_id] = {
+            "sceneId": scene_id,
+            "ref": ref,
+            "apiPath": api_path,
+            "url": url,
+            "variantId": variant_id,
+            "prompt": prompt,
+            "volume": 1.0,  # Audio Studio apply already bakes the chosen MMA volume into the MP4.
+            "source": "audio_studio_snapshot_v212k",
+        }
+
+    print("[ASSEMBLY MMA AUDIO INDEX V212K]", {
+        "project_id": pid,
+        "count": len(result),
+        "sceneIds": list(result.keys())[:20],
+    }, flush=True)
+    return result
+
+
+def _assembly_mmaudio_layer_from_audio_studio_v212k(
+    info: dict[str, Any] | None,
+    *,
+    scene_id: str,
+    start_sec: float,
+    duration_sec: float,
+    index: int,
+    job_id: str,
+) -> dict[str, Any] | None:
+    if not isinstance(info, dict) or not info.get("ref"):
+        return None
+    ref = str(info.get("ref") or "").strip()
+    try:
+        source_path = _resolve_local_file(ref)
+    except Exception as exc:
+        print("[ASSEMBLY MMA AUDIO LAYER SKIP V212K]", {
+            "job_id": job_id,
+            "scene_id": scene_id,
+            "reason": "resolve_failed",
+            "ref": ref,
+            "error": str(exc),
+        }, flush=True)
+        return None
+    if not source_path.exists():
+        print("[ASSEMBLY MMA AUDIO LAYER SKIP V212K]", {
+            "job_id": job_id,
+            "scene_id": scene_id,
+            "reason": "source_file_missing",
+            "ref": ref,
+            "sourcePath": str(source_path),
+        }, flush=True)
+        return None
+    try:
+        if not _ffprobe_has_audio(source_path):
+            print("[ASSEMBLY MMA AUDIO LAYER SKIP V212K]", {
+                "job_id": job_id,
+                "scene_id": scene_id,
+                "reason": "source_has_no_audio",
+                "ref": ref,
+                "sourcePath": str(source_path),
+            }, flush=True)
+            return None
+    except Exception as exc:
+        print("[ASSEMBLY MMA AUDIO LAYER SKIP V212K]", {
+            "job_id": job_id,
+            "scene_id": scene_id,
+            "reason": "ffprobe_failed",
+            "ref": ref,
+            "error": str(exc),
+        }, flush=True)
+        return None
+
+    layer = {
+        "index": index,
+        "sceneId": scene_id,
+        "ref": ref,
+        "path": source_path,
+        "startSec": max(0.0, float(start_sec or 0.0)),
+        "durationSec": max(0.05, float(duration_sec or 0.05)),
+        "volume": max(0.0, float(info.get("volume") or 1.0)),
+        "variantId": str(info.get("variantId") or ""),
+        "prompt": str(info.get("prompt") or "")[:240],
+        "source": "audio_studio_snapshot_v212k",
+    }
+    print("[ASSEMBLY MMA AUDIO LAYER PICK V212K]", {
+        "job_id": job_id,
+        "scene_id": scene_id,
+        "ref": ref,
+        "sourcePath": str(source_path),
+        "startSec": layer["startSec"],
+        "durationSec": layer["durationSec"],
+        "volume": layer["volume"],
+        "variantId": layer["variantId"],
+        "prompt": layer["prompt"],
+    }, flush=True)
+    return layer
 
 
 # AVA_BOARD_ASSEMBLY_SAFE_XFADE_V134D:
@@ -9166,6 +9596,8 @@ def _run_board_assembly_job(job_id: str) -> None:
         music_volume = _assembly_float(volumes.get("music"), 1.0)
         stau_layers_v204h3 = _assembly_stau_layers_v204h3(payload)
         stau_volume_v204h3 = _assembly_float(volumes.get("stau"), 0.3)
+        project_id_v212k = str(payload.get("project_id") or payload.get("projectId") or "").strip()
+        mmaudio_audio_studio_index_v212k = _assembly_audio_studio_mmaudio_index_v212k(project_id_v212k)
         original_audio_path = _assembly_original_audio_path(payload)
         if not original_audio_path:
             original_audio_path = _assembly_project_original_audio_path_v200r(payload, job_id=job_id)
@@ -9198,6 +9630,7 @@ def _run_board_assembly_job(job_id: str) -> None:
         normalized_paths: list[Path] = []
         prepared_items: list[dict[str, Any]] = []
         missing_items: list[dict[str, Any]] = []
+        mmaudio_scene_layers_v212j: list[dict[str, Any]] = []
 
         timeline_items: list[tuple[float, int, dict[str, Any]]] = []
         for index, item in enumerate(raw_items):
@@ -9264,6 +9697,8 @@ def _run_board_assembly_job(job_id: str) -> None:
                 "placeholder": is_placeholder_item,
                 "missing_video": _assembly_bool(item.get("missing_video") or item.get("missingVideo")),
                 "has_video_url": bool(video_value),
+                "source_is_mmaudio": _assembly_bool(item.get("source_is_mmaudio") or item.get("sourceIsMmaudio")),
+                "video_source": item.get("video_source") or item.get("videoSource") or "",
                 "start_sec": target_start,
                 "duration_sec": duration,
             })
@@ -9361,6 +9796,9 @@ def _run_board_assembly_job(job_id: str) -> None:
             _log_board_assembly("[BOARD ASSEMBLY VIDEO ITEM]", {
                 "scene_id": scene_id,
                 "video_url": video_value,
+                "source_is_mmaudio": _assembly_bool(item.get("source_is_mmaudio") or item.get("sourceIsMmaudio")),
+                "video_source": item.get("video_source") or item.get("videoSource") or "",
+                "mmaudio_video_api_path": item.get("mmaudio_video_api_path") or item.get("mmaudioVideoApiPath") or "",
                 "start_sec": target_start,
                 "duration_sec": duration,
             })
@@ -9377,6 +9815,30 @@ def _run_board_assembly_job(job_id: str) -> None:
                         "video": video_value,
                     })
                 raise
+
+            mmaudio_layer_v212j = _assembly_mmaudio_layer_from_item_v212j(
+                item,
+                scene_id=scene_id,
+                source_path=source_path,
+                start_sec=target_start,
+                duration_sec=duration,
+                index=index,
+                job_id=job_id,
+            )
+            if mmaudio_layer_v212j:
+                mmaudio_scene_layers_v212j.append(mmaudio_layer_v212j)
+            else:
+                mmaudio_info_v212k = mmaudio_audio_studio_index_v212k.get(scene_id) if isinstance(mmaudio_audio_studio_index_v212k, dict) else None
+                mmaudio_layer_v212k = _assembly_mmaudio_layer_from_audio_studio_v212k(
+                    mmaudio_info_v212k,
+                    scene_id=scene_id,
+                    start_sec=target_start,
+                    duration_sec=duration,
+                    index=index,
+                    job_id=job_id,
+                )
+                if mmaudio_layer_v212k:
+                    mmaudio_scene_layers_v212j.append(mmaudio_layer_v212k)
 
             trim_v201a = _assembly_item_video_trim_v201a(item)
             source_for_normalize_v201a = source_path
@@ -9735,6 +10197,26 @@ def _run_board_assembly_job(job_id: str) -> None:
         else:
             shutil.copy2(scene_concat_path, out_path)
 
+        mmaudio_mix_result_v212j = {"applied": False, "reason": "disabled_or_no_layers"}
+        if mmaudio_scene_layers_v212j:
+            mmaudio_out_path_v212j = work_dir / f"{job_id}_with_mmaudio_v212j.mp4"
+            try:
+                mmaudio_mix_result_v212j = _assembly_apply_mmaudio_layers_v212j(
+                    out_path,
+                    mmaudio_out_path_v212j,
+                    mmaudio_scene_layers_v212j,
+                    timeline_duration=scene_concat_duration or target_timeline_duration,
+                    job_id=job_id,
+                )
+                if mmaudio_mix_result_v212j.get("applied") and mmaudio_out_path_v212j.exists() and mmaudio_out_path_v212j.stat().st_size > 0:
+                    shutil.copy2(mmaudio_out_path_v212j, out_path)
+                print("[BOARD ASSEMBLY MMA AUDIO MIX V212J]", {"job_id": job_id, **mmaudio_mix_result_v212j}, flush=True)
+            except Exception as exc:
+                mmaudio_mix_result_v212j = {"applied": False, "reason": f"mmaudio_mix_failed: {exc}"}
+                raise HTTPException(status_code=500, detail={"code": "mmaudio_mix_failed_v212j", "message": str(exc)})
+        else:
+            print("[BOARD ASSEMBLY MMA AUDIO MIX V212J]", {"job_id": job_id, **mmaudio_mix_result_v212j}, flush=True)
+
         stau_mix_result_v204h3 = {"applied": False, "reason": "disabled_or_no_layers"}
         if stau_layers_v204h3:
             stau_out_path_v204h3 = work_dir / f"{job_id}_with_stau_v204h3.mp4"
@@ -9840,6 +10322,10 @@ def _run_board_assembly_job(job_id: str) -> None:
             "stauVolume": stau_volume_v204h3,
             "stauLayerCount": len(stau_layers_v204h3),
             "stauMixV204H3": locals().get("stau_mix_result_v204h3") or {},
+            "mmaudioLayerCountV212J": len(mmaudio_scene_layers_v212j),
+            "mmaudioLayerCountV212K": len(mmaudio_scene_layers_v212j),
+            "mmaudioAudioStudioIndexCountV212K": len(mmaudio_audio_studio_index_v212k) if isinstance(mmaudio_audio_studio_index_v212k, dict) else 0,
+            "mmaudioMixV212J": locals().get("mmaudio_mix_result_v212j") or {},
             "watermarkRequested": watermark_requested,
             "watermarkApplied": watermark_applied,
             "watermarkError": watermark_error,
@@ -11711,6 +12197,7 @@ def _apply_assembly_watermark(src_path, out_path, watermark):
 
 
 # ---------------------------------------------------------------------
+# AVA_AUDIO_STUDIO_STABLE_PREVIEW_FAST_422_V211T: installed
 # V204G1_STABLE_BLOCK_PREVIEW_MP4
 # Audio Studio / Stable Audio: quick backend preview for a saved block.
 # This first backend step intentionally renders only:
@@ -11726,7 +12213,11 @@ class AudioStudioStablePreviewIn(BaseModel):
     title: str | None = None
     scene_ids: list[Any] | None = None
     sceneIds: list[Any] | None = None
-    scenes: list[dict[str, Any]] | None = None
+    # V211T: accept list[Any] because the frontend can transiently serialize
+    # sparse/undefined scene entries as null on the first click. The endpoint
+    # below already filters real dict scenes and returns a readable 400 if none
+    # are usable; this prevents FastAPI/Pydantic raw 422 before our diagnostics.
+    scenes: list[Any] | None = None
     block: dict[str, Any] | None = None
     duration_sec: float | None = None
     durationSec: float | None = None
@@ -11986,14 +12477,37 @@ def _stable_audio_comfy_url_v204g6() -> str:
 
 def _stable_audio_mode_api_v204g6(value: Any) -> tuple[str, int]:
     text = str(value or "Music").strip().lower()
+    if text in {"sfx", "soundfx", "sound_fx", "sound effects", "soundeffects", "effects", "effect", "fx", "сфх", "эффекты", "звуковые эффекты"}:
+        # V211Z2: TRUE SFX category in Stable_Audio_3_Medium_CLEAN.json.
+        # Node 52:43 has option3=SFX, index=2. Do NOT route SFX through Music.
+        return "SFX", 2
     if text in {"instrument", "instrumental", "инструмент", "инструментал"}:
         return "Instrument", 1
     return "Music", 0
 
 
+
+def _stable_audio_mode_label_v211z2(value: Any) -> str:
+    text = str(value or "Music").strip().lower()
+    if text in {"sfx", "soundfx", "sound_fx", "sound effects", "soundeffects", "effects", "effect", "fx", "сфх", "эффекты", "звуковые эффекты"}:
+        return "SFX"
+    if text in {"instrument", "instrumental", "инструмент", "инструментал"}:
+        return "Instrumental"
+    return "Music"
+
+
+# V211Z4 compatibility alias: old V211Z patches may still call this name.
+_stable_audio_mode_label_v211z = _stable_audio_mode_label_v211z2
+
 def _stable_audio_patch_workflow_v204g6(workflow: dict[str, Any], *, prompt: str, mode: str, request_duration_sec: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     patched = copy.deepcopy(workflow)
     mode_choice, mode_index = _stable_audio_mode_api_v204g6(mode)
+    # V211Z2_TRUE_SFX_PROMPT_GUARD: SFX must not drift into music/melody.
+    if mode_choice == "SFX":
+        clean_prompt_v211z2 = str(prompt or "").strip()
+        sfx_prefix_v211z2 = "sound effects only, foley only, ambience only, no music, no melody, no song, no vocals"
+        if sfx_prefix_v211z2.lower() not in clean_prompt_v211z2.lower():
+            prompt = f"{sfx_prefix_v211z2}. {clean_prompt_v211z2}".strip()
     patches: list[dict[str, Any]] = []
 
     def patch(node_id: str, key: str, value: Any, reason: str) -> None:
@@ -12026,15 +12540,57 @@ def _stable_audio_is_audio_output_v204g6(output: dict[str, Any]) -> bool:
 def _stable_audio_wait_for_output_v204g6(base_url: str, prompt_id: str, *, timeout_sec: int = 900) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     started = datetime.utcnow().timestamp()
     last_outputs: list[dict[str, Any]] = []
+    last_log_bucket_v211c = -1
+    print("[AUDIO STUDIO STABLE WAIT START V211C]", {
+        "promptId": prompt_id,
+        "timeoutSec": timeout_sec,
+        "baseUrl": base_url,
+    }, flush=True)
     while datetime.utcnow().timestamp() - started < timeout_sec:
+        elapsed_v211c = datetime.utcnow().timestamp() - started
         history = _history(base_url, prompt_id)
         outputs = _extract_comfy_outputs(base_url, history) if isinstance(history, dict) else []
         last_outputs = outputs
         audio_outputs = [item for item in outputs if _stable_audio_is_audio_output_v204g6(item)]
+        log_bucket_v211c = int(elapsed_v211c // 10)
+        if log_bucket_v211c != last_log_bucket_v211c:
+            last_log_bucket_v211c = log_bucket_v211c
+            preview_outputs_v211c = []
+            for item in outputs[-6:]:
+                if isinstance(item, dict):
+                    preview_outputs_v211c.append({
+                        "filename": item.get("filename"),
+                        "subfolder": item.get("subfolder"),
+                        "type": item.get("type"),
+                        "group": item.get("group"),
+                    })
+            print("[AUDIO STUDIO STABLE WAIT POLL V211C]", {
+                "promptId": prompt_id,
+                "elapsedSec": round(float(elapsed_v211c), 1),
+                "outputs": len(outputs),
+                "audioOutputs": len(audio_outputs),
+                "lastOutputs": preview_outputs_v211c,
+                "historyKeys": list(history.keys())[:8] if isinstance(history, dict) else str(type(history)),
+            }, flush=True)
         if audio_outputs:
-            return audio_outputs[-1], outputs
+            chosen_v211c = audio_outputs[-1]
+            print("[AUDIO STUDIO STABLE OUTPUT FOUND V211C]", {
+                "promptId": prompt_id,
+                "elapsedSec": round(float(elapsed_v211c), 1),
+                "filename": chosen_v211c.get("filename") if isinstance(chosen_v211c, dict) else None,
+                "subfolder": chosen_v211c.get("subfolder") if isinstance(chosen_v211c, dict) else None,
+                "type": chosen_v211c.get("type") if isinstance(chosen_v211c, dict) else None,
+                "group": chosen_v211c.get("group") if isinstance(chosen_v211c, dict) else None,
+                "outputs": len(outputs),
+            }, flush=True)
+            return chosen_v211c, outputs
         __import__('time').sleep(2.0)
-    raise HTTPException(status_code=504, detail={"code": "stable_audio_timeout_v204g6", "promptId": prompt_id, "outputs": last_outputs[-8:]})
+    print("[AUDIO STUDIO STABLE WAIT TIMEOUT V211C]", {
+        "promptId": prompt_id,
+        "timeoutSec": timeout_sec,
+        "lastOutputs": last_outputs[-8:],
+    }, flush=True)
+    raise HTTPException(status_code=504, detail={"code": "stable_audio_timeout_v211c", "promptId": prompt_id, "outputs": last_outputs[-8:]})
 
 
 def _stable_audio_download_output_v204g6(base_url: str, output: dict[str, Any], out_path: Path) -> None:
@@ -12141,6 +12697,16 @@ def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerate
     if project_id:
         ensure_project_access(project_id, user)
 
+    print("[AUDIO STUDIO STABLE GENERATE START V211C]", {
+        "projectId": project_id,
+        "blockId": _audio_studio_first_text_v204g1(payload.block_id, payload.blockId, "stable_block"),
+        "mode": str(payload.mode or "Music"),
+        "durationSec": payload.duration_sec if payload.duration_sec is not None else payload.durationSec,
+        "requestDurationSec": payload.request_duration_sec if payload.request_duration_sec is not None else payload.requestDurationSec,
+        "promptPreview": str(payload.prompt or "")[:160],
+        "workflowKey": str(payload.workflow_key or payload.workflowKey or "Stable_Audio_3_Medium_CLEAN.json"),
+    }, flush=True)
+
     prompt = str(payload.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Stable Audio prompt is empty")
@@ -12188,8 +12754,27 @@ def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerate
     block_id = _audio_studio_first_text_v204g1(payload.block_id, payload.blockId, "stable_block")
     block_title = _safe_name(payload.title or block_id or "stable_audio_block", "stable_audio_block")
     job_id = f"stable_audio_{uuid4().hex[:14]}"
+    print("[AUDIO STUDIO STABLE SUBMIT START V211C]", {
+        "projectId": project_id,
+        "blockId": block_id,
+        "jobId": job_id,
+        "baseUrl": base_url,
+        "workflowKey": workflow_key,
+        "patchCount": len(patches),
+        "mode": mode_choice,
+        "modeIndex": int(mode_index),
+        "exactDurationSec": round(float(exact_duration_f), 3),
+        "requestDurationSec": request_duration_i,
+    }, flush=True)
     submit_data = _submit_prompt(base_url, prompt_graph)
     prompt_id = submit_data.get("prompt_id") or submit_data.get("promptId")
+    print("[AUDIO STUDIO STABLE SUBMIT DONE V211C]", {
+        "projectId": project_id,
+        "blockId": block_id,
+        "jobId": job_id,
+        "promptId": prompt_id,
+        "submitKeys": list(submit_data.keys()) if isinstance(submit_data, dict) else str(type(submit_data)),
+    }, flush=True)
     if not prompt_id:
         raise HTTPException(status_code=502, detail={"code": "stable_audio_no_prompt_id_v204g6", "submit": submit_data})
 
@@ -12199,8 +12784,42 @@ def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerate
         raw_suffix = Path(str(output.get("filename") or "stable_audio_3.mp3")).suffix or ".mp3"
         raw_path = tmp_dir / f"raw{raw_suffix}"
         final_path = tmp_dir / f"{block_title}_{uuid4().hex[:8]}_stau.mp3"
+        print("[AUDIO STUDIO STABLE DOWNLOAD START V211C]", {
+            "projectId": project_id,
+            "blockId": block_id,
+            "promptId": prompt_id,
+            "filename": output.get("filename") if isinstance(output, dict) else None,
+            "subfolder": output.get("subfolder") if isinstance(output, dict) else None,
+            "type": output.get("type") if isinstance(output, dict) else None,
+        }, flush=True)
         _stable_audio_download_output_v204g6(base_url, output, raw_path)
+        print("[AUDIO STUDIO STABLE DOWNLOAD DONE V211C]", {
+            "projectId": project_id,
+            "blockId": block_id,
+            "rawPath": str(raw_path),
+            "rawExists": raw_path.exists(),
+            "rawSize": raw_path.stat().st_size if raw_path.exists() else 0,
+        }, flush=True)
+        print("[AUDIO STUDIO STABLE FIT START V211C]", {
+            "projectId": project_id,
+            "blockId": block_id,
+            "exactDurationSec": round(float(exact_duration_f), 3),
+        }, flush=True)
         fit_info = _stable_audio_fit_to_block_v204g6(raw_path, final_path, exact_duration_sec=exact_duration_f)
+        print("[AUDIO STUDIO STABLE FIT DONE V211C]", {
+            "projectId": project_id,
+            "blockId": block_id,
+            "finalPath": str(final_path),
+            "finalExists": final_path.exists(),
+            "finalSize": final_path.stat().st_size if final_path.exists() else 0,
+            "fitInfo": fit_info,
+        }, flush=True)
+        print("[AUDIO STUDIO STABLE REGISTER START V211C]", {
+            "projectId": project_id,
+            "blockId": block_id,
+            "jobId": job_id,
+            "finalPath": str(final_path),
+        }, flush=True)
 
         public = _register_board_output_asset(
             final_path,
@@ -12215,6 +12834,12 @@ def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerate
             original_name=f"{block_title}_stable_audio.mp3",
         )
 
+    print("[AUDIO STUDIO STABLE REGISTER DONE V211C]", {
+        "projectId": project_id,
+        "blockId": block_id,
+        "jobId": job_id,
+        "public": public,
+    }, flush=True)
     if not public:
         raise HTTPException(status_code=500, detail="stable_audio_asset_register_failed_v204g6")
 
@@ -12224,8 +12849,10 @@ def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerate
         "variantId": variant_id,
         "label": "STAU",
         "kind": "stable_audio",
-        "mode": mode_choice,
-        "modeLabel": "Instrumental" if mode_choice == "Instrument" else "Music",
+        "mode": _stable_audio_mode_label_v211z2(payload.mode) if _stable_audio_mode_label_v211z2(payload.mode) == "SFX" else mode_choice,
+        "workflowMode": mode_choice,
+        "workflow_mode": mode_choice,
+        "modeLabel": _stable_audio_mode_label_v211z2(payload.mode),
         "prompt": prompt,
         "volume": DEFAULT_STAU_VOLUME_PERCENT_V204G15,
         "fadeInSec": 0.2,
@@ -12257,6 +12884,15 @@ def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerate
         "requestDurationSec": request_duration_i,
         "assetApiPath": variant.get("assetApiPath"),
     }, flush=True)
+    print("[AUDIO STUDIO STABLE VARIANT RESPONSE READY V211Z4]", {
+        "projectId": project_id,
+        "blockId": block_id,
+        "variantId": variant.get("id") or variant.get("variantId"),
+        "mode": variant.get("mode"),
+        "modeLabel": variant.get("modeLabel"),
+        "workflowMode": variant.get("workflowMode"),
+        "assetApiPath": variant.get("assetApiPath"),
+    }, flush=True)
 
     return {
         "ok": True,
@@ -12282,10 +12918,18 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
     if project_id:
         ensure_project_access(project_id, user)
 
-    scenes = payload.scenes if isinstance(payload.scenes, list) else []
-    scenes = [scene for scene in scenes if isinstance(scene, dict)]
+    raw_scenes_v211t = payload.scenes if isinstance(payload.scenes, list) else []
+    bad_scene_count_v211t = sum(1 for scene in raw_scenes_v211t if not isinstance(scene, dict))
+    scenes = [scene for scene in raw_scenes_v211t if isinstance(scene, dict)]
+    if bad_scene_count_v211t:
+        print("[AUDIO STUDIO STABLE PREVIEW BAD SCENES DROPPED V211T]", {
+            "projectId": project_id,
+            "badSceneCount": bad_scene_count_v211t,
+            "usableSceneCount": len(scenes),
+            "source": payload.source,
+        }, flush=True)
     if not scenes:
-        raise HTTPException(status_code=400, detail="No scenes for Stable block preview")
+        raise HTTPException(status_code=400, detail="No usable scenes for Stable block preview")
 
     block_title = _safe_name(payload.title or "stable_block_preview", "stable_block_preview")
     with tempfile.TemporaryDirectory(prefix="ava_audio_stable_preview_v204g1_") as tmp_raw:

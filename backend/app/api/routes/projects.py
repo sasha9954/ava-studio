@@ -3749,6 +3749,17 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
+        if stage == 'audio_studio' and current and not is_destructive_clear and payload.guard_mode == 'safe_merge':
+            incoming_data, audio_studio_preserved_v211y2 = preserve_media_refs(current.get('data') or {}, incoming_data)
+            if audio_studio_preserved_v211y2:
+                preserved_media_refs += audio_studio_preserved_v211y2
+                print('[PROJECT AUDIO_STUDIO MEDIA REFS PRESERVED V211Y2]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'preservedAudioStudioMediaRefs': audio_studio_preserved_v211y2,
+                    **media_refs_summary(incoming_data),
+                })
+
         if current and cleanup is None and not is_destructive_clear:
             current_data_for_noop_v200b = current.get('data') if isinstance(current, dict) else {}
             if _ava_project_snapshot_noop_equal_v200b(current_data_for_noop_v200b, incoming_data):
