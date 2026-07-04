@@ -28,10 +28,13 @@ export default function ProjectsPage() {
 
   async function confirmDeleteProject() {
     if (!projectToDelete) return
+    // AVA_PROJECT_DELETE_MODAL_FAST_CLOSE_V212Q:
+    // Close the modal immediately so the UI does not feel frozen while backend schedules cleanup.
+    const deleteId = projectToDelete.id
     setDeleting(true)
+    setProjectToDelete(null)
     try {
-      await deleteProject(projectToDelete.id)
-      setProjectToDelete(null)
+      await deleteProject(deleteId)
     } finally {
       setDeleting(false)
     }

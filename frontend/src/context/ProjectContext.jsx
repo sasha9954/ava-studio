@@ -167,11 +167,28 @@ export function ProjectProvider({ children }) {
   }
 
   async function deleteProject(projectId) {
-    await apiRequest(`/projects/${projectId}`, { method: 'DELETE' })
-    if (activeProject?.id === projectId) {
+    // AVA_PROJECT_DELETE_OPTIMISTIC_V212Q:
+    // Hide the project immediately; backend now cleans heavy media in the background.
+    const cleanProjectId = String(projectId || '').trim()
+    if (!avaProjectContextIsRealProjectId(cleanProjectId)) return null
+    const previousProjects = projects
+
+    setProjects((current) => current.filter((project) => String(project?.id || '') !== cleanProjectId))
+    if (activeProject?.id === cleanProjectId) {
       exitProject()
     }
-    await refreshProjects()
+
+    try {
+      const response = await apiRequest(`/projects/${cleanProjectId}`, { method: 'DELETE' })
+      // Do not block the UI on a full list refresh; reconcile in the background.
+      refreshProjects().catch((error) => {
+        console.warn('[AVA PROJECT DELETE REFRESH FAILED V212Q]', error)
+      })
+      return response
+    } catch (error) {
+      setProjects(previousProjects)
+      throw error
+    }
   }
 
   async function loadStage(projectId, stage) {

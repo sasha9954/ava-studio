@@ -4,6 +4,7 @@
 // AVA_ASSEMBLY_FORCE_TRANSITION_PAYLOAD_V134E: send transition checkbox to backend even when UI says mode is blocked.
 // AVA_ASSEMBLY_COMPACT_TRANSITIONS_V134B: compact right-panel transition control, safe after stats initialization.
 // V209I_ASSEMBLY_SKIP_MISSING_GUARD: Montage builds ready scenes only by default; black placeholders require explicit backend flag.
+// AVA_ASSEMBLY_REQUEST_GUARD_ASSET_PRELOAD_V212P: one Assembly job/poll at a time; pause autosave during render; de-dupe/preload scene assets.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { ArrowLeft, Clapperboard, Download, ExternalLink, Music, RefreshCcw, SlidersHorizontal, UploadCloud, Volume2, Wand2 } from 'lucide-react'
@@ -1466,6 +1467,11 @@ export default function BoardAssemblyPage() {
   const assemblyF5HydrateGuardRefV200O = useRef(false)
   const assemblyF5HydrateGuardRefV200N = useRef(false)
   const assemblyVideoBlobUrlCacheRefV200C = useRef(new Map())
+  const assemblyVideoBlobUrlPromiseCacheRefV212P = useRef(new Map())
+  const assemblyPollTimerRefV212P = useRef(null)
+  const assemblyPollingJobIdRefV212P = useRef('')
+  const assemblyStartInFlightRefV212P = useRef(false)
+  const assemblyUiStartedAtRefV212O = useRef(0)
 
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1504,6 +1510,10 @@ export default function BoardAssemblyPage() {
   const [watermarkPanelOpen, setWatermarkPanelOpen] = useState(false)
   const [assemblyJob, setAssemblyJob] = useState(null)
   const [assemblyRunning, setAssemblyRunning] = useState(false)
+  const [assemblyUiPhaseV212O, setAssemblyUiPhaseV212O] = useState('')
+  const [assemblyElapsedSecV212O, setAssemblyElapsedSecV212O] = useState(0)
+  const [assemblyPollCountV212O, setAssemblyPollCountV212O] = useState(0)
+  const [downloadBusyV212O, setDownloadBusyV212O] = useState(false)
   const [finalVideoUrl, setFinalVideoUrl] = useState('')
   const [finalVideoMetaV200Q, setFinalVideoMetaV200Q] = useState(null)
   const [finalDirty, setFinalDirty] = useState(false)
@@ -1595,12 +1605,8 @@ export default function BoardAssemblyPage() {
 
     async function loadSelectedVideoBlob() {
       try {
-        const objectUrl = await fetchProtectedBlobUrl(selectedItemVideoAssetApiPath)
-        if (cancelled) {
-          URL.revokeObjectURL(objectUrl)
-          return
-        }
-        assemblyVideoBlobUrlCacheRefV200C.current.set(cacheKey, objectUrl)
+        const objectUrl = await fetchAssemblyVideoBlobUrlV212P(selectedItemVideoAssetApiPath)
+        if (cancelled) return
         setSelectedVideoBlobUrl(objectUrl)
       } catch (error) {
         const message = error?.message || 'asset_fetch_failed'
@@ -1623,8 +1629,29 @@ export default function BoardAssemblyPage() {
         try { URL.revokeObjectURL(objectUrl) } catch { /* ignore */ }
       })
       assemblyVideoBlobUrlCacheRefV200C.current.clear()
+      assemblyVideoBlobUrlPromiseCacheRefV212P.current.clear()
+      if (assemblyPollTimerRefV212P.current) {
+        window.clearTimeout(assemblyPollTimerRefV212P.current)
+        assemblyPollTimerRefV212P.current = null
+      }
+      assemblyPollingJobIdRefV212P.current = ''
+      assemblyStartInFlightRefV212P.current = false
     }
   }, [])
+
+
+  useEffect(() => {
+    if (!selectedItem || !Array.isArray(sceneItems) || !sceneItems.length) return undefined
+    const selectedId = String(selectedItem?.id || selectedItem?.sceneId || selectedItem?.scene_id || '')
+    const selectedIndex = sceneItems.findIndex((item) => String(item?.id || item?.sceneId || item?.scene_id || '') === selectedId)
+    if (selectedIndex < 0) return undefined
+    const preloadItems = [sceneItems[selectedIndex - 1], sceneItems[selectedIndex + 1]].filter(Boolean)
+    if (!preloadItems.length) return undefined
+    const timer = window.setTimeout(() => {
+      preloadItems.forEach((item) => preloadAssemblySceneVideoV212P(item))
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [selectedItem?.id, selectedItem?.sceneId, selectedItem?.scene_id, sceneItems, preferMmaudio])
 
   const selectedItemPlayableVideoUrl = selectedItemVideoAssetApiPath ? selectedVideoBlobUrl : (selectedItem?.videoUrl || '')
   const selectedItemVideoHydrating = Boolean(
@@ -1633,6 +1660,41 @@ export default function BoardAssemblyPage() {
     !selectedVideoBlobUrl &&
     !selectedVideoLoadError
   )
+
+
+  function fetchAssemblyVideoBlobUrlV212P(apiPath = '') {
+    const cacheKey = String(apiPath || '').trim()
+    if (!cacheKey) return Promise.resolve('')
+    const cachedUrl = assemblyVideoBlobUrlCacheRefV200C.current.get(cacheKey)
+    if (cachedUrl) return Promise.resolve(cachedUrl)
+    const cachedPromise = assemblyVideoBlobUrlPromiseCacheRefV212P.current.get(cacheKey)
+    if (cachedPromise) return cachedPromise
+
+    const promise = fetchProtectedBlobUrl(cacheKey)
+      .then((objectUrl) => {
+        assemblyVideoBlobUrlCacheRefV200C.current.set(cacheKey, objectUrl)
+        return objectUrl
+      })
+      .finally(() => {
+        assemblyVideoBlobUrlPromiseCacheRefV212P.current.delete(cacheKey)
+      })
+    assemblyVideoBlobUrlPromiseCacheRefV212P.current.set(cacheKey, promise)
+    return promise
+  }
+
+  function preloadAssemblySceneVideoV212P(scene) {
+    const apiPath = sceneVideoAssetApiPath(scene, preferMmaudio)
+    if (!apiPath) return
+    if (assemblyVideoBlobUrlCacheRefV200C.current.has(apiPath)) return
+    if (assemblyVideoBlobUrlPromiseCacheRefV212P.current.has(apiPath)) return
+    fetchAssemblyVideoBlobUrlV212P(apiPath).catch((error) => {
+      console.warn('[AVA ASSEMBLY PRELOAD SCENE VIDEO V212P FAILED]', {
+        sceneId: scene?.id || scene?.sceneId || scene?.scene_id,
+        apiPath,
+        error: error?.message || error,
+      })
+    })
+  }
   useEffect(() => {
     setSelectedPreviewVideoLoading(Boolean(selectedItemPlayableVideoUrl))
   }, [selectedItemPlayableVideoUrl])
@@ -1640,6 +1702,20 @@ export default function BoardAssemblyPage() {
   useEffect(() => {
     setFinalPreviewVideoLoading(Boolean(finalVideoUrl && !finalDirty))
   }, [finalVideoUrl, finalDirty])
+
+  // AVA_ASSEMBLY_LOADING_UI_V212O: show clear visual progress while FFmpeg / asset loading runs.
+  useEffect(() => {
+    if (!assemblyRunning) {
+      assemblyUiStartedAtRefV212O.current = 0
+      return undefined
+    }
+    if (!assemblyUiStartedAtRefV212O.current) assemblyUiStartedAtRefV212O.current = Date.now()
+    setAssemblyElapsedSecV212O(Math.max(0, Math.round((Date.now() - assemblyUiStartedAtRefV212O.current) / 1000)))
+    const timer = window.setInterval(() => {
+      setAssemblyElapsedSecV212O(Math.max(0, Math.round((Date.now() - assemblyUiStartedAtRefV212O.current) / 1000)))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [assemblyRunning])
 
   useEffect(() => {
     setFinalVideoMetaV200Q(null)
@@ -1667,6 +1743,33 @@ export default function BoardAssemblyPage() {
     opacity: Math.max(0.05, Math.min(1, watermarkOpacity / 100)),
     fontSize: `${Math.max(10, Math.round(watermarkSize * 0.42))}px`,
   }
+
+  const assemblyUiJobIdV212O = assemblyJob?.jobId || assemblyJob?.job_id || ''
+  const assemblyUiPhaseIndexV212O = assemblyRunning
+    ? (assemblyUiPhaseV212O === 'preparing' || assemblyUiPhaseV212O === 'payload' ? 0
+      : assemblyUiPhaseV212O === 'start' || assemblyUiPhaseV212O === 'queued' ? 1
+      : assemblyUiPhaseV212O === 'concat' ? 2
+      : assemblyUiPhaseV212O === 'audio' ? 3
+      : assemblyUiPhaseV212O === 'finalize' ? 4
+      : 1)
+    : (finalVideoUrl && !finalDirty ? 5 : -1)
+  const assemblyUiStepsV212O = [
+    { key: 'payload', title: 'Сцены' },
+    { key: 'job', title: 'Job' },
+    { key: 'video', title: 'Видео' },
+    { key: 'audio', title: 'Аудио' },
+    { key: 'finish', title: 'MP4' },
+  ]
+  const assemblyUiStageLabelV212O = assemblyRunning
+    ? (assemblyUiPhaseV212O === 'preparing' ? 'Проверяем сцены и готовим payload'
+      : assemblyUiPhaseV212O === 'payload' ? 'Собираем список сцен для FFmpeg'
+      : assemblyUiPhaseV212O === 'start' ? 'Отправляем задачу на backend'
+      : assemblyUiPhaseV212O === 'queued' ? `Job принят${assemblyUiJobIdV212O ? ` · ${assemblyUiJobIdV212O}` : ''}`
+      : assemblyUiPhaseV212O === 'concat' ? `Собираем видео по точным кадрам · проверка #${assemblyPollCountV212O || 1}`
+      : assemblyUiPhaseV212O === 'audio' ? `Миксуем master + MMAudio + STAU · проверка #${assemblyPollCountV212O || 1}`
+      : assemblyUiPhaseV212O === 'finalize' ? `Финализируем MP4 · проверка #${assemblyPollCountV212O || 1}`
+      : `Сборка идёт · проверка #${assemblyPollCountV212O || 1}`)
+    : (finalVideoUrl && !finalDirty ? 'Финальный MP4 готов' : 'Ожидает запуска')
 
   const stats = useMemo(() => {
     const total = sceneItems.length
@@ -2403,6 +2506,14 @@ function clearBoardAssemblyWorkflowEntryV200O() {
 
   useEffect(() => {
     if (!settingsHydrated || loading || !board) return undefined
+    if (assemblyRunning || assemblyStartInFlightRefV212P.current) {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+      console.log('[AVA ASSEMBLY AUTOSAVE PAUSED V212P]', { assemblyRunning, assemblyStartInFlight: assemblyStartInFlightRefV212P.current })
+      return undefined
+    }
     if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
     autosaveTimerRef.current = window.setTimeout(() => {
       saveAssemblySnapshotNow({ source: 'board_assembly_autosave_v8', guardMode: 'replace' }).catch((error) => {
@@ -2437,6 +2548,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     finalVideoUrl,
     finalDirty,
     assemblyJob,
+    assemblyRunning,
   ])
 
   useEffect(() => {
@@ -2697,6 +2809,13 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     }
   }
 
+  function clearAssemblyPollTimerV212P() {
+    if (assemblyPollTimerRefV212P.current) {
+      window.clearTimeout(assemblyPollTimerRefV212P.current)
+      assemblyPollTimerRefV212P.current = null
+    }
+  }
+
   function pollAssemblyJob(statusEndpoint, jobId) {
     const endpoint = statusEndpoint?.startsWith('/api/')
       ? statusEndpoint.slice(4)
@@ -2704,68 +2823,113 @@ function clearBoardAssemblyWorkflowEntryV200O() {
 
     if (!endpoint) return
 
+    const pollKey = String(jobId || statusEndpoint || endpoint || '').trim()
+    if (pollKey && assemblyPollingJobIdRefV212P.current === pollKey && assemblyPollTimerRefV212P.current) {
+      console.log('[AVA ASSEMBLY POLL DUPLICATE SKIP V212P]', { jobId: pollKey, endpoint })
+      return
+    }
+
+    clearAssemblyPollTimerV212P()
+    assemblyPollingJobIdRefV212P.current = pollKey
+
     let attempt = 0
+    const scheduleNext = (delayMs) => {
+      clearAssemblyPollTimerV212P()
+      assemblyPollTimerRefV212P.current = window.setTimeout(tick, delayMs)
+    }
+    const finishPolling = () => {
+      clearAssemblyPollTimerV212P()
+      assemblyPollingJobIdRefV212P.current = ''
+    }
     const tick = async () => {
       attempt += 1
       try {
         const data = await apiRequest(endpoint)
+        try { if (typeof setAssemblyPollCountV212O === 'function') setAssemblyPollCountV212O(attempt) } catch {}
+        try { if (typeof setAssemblyUiPhaseV212O === 'function') setAssemblyUiPhaseV212O(attempt <= 1 ? 'queued' : attempt <= 3 ? 'concat' : attempt <= 7 ? 'audio' : 'finalize') } catch {}
         const nextStatus = data?.status || 'running'
         const videoUrl = boardAssemblyVideoUrl(data)
 
         setAssemblyJob(data || null)
 
         if (videoUrl) {
+          finishPolling()
+          try { if (typeof setAssemblyUiPhaseV212O === 'function') setAssemblyUiPhaseV212O('done') } catch {}
           setFinalVideoUrl(videoUrl)
           setFinalDirty(false)
           setAssemblyRunning(false)
           setAssemblyJob(null)
+          assemblyStartInFlightRefV212P.current = false
           await persistBoardAssemblyResult(data, videoUrl)
           setStatus(`Финальный MP4 готов: ${data?.videoName || data?.video_name || jobId || ''}`)
           return
         }
 
         if (['done', 'ready', 'complete', 'completed', 'success', 'succeeded', 'finished'].includes(String(nextStatus).toLowerCase())) {
+          finishPolling()
+          try { if (typeof setAssemblyUiPhaseV212O === 'function') setAssemblyUiPhaseV212O('done') } catch {}
           setAssemblyRunning(false)
           setAssemblyJob(null)
+          assemblyStartInFlightRefV212P.current = false
           setStatus(`Assembly job завершён без нового video url: ${nextStatus}. Нажми “Собрать preview”, чтобы запустить свежую сборку.`)
           return
         }
 
         if (['error', 'failed'].includes(String(nextStatus).toLowerCase())) {
+          finishPolling()
+          try { if (typeof setAssemblyUiPhaseV212O === 'function') setAssemblyUiPhaseV212O('error') } catch {}
           setAssemblyRunning(false)
           setAssemblyJob(null)
+          assemblyStartInFlightRefV212P.current = false
           setStatus(`Ошибка сборки: ${data?.error || data?.detail || nextStatus}`)
           return
         }
 
         if (attempt < 240) {
-          window.setTimeout(tick, 2500)
+          scheduleNext(2500)
         } else {
+          finishPolling()
+          try { if (typeof setAssemblyUiPhaseV212O === 'function') setAssemblyUiPhaseV212O('error') } catch {}
           setAssemblyRunning(false)
           setAssemblyJob(null)
+          assemblyStartInFlightRefV212P.current = false
           setStatus('Сборка слишком долго не отвечает: poll_timeout')
         }
       } catch (error) {
         if (attempt < 240) {
-          window.setTimeout(tick, 4000)
+          scheduleNext(4000)
         } else {
+          finishPolling()
+          try { if (typeof setAssemblyUiPhaseV212O === 'function') setAssemblyUiPhaseV212O('error') } catch {}
           setAssemblyRunning(false)
           setAssemblyJob(null)
+          assemblyStartInFlightRefV212P.current = false
           setStatus(`Ошибка проверки сборки: ${error?.message || 'assembly_poll_failed'}`)
         }
       }
     }
 
-    window.setTimeout(tick, 900)
+    scheduleNext(900)
   }
 
+
   async function startAssembly() {
+    if (assemblyRunning || assemblyStartInFlightRefV212P.current) {
+      setStatus('Сборка уже идёт — ждём текущий job, повторный запрос не отправляем.')
+      console.log('[AVA ASSEMBLY START DUPLICATE SKIP V212P]', { assemblyRunning, assemblyStartInFlight: assemblyStartInFlightRefV212P.current })
+      return
+    }
     if (!stats.canAssemble) {
       setStatus('Нет готовых видео для сборки')
       return
     }
 
+    assemblyStartInFlightRefV212P.current = true
     setAssemblyRunning(true)
+    assemblyUiStartedAtRefV212O.current = Date.now()
+    setAssemblyElapsedSecV212O(0)
+    setAssemblyPollCountV212O(0)
+    setAssemblyUiPhaseV212O('preparing')
     setFinalVideoUrl('')
     setFinalDirty(false)
     setStatus(`Отправляем сборку в FFmpeg… watermark preview: ${watermarkEnabled && String(watermarkText || '').trim() ? 'ON' : 'OFF'} / export OFF`)
@@ -2774,12 +2938,15 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       const payload = buildAssemblyPayload()
       if (!Array.isArray(payload.items) || payload.items.length === 0) {
         setAssemblyRunning(false)
+        assemblyStartInFlightRefV212P.current = false
+        setAssemblyUiPhaseV212O('')
         setStatus('Нет готовых видео для сборки: Montage больше не собирает пустые placeholder-сцены.')
         return
       }
       if (payload.auto_skip_missing_v209i) {
         setStatus(`Готово видео ${stats.ready}/${stats.total}. Собираю компактный preview только из готовых сцен, пустые ${stats.missing} пропущены.`)
       }
+      setAssemblyUiPhaseV212O('payload')
       console.log('[BOARD ASSEMBLY FINAL PAYLOAD SUMMARY]', {
         totalItems: payload.items.length,
         videoItems: payload.items.filter((item) => item.video_url || item.video_api_path).length,
@@ -2797,6 +2964,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
         })),
       })
       console.log('[AVA ASSEMBLY PAYLOAD watermark]', payload.watermark)
+      setAssemblyUiPhaseV212O('start')
       setStatus(`Отправляем сборку в FFmpeg… watermark: ${payload.watermark?.enabled ? 'ON' : 'OFF'}`)
       const data = await apiRequest('/board-assembly/start', {
         method: 'POST',
@@ -2804,6 +2972,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       })
 
       const startedJob = { ...data, startedAt: new Date().toISOString() }
+      setAssemblyUiPhaseV212O('queued')
       setAssemblyJob(startedJob)
       await saveAssemblySnapshotNow({
         source: 'board_assembly_job_started_v8',
@@ -2814,6 +2983,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       pollAssemblyJob(data?.statusEndpoint || (data?.jobId ? `/api/board-assembly/status/${data.jobId}` : ''), data?.jobId || data?.job_id)
     } catch (error) {
       setAssemblyRunning(false)
+      setAssemblyUiPhaseV212O('error')
       setStatus(error?.message || 'Не удалось отправить сборку')
     }
   }
@@ -2838,7 +3008,13 @@ function clearBoardAssemblyWorkflowEntryV200O() {
     const normalizedUrl = normalizePlayableVideoUrl(url)
     if (!normalizedUrl) return
 
+    if (downloadBusyV212O) {
+      setStatus('Скачивание уже готовится. Повторный клик не отправляем.')
+      return
+    }
+
     const safeFilename = String(filename || 'ava-video.mp4').trim() || 'ava-video.mp4'
+    setDownloadBusyV212O(true)
     try {
       setStatus(`Готовим скачивание: ${safeFilename}`)
       const needsAuth = /\/api\/assets\//i.test(normalizedUrl) || /\/assets\//i.test(normalizedUrl)
@@ -2861,6 +3037,8 @@ function clearBoardAssemblyWorkflowEntryV200O() {
       console.warn('[BOARD ASSEMBLY DOWNLOAD FALLBACK V13]', error)
       setStatus('Не удалось скачать напрямую, открываем видео в новой вкладке')
       window.open(normalizedUrl, '_blank', 'noopener,noreferrer')
+    } finally {
+      setDownloadBusyV212O(false)
     }
   }
 
@@ -2936,11 +3114,12 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           )}
           <button
               type="button"
+              className={`avaAssemblyQuickBuildButtonV212O ${assemblyRunning ? 'isRunning' : ''}`}
               onClick={startAssembly}
               disabled={assemblyRunning || !stats.canAssemble}
               title={assemblyRunning ? 'Сборка уже идёт' : stats.canAssemble ? 'Собрать новый preview из текущих сцен' : 'Нет готовых сцен для сборки'}
             >
-              <Wand2 size={15} /> {assemblyRunning ? 'Собираем…' : 'Собрать preview'}
+              {assemblyRunning ? <RefreshCcw className="avaInlineSpinV212O" size={15} /> : <Wand2 size={15} />} {assemblyRunning ? 'Собираем…' : 'Собрать preview'}
             </button>
         </div>
       </section>
@@ -3010,6 +3189,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
               <div className="avaAssemblyVideoPreviewShellV195C">
                 <div className={`avaAssemblyVideoViewportV195C ${assemblyOutputSpec.previewClass}`} title={`Preview crop/output frame: ${assemblyOutputSpec.label}`}>
                 <video
+                  key={selectedItemPlayableVideoUrl || selectedItem?.id || 'scene-preview'}
                   src={selectedItemPlayableVideoUrl}
                   controls
                   preload="metadata"
@@ -3020,9 +3200,11 @@ function clearBoardAssemblyWorkflowEntryV200O() {
                   onError={() => setSelectedPreviewVideoLoading(false)}
                 />
                 {selectedPreviewVideoLoading ? (
-                  <div className="avaAssemblyMediaOverlay" role="status" aria-live="polite">
-                    <RefreshCcw className="avaMediaSpinIcon" size={32} />
-                    <strong>Загружаем видео…</strong>
+                  <div className="avaAssemblyMediaOverlay avaAssemblyMediaOverlayV212O" role="status" aria-live="polite">
+                    <div className="avaAssemblyLoaderCameraV212O"><RefreshCcw className="avaMediaSpinIcon" size={30} /></div>
+                    <strong>Подгружаем сцену</strong>
+                    <span>Проверяем asset и готовим preview-плеер</span>
+                    <i className="avaAssemblyLoaderRailV212O" aria-hidden="true" />
                   </div>
                 ) : null}
                 {watermarkEnabled && String(watermarkText || '').trim() && (
@@ -3033,14 +3215,15 @@ function clearBoardAssemblyWorkflowEntryV200O() {
                 </div>
                 <div className="avaBoardVideoActions">
                   <button type="button" onClick={(event) => openVideoExplicitly(event, selectedItemPlayableVideoUrl)}>Смотреть видео</button>
-                  <button type="button" onClick={(event) => downloadVideoExplicitly(event, selectedItemPlayableVideoUrl, `${selectedItem.id || 'scene'}.mp4`)}>Скачать видео</button>
+                  <button type="button" disabled={downloadBusyV212O} onClick={(event) => downloadVideoExplicitly(event, selectedItemPlayableVideoUrl, `${selectedItem.id || 'scene'}.mp4`)}>{downloadBusyV212O ? 'Готовим…' : 'Скачать видео'}</button>
                 </div>
               </div>
             ) : selectedItemVideoHydrating ? (
-              <div className="avaAssemblyEmptyPreview">
-                <RefreshCcw size={42} />
+              <div className="avaAssemblyEmptyPreview avaAssemblyEmptyPreviewLoadingV212O" role="status" aria-live="polite">
+                <div className="avaAssemblyLoaderCameraV212O"><RefreshCcw className="avaMediaSpinIcon" size={34} /></div>
                 <strong>Загружаем видео сцены…</strong>
                 <span>Проверяем Board snapshot и подгружаем asset-файл. Это может занять несколько секунд.</span>
+                <i className="avaAssemblyLoaderRailV212O" aria-hidden="true" />
               </div>
             ) : (
               <div className="avaAssemblyEmptyPreview">
@@ -3052,7 +3235,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
             )}
           </div>
 
-          <div className="avaAssemblyBuildDock">
+          <div className={`avaAssemblyBuildDock avaAssemblyBuildDockV212O ${assemblyRunning ? 'isRunning' : finalVideoUrl && !finalDirty ? 'isDone' : ''}`}>
             <div className="avaAssemblyBuildText">
               <p className="avaEyebrow"><Download size={14} /> export</p>
               <strong>{finalDirty ? 'Нужно пересобрать MP4' : finalVideoUrl ? 'Финальный MP4 готов' : 'Собрать финальный ролик'}</strong>
@@ -3064,8 +3247,23 @@ function clearBoardAssemblyWorkflowEntryV200O() {
                     : 'Сначала подготовь хотя бы одну сцену с видео.'}
               </span>
             </div>
-            <button type="button" className="avaBoardPrimary avaAssemblyBuildButton" onClick={startAssembly} disabled={assemblyRunning || !stats.canAssemble}>
-              <Download size={16} /> {assemblyRunning ? 'Собирается…' : finalDirty ? 'Пересобрать MP4' : 'Собрать MP4'}
+            {(assemblyRunning || finalVideoUrl || status) && (
+              <div className="avaAssemblyBuildProgressV212O" role="status" aria-live="polite">
+                <div className="avaAssemblyBuildProgressHeadV212O">
+                  <span className={`avaAssemblyPulseDotV212O ${assemblyRunning ? 'isRunning' : finalVideoUrl && !finalDirty ? 'isDone' : ''}`} />
+                  <strong>{assemblyUiStageLabelV212O}</strong>
+                  <em>{assemblyRunning ? `${assemblyElapsedSecV212O}s` : finalVideoUrl && !finalDirty ? 'готово' : 'idle'}</em>
+                </div>
+                <div className="avaAssemblyStageRailV212O">
+                  {assemblyUiStepsV212O.map((step, index) => (
+                    <span key={step.key} className={index <= assemblyUiPhaseIndexV212O ? 'isActive' : ''}>{step.title}</span>
+                  ))}
+                </div>
+                <div className={`avaAssemblyProgressBarV212O ${assemblyRunning ? 'isRunning' : finalVideoUrl && !finalDirty ? 'isDone' : ''}`}><span /></div>
+              </div>
+            )}
+            <button type="button" className={`avaBoardPrimary avaAssemblyBuildButton avaAssemblyBuildButtonV212O ${assemblyRunning ? 'isRunning' : ''}`} onClick={startAssembly} disabled={assemblyRunning || !stats.canAssemble}>
+              {assemblyRunning ? <RefreshCcw className="avaInlineSpinV212O" size={16} /> : <Download size={16} />} <span>{assemblyRunning ? 'Собираем MP4...' : finalDirty ? 'Пересобрать MP4' : 'Собрать MP4'}</span>
             </button>
           </div>
 
@@ -3100,9 +3298,11 @@ function clearBoardAssemblyWorkflowEntryV200O() {
                   onError={() => setFinalPreviewVideoLoading(false)}
                 />
                 {finalPreviewVideoLoading ? (
-                  <div className="avaAssemblyMediaOverlay" role="status" aria-live="polite">
-                    <RefreshCcw className="avaMediaSpinIcon" size={32} />
+                  <div className="avaAssemblyMediaOverlay avaAssemblyMediaOverlayV212O" role="status" aria-live="polite">
+                    <div className="avaAssemblyLoaderCameraV212O"><RefreshCcw className="avaMediaSpinIcon" size={30} /></div>
                     <strong>Загружаем финальный MP4…</strong>
+                    <span>Подготавливаем файл к просмотру и скачиванию</span>
+                    <i className="avaAssemblyLoaderRailV212O" aria-hidden="true" />
                   </div>
                 ) : null}
                 {watermarkEnabled && String(watermarkText || '').trim() && (
@@ -3113,7 +3313,7 @@ function clearBoardAssemblyWorkflowEntryV200O() {
                 </div>
                 <div className="avaBoardVideoActions">
                   <button type="button" onClick={(event) => openVideoExplicitly(event, finalVideoUrl)}>Смотреть видео</button>
-                  <button type="button" onClick={(event) => downloadVideoExplicitly(event, finalVideoUrl, 'ava-board-assembly.mp4')}>Скачать MP4</button>
+                  <button type="button" disabled={downloadBusyV212O} onClick={(event) => downloadVideoExplicitly(event, finalVideoUrl, 'ava-board-assembly.mp4')}>{downloadBusyV212O ? 'Готовим скачивание…' : 'Скачать MP4'}</button>
                 </div>
               </div>
               {false ? <p /> : null}

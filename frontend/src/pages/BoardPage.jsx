@@ -2435,6 +2435,133 @@ function boardSceneTruthFieldsV208C(rawScene = {}, savedScene = {}) {
   return out
 }
 
+
+// AVA_BOARD_TIMING_SOURCE_PRIORITY_V212S5:
+// Manual Timing snapshots may contain duplicated scene containers from older UI state.
+// After merge/split, root scenes can be correct while manualTiming/manual_timing still
+// keeps stale first-slice end_sec (2-3 sec). Board import must choose the scene
+// container that matches the current Timing intent/audio, not the first nested object.
+function boardSceneTimeScoreV212S5(scene = {}) {
+  const start = toNumber(scene?.start_sec ?? scene?.start ?? scene?.target_t0 ?? 0, 0)
+  const rawEnd = Number(scene?.end_sec ?? scene?.end ?? scene?.target_t1)
+  const rawDuration = Number(scene?.duration_sec ?? scene?.durationSec ?? scene?.duration)
+  const duration = Number.isFinite(rawDuration) ? Math.max(0, rawDuration) : 0
+  const end = Number.isFinite(rawEnd)
+    ? Math.max(start, rawEnd)
+    : (duration > 0 ? start + duration : start)
+  return {
+    start,
+    end: duration > 0 && Math.abs((end - start) - duration) > 0.05 ? start + duration : end,
+    duration: duration || Math.max(0, end - start),
+  }
+}
+
+function boardTimingAudioDurationV212S5(timingData = {}) {
+  const candidates = []
+  const addNode = (node) => {
+    if (!node || typeof node !== 'object') return
+    candidates.push(
+      node.audioDurationSec,
+      node.audio_duration_sec,
+      node.durationSec,
+      node.duration_sec,
+      node.totalDurationSec,
+      node.total_duration_sec,
+      node.audio_duration,
+      node.audioDuration
+    )
+    if (node.audio && typeof node.audio === 'object') {
+      candidates.push(node.audio.durationSec, node.audio.duration_sec, node.audio.duration, node.audio.audioDurationSec, node.audio.audio_duration_sec)
+    }
+    if (node.assets?.audio && typeof node.assets.audio === 'object') {
+      candidates.push(node.assets.audio.durationSec, node.assets.audio.duration_sec, node.assets.audio.duration)
+    }
+  }
+  addNode(timingData)
+  addNode(timingData?.timing)
+  addNode(timingData?.production)
+  addNode(timingData?.manualTiming)
+  addNode(timingData?.manual_timing)
+  return candidates.reduce((best, value) => {
+    const n = Number(value)
+    return Number.isFinite(n) && n > best ? n : best
+  }, 0)
+}
+
+function boardExpectedSceneCountV212S5(timingData = {}) {
+  const candidates = [
+    timingData?.scenesCount,
+    timingData?.scenes_count,
+    timingData?.sceneCount,
+    timingData?.scene_count,
+    timingData?.timing?.scenesCount,
+    timingData?.timing?.scenes_count,
+    timingData?.manualTiming?.scenesCount,
+    timingData?.manual_timing?.scenes_count,
+  ]
+  for (const value of candidates) {
+    const n = Number(value)
+    if (Number.isFinite(n) && n > 0) return Math.round(n)
+  }
+  return 0
+}
+
+function boardSelectTimingSourceForBoardImportV212S5(timingData = {}) {
+  if (!timingData || typeof timingData !== 'object') return timingData || {}
+  const candidates = [
+    { label: 'root', node: timingData },
+    { label: 'timing', node: timingData.timing },
+    { label: 'production', node: timingData.production },
+    { label: 'manualTiming', node: timingData.manualTiming },
+    { label: 'manual_timing', node: timingData.manual_timing },
+  ].filter((item) => item.node && typeof item.node === 'object' && Array.isArray(item.node.scenes) && item.node.scenes.length)
+
+  if (!candidates.length) return timingData?.manualTiming || timingData?.manual_timing || timingData || {}
+
+  const expectedCount = boardExpectedSceneCountV212S5(timingData)
+  const audioDuration = boardTimingAudioDurationV212S5(timingData)
+  let best = candidates[0]
+  let bestScore = -Infinity
+
+  for (const candidate of candidates) {
+    const scenes = candidate.node.scenes || []
+    const times = scenes.map(boardSceneTimeScoreV212S5)
+    const lastEnd = times.reduce((max, item) => Math.max(max, item.end), 0)
+    const totalDuration = times.reduce((sum, item) => sum + Math.max(0, item.duration), 0)
+    const coverage = Math.max(lastEnd, totalDuration)
+    const audioDiff = audioDuration > 0 ? Math.abs(coverage - audioDuration) : 0
+
+    let score = 0
+    if (expectedCount > 0 && scenes.length === expectedCount) score += 1000000
+    if (audioDuration > 0) score += Math.max(0, 500000 - (audioDiff * 10000))
+    score += Math.min(scenes.length, 500) * 100
+    score += Math.min(coverage, 10000)
+    if (candidate.label === 'root') score += 50
+
+    if (score > bestScore) {
+      best = candidate
+      bestScore = score
+    }
+  }
+
+  if (best.label !== 'root') {
+    console.log('[BOARD TIMING SOURCE SELECTED V212S5]', {
+      selected: best.label,
+      expectedCount,
+      audioDuration,
+      sceneCount: best.node.scenes.length,
+    })
+  }
+
+  return {
+    ...timingData,
+    ...best.node,
+    scenes: best.node.scenes,
+    storyBlocks: best.node.storyBlocks || best.node.story_blocks || timingData.storyBlocks || timingData.story_blocks || [],
+    story_blocks: best.node.story_blocks || best.node.storyBlocks || timingData.story_blocks || timingData.storyBlocks || [],
+  }
+}
+
 function normalizeBoardScene(rawScene, index, phrases, savedScene = {}) {
 
 // AVA_PROJECT_FORMAT_CONTEXT_BRIDGE_V177B:
@@ -2520,8 +2647,12 @@ function boardInjectProjectFormatIntoTimingV177C(timingData = {}, projectFormat 
 }
 
 
-  const start = toNumber(rawScene?.start_sec ?? rawScene?.start, 0)
-  const end = toNumber(rawScene?.end_sec ?? rawScene?.end, start)
+  const start = toNumber(rawScene?.start_sec ?? rawScene?.start ?? rawScene?.target_t0, 0)
+  let end = toNumber(rawScene?.end_sec ?? rawScene?.end ?? rawScene?.target_t1, start)
+  const durationFromTimingV212S5 = toNumber(rawScene?.duration_sec ?? rawScene?.durationSec ?? rawScene?.duration, 0)
+  if (durationFromTimingV212S5 > 0 && Math.abs(Math.max(0, end - start) - durationFromTimingV212S5) > 0.05) {
+    end = Number((start + durationFromTimingV212S5).toFixed(3))
+  }
   const id = asText(rawScene?.scene_id || rawScene?.id || savedScene?.scene_id || savedScene?.id || `seg_${String(index + 1).padStart(2, '0')}`)
 
   const phraseIds = getScenePhraseIds(rawScene, phrases)
@@ -2707,7 +2838,7 @@ function boardInjectProjectFormatIntoTimingV177C(timingData = {}, projectFormat 
 }
 
 function buildBoardFromTiming(timingData = {}, boardData = {}) {
-  const timing = timingData?.manualTiming || timingData?.manual_timing || timingData || {}
+  const timing = boardSelectTimingSourceForBoardImportV212S5(timingData)
   const existing = boardData?.board || boardData || {}
   const phrases = buildPhraseList(timing)
   const projectFormatV177A = boardProjectFormatV177A(timingData, timing, existing)
@@ -4232,6 +4363,286 @@ function buildCleanBoardFromTimingV14B(timingData = {}) {
   }
 }
 
+
+// AVA_TIMING_TO_BOARD_DURATION_AUTHORITY_V212S:
+// Manual Timing is the source of truth for scene count/start/end/duration. If the user
+// merges or splits scenes in Timing and returns to Board, old Board snapshots/video jobs
+// must not keep the previous 3-second timing alive.
+function boardManualTimingRootV212S(timingData = {}) {
+  if (timingData?.manualTiming && typeof timingData.manualTiming === 'object') return timingData.manualTiming
+  if (timingData?.manual_timing && typeof timingData.manual_timing === 'object') return timingData.manual_timing
+  if (timingData?.timing && typeof timingData.timing === 'object') return timingData.timing
+  return timingData || {}
+}
+
+function boardManualTimingScenesV212S(timingData = {}) {
+  const root = boardManualTimingRootV212S(timingData)
+  return asSceneArray(
+    root.scenes ||
+    root.production?.scenes ||
+    timingData?.scenes ||
+    timingData?.production?.scenes ||
+    timingData?.timing?.scenes ||
+    []
+  )
+}
+
+function boardTimingComparableSceneV212S(scene = {}, index = 0) {
+  const id = asText(scene.scene_id || scene.id || `seg_${String(index + 1).padStart(2, '0')}`)
+  const start = toNumber(scene.start_sec ?? scene.start ?? scene.target_t0 ?? scene.t0, 0)
+  const rawEnd = toNumber(scene.end_sec ?? scene.end ?? scene.target_t1 ?? scene.t1, NaN)
+  const rawDuration = toNumber(scene.duration_sec ?? scene.durationSec ?? scene.duration, NaN)
+  const duration = Number((Number.isFinite(rawDuration) ? rawDuration : Math.max(0, rawEnd - start)).toFixed(3))
+  const end = Number((Number.isFinite(rawEnd) ? rawEnd : start + duration).toFixed(3))
+  return { id, start: Number(start.toFixed ? start.toFixed(3) : Number(start).toFixed(3)), end, duration }
+}
+
+function boardHasManualTimingDriftV212S(timingData = {}, boardData = {}) {
+  const timingScenes = boardManualTimingScenesV212S(timingData)
+  const boardScenes = asSceneArray((boardData?.board && Array.isArray(boardData.board.scenes)) ? boardData.board.scenes : boardData?.scenes)
+  if (!timingScenes.length) return false
+  if (!boardScenes.length) return true
+  if (timingScenes.length !== boardScenes.length) return true
+
+  const boardById = new Map(boardScenes.map((scene, index) => [boardTimingComparableSceneV212S(scene, index).id, boardTimingComparableSceneV212S(scene, index)]))
+  const EPS = 0.035
+  for (let index = 0; index < timingScenes.length; index += 1) {
+    const timingScene = boardTimingComparableSceneV212S(timingScenes[index], index)
+    const boardScene = boardById.get(timingScene.id) || boardTimingComparableSceneV212S(boardScenes[index], index)
+    if (!boardScene?.id) return true
+    if (Math.abs(timingScene.start - boardScene.start) > EPS) return true
+    if (Math.abs(timingScene.end - boardScene.end) > EPS) return true
+    if (Math.abs(timingScene.duration - boardScene.duration) > EPS) return true
+  }
+  return false
+}
+
+function boardBuildFromManualTimingAuthorityV212S(timingData = {}, projectFormat = '') {
+  return buildCleanBoardFromTimingV14B(boardInjectProjectFormatIntoTimingV177C(timingData, projectFormat))
+}
+
+
+
+
+// AVA_BOARD_FRONTEND_TIMING_AUTHORITY_V212S4C
+// Board frontend must accept Manual Timing as source of truth after merge/split.
+// This version does not depend on a fragile existing Timing-load block.
+function avaRoundSecV212S4C(value = 0) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 0
+  return Number(n.toFixed(3))
+}
+
+function avaCloneJsonV212S4C(value) {
+  try {
+    return JSON.parse(JSON.stringify(value || {}))
+  } catch (error) {
+    return value && typeof value === 'object' ? { ...value } : {}
+  }
+}
+
+function avaTimingAudioDurationV212S4C(data = {}) {
+  const candidates = []
+  const addNode = (node) => {
+    if (!node || typeof node !== 'object') return
+    candidates.push(
+      node.audioDurationSec,
+      node.audio_duration_sec,
+      node.durationSec,
+      node.duration_sec,
+      node.totalDurationSec,
+      node.total_duration_sec,
+      node.audio_duration,
+      node.audioDuration
+    )
+    const audio = node.audio && typeof node.audio === 'object' ? node.audio : null
+    if (audio) {
+      candidates.push(audio.durationSec, audio.duration_sec, audio.duration, audio.audioDurationSec, audio.audio_duration_sec)
+    }
+    const assetsAudio = node.assets && node.assets.audio && typeof node.assets.audio === 'object' ? node.assets.audio : null
+    if (assetsAudio) {
+      candidates.push(assetsAudio.durationSec, assetsAudio.duration_sec, assetsAudio.duration)
+    }
+  }
+  addNode(data)
+  addNode(data?.manualTiming)
+  addNode(data?.manual_timing)
+  addNode(data?.timing)
+  let best = 0
+  candidates.forEach((value) => {
+    const n = Number(value)
+    if (Number.isFinite(n) && n > best) best = n
+  })
+  return avaRoundSecV212S4C(best)
+}
+
+function avaTimingSceneContainersV212S4C(data = {}) {
+  const containers = []
+  const push = (label, node) => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node.scenes)) containers.push({ label, node, scenes: node.scenes })
+  }
+  push('root', data)
+  push('manualTiming', data?.manualTiming)
+  push('manual_timing', data?.manual_timing)
+  push('timing', data?.timing)
+  push('production', data?.production)
+  return containers
+}
+
+function avaTimingSceneTimeV212S4C(scene = {}, index = 0, sceneCount = 0, audioDurationSec = 0) {
+  const start = avaRoundSecV212S4C(scene.start_sec ?? scene.start ?? scene.target_t0 ?? scene.t0 ?? 0)
+  let duration = Number(scene.duration_sec ?? scene.durationSec ?? scene.duration)
+  duration = Number.isFinite(duration) ? Math.max(0, duration) : 0
+  let end = Number(scene.end_sec ?? scene.end ?? scene.target_t1 ?? scene.t1)
+  end = Number.isFinite(end) ? end : (duration ? start + duration : start)
+
+  let span = Math.max(0, end - start)
+  if (!duration && span > 0) duration = span
+  if (!span && duration > 0) end = start + duration
+
+  // Critical merge fix: one-scene Timing can keep stale end_sec from first old slice,
+  // while audio duration already reflects merged audio.
+  if (sceneCount === 1 && audioDurationSec > 0) {
+    const audioBasedDuration = Math.max(0, audioDurationSec - start)
+    if (audioBasedDuration > duration + 0.25 || audioDurationSec > end + 0.25) {
+      duration = audioBasedDuration
+      end = start + duration
+    }
+  }
+
+  span = Math.max(0, end - start)
+  if (duration > 0 && Math.abs(span - duration) > 0.05) {
+    end = start + duration
+  }
+
+  return {
+    start: avaRoundSecV212S4C(start),
+    end: avaRoundSecV212S4C(end),
+    duration: avaRoundSecV212S4C(duration || Math.max(0, end - start)),
+  }
+}
+
+function avaNormalizeTimingScenesForBoardV212S4C(timingData = {}) {
+  const next = avaCloneJsonV212S4C(timingData)
+  const audioDurationSec = avaTimingAudioDurationV212S4C(next)
+  let changed = false
+  const details = []
+
+  avaTimingSceneContainersV212S4C(next).forEach(({ label, scenes }) => {
+    if (!Array.isArray(scenes) || !scenes.length) return
+    scenes.forEach((scene, index) => {
+      if (!scene || typeof scene !== 'object') return
+      const before = avaTimingSceneTimeV212S4C(scene, index, scenes.length, 0)
+      const after = avaTimingSceneTimeV212S4C(scene, index, scenes.length, audioDurationSec)
+      const sceneChanged = (
+        Math.abs(before.start - after.start) > 0.001 ||
+        Math.abs(before.end - after.end) > 0.035 ||
+        Math.abs(before.duration - after.duration) > 0.035
+      )
+      if (!sceneChanged) return
+      scene.start = after.start
+      scene.start_sec = after.start
+      scene.target_t0 = after.start
+      scene.end = after.end
+      scene.end_sec = after.end
+      scene.target_t1 = after.end
+      scene.duration = after.duration
+      scene.duration_sec = after.duration
+      scene.durationSec = after.duration
+      scene.boardTimingNormalizedV212S4C = true
+      changed = true
+      details.push({ label, sceneId: scene.scene_id || scene.id || `seg_${String(index + 1).padStart(2, '0')}`, before, after })
+    })
+  })
+
+  if (changed) {
+    next.boardTimingNormalizedV212S4C = true
+    next.boardTimingNormalizedDetailsV212S4C = details
+  }
+  return next
+}
+
+function avaBoardSceneSignatureV212S4C(boardLike = {}) {
+  const scenes = asSceneArray(boardLike?.scenes || boardLike?.board?.scenes)
+  return scenes.map((scene, index) => {
+    const id = asText(scene?.scene_id || scene?.id || `seg_${String(index + 1).padStart(2, '0')}`)
+    const start = avaRoundSecV212S4C(scene?.timing_start_sec ?? scene?.timingStartSec ?? scene?.start_sec ?? scene?.start ?? scene?.target_t0 ?? 0)
+    let end = Number(scene?.timing_end_sec ?? scene?.timingEndSec ?? scene?.end_sec ?? scene?.end ?? scene?.target_t1)
+    let duration = Number(scene?.timing_duration_sec ?? scene?.timingDurationSec ?? scene?.duration_sec ?? scene?.durationSec ?? scene?.duration)
+    if (!Number.isFinite(end)) end = start
+    if (!Number.isFinite(duration)) duration = Math.max(0, end - start)
+    if (duration > 0 && Math.abs(Math.max(0, end - start) - duration) > 0.05) end = start + duration
+    return [id, avaRoundSecV212S4C(start), avaRoundSecV212S4C(end), avaRoundSecV212S4C(duration)]
+  })
+}
+
+function avaTimingSignatureV212S4C(timingData = {}) {
+  const normalized = avaNormalizeTimingScenesForBoardV212S4C(timingData)
+  const containers = avaTimingSceneContainersV212S4C(normalized)
+  const primary = containers.find((item) => item.scenes.length) || null
+  return primary ? avaBoardSceneSignatureV212S4C({ scenes: primary.scenes }) : []
+}
+
+function avaSignaturesDifferV212S4C(left = [], right = []) {
+  if (left.length !== right.length) return true
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index] || []
+    const b = right[index] || []
+    if (String(a[0] || '') !== String(b[0] || '')) return true
+    if (Math.abs(Number(a[1] || 0) - Number(b[1] || 0)) > 0.035) return true
+    if (Math.abs(Number(a[2] || 0) - Number(b[2] || 0)) > 0.035) return true
+    if (Math.abs(Number(a[3] || 0) - Number(b[3] || 0)) > 0.035) return true
+  }
+  return false
+}
+
+function avaExtractSnapshotDataV212S4C(value = {}) {
+  if (!value || typeof value !== 'object') return {}
+  return value?.snapshot?.data || value?.data || value
+}
+
+async function avaLoadManualTimingSnapshotForBoardV212S4C({ workspaceMode, projectId, loadWorkspaceStage, loadStage }) {
+  try {
+    const raw = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
+    return avaNormalizeTimingScenesForBoardV212S4C(avaExtractSnapshotDataV212S4C(raw))
+  } catch (error) {
+    console.warn('[BOARD FRONTEND TIMING AUTHORITY LOAD FAILED V212S4C]', error)
+    return null
+  }
+}
+
+function avaBuildBoardFromManualTimingAuthorityV212S4C(boardData = {}, timingData = {}, options = {}) {
+  const normalizedTiming = avaNormalizeTimingScenesForBoardV212S4C(timingData)
+  const manualSig = avaTimingSignatureV212S4C(normalizedTiming)
+  if (!manualSig.length) return { board: boardData, changed: false, manualSig, boardSig: avaBoardSceneSignatureV212S4C(boardData) }
+
+  const boardSig = avaBoardSceneSignatureV212S4C(boardData)
+  if (!avaSignaturesDifferV212S4C(manualSig, boardSig)) {
+    return { board: boardData, changed: false, manualSig, boardSig }
+  }
+
+  const cleanBoard = buildCleanBoardFromTimingV14B(normalizedTiming)
+  const nextBoard = {
+    ...cleanBoard,
+    source: 'manual_timing_frontend_authority_v212s4c',
+    importedFrom: 'manual_timing',
+    timingAuthorityAppliedV212S4C: true,
+    timingAuthoritySourceV212S4C: options.source || '',
+    timingAuthorityManualSigV212S4C: manualSig,
+    timingAuthorityPreviousSigV212S4C: boardSig,
+    updatedAt: new Date().toISOString(),
+  }
+  return { board: nextBoard, changed: true, manualSig, boardSig }
+}
+
+function avaBoardShouldAcceptServerCorrectionV212S4C(payload = {}, serverBoard = {}) {
+  if (!serverBoard || !Array.isArray(serverBoard.scenes)) return false
+  if (serverBoard.timingAuthorityAppliedV212S4C || serverBoard.timingAuthorityAppliedV212S4B || serverBoard.timingAuthorityAppliedV212S4 || serverBoard.timingAuthorityAppliedV212S2) return true
+  const payloadSig = avaBoardSceneSignatureV212S4C(payload)
+  const serverSig = avaBoardSceneSignatureV212S4C(serverBoard)
+  return avaSignaturesDifferV212S4C(payloadSig, serverSig)
+}
 
 function selectedSceneAccentColorV60C(scene = {}) {
   return scene?.sceneColor || scene?.scene_color || scene?.blockColor || scene?.block_color || scene?.color || scene?.hue || '#8b5cf6'
@@ -7592,8 +8003,10 @@ function sceneVideoActionState(scene) {
         // Do not merge Timing scenes automatically here, but always read the current master audio from Manual Timing.
         // This keeps old scene splits/photos while replacing dead old audio refs from imported packs.
         let timingData = {}
+        let fullTimingDataV212S = {}
         try {
           const timingStageDataV194B = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
+          fullTimingDataV212S = timingStageDataV194B || {}
           const recoveredAudioV194B = boardAudioFromTiming(timingStageDataV194B?.manualTiming || timingStageDataV194B?.manual_timing || timingStageDataV194B || {})
           if (recoveredAudioV194B) {
             timingData = {
@@ -7618,18 +8031,77 @@ function sceneVideoActionState(scene) {
         if (!active) return
         // AVA09D2_STANDALONE_BOARD_DOES_NOT_PULL_TIMING
         let nextBoard = buildBoardFromTiming(timingData, boardData)
+
+        const timingStageDataV212S4C = await avaLoadManualTimingSnapshotForBoardV212S4C({ workspaceMode, projectId, loadWorkspaceStage, loadStage })
+
+        const timingAuthorityV212S4C = avaBuildBoardFromManualTimingAuthorityV212S4C(nextBoard, timingStageDataV212S4C || timingData, { source: 'board_load_v212s4c' })
+
+        if (timingAuthorityV212S4C.changed) {
+
+          nextBoard = timingAuthorityV212S4C.board
+
+          console.log('[BOARD FRONTEND TIMING AUTHORITY APPLIED V212S4C]', {
+
+            projectId: projectId || '',
+
+            source: 'board_load_v212s4c',
+
+            manualSig: timingAuthorityV212S4C.manualSig,
+
+            previousSig: timingAuthorityV212S4C.boardSig,
+
+            sceneCount: asSceneArray(nextBoard.scenes).length,
+
+          })
+
+        }
+        let timingAuthorityReplacedBoardV212S = false
+        if (boardHasManualTimingDriftV212S(fullTimingDataV212S, boardData)) {
+          const timingAuthorityBoardV212S = boardBuildFromManualTimingAuthorityV212S(fullTimingDataV212S, activeProjectFormatV177B)
+          if (asSceneArray(timingAuthorityBoardV212S.scenes).length) {
+            nextBoard = {
+              ...timingAuthorityBoardV212S,
+              source: 'manual_timing_duration_authority_v212s',
+              importedFrom: 'manual_timing',
+              timingAuthorityAppliedV212S: true,
+              timingAuthorityAppliedAtV212S: new Date().toISOString(),
+            }
+            timingAuthorityReplacedBoardV212S = true
+            try {
+              const cleanProjectIdV212S = asText(projectId || '')
+              if (cleanProjectIdV212S) {
+                writeAvaCompletedJobs(readAvaCompletedJobs().filter((job) => asText(job.projectId || job.project_id || job.data?.projectId || job.data?.project_id) !== cleanProjectIdV212S))
+              }
+            } catch (completedCleanupErrorV212S) {
+              console.warn('[BOARD TIMING AUTHORITY COMPLETED JOB CLEANUP V212S] failed', completedCleanupErrorV212S)
+            }
+            console.log('[BOARD TIMING AUTHORITY APPLIED V212S]', {
+              projectId: projectId || '',
+              scenes: asSceneArray(nextBoard.scenes).length,
+              reason: 'manual_timing_scene_signature_changed',
+            })
+            try {
+              if (workspaceMode) await saveWorkspaceStage(STAGE, nextBoard)
+              else await saveStage(projectId, STAGE, nextBoard, 'replace')
+            } catch (timingAuthoritySaveErrorV212S) {
+              console.warn('[BOARD TIMING AUTHORITY SAVE V212S] failed', timingAuthoritySaveErrorV212S)
+            }
+          }
+        }
         if (!workspaceMode) {
           nextBoard = {
             ...nextBoard,
             source: nextBoard.source === 'standalone_board' ? 'project_board' : (nextBoard.source || 'project_board'),
           }
         }
-        const hydratedCompleted = applyCompletedJobsToBoard(nextBoard, { projectId: projectId || '', workspaceMode })
+        const hydratedCompleted = timingAuthorityReplacedBoardV212S
+          ? { board: nextBoard, usedKeys: [] }
+          : applyCompletedJobsToBoard(nextBoard, { projectId: projectId || '', workspaceMode })
         nextBoard = hydratedCompleted.board
         // AVA_BOARD_LOAD_FORCE_SERVER_VIDEO_REHYDRATE_V132W:
         // buildBoardFromTiming/normalization can rebuild scene objects from older local data.
         // On project Board entry, merge backend video/result/review refs again after the rebuild.
-        if (!workspaceMode && serverBoardData && Array.isArray(serverBoardData.scenes) && boardVideoStateScoreV131N(serverBoardData) > 0) {
+        if (!timingAuthorityReplacedBoardV212S && !workspaceMode && serverBoardData && Array.isArray(serverBoardData.scenes) && boardVideoStateScoreV131N(serverBoardData) > 0) {
           const beforeScoreV132W = boardVideoStateScoreV131N(nextBoard)
           nextBoard = boardMergeServerVideoStateV131N(nextBoard, serverBoardData)
           const afterScoreV132W = boardVideoStateScoreV131N(nextBoard)
@@ -7643,7 +8115,7 @@ function sceneVideoActionState(scene) {
           })
         }
 
-        if (!workspaceMode && serverBoardData && Array.isArray(serverBoardData.scenes) && boardImageStateScoreV145A(serverBoardData) > 0) {
+        if (!timingAuthorityReplacedBoardV212S && !workspaceMode && serverBoardData && Array.isArray(serverBoardData.scenes) && boardImageStateScoreV145A(serverBoardData) > 0) {
           const beforeScoreV145A = boardImageStateScoreV145A(nextBoard)
           nextBoard = boardMergeServerImageStateV145A(nextBoard, serverBoardData)
           const afterScoreV145A = boardImageStateScoreV145A(nextBoard)
@@ -7674,7 +8146,7 @@ function sceneVideoActionState(scene) {
           nextBoard,
           { source: 'initial_snapshot_load_v136j' }
         )
-        if (!workspaceMode && projectId) {
+        if (!timingAuthorityReplacedBoardV212S && !workspaceMode && projectId) {
           apiRequest(`/projects/${projectId}/board/video-batch/status`)
             .then((batchStatusDataV136J) => {
               if (!active) return
@@ -7695,9 +8167,11 @@ function sceneVideoActionState(scene) {
             })
             .catch((error) => console.warn('[BOARD BAD REGEN F5 RUNTIME REHYDRATE V136J] initial status failed', error))
         }
-        setStatus(openedFromTiming
-          ? 'Открыта старая Доска. Подтверди перенос из Тайминга, чтобы заменить сцены и аудио.'
-          : (nextBoard.scenes.length ? 'Storyboard загружен' : 'Сцен пока нет — импортируй JSON или вернись в Тайминг')) // AVA_TIMING_TO_BOARD_CONFIRM_STATUS_V14B
+        setStatus(timingAuthorityReplacedBoardV212S
+          ? `Доска обновлена по свежему Таймингу: ${asSceneArray(nextBoard.scenes).length} сцен`
+          : (openedFromTiming
+            ? 'Открыта старая Доска. Подтверди перенос из Тайминга, чтобы заменить сцены и аудио.'
+            : (nextBoard.scenes.length ? 'Storyboard загружен' : 'Сцен пока нет — импортируй JSON или вернись в Тайминг'))) // AVA_TIMING_TO_BOARD_CONFIRM_STATUS_V14B
       } catch (err) {
         if (!active) return
         setStatus(`Ошибка загрузки Storyboard: ${err.message}`)
@@ -8468,6 +8942,22 @@ function sceneVideoActionState(scene) {
       const saveResult = workspaceMode
         ? await saveWorkspaceStage(STAGE, payload)
         : await saveStage(projectId, STAGE, payload, boardGuardModeV145A)
+      const serverCorrectedBoardV212S4C = saveResult?.snapshot?.data || saveResult?.data || null
+      if (!workspaceMode && avaBoardShouldAcceptServerCorrectionV212S4C(payload, serverCorrectedBoardV212S4C)) {
+        const acceptedBoardV212S4C = normalizeLoadedBoardVideoStatuses({
+          ...serverCorrectedBoardV212S4C,
+          updatedAt: serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
+        })
+        boardRef.current = acceptedBoardV212S4C
+        setBoard(acceptedBoardV212S4C)
+        writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), acceptedBoardV212S4C)
+        console.log('[BOARD SERVER CORRECTION ACCEPTED V212S4C]', {
+          projectId: projectId || '',
+          payloadSig: avaBoardSceneSignatureV212S4C(payload),
+          serverSig: avaBoardSceneSignatureV212S4C(acceptedBoardV212S4C),
+          sceneCount: asSceneArray(acceptedBoardV212S4C.scenes).length,
+        })
+      }
       const verifyScene = boardSaveVerifyScene(payload)
       console.log('[BOARD SAVE VERIFY]', {
         projectId: projectId || '',
@@ -8925,7 +9415,7 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
     try {
       const timingData = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
       const timingDataWithProjectFormatV177B = boardInjectProjectFormatIntoTimingV177C(timingData, activeProjectFormatV177B)
-      const nextBoard = buildCleanBoardFromTimingV14B(timingDataWithProjectFormatV177B)
+      const nextBoard = buildCleanBoardFromTimingV14B(avaNormalizeTimingScenesForBoardV212S4C(timingDataWithProjectFormatV177B))
       if (!asSceneArray(nextBoard.scenes).length) {
         setStatus('В Тайминге нет сцен для переноса в Доску')
         return

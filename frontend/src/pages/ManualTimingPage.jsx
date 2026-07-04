@@ -1788,6 +1788,44 @@ function avaManualTimingProjectForPackV208J({ activeProject, projectId, scopeTit
   }
 }
 
+
+// AVA_MANUAL_TIMING_TO_BOARD_CANONICAL_SCENES_V212S5:
+// When scenes are merged into one, some old fields can remain from the first slice
+// (for example end_sec=2.998) while scene.end/audioDuration already represent the
+// full merged audio. Before handoff to Board, make start/end/end_sec/duration agree.
+function avaManualTimingCanonicalSceneTimesV212S5(scene = {}, index = 0, sceneCount = 0, audioDurationSec = 0) {
+  const start = Math.max(0, Number(scene?.start ?? scene?.start_sec ?? scene?.target_t0 ?? 0) || 0)
+  const candidatesEnd = [
+    scene?.end,
+    scene?.end_sec,
+    scene?.target_t1,
+    scene?.t1,
+  ].map(Number).filter(Number.isFinite)
+  const candidatesDuration = [
+    scene?.duration,
+    scene?.duration_sec,
+    scene?.durationSec,
+  ].map(Number).filter(Number.isFinite).filter((value) => value > 0)
+
+  let end = candidatesEnd.length ? Math.max(...candidatesEnd, start) : start
+  let duration = candidatesDuration.length ? Math.max(...candidatesDuration) : Math.max(0, end - start)
+
+  if (sceneCount === 1 && audioDurationSec > 0 && audioDurationSec > end + 0.25) {
+    end = audioDurationSec
+    duration = Math.max(0, end - start)
+  }
+
+  if (duration > 0 && Math.abs(Math.max(0, end - start) - duration) > 0.05) {
+    end = start + duration
+  }
+
+  return {
+    start: Number(start.toFixed(3)),
+    end: Number(end.toFixed(3)),
+    duration: Number(Math.max(0, end - start).toFixed(3)),
+  }
+}
+
 export default function ManualTimingPage() {
   const { projectId: routeProjectId } = useParams()
   const navigate = useNavigate()
@@ -4819,33 +4857,46 @@ const useVocalStem = mode === 'vocal'
     if (timingToBoardActionV162A) return
     setTimingToBoardActionV162A('confirm')
 
-    const sceneSnapshot = scenes.map((scene, index) => ({
-      ...scene,
-      id: scene.id || scene.scene_id || `seg_${String(index + 1).padStart(2, '0')}`,
-      scene_id: scene.scene_id || scene.id || `seg_${String(index + 1).padStart(2, '0')}`,
-      start: Number(scene.start ?? scene.start_sec ?? 0),
-      end: Number(scene.end ?? scene.end_sec ?? 0),
-      start_sec: Number(scene.start_sec ?? scene.start ?? 0),
-      end_sec: Number(scene.end_sec ?? scene.end ?? 0),
-      duration_sec: Math.max(0, Number(scene.end ?? scene.end_sec ?? 0) - Number(scene.start ?? scene.start_sec ?? 0)),
-      durationSec: Math.max(0, Number(scene.end ?? scene.end_sec ?? 0) - Number(scene.start ?? scene.start_sec ?? 0)),
-      // AVA_TIMING_TO_BOARD_SCENE_COLORS_V67B:
-      // Preserve the exact visual hue used in Manual Timing so Board cards do not collapse to one role/block color.
-      blockId: scene.blockId || scene.block_id || '',
-      block_id: scene.block_id || scene.blockId || '',
-      blockTitle: scene.blockTitle || scene.block_title || '',
-      block_title: scene.block_title || scene.blockTitle || '',
-      // AVA_TIMING_TO_BOARD_BLOCK_COLOR_CANON_V72:
-      // Use the semantic block color as the one canonical color for Board.
-      blockColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
-      block_color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
-      sceneColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
-      scene_color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
-      color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
-      user_scene_color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
-      timelineColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
-      cardColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
-    }))
+    const sceneSnapshot = scenes.map((scene, index) => {
+      const sceneIdV212S5 = scene.id || scene.scene_id || `seg_${String(index + 1).padStart(2, '0')}`
+      const timesV212S5 = avaManualTimingCanonicalSceneTimesV212S5(
+        scene,
+        index,
+        scenes.length,
+        Number(draft.audioDurationSec || timelineDurationSec || 0)
+      )
+      return {
+        ...scene,
+        id: sceneIdV212S5,
+        scene_id: scene.scene_id || scene.id || sceneIdV212S5,
+        start: timesV212S5.start,
+        end: timesV212S5.end,
+        start_sec: timesV212S5.start,
+        end_sec: timesV212S5.end,
+        target_t0: timesV212S5.start,
+        target_t1: timesV212S5.end,
+        duration: timesV212S5.duration,
+        duration_sec: timesV212S5.duration,
+        durationSec: timesV212S5.duration,
+        timingToBoardCanonicalV212S5: true,
+        // AVA_TIMING_TO_BOARD_SCENE_COLORS_V67B:
+        // Preserve the exact visual hue used in Manual Timing so Board cards do not collapse to one role/block color.
+        blockId: scene.blockId || scene.block_id || '',
+        block_id: scene.block_id || scene.blockId || '',
+        blockTitle: scene.blockTitle || scene.block_title || '',
+        block_title: scene.block_title || scene.blockTitle || '',
+        // AVA_TIMING_TO_BOARD_BLOCK_COLOR_CANON_V72:
+        // Use the semantic block color as the one canonical color for Board.
+        blockColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+        block_color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+        sceneColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+        scene_color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+        color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+        user_scene_color: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+        timelineColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+        cardColor: avaManualTimingSceneDisplayColorV208E(scene, index, draft.storyBlocks || []),
+      }
+    })
 
     const nextDraft = {
       ...draft,

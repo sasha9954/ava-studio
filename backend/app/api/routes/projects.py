@@ -25,6 +25,7 @@ from app.core.storage import store
 from app.core.media_cleanup import cleanup_project_media, cleanup_project_stage_media
 from app.schemas import ProjectCreateRequest, ProjectUpdateRequest, SnapshotSaveRequest
 import copy
+import threading
 import time
 from copy import deepcopy
 
@@ -252,17 +253,431 @@ def update_project(payload: ProjectUpdateRequest, project: dict = Depends(ensure
     return store.update(op)
 
 
+# AVA_PROJECT_FAST_DELETE_BACKGROUND_V212Q
+def _project_delete_background_cleanup_v212q(project_id: str, user_id: str | None = None) -> None:
+    started = time.monotonic()
+    try:
+        print('[PROJECT DELETE BACKGROUND CLEANUP START V212Q]', {'project_id': project_id}, flush=True)
+
+        def cleanup_op(db):
+            cleanup = cleanup_project_media(db, project_id, user_id=user_id)
+            return {
+                'project_id': project_id,
+                'background_cleanup': True,
+                'cleanup': cleanup,
+                'elapsed_ms': round((time.monotonic() - started) * 1000, 1),
+            }
+
+        result = store.update(cleanup_op)
+        print('[PROJECT DELETE BACKGROUND CLEANUP DONE V212Q]', result, flush=True)
+    except Exception as exc:
+        print('[PROJECT DELETE BACKGROUND CLEANUP ERROR V212Q]', {'project_id': project_id, 'error': str(exc)}, flush=True)
+
+
 @router.delete('/{project_id}')
 def delete_project(project: dict = Depends(ensure_project_access)):
+    # V212Q: return quickly to the UI, then remove heavy media/files in background.
+    # The project disappears from the list immediately, while rmtree/assets cleanup no longer blocks the click.
     project_id = project['id']
     user_id = project.get('user_id')
+    started = time.monotonic()
 
     def op(db):
-        cleanup = cleanup_project_media(db, project_id, user_id=user_id)
-        return {'deleted': True, 'project_id': project_id, 'hard_deleted': True, 'cleanup': cleanup}
+        projects = db.setdefault('projects', {})
+        snapshots = db.setdefault('snapshots', {})
+        jobs = db.setdefault('jobs', {})
 
-    return store.update(op)
+        snapshot_count = len((snapshots.get(project_id) or {}))
+        projects.pop(project_id, None)
+        snapshots.pop(project_id, None)
 
+        # Remove direct project jobs now, but leave deep cleanup/path deletion for background.
+        jobs_deleted = 0
+        for job_id, job in list(jobs.items()):
+            if str((job or {}).get('project_id') or (job or {}).get('projectId') or '') == project_id:
+                jobs.pop(job_id, None)
+                jobs_deleted += 1
+
+        return {
+            'deleted': True,
+            'project_id': project_id,
+            'hard_deleted': False,
+            'fast_delete': True,
+            'cleanup': {
+                'mode': 'background_v212q',
+                'snapshots_dropped_now': snapshot_count,
+                'jobs_dropped_now': jobs_deleted,
+            },
+            'elapsed_ms': round((time.monotonic() - started) * 1000, 1),
+        }
+
+    result = store.update(op)
+    print('[PROJECT DELETE FAST ACK V212Q]', result, flush=True)
+
+    thread = threading.Thread(
+        target=_project_delete_background_cleanup_v212q,
+        args=(project_id, user_id),
+        name=f'ava-project-delete-cleanup-{project_id}',
+        daemon=True,
+    )
+    thread.start()
+    return result
+
+
+
+
+# AVA_SERVER_TIMING_AUTHORITY_BOARD_SNAPSHOT_V212S2
+# Server-side guard for Manual Timing -> Board. Manual Timing is the authority for
+# scene count/start/end/duration. If the user merges/splits scenes in Timing, stale
+# Board snapshots must not keep old 3-second durations, old audio slices, or old videos.
+def _ava_v212s2_as_list(value):
+    return value if isinstance(value, list) else []
+
+
+def _ava_v212s2_num(value, default=0.0):
+    try:
+        if value is None or value == '':
+            return float(default)
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _ava_v212s2_text(value):
+    return str(value or '').strip()
+
+
+def _ava_v212s2_scene_id(scene, index):
+    if isinstance(scene, dict):
+        return _ava_v212s2_text(scene.get('scene_id') or scene.get('id') or f"seg_{index + 1:02d}")
+    return f"seg_{index + 1:02d}"
+
+
+def _ava_v212s2_root(data):
+    if not isinstance(data, dict):
+        return {}
+    for key in ('manualTiming', 'manual_timing', 'timing'):
+        node = data.get(key)
+        if isinstance(node, dict) and isinstance(node.get('scenes'), list):
+            return node
+    return data
+
+
+def _ava_v212s2_scenes(data):
+    if not isinstance(data, dict):
+        return []
+    root = _ava_v212s2_root(data)
+    for node in (root, data):
+        if isinstance(node, dict) and isinstance(node.get('scenes'), list):
+            return node.get('scenes') or []
+        if isinstance(node, dict) and isinstance((node.get('production') or {}).get('scenes'), list):
+            return (node.get('production') or {}).get('scenes') or []
+    board = data.get('board') if isinstance(data.get('board'), dict) else None
+    if board and isinstance(board.get('scenes'), list):
+        return board.get('scenes') or []
+    return []
+
+
+def _ava_v212s2_scene_times(scene, index):
+    scene = scene if isinstance(scene, dict) else {}
+    start = _ava_v212s2_num(scene.get('start_sec', scene.get('start', scene.get('target_t0', scene.get('t0', 0)))), 0)
+    raw_end = scene.get('end_sec', scene.get('end', scene.get('target_t1', scene.get('t1'))))
+    raw_duration = scene.get('duration_sec', scene.get('durationSec', scene.get('duration')))
+    duration = _ava_v212s2_num(raw_duration, None) if raw_duration is not None else None
+    end = _ava_v212s2_num(raw_end, None) if raw_end is not None else None
+    if duration is None and end is not None:
+        duration = max(0.0, end - start)
+    if end is None and duration is not None:
+        end = start + duration
+    if duration is None:
+        duration = 0.0
+    if end is None:
+        end = start + duration
+
+    # V212S3: after the user merges scenes in Manual Timing, one stale field may remain
+    # from the first old scene: end_sec=2.47, while duration_sec/audio duration is 13.5.
+    # If end-start and duration disagree, prefer duration and make the end consistent.
+    span = max(0.0, end - start)
+    if duration > 0.0 and abs(span - duration) > 0.05:
+        end = start + duration
+
+    return (round(start, 3), round(end, 3), round(duration, 3))
+
+def _ava_v212s2_scene_signature(data):
+    scenes = _ava_v212s2_scenes(data)
+    signature = []
+    for index, scene in enumerate(scenes):
+        signature.append((_ava_v212s2_scene_id(scene, index), *_ava_v212s2_scene_times(scene, index)))
+    return signature
+
+
+def _ava_v212s2_signatures_differ(manual_data, board_data, eps=0.035):
+    manual_sig = _ava_v212s2_scene_signature(manual_data)
+    board_sig = _ava_v212s2_scene_signature(board_data)
+    if not manual_sig:
+        return False, manual_sig, board_sig
+    if len(manual_sig) != len(board_sig):
+        return True, manual_sig, board_sig
+    for left, right in zip(manual_sig, board_sig):
+        if left[0] != right[0]:
+            return True, manual_sig, board_sig
+        for i in (1, 2, 3):
+            if abs(float(left[i]) - float(right[i])) > eps:
+                return True, manual_sig, board_sig
+    return False, manual_sig, board_sig
+
+
+_AVA_V212S2_STALE_MEDIA_KEYS = {
+    # generated/source video refs and status
+    'video_url', 'videoUrl', 'video_api_path', 'videoApiPath', 'video_static_url', 'videoStaticUrl',
+    'video_path', 'videoPath', 'video_asset_id', 'videoAssetId', 'video_name', 'videoName',
+    'video_result', 'videoResult', 'result_video_url', 'resultVideoUrl', 'result_video_api_path', 'resultVideoApiPath',
+    'result_video_asset_id', 'resultVideoAssetId', 'last_video_job_id', 'lastVideoJobId', 'video_job_id', 'videoJobId',
+    'video_status_endpoint', 'videoStatusEndpoint', 'video_review', 'videoReview', 'video_review_state', 'videoReviewState',
+    'video_review_status', 'videoReviewStatus', 'video_error', 'videoError', 'video_queue_position', 'videoQueuePosition',
+    'video_queue_source', 'videoQueueSource', 'video_ready_at', 'videoReadyAt',
+    # old per-scene audio slices become invalid after timing merge/split
+    'audio_slice_url', 'audioSliceUrl', 'audio_slice_api_path', 'audioSliceApiPath', 'audio_slice_asset_id', 'audioSliceAssetId',
+    'audio_slice_name', 'audioSliceName', 'audio_slice_duration', 'audioSliceDuration', 'audio_slice_status', 'audioSliceStatus',
+    'audio_slice_error', 'audioSliceError', 'manual_lipsync_audio_url', 'manualLipSyncAudioUrl',
+    'manual_lipsync_audio_api_path', 'manualLipSyncAudioApiPath', 'manual_lipsync_audio_asset_id', 'manualLipSyncAudioAssetId',
+    'manual_lipsync_audio_name', 'manualLipSyncAudioName', 'manual_lipsync_audio_duration', 'manualLipSyncAudioDuration',
+    # MMA/output refs tied to old scene media
+    'mmaudio_video_api_path', 'mmaudioVideoApiPath', 'mmaudio_video_url', 'mmaudioVideoUrl', 'source_is_mmaudio', 'sourceIsMmaudio',
+}
+
+_AVA_V212S2_BOARD_LEVEL_STALE_KEYS = {
+    'jobs', 'completedJobs', 'completed_jobs', 'videoJobs', 'video_jobs', 'pendingJobs', 'runningJobs',
+    'videoBatch', 'video_batch', 'boardVideoBatch', 'board_video_batch', 'videoQueue', 'video_queue',
+}
+
+
+def _ava_v212s2_clear_stale_scene_media(scene):
+    if not isinstance(scene, dict):
+        return {}
+    next_scene = dict(scene)
+    for key in _AVA_V212S2_STALE_MEDIA_KEYS:
+        if key in next_scene:
+            next_scene.pop(key, None)
+    next_scene['video_status'] = 'empty'
+    next_scene['videoStatus'] = 'empty'
+    next_scene['audio_slice_status'] = 'empty'
+    next_scene['audioSliceStatus'] = 'empty'
+    next_scene['timingAuthorityClearedMediaV212S2'] = True
+    return next_scene
+
+
+def _ava_v212s2_apply_manual_scene_timing(saved_scene, manual_scene, index, clear_stale_media=False):
+    saved_scene = saved_scene if isinstance(saved_scene, dict) else {}
+    manual_scene = manual_scene if isinstance(manual_scene, dict) else {}
+    base = dict(saved_scene)
+    if clear_stale_media:
+        base = _ava_v212s2_clear_stale_scene_media(base)
+    scene_id = _ava_v212s2_scene_id(manual_scene, index)
+    start, end, duration = _ava_v212s2_scene_times(manual_scene, index)
+    # Keep user prompts/notes/images, but force timing/route/block from Manual Timing.
+    base.update({
+        'id': scene_id,
+        'scene_id': scene_id,
+        'index': index,
+        'start': start,
+        'start_sec': start,
+        'target_t0': start,
+        'end': end,
+        'end_sec': end,
+        'target_t1': end,
+        'duration': duration,
+        'duration_sec': duration,
+        'durationSec': duration,
+        'timingAuthorityV212S2': True,
+        'timingAuthorityAppliedAtV212S2': now_iso(),
+    })
+    for key in ('route', 'planned_route', 'plannedRoute', 'format', 'aspect_ratio', 'aspectRatio', 'output_format', 'outputFormat',
+                'blockId', 'block_id', 'blockTitle', 'block_title', 'blockColor', 'block_color', 'color', 'sceneColor', 'scene_color'):
+        if manual_scene.get(key) not in (None, ''):
+            base[key] = manual_scene.get(key)
+    return base
+
+
+def _ava_v212s2_apply_manual_timing_to_board(board_data, manual_data, clear_stale_media=False):
+    if not isinstance(manual_data, dict):
+        return board_data, False, 'no_manual_data'
+    manual_scenes = _ava_v212s2_scenes(manual_data)
+    if not manual_scenes:
+        return board_data, False, 'no_manual_scenes'
+    board_data = deepcopy(board_data) if isinstance(board_data, dict) else {}
+    board_scenes = _ava_v212s2_scenes(board_data)
+    saved_by_id = {_ava_v212s2_scene_id(scene, idx): scene for idx, scene in enumerate(board_scenes) if isinstance(scene, dict)}
+    next_scenes = []
+    for index, manual_scene in enumerate(manual_scenes):
+        scene_id = _ava_v212s2_scene_id(manual_scene, index)
+        next_scenes.append(_ava_v212s2_apply_manual_scene_timing(saved_by_id.get(scene_id, {}), manual_scene, index, clear_stale_media=clear_stale_media))
+
+    for key in _AVA_V212S2_BOARD_LEVEL_STALE_KEYS:
+        if clear_stale_media and key in board_data:
+            board_data.pop(key, None)
+    board_data['scenes'] = next_scenes
+    board_data['selectedSceneId'] = next_scenes[0].get('scene_id') if next_scenes else board_data.get('selectedSceneId')
+    board_data['timingAuthorityV212S2'] = True
+    board_data['timingAuthorityReasonV212S2'] = 'manual_timing_scene_signature_changed'
+    board_data['timingAuthorityAppliedAtV212S2'] = now_iso()
+    # Keep board-level audio locked to Manual Timing where present.
+    manual_root = _ava_v212s2_root(manual_data)
+    manual_audio = manual_data.get('audio') or manual_root.get('audio')
+    if manual_audio:
+        board_data['audio'] = manual_audio
+    elif manual_root.get('audioDurationSec') or manual_root.get('audio_duration_sec'):
+        audio = dict(board_data.get('audio') or {})
+        audio['durationSec'] = _ava_v212s2_num(manual_root.get('audioDurationSec', manual_root.get('audio_duration_sec')), audio.get('durationSec', 0))
+        board_data['audio'] = audio
+    return board_data, True, 'manual_timing_scene_signature_changed'
+
+
+
+
+# AVA_MANUAL_SINGLE_SCENE_DURATION_AUTHORITY_V212S3
+# Normalizes Manual Timing when a merge leaves one scene with stale end_sec from the
+# first old segment but correct total duration/audio duration. This must be fixed at
+# Manual Timing save time, before Board imports/saves stale timing again.
+def _ava_v212s3_audio_duration(data):
+    if not isinstance(data, dict):
+        return 0.0
+    candidates = []
+    for node in (data, data.get('timing') if isinstance(data.get('timing'), dict) else None,
+                 data.get('manualTiming') if isinstance(data.get('manualTiming'), dict) else None,
+                 data.get('manual_timing') if isinstance(data.get('manual_timing'), dict) else None):
+        if not isinstance(node, dict):
+            continue
+        candidates.extend([
+            node.get('audioDurationSec'), node.get('audio_duration_sec'), node.get('durationSec'), node.get('duration_sec')
+        ])
+        audio = node.get('audio') if isinstance(node.get('audio'), dict) else None
+        if audio:
+            candidates.extend([audio.get('durationSec'), audio.get('duration_sec'), audio.get('duration')])
+    best = 0.0
+    for value in candidates:
+        try:
+            if value is not None and value != '':
+                best = max(best, float(value))
+        except Exception:
+            pass
+    return best
+
+
+def _ava_v212s3_set_scene_times(scene, start, end, duration):
+    if not isinstance(scene, dict):
+        return scene
+    scene['start'] = round(start, 3)
+    scene['start_sec'] = round(start, 3)
+    scene['target_t0'] = round(start, 3)
+    scene['end'] = round(end, 3)
+    scene['end_sec'] = round(end, 3)
+    scene['target_t1'] = round(end, 3)
+    scene['duration'] = round(duration, 3)
+    scene['duration_sec'] = round(duration, 3)
+    scene['durationSec'] = round(duration, 3)
+    scene['manualTimingNormalizedV212S3'] = True
+    scene['manualTimingNormalizedAtV212S3'] = now_iso()
+    return scene
+
+
+def _ava_v212s3_normalize_one_scene_list(scene_list, audio_duration=0.0):
+    if not isinstance(scene_list, list) or len(scene_list) != 1 or not isinstance(scene_list[0], dict):
+        return False, {}
+    scene = scene_list[0]
+    start, end, duration = _ava_v212s2_scene_times(scene, 0)
+    old_end = end
+    old_duration = duration
+    target_duration = duration
+    target_end = end
+
+    # If the whole audio is clearly longer than the single scene, the merged single
+    # scene must cover the full audio, not the stale first segment.
+    if audio_duration and audio_duration > 0:
+        audio_based_duration = max(0.0, audio_duration - start)
+        if audio_based_duration > target_duration + 0.25 or audio_duration > target_end + 0.25:
+            target_duration = audio_based_duration
+            target_end = start + target_duration
+
+    # Also fix internally inconsistent end/duration pairs.
+    if target_duration > 0 and abs((target_end - start) - target_duration) > 0.05:
+        target_end = start + target_duration
+
+    changed = abs(target_end - old_end) > 0.035 or abs(target_duration - old_duration) > 0.035
+    if changed:
+        _ava_v212s3_set_scene_times(scene, start, target_end, target_duration)
+    return changed, {
+        'oldEnd': old_end,
+        'oldDuration': old_duration,
+        'newEnd': round(target_end, 3),
+        'newDuration': round(target_duration, 3),
+        'audioDuration': round(audio_duration, 3) if audio_duration else 0,
+    }
+
+
+def _ava_v212s3_normalize_manual_timing_data(data):
+    if not isinstance(data, dict):
+        return data, False, {'reason': 'not_dict'}
+    data = deepcopy(data)
+    audio_duration = _ava_v212s3_audio_duration(data)
+    changed_any = False
+    details = []
+
+    # Normalize all common scene containers in the snapshot. They often duplicate the
+    # same timing scene in top-level scenes and timing.scenes.
+    for label, node in [
+        ('root', data),
+        ('timing', data.get('timing') if isinstance(data.get('timing'), dict) else None),
+        ('manualTiming', data.get('manualTiming') if isinstance(data.get('manualTiming'), dict) else None),
+        ('manual_timing', data.get('manual_timing') if isinstance(data.get('manual_timing'), dict) else None),
+    ]:
+        if not isinstance(node, dict) or not isinstance(node.get('scenes'), list):
+            continue
+        changed, info = _ava_v212s3_normalize_one_scene_list(node.get('scenes'), audio_duration=audio_duration)
+        if changed:
+            changed_any = True
+            details.append({'container': label, **info})
+
+    # Keep storyBlocks consistent for the 1-scene merged case too.
+    for key in ('storyBlocks', 'story_blocks'):
+        blocks = data.get(key)
+        if isinstance(blocks, list) and len(blocks) == 1 and isinstance(blocks[0], dict):
+            block = blocks[0]
+            scene_start, scene_end, scene_duration = _ava_v212s2_scene_times((data.get('scenes') or [{}])[0], 0) if isinstance(data.get('scenes'), list) and data.get('scenes') else (0.0, audio_duration, audio_duration)
+            if abs(_ava_v212s2_num(block.get('end'), 0) - scene_end) > 0.035 or abs(_ava_v212s2_num(block.get('duration'), 0) - scene_duration) > 0.035:
+                block['start'] = scene_start
+                block['end'] = scene_end
+                block['duration'] = scene_duration
+                block['manualTimingNormalizedV212S3'] = True
+                changed_any = True
+
+    if changed_any:
+        data['manualTimingNormalizedV212S3'] = True
+        data['manualTimingNormalizedAtV212S3'] = now_iso()
+    return data, changed_any, {'reason': 'single_scene_merged_duration_authority_v212s3', 'details': details[:4]}
+
+def _ava_v212s2_board_snapshot_with_manual_authority(db, project_id, snapshot, persist=False):
+    manual_snapshot = ((db.get('snapshots') or {}).get(project_id) or {}).get('manual_timing') or {}
+    manual_data = manual_snapshot.get('data') if isinstance(manual_snapshot, dict) else {}
+    board_data = (snapshot or {}).get('data') if isinstance(snapshot, dict) else {}
+    changed, manual_sig, board_sig = _ava_v212s2_signatures_differ(manual_data or {}, board_data or {})
+    if not changed:
+        return snapshot, False, {'reason': 'no_drift', 'manualSig': manual_sig[:3], 'boardSig': board_sig[:3]}
+    next_data, applied, reason = _ava_v212s2_apply_manual_timing_to_board(board_data or {}, manual_data or {}, clear_stale_media=True)
+    if not applied:
+        return snapshot, False, {'reason': reason, 'manualSig': manual_sig[:3], 'boardSig': board_sig[:3]}
+    next_snapshot = {
+        **(snapshot or {}),
+        'stage': 'board',
+        'data': next_data,
+        'client_version': MARK,
+        'updated_at': now_iso(),
+    }
+    if persist:
+        db.setdefault('snapshots', {}).setdefault(project_id, {})['board'] = next_snapshot
+        if project_id in db.get('projects', {}):
+            db['projects'][project_id]['updated_at'] = now_iso()
+    return next_snapshot, True, {'reason': reason, 'manualSig': manual_sig[:3], 'boardSig': board_sig[:3], 'sceneCount': len(_ava_v212s2_scenes(next_data))}
 
 @router.get('/{project_id}/snapshots/{stage}')
 def get_snapshot(stage: str, project: dict = Depends(ensure_project_access)):
@@ -272,6 +687,10 @@ def get_snapshot(stage: str, project: dict = Depends(ensure_project_access)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unknown stage')
     db = store.get_db()
     snapshot = db['snapshots'].get(project['id'], {}).get(stage)
+    if stage == 'board':
+        snapshot, applied_v212s2, info_v212s2 = _ava_v212s2_board_snapshot_with_manual_authority(db, project['id'], snapshot or {'stage': stage, 'data': {}, 'updated_at': None}, persist=False)
+        if applied_v212s2:
+            print('[BOARD TIMING AUTHORITY GET APPLIED V212S2]', {'project_id': project['id'], **info_v212s2}, flush=True)
     return {'snapshot': snapshot or {'stage': stage, 'data': {}, 'updated_at': None}}
 
 
@@ -3544,14 +3963,44 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
         db['snapshots'].setdefault(project_id, {})
         current = db['snapshots'][project_id].get(stage)
         cleanup = None
+        # AVA_TIMING_TO_BOARD_DURATION_AUTHORITY_V212S:
+        # guard_mode='replace' must be a real full replacement. Earlier it still
+        # ran safe media-preservation blocks, so stale Board videos/audio slices
+        # could come back after Manual Timing was merged/split.
+        is_replace_snapshot = payload.guard_mode == 'replace'
         is_destructive_clear = (
-            payload.guard_mode == 'replace'
+            is_replace_snapshot
             and not (payload.data or {})
             and str(payload.client_version or '').startswith('workflow-stage-controls-clear')
         )
         if is_destructive_clear:
             cleanup = cleanup_project_stage_media(db, project_id, stage, user_id=project.get('user_id'))
         incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
+        if stage == 'manual_timing':
+            incoming_data, normalized_v212s3, info_v212s3 = _ava_v212s3_normalize_manual_timing_data(incoming_data or {})
+            if normalized_v212s3:
+                print('[MANUAL TIMING SINGLE SCENE NORMALIZED V212S3]', {
+                    'project_id': project_id,
+                    **info_v212s3,
+                }, flush=True)
+        timing_authority_forced_replace_v212s2 = False
+        if stage == 'board':
+            manual_snapshot_v212s2 = (db.get('snapshots', {}).get(project_id, {}) or {}).get('manual_timing') or {}
+            manual_data_v212s2 = manual_snapshot_v212s2.get('data') if isinstance(manual_snapshot_v212s2, dict) else {}
+            drift_v212s2, manual_sig_v212s2, board_sig_v212s2 = _ava_v212s2_signatures_differ(manual_data_v212s2 or {}, incoming_data or {})
+            if drift_v212s2:
+                incoming_data, applied_v212s2, reason_v212s2 = _ava_v212s2_apply_manual_timing_to_board(incoming_data or {}, manual_data_v212s2 or {}, clear_stale_media=True)
+                if applied_v212s2:
+                    timing_authority_forced_replace_v212s2 = True
+                    # Do not let old current Board preservation resurrect stale 3-second media/timing.
+                    current = None
+                    print('[BOARD TIMING AUTHORITY SAVE APPLIED V212S2]', {
+                        'project_id': project_id,
+                        'reason': reason_v212s2,
+                        'manualSig': manual_sig_v212s2[:3],
+                        'incomingSig': board_sig_v212s2[:3],
+                        'sceneCount': len(_ava_v212s2_scenes(incoming_data)),
+                    }, flush=True)
         if stage == 'video_node' and is_destructive_clear:
             incoming_data = _ava_video_node_clear_tombstone_v209b(payload.client_version or '')
         if stage == 'video_node' and payload.guard_mode == 'safe_merge' and current:
@@ -3571,7 +4020,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     'snapshot': current,
                     '_skip_store_write_v200c': True,
                 }
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, isolated_scene_contracts_v209k = _ava_project_board_image_upload_batch_isolation_v209k(
                 current,
                 incoming_data,
@@ -3597,7 +4046,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
 
         board_server_video_preserved_v131q2 = 0
         # AVA_PROJECT_FORCE_CLEAR_ON_CHANGED_IMAGE_V132M must run before all preserve guards.
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, cleared_changed_image_v132m = _ava_project_force_clear_on_changed_image_v132m(
                 current.get('data') if isinstance(current, dict) else {},
                 incoming_data,
@@ -3610,7 +4059,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, board_server_video_preserved_v131q2 = _ava_project_merge_server_batch_video_refs_v131q2(
                 current,
                 incoming_data,
@@ -3626,7 +4075,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, preserved_review_state_v132b = _ava_project_preserve_review_state_v132b(
                 current.get('data') if isinstance(current, dict) else {},
                 incoming_data,
@@ -3640,7 +4089,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, preserved_bound_video_refs_v132j = _ava_project_preserve_current_bound_video_refs_v132j_fix(
                 current.get('data') if isinstance(current, dict) else {},
                 incoming_data,
@@ -3654,7 +4103,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, cleared_review_video_v132l = _ava_project_clear_review_video_on_image_change_v132l(
                 current.get('data') if isinstance(current, dict) else {},
                 incoming_data,
@@ -3667,7 +4116,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, review_cleared_v133b = _ava_project_clear_review_on_image_change_v133b(incoming_data)
             if review_cleared_v133b:
                 print('[PROJECT BOARD REVIEW CLEAR SUMMARY V133B]', {
@@ -3677,7 +4126,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, stale_video_cleared_v133d = _ava_project_clear_stale_v132j_video_refs_v133d(current, incoming_data)
             if stale_video_cleared_v133d:
                 print('[PROJECT BOARD STALE V132J VIDEO CLEAR SUMMARY V133D]', {
@@ -3687,7 +4136,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, review_event_authority_v136d = _ava_project_apply_review_event_authority_v136d(
                 payload.data or {},
                 current.get('data') if isinstance(current, dict) else {},
@@ -3702,7 +4151,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'board' and current and not is_destructive_clear:
+        if stage == 'board' and current and not is_replace_snapshot:
             incoming_data, server_review_memory_v136e = _ava_project_apply_server_review_memory_v136e(
                 payload.data or {},
                 current.get('data') if isinstance(current, dict) else {},
@@ -3717,7 +4166,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'board' and not is_destructive_clear:
+        if stage == 'board' and not is_replace_snapshot:
             incoming_data, telegram_review_notes_v137c = _ava_project_apply_telegram_review_note_memory_v137c(
                 db,
                 project_id,
@@ -3735,7 +4184,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                 })
 
 
-        if stage == 'board_assembly' and current and not is_destructive_clear:
+        if stage == 'board_assembly' and current and not is_replace_snapshot:
             incoming_data, assembly_final_preserved_v200p = _ava_project_preserve_board_assembly_final_v200p(
                 current.get('data') if isinstance(current, dict) else {},
                 incoming_data,
@@ -3749,7 +4198,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if stage == 'audio_studio' and current and not is_destructive_clear and payload.guard_mode == 'safe_merge':
+        if stage == 'audio_studio' and current and not is_replace_snapshot and payload.guard_mode == 'safe_merge':
             incoming_data, audio_studio_preserved_v211y2 = preserve_media_refs(current.get('data') or {}, incoming_data)
             if audio_studio_preserved_v211y2:
                 preserved_media_refs += audio_studio_preserved_v211y2
@@ -3760,7 +4209,7 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **media_refs_summary(incoming_data),
                 })
 
-        if current and cleanup is None and not is_destructive_clear:
+        if current and cleanup is None and not is_replace_snapshot:
             current_data_for_noop_v200b = current.get('data') if isinstance(current, dict) else {}
             if _ava_project_snapshot_noop_equal_v200b(current_data_for_noop_v200b, incoming_data):
                 return {
