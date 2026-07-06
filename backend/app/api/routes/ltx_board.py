@@ -663,6 +663,13 @@ class BoardVideoBatchStartIn(BaseModel):
     source: str | None = None
     scene_ids: list[str] | None = None
     sceneIds: list[str] | None = None
+    # AVA_BOARD_BATCH_ACTUAL_QUEUE_AUTHORITY_V213K:
+    # Explicit frontend intent: ready video scenes in this list must regenerate even if
+    # a stale scene snapshot has already lost the red review flag.
+    force_regenerate_scene_ids: list[str] | None = None
+    forceRegenerateSceneIds: list[str] | None = None
+    client_planned_scene_ids_v213k: list[str] | None = None
+    clientPlannedSceneIdsV213K: list[str] | None = None
     scenes: list[dict[str, Any]] | None = None
     overwrite: bool | None = False
     # AVA_BOARD_SERVER_BATCH_AUTOSLICE_V147A: optional root Board audio for auto slicing.
@@ -3673,12 +3680,236 @@ def _board_batch_read_snapshot(project_id: str) -> dict[str, Any]:
     return copy.deepcopy(data or {})
 
 
+
+# AVA_BOARD_MEDIA_DELETE_REPLACE_AUTHORITY_V213G
+# Server batch/status polling must be read-only for Board source images.  The user can
+# delete/replace a photo while a finished/stale batch status request is still in flight.
+# Without this guard, an old status/orphan-cleanup snapshot can resurrect the old image ref.
+_AVA_V213G_IMAGE_MEDIA_KEYS = (
+    'image', 'imageRef', 'image_ref',
+    'image_url', 'imageUrl', 'image_api_path', 'imageApiPath', 'image_asset_id', 'imageAssetId',
+    'image_name', 'imageName', 'image_status', 'imageStatus', 'image_data_url', 'imageDataUrl',
+    'image_uploading', 'imageUploading', 'image_uploading_v129q', 'imageUploadingV129Q',
+    'photo_uploading', 'photoUploading', 'mediaUrl', 'media_url',
+    'first_frame_url', 'firstFrameUrl', 'first_frame_api_path', 'firstFrameApiPath',
+    'first_frame_asset_id', 'firstFrameAssetId', 'first_frame_name', 'firstFrameName',
+    'first_image_url', 'firstImageUrl', 'first_image_api_path', 'firstImageApiPath',
+    'first_image_asset_id', 'firstImageAssetId', 'first_image_name', 'firstImageName',
+    'startImage', 'start_image', 'startImageUrl', 'start_image_url', 'start_image_api_path', 'startImageApiPath',
+    'start_image_asset_id', 'startImageAssetId', 'start_image_name', 'startImageName',
+    'start_image_data_url', 'startImageDataUrl',
+    'last_frame_url', 'lastFrameUrl', 'last_frame_api_path', 'lastFrameApiPath',
+    'last_frame_asset_id', 'lastFrameAssetId', 'last_frame_name', 'lastFrameName',
+    'last_image_url', 'lastImageUrl', 'last_image_api_path', 'lastImageApiPath',
+    'last_image_asset_id', 'lastImageAssetId', 'last_image_name', 'lastImageName',
+    'endImage', 'end_image', 'endImageUrl', 'end_image_url', 'end_image_api_path', 'endImageApiPath',
+    'end_image_asset_id', 'endImageAssetId', 'end_image_name', 'endImageName',
+    'end_image_data_url', 'endImageDataUrl',
+    'image_deleted_v129o', 'imageDeletedV129O', 'first_image_deleted_v129o', 'firstImageDeletedV129O',
+    'last_image_deleted_v129o', 'lastImageDeletedV129O',
+    'image_mutation_at', 'imageMutationAt', 'image_mutation_epoch', 'imageMutationEpoch',
+    'media_reset_generation_v129s', 'mediaResetGenerationV129S',
+    'media_reset_generation_v129t', 'mediaResetGenerationV129T',
+    'media_reset_generation_v129u', 'mediaResetGenerationV129U',
+    'image_delete_reason_v129s', 'imageDeleteReasonV129S',
+    'image_delete_reason_v129t', 'imageDeleteReasonV129T',
+    'image_delete_reason_v129u', 'imageDeleteReasonV129U',
+    'mediaEditVersionV213G', 'media_edit_version_v213g',
+    'imageDeletedAtV213G', 'image_deleted_at_v213g',
+)
+
+_AVA_V213G_NESTED_MEDIA_IMAGE_KEYS = ('image', 'first', 'start', 'last', 'end', 'images')
+
+
+def _ava_v213g_scene_id(scene: dict[str, Any] | None, index: int = 0) -> str:
+    if not isinstance(scene, dict):
+        return f"seg_{index + 1:02d}"
+    return str(scene.get('scene_id') or scene.get('sceneId') or scene.get('id') or f"seg_{index + 1:02d}").strip()
+
+
+def _ava_v213g_value_present(value: Any) -> bool:
+    if value is None or value is False or value == '':
+        return False
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    return True
+
+
+def _ava_v213g_nested_image_state(scene: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(scene, dict):
+        return {}
+    media = scene.get('media') if isinstance(scene.get('media'), dict) else {}
+    out: dict[str, Any] = {}
+    for key in _AVA_V213G_NESTED_MEDIA_IMAGE_KEYS:
+        if key in media:
+            out[key] = copy.deepcopy(media.get(key))
+    return out
+
+
+def _ava_v213g_scene_image_state(scene: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(scene, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key in _AVA_V213G_IMAGE_MEDIA_KEYS:
+        if key in scene:
+            out[key] = copy.deepcopy(scene.get(key))
+    nested = _ava_v213g_nested_image_state(scene)
+    if nested:
+        out['_nested_media_v213g'] = nested
+    return out
+
+
+def _ava_v213g_scene_has_image_state(scene: dict[str, Any] | None) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    for key in _AVA_V213G_IMAGE_MEDIA_KEYS:
+        if _ava_v213g_value_present(scene.get(key)):
+            return True
+    media = scene.get('media') if isinstance(scene.get('media'), dict) else {}
+    for key in _AVA_V213G_NESTED_MEDIA_IMAGE_KEYS:
+        if _ava_v213g_value_present(media.get(key)):
+            return True
+    return False
+
+
+def _ava_v213g_clear_scene_image_state(scene: dict[str, Any]) -> int:
+    if not isinstance(scene, dict):
+        return 0
+    changed = 0
+    for key in _AVA_V213G_IMAGE_MEDIA_KEYS:
+        if key in scene:
+            scene.pop(key, None)
+            changed += 1
+    media = scene.get('media')
+    if isinstance(media, dict):
+        for key in _AVA_V213G_NESTED_MEDIA_IMAGE_KEYS:
+            if key in media:
+                media.pop(key, None)
+                changed += 1
+        if not media:
+            scene.pop('media', None)
+    return changed
+
+
+def _ava_v213g_apply_scene_image_state(scene: dict[str, Any], image_state: dict[str, Any]) -> int:
+    if not isinstance(scene, dict):
+        return 0
+    changed = _ava_v213g_clear_scene_image_state(scene)
+    nested = image_state.get('_nested_media_v213g') if isinstance(image_state.get('_nested_media_v213g'), dict) else {}
+    for key, value in image_state.items():
+        if key == '_nested_media_v213g':
+            continue
+        scene[key] = copy.deepcopy(value)
+        changed += 1
+    if nested:
+        media = scene.get('media') if isinstance(scene.get('media'), dict) else {}
+        for key, value in nested.items():
+            media[key] = copy.deepcopy(value)
+        scene['media'] = media
+        changed += len(nested)
+    return changed
+
+
+def _ava_v213g_status_media_readonly_client(client_version: str = '') -> bool:
+    text = str(client_version or '').lower()
+    # AVA_BOARD_FRESH_UPLOAD_START_AUTHORITY_V213I:
+    # User-triggered preparing/start payloads may contain a freshly uploaded /assets/... image
+    # that has not yet been persisted by a follow-up Board autosave.  The V213G media guard
+    # must stay active for old status/finished/orphan snapshots, but it must NOT overwrite
+    # the start payload with stale saved delete/no-image fields.
+    if text.startswith('board-server-video-batch-preparing') or text.startswith('board-server-video-batch-start'):
+        return False
+    return (
+        text.startswith('board-server-batch-') or
+        text.startswith('board-server-video-batch-') or
+        text.startswith('board-manual-queue-stale-lock-clear') or
+        text.startswith('board-stale-scene-job-clear')
+    )
+
+
+def _ava_v213g_preserve_current_image_media(current_data: dict[str, Any] | None, incoming_data: dict[str, Any] | None, client_version: str = '') -> tuple[dict[str, Any], int]:
+    if not _ava_v213g_status_media_readonly_client(client_version):
+        return incoming_data or {}, 0
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data or {}, 0
+    current_scenes = current_data.get('scenes') if isinstance(current_data.get('scenes'), list) else []
+    incoming_scenes = incoming_data.get('scenes') if isinstance(incoming_data.get('scenes'), list) else []
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, 0
+
+    current_by_id = {
+        _ava_v213g_scene_id(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+    next_data = copy.deepcopy(incoming_data)
+    next_scenes = next_data.get('scenes') if isinstance(next_data.get('scenes'), list) else []
+    changed = 0
+    changed_scene_ids: list[str] = []
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _ava_v213g_scene_id(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict):
+            continue
+        current_state = _ava_v213g_scene_image_state(current_scene)
+        before_state = _ava_v213g_scene_image_state(scene)
+        # Current Board is the authority for source image refs during server-batch/status writes.
+        # If current has no image, old incoming image refs are removed instead of resurrected.
+        changed_here = _ava_v213g_apply_scene_image_state(scene, current_state)
+        after_state = _ava_v213g_scene_image_state(scene)
+        if before_state != after_state:
+            changed += changed_here or 1
+            changed_scene_ids.append(scene_id)
+            scene['media_authority_preserved_v213g'] = True
+            scene['mediaAuthorityPreservedV213G'] = True
+    if changed:
+        next_data['boardMediaDeleteReplaceAuthorityV213G'] = True
+        next_data['board_media_delete_replace_authority_v213g'] = True
+        print('[BOARD MEDIA DELETE REPLACE AUTHORITY V213G]', {
+            'source': client_version,
+            'changedFields': changed,
+            'changedSceneIds': changed_scene_ids[:60],
+            **media_refs_summary(next_data),
+        }, flush=True)
+    return next_data, changed
+
+
+def _ava_v213g_apply_fresh_image_authority(project_id: str, board_data: dict[str, Any] | None, source: str = 'status_return') -> dict[str, Any]:
+    try:
+        latest = _board_batch_read_snapshot(project_id)
+        next_data, changed = _ava_v213g_preserve_current_image_media(latest or {}, copy.deepcopy(board_data or {}), f'board-server-batch-{source}')
+        if changed:
+            print('[BOARD STATUS RETURN FRESH MEDIA AUTHORITY V213G]', {
+                'project_id': project_id,
+                'source': source,
+                'changedFields': changed,
+            }, flush=True)
+        return next_data
+    except Exception as exc:
+        print('[BOARD STATUS RETURN FRESH MEDIA AUTHORITY V213G ERROR]', {
+            'project_id': project_id,
+            'source': source,
+            'error': str(exc),
+        }, flush=True)
+        return board_data or {}
+
+
 def _board_batch_save_snapshot(project_id: str, board_data: dict[str, Any], client_version: str = "board-server-video-batch-v131a") -> None:
     def op(db: dict[str, Any]) -> dict[str, Any]:
         db.setdefault("snapshots", {}).setdefault(project_id, {})
         current = db["snapshots"].get(project_id, {}).get("board") or {}
         current_data = current.get("data") if isinstance(current, dict) else {}
-        incoming, preserved = preserve_media_refs(current_data or {}, copy.deepcopy(board_data or {}))
+        incoming_raw_v213g = copy.deepcopy(board_data or {})
+        incoming_raw_v213g, preserved_image_authority_v213g = _ava_v213g_preserve_current_image_media(
+            current_data or {},
+            incoming_raw_v213g,
+            client_version=client_version,
+        )
+        incoming, preserved = preserve_media_refs(current_data or {}, incoming_raw_v213g)
+        if preserved_image_authority_v213g:
+            preserved += preserved_image_authority_v213g
         print("[BOARD SERVER BATCH SNAPSHOT]", {
             "project_id": project_id,
             **media_refs_summary(incoming),
@@ -4014,6 +4245,47 @@ def _board_batch_error_patch(status: str, detail: Any = None) -> dict[str, Any]:
     }
 
 
+
+# AVA_BOARD_INPUT_NOT_READY_NOT_BAD_V213I
+# Missing prompt/image/audio-slice should not mark a non-existent video as bad.  It is a
+# preflight/not-ready state.  This also clears stale review flags left from an earlier failed run.
+def _board_batch_input_not_ready_patch_v213i(detail: Any = None) -> dict[str, Any]:
+    msg = str(detail or "not_ready")
+    return {
+        "video_status": "not_ready",
+        "videoStatus": "not_ready",
+        "video_error": msg,
+        "videoError": msg,
+        "video_job_id": "",
+        "videoJobId": "",
+        "video_status_endpoint": "",
+        "videoStatusEndpoint": "",
+        "video_queue_position": 0,
+        "videoQueuePosition": 0,
+        "video_queue_source": "input_not_ready_v213i",
+        "videoQueueSource": "input_not_ready_v213i",
+        "generation_status": "not_ready",
+        "generationStatus": "not_ready",
+        "batch_status": "not_ready",
+        "batchStatus": "not_ready",
+        "review_status": "",
+        "reviewStatus": "",
+        "video_review_status": "",
+        "videoReviewStatus": "",
+        "bad_video": False,
+        "badVideo": False,
+        "video_bad": False,
+        "videoBad": False,
+        "is_bad_video": False,
+        "isBadVideo": False,
+        "pending_review": False,
+        "pendingReview": False,
+        "review_required": False,
+        "reviewRequired": False,
+        "input_not_ready_v213i": True,
+        "inputNotReadyV213I": True,
+    }
+
 def _board_batch_update_scene(project_id: str, scene_id: str, patch: dict[str, Any], batch_patch: dict[str, Any] | None = None) -> dict[str, Any]:
     board_data = _board_batch_read_snapshot(project_id)
     scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
@@ -4345,7 +4617,8 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
             problems = _board_batch_input_problems(scene)
             if problems:
                 failed.append(scene_id)
-                _board_batch_update_scene(project_id, scene_id, _board_batch_error_patch("error", ", ".join(problems)), {
+                print("[BOARD BATCH INPUT NOT READY V213I]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id, "problems": problems}, flush=True)
+                _board_batch_update_scene(project_id, scene_id, _board_batch_input_not_ready_patch_v213i(", ".join(problems)), {
                     "batch_id": batch_id,
                     "status": "running" if waiting_ids else "finished_with_errors",
                     "failed_scene_ids": failed,
@@ -4860,6 +5133,17 @@ def _board_batch_clear_not_started_state_v152a(
 def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     project = ensure_project_access(project_id, user)
     mode = str(payload.mode or "missing").strip().lower()
+    # AVA_BOARD_BATCH_ACTUAL_QUEUE_AUTHORITY_V213K
+    force_regenerate_ids_v213k = {
+        str(item or "").strip()
+        for item in ((getattr(payload, "force_regenerate_scene_ids", None) or getattr(payload, "forceRegenerateSceneIds", None) or []) or [])
+        if str(item or "").strip()
+    }
+    client_planned_ids_v213k = [
+        str(item or "").strip()
+        for item in ((getattr(payload, "client_planned_scene_ids_v213k", None) or getattr(payload, "clientPlannedSceneIdsV213K", None) or []) or [])
+        if str(item or "").strip()
+    ]
     incoming_scenes = payload.scenes if isinstance(payload.scenes, list) else None
     board_data = _board_batch_read_snapshot(project_id)
     if incoming_scenes is not None:
@@ -4886,6 +5170,38 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
                 sid_v209x = _board_batch_scene_id(scene_v209x)
                 if sid_v209x and sid_v209x not in early_candidate_ids_v209x:
                     early_candidate_ids_v209x.append(sid_v209x)
+
+        # AVA_BOARD_BATCH_READY_VIDEO_AUTHORITATIVE_SKIP_V213F:
+        # Early preparing marker must use the same truth as final queue.
+        # A ready scene may be shown as preparing only if it is explicitly marked red "bad" now.
+        if early_candidate_ids_v209x:
+            try:
+                scenes_by_id_v213f = {
+                    _board_batch_scene_id(scene_v213f): scene_v213f
+                    for scene_v213f in scenes
+                    if isinstance(scene_v213f, dict) and _board_batch_scene_id(scene_v213f)
+                }
+                skipped_ready_early_v213f = []
+                filtered_early_v213f = []
+                for sid_v213f in early_candidate_ids_v209x:
+                    scene_v213f = scenes_by_id_v213f.get(sid_v213f) or {}
+                    if _board_batch_scene_has_video(scene_v213f) and not _board_batch_scene_has_bad_review(scene_v213f) and sid_v213f not in force_regenerate_ids_v213k:
+                        skipped_ready_early_v213f.append(sid_v213f)
+                        continue
+                    filtered_early_v213f.append(sid_v213f)
+                if skipped_ready_early_v213f:
+                    print("[BOARD BATCH READY VIDEO AUTHORITATIVE SKIP V213F]", {
+                        "project_id": project_id,
+                        "stage": "early_preparing",
+                        "skippedReadyIds": skipped_ready_early_v213f,
+                    }, flush=True)
+                early_candidate_ids_v209x = filtered_early_v213f
+            except Exception as exc_v213f:
+                print("[BOARD BATCH READY VIDEO AUTHORITATIVE SKIP V213F ERROR]", {
+                    "project_id": project_id,
+                    "stage": "early_preparing",
+                    "error": str(exc_v213f),
+                }, flush=True)
 
         if early_candidate_ids_v209x:
             early_batch_id_v209x = f"boardbatch_{uuid4().hex[:14]}"
@@ -5010,7 +5326,18 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
             continue
         if requested_set and scene_id not in requested_set:
             continue
-        if mode in {"missing", "remaining"} and _board_batch_scene_has_video(scene) and not _board_batch_scene_has_bad_review(scene):
+        # AVA_BOARD_BATCH_READY_VIDEO_AUTHORITATIVE_SKIP_V213F:
+        # Generate All is missing/bad authority, not blind overwrite. If the browser sends a stale
+        # requested id for a ready scene, do not queue it unless it is explicitly red "bad" right now.
+        if _board_batch_scene_has_video(scene) and not _board_batch_scene_has_bad_review(scene) and scene_id not in force_regenerate_ids_v213k:
+            print("[BOARD BATCH READY VIDEO AUTHORITATIVE SKIP V213F]", {
+                "project_id": project_id,
+                "stage": "final_waiting_ids",
+                "scene_id": scene_id,
+                "mode": mode,
+                "forceRegenerateIdsV213K": list(force_regenerate_ids_v213k),
+                "reviewStatus": _board_batch_review_status(scene),
+            }, flush=True)
             continue
         problems = _board_batch_input_problems(scene)
         if problems:
@@ -5197,7 +5524,7 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     bad_review_waiting_ids_v132b = [
         _board_batch_scene_id(scene)
         for scene in scenes
-        if _board_batch_scene_id(scene) in waiting_set and _board_batch_scene_was_bad_before_regenerate(scene)
+        if _board_batch_scene_id(scene) in waiting_set and (_board_batch_scene_was_bad_before_regenerate(scene) or _board_batch_scene_id(scene) in force_regenerate_ids_v213k)
     ]
     scenes_next: list[dict[str, Any]] = []
     for scene in scenes:
@@ -5228,7 +5555,7 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
                 "videoName": "",
                 "video_result": None,
                 "videoResult": None,
-                **_board_batch_bad_review_start_patch(scene, _board_batch_scene_has_bad_review(scene)),
+                **_board_batch_bad_review_start_patch(scene, _board_batch_scene_has_bad_review(scene) or scene_id in force_regenerate_ids_v213k),
             })
         else:
             scenes_next.append(scene)
@@ -5303,6 +5630,12 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
         "batchId": batch_id,
         "batch_id": batch_id,
         "queued": waiting_ids,
+        "queuedSceneIds": waiting_ids,
+        "queued_scene_ids": waiting_ids,
+        "forceRegenerateSceneIds": list(force_regenerate_ids_v213k),
+        "force_regenerate_scene_ids": list(force_regenerate_ids_v213k),
+        "clientPlannedSceneIdsV213K": client_planned_ids_v213k,
+        "client_planned_scene_ids_v213k": client_planned_ids_v213k,
         "invalid": invalid,
         "autoAudioSliceSceneIds": auto_sliced_scene_ids_v147a,
         "auto_audio_slice_scene_ids": auto_sliced_scene_ids_v147a,
@@ -5446,8 +5779,10 @@ def board_video_batch_status(project_id: str, user: dict = Depends(get_current_u
     if live is None:
         cleaned = _board_batch_cleanup_orphaned_after_reload_v150a(project_id, board_data, batch)
         if cleaned is not None:
-            return {"ok": True, "batch": cleaned, "board_video_batch": cleaned, "orphanCleaned": True, "orphan_cleaned": True, "board": board_data, "clearedSceneIds": cleared_scene_jobs_v200h, "cleared_scene_ids": cleared_scene_jobs_v200h, "client_version": "board-batch-status-returns-board-v200i"}
-    return {"ok": True, "batch": live or batch or {}, "board_video_batch": live or batch or {}, "board": board_data, "clearedSceneIds": cleared_scene_jobs_v200h, "cleared_scene_ids": cleared_scene_jobs_v200h, "client_version": "board-batch-status-returns-board-v200i"}
+            board_data = _ava_v213g_apply_fresh_image_authority(project_id, board_data, source='orphan_cleaned_return')
+            return {"ok": True, "batch": cleaned, "board_video_batch": cleaned, "orphanCleaned": True, "orphan_cleaned": True, "board": board_data, "clearedSceneIds": cleared_scene_jobs_v200h, "cleared_scene_ids": cleared_scene_jobs_v200h, "client_version": "board-batch-status-returns-board-v200i", "board_media_authority_v213g": True}
+    board_data = _ava_v213g_apply_fresh_image_authority(project_id, board_data, source='status_return')
+    return {"ok": True, "batch": live or batch or {}, "board_video_batch": live or batch or {}, "board": board_data, "clearedSceneIds": cleared_scene_jobs_v200h, "cleared_scene_ids": cleared_scene_jobs_v200h, "client_version": "board-batch-status-returns-board-v200i", "board_media_authority_v213g": True}
 
 
 @router.post("/projects/{project_id}/board/video-batch/stop")
@@ -6397,10 +6732,245 @@ def _assembly_make_local_player_safe_v196f(
     return result
 
 
+# AVA_ASSEMBLY_CURRENT_BOARD_MEDIA_AUTHORITY_V213P:
+# Backend safety net: if frontend marks an item as deleted/stale, never fallback to old
+# resultVideo/result_video aliases from an older board_assembly snapshot.
+def _assembly_item_video_suppressed_v213p(item: dict[str, Any]) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if any(_assembly_bool(item.get(key)) for key in (
+        "video_suppressed_v213p", "videoSuppressedV213P",
+        "image_deleted_v129o", "imageDeletedV129O",
+        "first_image_deleted_v129o", "firstImageDeletedV129O",
+        "last_image_deleted_v129o", "lastImageDeletedV129O",
+    )):
+        return True
+    status = str(item.get("video_status") or item.get("videoStatus") or "").strip().lower()
+    if status == "ready":
+        return False
+    if any(_assembly_bool(item.get(key)) for key in (
+        "video_stale_after_image_change_v129p", "videoStaleAfterImageChangeV129P",
+        "input_not_ready_v213i", "inputNotReadyV213I",
+    )):
+        return True
+    reason = str(item.get("video_reset_reason") or item.get("videoResetReason") or item.get("video_error") or item.get("videoError") or "").lower()
+    return any(token in reason for token in ("image_changed", "source_image", "deleted", "cleared", "clear_video"))
+
+
+
+# AVA_ASSEMBLY_SUPPRESSED_VIDEO_IMAGE_PLACEHOLDER_V213U:
+# V213R preserved timing by inserting black placeholders when V213P suppressed an old
+# deleted/stale video ref. That is safe but ugly: the final MP4/Telegram copy can go black
+# in the middle of a song. If the current Board scene still has a valid still image, build
+# a still-image video clip for the exact scene duration instead of a black clip.
+def _assembly_item_image_value_v213u(item: dict[str, Any]) -> str:
+    if not isinstance(item, dict):
+        return ""
+    if any(_assembly_bool(item.get(key)) for key in (
+        "image_deleted_v129o", "imageDeletedV129O",
+        "first_image_deleted_v129o", "firstImageDeletedV129O",
+        "last_image_deleted_v129o", "lastImageDeletedV129O",
+    )):
+        return ""
+    image_result = item.get("image_result") if isinstance(item.get("image_result"), dict) else {}
+    result_image = item.get("resultImage") if isinstance(item.get("resultImage"), dict) else {}
+    return str(
+        item.get("image_api_path")
+        or item.get("imageApiPath")
+        or item.get("first_image_api_path")
+        or item.get("firstImageApiPath")
+        or item.get("start_image_api_path")
+        or item.get("startImageApiPath")
+        or item.get("first_frame_api_path")
+        or item.get("firstFrameApiPath")
+        or image_result.get("image_api_path")
+        or image_result.get("imageApiPath")
+        or image_result.get("api_path")
+        or result_image.get("image_api_path")
+        or result_image.get("imageApiPath")
+        or result_image.get("api_path")
+        or item.get("image_url")
+        or item.get("imageUrl")
+        or item.get("first_image_url")
+        or item.get("firstImageUrl")
+        or item.get("start_image_url")
+        or item.get("startImageUrl")
+        or item.get("first_frame_url")
+        or item.get("firstFrameUrl")
+        or image_result.get("image_url")
+        or image_result.get("imageUrl")
+        or image_result.get("url")
+        or result_image.get("image_url")
+        or result_image.get("imageUrl")
+        or result_image.get("url")
+        or ""
+    ).strip()
+
+
+def _create_image_assembly_clip_v213u(
+    image_value: str,
+    out_path: Path,
+    *,
+    width: int,
+    height: int,
+    fps: int,
+    duration: float,
+    fit_mode: str = "contain",
+    audio_volume: float = 0.0,
+) -> dict[str, Any]:
+    safe_duration = max(float(duration or 0.0), 0.1)
+    safe_fps = max(1, int(fps or 30))
+    image_path = _resolve_local_file(image_value)
+    mode = str(fit_mode or "contain").strip().lower()
+    if mode in {"cover", "crop", "fill_crop"}:
+        vf = (
+            f"scale={int(width)}:{int(height)}:force_original_aspect_ratio=increase,"
+            f"crop={int(width)}:{int(height)},setsar=1,format=yuv420p"
+        )
+    else:
+        vf = (
+            f"scale={int(width)}:{int(height)}:force_original_aspect_ratio=decrease,"
+            f"pad={int(width)}:{int(height)}:(ow-iw)/2:(oh-ih)/2:color=black,"
+            f"setsar=1,format=yuv420p"
+        )
+    _run_ffmpeg([
+        "-y",
+        "-loop", "1",
+        "-framerate", str(safe_fps),
+        "-t", f"{safe_duration:.6f}",
+        "-i", str(image_path),
+        "-f", "lavfi",
+        "-t", f"{safe_duration:.6f}",
+        "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-vf", vf,
+        "-r", str(safe_fps),
+        "-fps_mode", "cfr",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-x264-params", "bframes=0:keyint=60:min-keyint=60:scenecut=0",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-ar", "48000",
+        "-ac", "2",
+        "-af", f"volume={max(0.0, float(audio_volume)):.4f}",
+        "-shortest",
+        "-movflags", "+faststart",
+        "-video_track_timescale", "30000",
+        str(out_path),
+    ])
+    return {
+        "sourcePath": str(image_path),
+        "normalizedPath": str(out_path),
+        "sourceDurationSec": 0.0,
+        "durationSec": _ffprobe_duration(out_path) or safe_duration,
+        "hadAudio": False,
+        "placeholder": True,
+        "imagePlaceholderV213U": True,
+        "imageSourceV213U": str(image_value),
+    }
+
+
+def _assembly_prepare_suppressed_placeholder_v213u(
+    item: dict[str, Any],
+    *,
+    scene_id: str,
+    index: int,
+    target_start: float,
+    duration: float,
+    work_dir: Path,
+    width: int,
+    height: int,
+    fps: int,
+    fit_mode: str,
+    suppressed_black_v213r: bool,
+    reason: str,
+) -> tuple[Path, dict[str, Any]]:
+    image_value = _assembly_item_image_value_v213u(item) if suppressed_black_v213r else ""
+    if image_value:
+        normalized_path = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}_image_placeholder_v213u.mp4"
+        try:
+            prepared = _create_image_assembly_clip_v213u(
+                image_value,
+                normalized_path,
+                width=width,
+                height=height,
+                fps=fps,
+                duration=duration,
+                fit_mode=fit_mode,
+                audio_volume=0.0,
+            )
+            _log_board_assembly("[BOARD ASSEMBLY SUPPRESSED VIDEO IMAGE PLACEHOLDER V213U]", {
+                "scene_id": scene_id,
+                "start_sec": target_start,
+                "duration_sec": duration,
+                "image": image_value,
+                "reason": reason,
+            })
+            route = item.get("route") or "image_placeholder_v213u"
+        except Exception as exc:
+            _log_board_assembly("[BOARD ASSEMBLY SUPPRESSED VIDEO IMAGE PLACEHOLDER FAILED V213U]", {
+                "scene_id": scene_id,
+                "image": image_value,
+                "error": str(exc),
+            })
+            image_value = ""
+    if not image_value:
+        _log_board_assembly("[BOARD ASSEMBLY SUPPRESSED VIDEO BLACK PLACEHOLDER V213R]" if suppressed_black_v213r else "[BOARD ASSEMBLY PLACEHOLDER ACCEPTED]", {
+            "scene_id": scene_id,
+            "start_sec": target_start,
+            "duration_sec": duration,
+            "reason": reason if suppressed_black_v213r else "allow_black_placeholders",
+        })
+        normalized_path = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}_black.mp4"
+        prepared = _create_black_assembly_clip(
+            normalized_path,
+            width=width,
+            height=height,
+            fps=fps,
+            duration=duration,
+            audio_volume=0.0,
+        )
+        route = item.get("route") or "black_placeholder"
+    prepared.update({
+        "sceneId": scene_id,
+        "index": index,
+        "title": item.get("title") or scene_id,
+        "route": route,
+        "targetStartSec": target_start,
+        "targetEndSec": target_start + duration,
+        "missingVideo": True,
+    })
+    if image_value:
+        prepared["suppressedVideoImagePlaceholderV213U"] = True
+    return normalized_path, prepared
+
+def _assembly_item_auto_black_for_suppressed_video_v213r(item: dict[str, Any]) -> bool:
+    # AVA_ASSEMBLY_SUPPRESSED_VIDEO_BLACK_PLACEHOLDER_V213R:
+    # If V213P deliberately suppresses a stale/deleted video ref, do not resurrect the
+    # old clip and do not abort the whole assembly. Preserve exact timing with a black
+    # placeholder for that scene. Ordinary missing videos still use the old strict rules.
+    try:
+        return bool(_assembly_item_video_suppressed_v213p(item))
+    except Exception:
+        if not isinstance(item, dict):
+            return False
+        return any(_assembly_bool(item.get(key)) for key in (
+            "video_suppressed_v213p", "videoSuppressedV213P",
+            "image_deleted_v129o", "imageDeletedV129O",
+            "video_stale_after_image_change_v129p", "videoStaleAfterImageChangeV129P",
+        ))
+
+
 def _assembly_item_video_value(item: dict[str, Any]) -> str:
     # AVA_BOARD_ASSEMBLY_RESULT_VIDEO_REFS_BACKEND_V202B:
     # Ready clips can be stored under resultVideo/result_video aliases before
     # normal video_* aliases are rehydrated. Assembly must count and use them.
+    if _assembly_item_video_suppressed_v213p(item):
+        return ""
     result_video = item.get("resultVideo") if isinstance(item.get("resultVideo"), dict) else {}
     video_result = item.get("video_result") if isinstance(item.get("video_result"), dict) else {}
     return str(
@@ -9685,6 +10255,7 @@ def _run_board_assembly_job(job_id: str) -> None:
                     "scene_id": scene_id,
                     "placeholder": is_placeholder_item,
                     "has_video_url": bool(video_value),
+                    "video_suppressed_v213p": _assembly_item_video_suppressed_v213p(item),
                     "original_start_sec": target_start,
                     "duration_sec": duration,
                 })
@@ -9697,6 +10268,7 @@ def _run_board_assembly_job(job_id: str) -> None:
                 "placeholder": is_placeholder_item,
                 "missing_video": _assembly_bool(item.get("missing_video") or item.get("missingVideo")),
                 "has_video_url": bool(video_value),
+                "video_suppressed_v213p": _assembly_item_video_suppressed_v213p(item),
                 "source_is_mmaudio": _assembly_bool(item.get("source_is_mmaudio") or item.get("sourceIsMmaudio")),
                 "video_source": item.get("video_source") or item.get("videoSource") or "",
                 "start_sec": target_start,
@@ -9704,8 +10276,9 @@ def _run_board_assembly_job(job_id: str) -> None:
             })
 
             if is_placeholder_item:
-                missing_items.append({"sceneId": scene_id, "reason": "missing_video_url"})
-                if not allow_black_placeholders_v209i:
+                suppressed_black_v213r = _assembly_item_auto_black_for_suppressed_video_v213r(item)
+                missing_items.append({"sceneId": scene_id, "reason": "suppressed_stale_video_black_placeholder_v213r" if suppressed_black_v213r else "missing_video_url"})
+                if (not allow_black_placeholders_v209i) and (not suppressed_black_v213r):
                     _log_board_assembly("[BOARD ASSEMBLY PLACEHOLDER BLOCKED V209I]", {
                         "scene_id": scene_id,
                         "start_sec": target_start,
@@ -9719,39 +10292,31 @@ def _run_board_assembly_job(job_id: str) -> None:
                         "message": "Assembly received placeholder scenes. Enable skip_missing / ready-only assembly, or explicitly allow black placeholders.",
                         "missing": missing_items,
                     })
-                _log_board_assembly("[BOARD ASSEMBLY PLACEHOLDER ACCEPTED]", {
-                    "scene_id": scene_id,
-                    "start_sec": target_start,
-                    "duration_sec": duration,
-                })
-                normalized_path = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}_black.mp4"
-                prepared = _create_black_assembly_clip(
-                    normalized_path,
+                normalized_path, prepared = _assembly_prepare_suppressed_placeholder_v213u(
+                    item,
+                    scene_id=scene_id,
+                    index=index,
+                    target_start=target_start,
+                    duration=duration,
+                    work_dir=work_dir,
                     width=width,
                     height=height,
                     fps=fps,
-                    duration=duration,
-                    audio_volume=0.0,
+                    fit_mode=fit_mode,
+                    suppressed_black_v213r=suppressed_black_v213r,
+                    reason="stale_or_deleted_video_ref_suppressed_v213p" if suppressed_black_v213r else "explicit_placeholder",
                 )
-                prepared.update({
-                    "sceneId": scene_id,
-                    "index": index,
-                    "title": item.get("title") or scene_id,
-                    "route": item.get("route") or "black_placeholder",
-                    "targetStartSec": target_start,
-                    "targetEndSec": target_start + duration,
-                    "missingVideo": True,
-                })
                 normalized_paths.append(normalized_path)
                 prepared_items.append(prepared)
                 timeline_cursor = max(timeline_cursor, target_start + duration)
                 continue
 
             if not video_value:
-                missing_items.append({"sceneId": scene_id, "reason": "missing_video_url"})
-                if _assembly_item_claims_video(item):
+                suppressed_black_v213r = _assembly_item_auto_black_for_suppressed_video_v213r(item)
+                missing_items.append({"sceneId": scene_id, "reason": "suppressed_stale_video_black_placeholder_v213r" if suppressed_black_v213r else "missing_video_url"})
+                if _assembly_item_claims_video(item) and (not suppressed_black_v213r):
                     raise HTTPException(status_code=400, detail={"code": "scene_missing_video", "sceneId": scene_id})
-                if not allow_black_placeholders_v209i:
+                if (not allow_black_placeholders_v209i) and (not suppressed_black_v213r):
                     _log_board_assembly("[BOARD ASSEMBLY MISSING VIDEO BLOCKED V209I]", {
                         "scene_id": scene_id,
                         "start_sec": target_start,
@@ -9765,29 +10330,20 @@ def _run_board_assembly_job(job_id: str) -> None:
                         "message": "Assembly received a scene without video. Enable skip_missing / ready-only assembly, or explicitly allow black placeholders.",
                         "missing": missing_items,
                     })
-                _log_board_assembly("[BOARD ASSEMBLY PLACEHOLDER ACCEPTED]", {
-                    "scene_id": scene_id,
-                    "start_sec": target_start,
-                    "duration_sec": duration,
-                })
-                normalized_path = work_dir / f"{index + 1:04d}_{_safe_name(scene_id, 'scene')}_black.mp4"
-                prepared = _create_black_assembly_clip(
-                    normalized_path,
+                normalized_path, prepared = _assembly_prepare_suppressed_placeholder_v213u(
+                    item,
+                    scene_id=scene_id,
+                    index=index,
+                    target_start=target_start,
+                    duration=duration,
+                    work_dir=work_dir,
                     width=width,
                     height=height,
                     fps=fps,
-                    duration=duration,
-                    audio_volume=0.0,
+                    fit_mode=fit_mode,
+                    suppressed_black_v213r=suppressed_black_v213r,
+                    reason="stale_or_deleted_video_ref_suppressed_v213p" if suppressed_black_v213r else "allow_black_placeholders",
                 )
-                prepared.update({
-                    "sceneId": scene_id,
-                    "index": index,
-                    "title": item.get("title") or scene_id,
-                    "route": item.get("route") or "black_placeholder",
-                    "targetStartSec": target_start,
-                    "targetEndSec": target_start + duration,
-                    "missingVideo": True,
-                })
                 normalized_paths.append(normalized_path)
                 prepared_items.append(prepared)
                 timeline_cursor = max(timeline_cursor, target_start + duration)

@@ -360,6 +360,7 @@ function normalizePlayableVideoUrl(value = '') {
 }
 
 function pickSceneVideoApiPath(scene = {}, preferMmaudio = true) {
+  if (assemblySceneVideoRefsSuppressedV213P(scene)) return ''
   if (preferMmaudio) {
     const mmaudioPath = scene?.mmaudio_video_api_path || scene?.mmaudioVideoApiPath || scene?.mmaudio_result?.video_api_path || scene?.mmaudioResult?.videoApiPath
     if (mmaudioPath) return String(mmaudioPath).trim()
@@ -491,6 +492,7 @@ function AvaAssemblyLoading({ title = 'Загрузка видео монтаж�
 }
 
 function sceneVideoUrl(scene, preferMmaudio = true) {
+  if (assemblySceneVideoRefsSuppressedV213P(scene)) return ''
   const apiPath = pickSceneVideoApiPath(scene, preferMmaudio)
   if (apiPath) return normalizePlayableVideoUrl(apiPath)
   if (preferMmaudio) {
@@ -1078,65 +1080,134 @@ function mergeAudioStudioMmaudioIntoBoardV212I(board = {}, audioStudioRaw = {}) 
 }
 
 
+// AVA_ASSEMBLY_CURRENT_BOARD_MEDIA_AUTHORITY_V213P:
+// Old board_assembly snapshots may still contain resultVideo/videoUrl refs for scenes that were
+// later deleted, cleared, or regenerated in Board.  Current Board must be the authority for
+// scene list + media refs; absent current aliases intentionally clear stale Assembly aliases.
+const ASSEMBLY_SCENE_MEDIA_KEYS_V213P = [
+  'video_url', 'videoUrl', 'video_api_path', 'videoApiPath', 'video_asset_id', 'videoAssetId',
+  'output_video_url', 'outputVideoUrl', 'output_video_api_path', 'outputVideoApiPath',
+  'result_url', 'resultUrl', 'result_video_url', 'resultVideoUrl', 'result_video_api_path', 'resultVideoApiPath', 'result_video_asset_id', 'resultVideoAssetId',
+  'video_name', 'videoName', 'video_status', 'videoStatus', 'video_ready_at', 'videoReadyAt',
+  'video_result', 'videoResult', 'original_video_url', 'originalVideoUrl',
+  'video_job_id', 'videoJobId', 'video_status_endpoint', 'videoStatusEndpoint',
+  'video_reset_reason', 'videoResetReason', 'video_stale_after_image_change_v129p', 'videoStaleAfterImageChangeV129P',
+  'video_source_image_mutation_epoch', 'videoSourceImageMutationEpoch', 'video_source_image_mutation_at', 'videoSourceImageMutationAt',
+  'image_url', 'imageUrl', 'image_api_path', 'imageApiPath', 'image_asset_id', 'imageAssetId',
+  'first_image_url', 'firstImageUrl', 'first_image_api_path', 'firstImageApiPath', 'first_image_asset_id', 'firstImageAssetId',
+  'first_frame_url', 'firstFrameUrl', 'first_frame_api_path', 'firstFrameApiPath', 'first_frame_asset_id', 'firstFrameAssetId',
+  'start_image_url', 'startImageUrl', 'start_image_api_path', 'startImageApiPath', 'start_image_asset_id', 'startImageAssetId',
+  'last_image_url', 'lastImageUrl', 'last_image_api_path', 'lastImageApiPath', 'last_image_asset_id', 'lastImageAssetId',
+  'last_frame_url', 'lastFrameUrl', 'last_frame_api_path', 'lastFrameApiPath', 'last_frame_asset_id', 'lastFrameAssetId',
+  'end_image_url', 'endImageUrl', 'end_image_api_path', 'endImageApiPath', 'end_image_asset_id', 'endImageAssetId',
+  'image_mutation_epoch', 'imageMutationEpoch', 'image_mutation_at', 'imageMutationAt',
+  'source_image_changed_at', 'sourceImageChangedAt', 'image_deleted_v129o', 'imageDeletedV129O', 'image_deleted_at_v213g', 'imageDeletedAtV213G',
+  'first_image_deleted_v129o', 'firstImageDeletedV129O', 'last_image_deleted_v129o', 'lastImageDeletedV129O',
+  'mmaudio_video_url', 'mmaudioVideoUrl', 'mmaudio_video_api_path', 'mmaudioVideoApiPath', 'mmaudio_video_asset_id', 'mmaudioVideoAssetId',
+  'mmaudio_result', 'mmaudioResult', 'mmaudio_result_video_url', 'mmaudioResultVideoUrl', 'mmaudio_result_video_api_path', 'mmaudioResultVideoApiPath',
+  'mmaudio_status', 'mmaudioStatus', 'has_mmaudio', 'hasMmaudio', 'audio_studio_status', 'audioStudioStatus',
+  'audio_studio_applied_variant_id', 'audioStudioAppliedVariantId',
+]
+
+function assemblyEmptyValueForMediaKeyV213P(key) {
+  if (['video_result', 'videoResult', 'mmaudio_result', 'mmaudioResult'].includes(key)) return null
+  if (['has_mmaudio', 'hasMmaudio', 'video_stale_after_image_change_v129p', 'videoStaleAfterImageChangeV129P', 'image_deleted_v129o', 'imageDeletedV129O', 'first_image_deleted_v129o', 'firstImageDeletedV129O', 'last_image_deleted_v129o', 'lastImageDeletedV129O'].includes(key)) return false
+  return ''
+}
+
+function assemblyDateMsV213P(...values) {
+  for (const value of values) {
+    const raw = String(value || '').trim()
+    if (!raw) continue
+    const parsed = Date.parse(raw)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return 0
+}
+
+function assemblySceneVideoRefsSuppressedV213P(scene = {}) {
+  const status = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
+  const imageDeleted = Boolean(scene?.image_deleted_v129o || scene?.imageDeletedV129O || scene?.first_image_deleted_v129o || scene?.firstImageDeletedV129O || scene?.last_image_deleted_v129o || scene?.lastImageDeletedV129O)
+  if (imageDeleted) return true
+
+  const imageMutationMs = assemblyDateMsV213P(scene?.source_image_changed_at, scene?.sourceImageChangedAt, scene?.image_mutation_at, scene?.imageMutationAt)
+  const videoReadyMs = assemblyDateMsV213P(scene?.video_ready_at, scene?.videoReadyAt)
+  if (imageMutationMs && videoReadyMs && videoReadyMs + 250 < imageMutationMs) return true
+
+  const resetReason = String(scene?.video_reset_reason || scene?.videoResetReason || scene?.mmaudio_reset_reason || scene?.mmaudioResetReason || '').toLowerCase()
+  const staleFlag = Boolean(scene?.video_stale_after_image_change_v129p || scene?.videoStaleAfterImageChangeV129P || scene?.input_not_ready_v213i || scene?.inputNotReadyV213I)
+  const hasActiveJob = Boolean(scene?.video_job_id || scene?.videoJobId || scene?.video_status_endpoint || scene?.videoStatusEndpoint || ['starting', 'queued', 'preparing', 'submitting', 'running', 'queued_no_prompt_id'].includes(status))
+  if (hasActiveJob) return true
+  if (status === 'ready') return false
+  return Boolean(staleFlag || resetReason.includes('image_changed') || resetReason.includes('source_image') || resetReason.includes('deleted') || resetReason.includes('clear'))
+}
+
 function assemblySceneMediaOverlayFromCurrentBoardV212M(scene = {}) {
-  const keys = [
-    'video_url', 'videoUrl', 'video_api_path', 'videoApiPath', 'video_asset_id', 'videoAssetId',
-    'output_video_url', 'outputVideoUrl', 'output_video_api_path', 'outputVideoApiPath',
-    'result_video_url', 'resultVideoUrl', 'result_video_api_path', 'resultVideoApiPath', 'result_video_asset_id', 'resultVideoAssetId',
-    'video_name', 'videoName', 'video_status', 'videoStatus', 'video_ready_at', 'videoReadyAt',
-    'image_url', 'imageUrl', 'image_api_path', 'imageApiPath', 'image_asset_id', 'imageAssetId',
-    'first_image_url', 'firstImageUrl', 'first_image_api_path', 'firstImageApiPath', 'first_image_asset_id', 'firstImageAssetId',
-    'first_frame_url', 'firstFrameUrl', 'first_frame_api_path', 'firstFrameApiPath', 'first_frame_asset_id', 'firstFrameAssetId',
-    'start_image_url', 'startImageUrl', 'start_image_api_path', 'startImageApiPath', 'start_image_asset_id', 'startImageAssetId',
-    'last_image_url', 'lastImageUrl', 'last_image_api_path', 'lastImageApiPath', 'last_image_asset_id', 'lastImageAssetId',
-    'last_frame_url', 'lastFrameUrl', 'last_frame_api_path', 'lastFrameApiPath', 'last_frame_asset_id', 'lastFrameAssetId',
-    'end_image_url', 'endImageUrl', 'end_image_api_path', 'endImageApiPath', 'end_image_asset_id', 'endImageAssetId',
-    'image_mutation_epoch', 'imageMutationEpoch', 'image_mutation_at', 'imageMutationAt',
-    'source_image_changed_at', 'sourceImageChangedAt',
-    'mmaudio_video_url', 'mmaudioVideoUrl', 'mmaudio_video_api_path', 'mmaudioVideoApiPath', 'mmaudio_video_asset_id', 'mmaudioVideoAssetId',
-    'mmaudio_status', 'mmaudioStatus', 'has_mmaudio', 'hasMmaudio', 'audio_studio_status', 'audioStudioStatus',
-    'audio_studio_applied_variant_id', 'audioStudioAppliedVariantId',
-  ]
   const out = {}
-  keys.forEach((key) => {
+  ASSEMBLY_SCENE_MEDIA_KEYS_V213P.forEach((key) => {
     if (Object.prototype.hasOwnProperty.call(scene || {}, key)) out[key] = scene[key]
+    else out[key] = assemblyEmptyValueForMediaKeyV213P(key)
   })
+  if (assemblySceneVideoRefsSuppressedV213P(scene)) {
+    ;[
+      'video_url', 'videoUrl', 'video_api_path', 'videoApiPath', 'video_asset_id', 'videoAssetId',
+      'output_video_url', 'outputVideoUrl', 'output_video_api_path', 'outputVideoApiPath',
+      'result_url', 'resultUrl', 'result_video_url', 'resultVideoUrl', 'result_video_api_path', 'resultVideoApiPath', 'result_video_asset_id', 'resultVideoAssetId',
+      'video_name', 'videoName', 'video_result', 'videoResult', 'original_video_url', 'originalVideoUrl',
+      'mmaudio_video_url', 'mmaudioVideoUrl', 'mmaudio_video_api_path', 'mmaudioVideoApiPath', 'mmaudio_video_asset_id', 'mmaudioVideoAssetId',
+      'mmaudio_result', 'mmaudioResult', 'mmaudio_result_video_url', 'mmaudioResultVideoUrl', 'mmaudio_result_video_api_path', 'mmaudioResultVideoApiPath',
+    ].forEach((key) => { out[key] = assemblyEmptyValueForMediaKeyV213P(key) })
+    out.has_mmaudio = false
+    out.hasMmaudio = false
+  }
   return out
 }
 
 function mergeCurrentBoardMediaIntoAssemblyV212M(assemblyBoard = {}, currentBoard = {}) {
   const currentScenes = asArray(currentBoard?.scenes)
   if (!currentScenes.length) return assemblyBoard || {}
-  const currentById = new Map(currentScenes.map((scene) => [String(firstAssemblyTextV204H3(scene?.id, scene?.sceneId, scene?.scene_id)), scene]))
+  const assemblyScenes = asArray(assemblyBoard?.scenes)
+  const oldById = new Map(assemblyScenes.map((scene) => [String(firstAssemblyTextV204H3(scene?.id, scene?.sceneId, scene?.scene_id)), scene]))
   let refreshed = 0
-  const scenes = asArray(assemblyBoard?.scenes).map((scene) => {
+  let dropped = 0
+  const currentIds = new Set(currentScenes.map((scene) => String(firstAssemblyTextV204H3(scene?.id, scene?.sceneId, scene?.scene_id))).filter(Boolean))
+  assemblyScenes.forEach((scene) => {
     const sceneId = String(firstAssemblyTextV204H3(scene?.id, scene?.sceneId, scene?.scene_id))
-    const current = currentById.get(sceneId)
-    if (!current) return scene
+    if (sceneId && !currentIds.has(sceneId)) dropped += 1
+  })
+  const scenes = currentScenes.map((current, index) => {
+    const sceneId = String(firstAssemblyTextV204H3(current?.id, current?.sceneId, current?.scene_id, `seg_${String(index + 1).padStart(2, '0')}`))
+    const previous = oldById.get(sceneId) || {}
     refreshed += 1
     return {
-      ...scene,
+      ...previous,
+      ...current,
       ...assemblySceneMediaOverlayFromCurrentBoardV212M(current),
-      id: scene?.id || current?.id || sceneId,
-      scene_id: scene?.scene_id || current?.scene_id || sceneId,
-      sceneId: scene?.sceneId || current?.sceneId || sceneId,
-      start_sec: scene?.start_sec ?? scene?.startSec ?? current?.start_sec ?? current?.startSec,
-      startSec: scene?.startSec ?? scene?.start_sec ?? current?.startSec ?? current?.start_sec,
-      end_sec: scene?.end_sec ?? scene?.endSec ?? current?.end_sec ?? current?.endSec,
-      endSec: scene?.endSec ?? scene?.end_sec ?? current?.endSec ?? current?.end_sec,
-      duration_sec: scene?.duration_sec ?? scene?.durationSec ?? current?.duration_sec ?? current?.durationSec,
-      durationSec: scene?.durationSec ?? scene?.duration_sec ?? current?.durationSec ?? current?.duration_sec,
+      id: current?.id || current?.scene_id || previous?.id || sceneId,
+      scene_id: current?.scene_id || current?.id || previous?.scene_id || sceneId,
+      sceneId: current?.sceneId || current?.id || current?.scene_id || previous?.sceneId || sceneId,
+      start_sec: current?.start_sec ?? current?.startSec ?? current?.start ?? previous?.start_sec ?? previous?.startSec,
+      startSec: current?.startSec ?? current?.start_sec ?? current?.start ?? previous?.startSec ?? previous?.start_sec,
+      end_sec: current?.end_sec ?? current?.endSec ?? current?.end ?? previous?.end_sec ?? previous?.endSec,
+      endSec: current?.endSec ?? current?.end_sec ?? current?.end ?? previous?.endSec ?? previous?.end_sec,
+      duration_sec: current?.duration_sec ?? current?.durationSec ?? previous?.duration_sec ?? previous?.durationSec,
+      durationSec: current?.durationSec ?? current?.duration_sec ?? previous?.durationSec ?? previous?.duration_sec,
       assembly_media_refreshed_from_board_v212m: true,
       assemblyMediaRefreshedFromBoardV212M: true,
+      assembly_current_board_scene_authority_v213p: true,
+      assemblyCurrentBoardSceneAuthorityV213P: true,
     }
   })
-  if (refreshed) console.log('[AVA ASSEMBLY CURRENT BOARD MEDIA REFRESH V212M]', { refreshed, boardScenes: currentScenes.length })
+  if (refreshed || dropped) console.log('[AVA ASSEMBLY CURRENT BOARD MEDIA AUTHORITY V213P]', { refreshed, dropped, boardScenes: currentScenes.length, oldAssemblyScenes: assemblyScenes.length })
   return {
     ...(assemblyBoard || {}),
+    ...currentBoard,
     scenes,
     assemblyCurrentBoardMediaRefreshV212M: true,
     assemblyCurrentBoardMediaRefreshCountV212M: refreshed,
     assemblyCurrentBoardMediaRefreshAtV212M: new Date().toISOString(),
+    assemblyCurrentBoardSceneAuthorityV213P: true,
+    assemblyCurrentBoardSceneAuthorityDroppedV213P: dropped,
   }
 }
 
@@ -1299,6 +1370,8 @@ function buildSceneItems(board, preferMmaudio = true) {
       videoStatusEndpoint,
       video_status_endpoint: videoStatusEndpoint,
       hasVideo,
+      videoSuppressedV213P: assemblySceneVideoRefsSuppressedV213P(scene),
+      video_suppressed_v213p: assemblySceneVideoRefsSuppressedV213P(scene),
       hasBaseVideo,
       hasMmaudio,
       hasSound,
@@ -2705,6 +2778,18 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           videoJobId: item.videoJobId || '',
           video_status_endpoint: item.videoStatusEndpoint || '',
           videoStatusEndpoint: item.videoStatusEndpoint || '',
+          video_suppressed_v213p: Boolean(item.videoSuppressedV213P),
+          videoSuppressedV213P: Boolean(item.videoSuppressedV213P),
+          image_deleted_v129o: Boolean(raw.image_deleted_v129o || raw.imageDeletedV129O),
+          imageDeletedV129O: Boolean(raw.imageDeletedV129O || raw.image_deleted_v129o),
+          video_stale_after_image_change_v129p: Boolean(raw.video_stale_after_image_change_v129p || raw.videoStaleAfterImageChangeV129P),
+          videoStaleAfterImageChangeV129P: Boolean(raw.videoStaleAfterImageChangeV129P || raw.video_stale_after_image_change_v129p),
+          video_reset_reason: raw.video_reset_reason || raw.videoResetReason || '',
+          videoResetReason: raw.videoResetReason || raw.video_reset_reason || '',
+          source_image_changed_at: raw.source_image_changed_at || raw.sourceImageChangedAt || raw.image_mutation_at || raw.imageMutationAt || '',
+          sourceImageChangedAt: raw.sourceImageChangedAt || raw.source_image_changed_at || raw.imageMutationAt || raw.image_mutation_at || '',
+          video_ready_at: raw.video_ready_at || raw.videoReadyAt || '',
+          videoReadyAt: raw.videoReadyAt || raw.video_ready_at || '',
           source_is_mmaudio: usesMmaudioVideo,
           sourceIsMmaudio: usesMmaudioVideo,
           video_source: usesMmaudioVideo ? 'audio_studio_mmaudio_applied_v212i' : 'board_video',

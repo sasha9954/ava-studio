@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+import shutil
 import mimetypes
 import re
 import threading
@@ -877,6 +879,590 @@ def _telegram_assembly_notification_key_v140b(
     return f"assembly:{clean_project_id}:{digest}"
 
 
+
+# AVA_ASSEMBLY_TELEGRAM_DOWNLOAD_BUTTON_V213Q:
+# Add a safe callback button to completed Assembly notifications. The callback does
+# not expose local paths; it resolves the saved output record and uploads the MP4
+# to Telegram as a document in a background thread.
+def _telegram_assembly_download_token_v213q(notification_key: str) -> str:
+    raw = str(notification_key or "").strip()
+    if not raw:
+        raw = f"assembly-download:{now_iso()}:{uuid4().hex}"
+    return hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()[:24]
+
+
+def _telegram_assembly_download_markup_v213q(download_token: str) -> dict[str, Any] | None:
+    token = str(download_token or "").strip()
+    if not token:
+        return None
+    return {"inline_keyboard": [[{"text": "⬇️ Скачать MP4", "callback_data": f"ava:asm_dl:{token}"}]]}
+
+
+def _telegram_assembly_download_candidate_paths_v213q(record: dict[str, Any]) -> list[Path]:
+    candidates: list[Path] = []
+    raw_values = [
+        record.get("output_path"), record.get("outputPath"),
+        record.get("local_path"), record.get("localPath"),
+        record.get("path"), record.get("file_path"), record.get("filePath"),
+    ]
+    for raw in raw_values:
+        if not raw:
+            continue
+        try:
+            p = Path(str(raw))
+            candidates.append(p)
+            if not p.is_absolute():
+                candidates.append(Path.cwd() / p)
+        except Exception:
+            pass
+
+    api_path = str(record.get("output_api_path") or record.get("outputApiPath") or record.get("video_api_path") or record.get("videoApiPath") or "").strip()
+    if api_path:
+        rel = api_path.lstrip("/")
+        if rel.startswith("static/"):
+            candidates.append(Path(rel))
+            candidates.append(Path.cwd() / rel)
+        elif rel.startswith("assets/"):
+            candidates.append(Path("static") / rel)
+            candidates.append(Path.cwd() / "static" / rel)
+
+    output_name = str(record.get("output_name") or record.get("outputName") or record.get("video_name") or record.get("videoName") or "").strip()
+    if output_name:
+        candidates.append(Path("static") / "assets" / "board_assembly" / output_name)
+        candidates.append(Path.cwd() / "static" / "assets" / "board_assembly" / output_name)
+
+    # Keep order but remove duplicates.
+    seen: set[str] = set()
+    result: list[Path] = []
+    for p in candidates:
+        key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(p)
+    return result
+
+
+def _telegram_assembly_resolve_download_path_v213q(record: dict[str, Any]) -> Path | None:
+    for path in _telegram_assembly_download_candidate_paths_v213q(record):
+        try:
+            if path.exists() and path.is_file() and path.stat().st_size > 0:
+                return path
+        except Exception:
+            continue
+    return None
+
+
+def _telegram_assembly_load_download_record_v213q(download_token: str) -> dict[str, Any] | None:
+    token = str(download_token or "").strip()
+    if not token:
+        return None
+    try:
+        db = store.get_db()
+        downloads = db.get("telegram_assembly_downloads_v213q") or {}
+        if isinstance(downloads, dict):
+            record = downloads.get(token)
+            if isinstance(record, dict):
+                return record
+        records = db.get("telegram_assembly_notifications_v140b") or {}
+        if isinstance(records, dict):
+            for record in records.values():
+                if isinstance(record, dict) and str(record.get("download_token_v213q") or record.get("downloadTokenV213Q") or "").strip() == token:
+                    return record
+    except Exception as exc:
+        print("[ASSEMBLY TELEGRAM DOWNLOAD LOAD ERROR V213Q]", {"token": token, "error": str(exc)}, flush=True)
+    return None
+
+
+def _telegram_assembly_download_caption_v213q(record: dict[str, Any], path: Path) -> str:
+    project_id = str(record.get("project_id") or record.get("projectId") or "").strip()
+    project_title = _telegram_assembly_project_title_v140b(project_id)
+    name = str(record.get("output_name") or record.get("outputName") or path.name or "montage.mp4").strip()
+    lines = ["⬇️ <b>Готовый монтаж MP4</b>"]
+    if project_title:
+        lines.append(f"Проект: <b>{_html(project_title)}</b>")
+    if name:
+        lines.append(f"Файл: <code>{_html(name)}</code>")
+    return "\n".join(lines)
+
+
+
+# AVA_ASSEMBLY_TELEGRAM_LARGE_MP4_COMPRESS_AND_URL_FALLBACK_V213S:
+# Telegram Bot API rejected a 74MB assembly with HTTP 413. Keep the full-quality
+# MP4 on the server, but make a Telegram-safe compressed copy for bot upload.
+# If compression/upload fails, send a clickable server URL instead of a local path.
+AVA_TELEGRAM_UPLOAD_SAFE_LIMIT_BYTES_V213S = 49 * 1024 * 1024
+AVA_TELEGRAM_COMPRESS_TARGET_BYTES_V213S = 47 * 1024 * 1024
+
+
+def _telegram_assembly_size_text_v213s(size: int | float | None) -> str:
+    try:
+        value = float(size or 0)
+    except Exception:
+        value = 0.0
+    if value <= 0:
+        return "0 B"
+    if value >= 1024 * 1024 * 1024:
+        return f"{value / (1024 * 1024 * 1024):.2f} GB"
+    if value >= 1024 * 1024:
+        return f"{value / (1024 * 1024):.1f} MB"
+    if value >= 1024:
+        return f"{value / 1024:.1f} KB"
+    return f"{int(value)} B"
+
+
+def _telegram_assembly_public_download_url_v213s(record: dict[str, Any], path: Path | None = None) -> str:
+    for key in ("output_url", "outputUrl", "final_video_url", "finalVideoUrl", "video_url", "videoUrl"):
+        raw = str(record.get(key) or "").strip()
+        if raw.startswith("http://") or raw.startswith("https://"):
+            return raw
+
+    api_path = str(
+        record.get("output_api_path")
+        or record.get("outputApiPath")
+        or record.get("video_api_path")
+        or record.get("videoApiPath")
+        or ""
+    ).strip()
+    if not api_path and path:
+        try:
+            p = Path(path)
+            parts = [part.replace("\\", "/") for part in p.parts]
+            joined = "/".join(parts)
+            marker = "static/assets/"
+            if marker in joined:
+                api_path = "/" + joined[joined.index(marker):]
+        except Exception:
+            pass
+
+    if not api_path:
+        return ""
+    if api_path.startswith("http://") or api_path.startswith("https://"):
+        return api_path
+
+    settings = get_settings()
+    base = str(
+        getattr(settings, "telegram_backend_base_url", "")
+        or getattr(settings, "backend_base_url", "")
+        or getattr(settings, "public_backend_base_url", "")
+        or getattr(settings, "api_base_url", "")
+        or ""
+    ).strip().rstrip("/")
+
+    # Existing local dev default used by Ava Studio in the user's logs.
+    if not base:
+        base = "http://100.80.135.114:8010"
+    return base + "/" + api_path.lstrip("/")
+
+
+def _telegram_assembly_url_markup_v213s(url: str) -> dict[str, Any] | None:
+    clean = str(url or "").strip()
+    if not clean:
+        return None
+    return {"inline_keyboard": [[{"text": "🌐 Открыть / скачать MP4", "url": clean}]]}
+
+
+def _telegram_assembly_ffprobe_duration_v213s(path: Path, record: dict[str, Any]) -> float:
+    for raw in (record.get("duration_sec"), record.get("durationSec"), record.get("duration")):
+        try:
+            value = float(raw or 0)
+            if value > 0:
+                return value
+        except Exception:
+            pass
+    ffprobe = shutil.which("ffprobe") or "ffprobe"
+    try:
+        proc = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if proc.returncode == 0:
+            value = float(str(proc.stdout or "").strip() or 0)
+            if value > 0:
+                return value
+    except Exception as exc:
+        print("[ASSEMBLY TELEGRAM FFPROBE SKIP V213S]", {"path": str(path), "error": str(exc)}, flush=True)
+    return 0.0
+
+
+def _telegram_assembly_compressed_path_v213s(path: Path) -> Path:
+    return path.with_name(path.stem + "_telegram_safe.mp4")
+
+
+
+# AVA_TELEGRAM_SAFE_MP4_FULL_VIDEO_REENCODE_V213T:
+# Telegram's player can show audio over black if the compressed copy has broken
+# video timestamps/stream duration. V213T makes the safe copy a clean CFR 30fps
+# H.264 MP4, validates video duration, and does not reuse old pre-V213T safe files.
+def _telegram_assembly_safe_meta_path_v213t(path: Path) -> Path:
+    return path.with_name(path.name + ".v213t.ok.json")
+
+
+def _telegram_assembly_probe_json_v213t(path: Path, args: list[str]) -> dict[str, Any]:
+    ffprobe = shutil.which("ffprobe") or "ffprobe"
+    try:
+        proc = subprocess.run(
+            [ffprobe, "-v", "error", *args, "-of", "json", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if proc.returncode == 0:
+            return json.loads(str(proc.stdout or "{}") or "{}")
+    except Exception as exc:
+        print("[ASSEMBLY TELEGRAM FFPROBE JSON ERROR V213T]", {"path": str(path), "error": str(exc)}, flush=True)
+    return {}
+
+
+def _telegram_assembly_video_stream_duration_v213t(path: Path) -> float:
+    data = _telegram_assembly_probe_json_v213t(path, ["-select_streams", "v:0", "-show_entries", "stream=duration,nb_frames"])
+    streams = data.get("streams") if isinstance(data, dict) else None
+    if isinstance(streams, list) and streams:
+        stream = streams[0] if isinstance(streams[0], dict) else {}
+        for key in ("duration",):
+            try:
+                value = float(stream.get(key) or 0)
+                if value > 0:
+                    return value
+            except Exception:
+                pass
+    return 0.0
+
+
+def _telegram_assembly_format_duration_v213t(path: Path) -> float:
+    data = _telegram_assembly_probe_json_v213t(path, ["-show_entries", "format=duration"])
+    fmt = data.get("format") if isinstance(data, dict) else None
+    if isinstance(fmt, dict):
+        try:
+            value = float(fmt.get("duration") or 0)
+            if value > 0:
+                return value
+        except Exception:
+            pass
+    return 0.0
+
+
+def _telegram_assembly_validate_video_duration_v213t(path: Path, expected_duration: float) -> bool:
+    try:
+        if not path.exists() or path.stat().st_size <= 0:
+            return False
+    except Exception:
+        return False
+    try:
+        expected = float(expected_duration or 0)
+    except Exception:
+        expected = 0.0
+    if expected <= 0:
+        return True
+    video_duration = _telegram_assembly_video_stream_duration_v213t(path)
+    format_duration = _telegram_assembly_format_duration_v213t(path)
+    ok = bool(video_duration >= max(1.0, expected * 0.96))
+    print("[ASSEMBLY TELEGRAM SAFE VALIDATE V213T]", {
+        "path": str(path),
+        "ok": ok,
+        "expectedDurationSec": round(expected, 3),
+        "videoDurationSec": round(video_duration, 3),
+        "formatDurationSec": round(format_duration, 3),
+        "size": path.stat().st_size if path.exists() else 0,
+    }, flush=True)
+    return ok
+
+
+def _telegram_assembly_mark_safe_copy_v213t(original_path: Path, safe_path: Path, expected_duration: float) -> None:
+    meta = _telegram_assembly_safe_meta_path_v213t(safe_path)
+    try:
+        payload = {
+            "marker": "AVA_TELEGRAM_SAFE_MP4_FULL_VIDEO_REENCODE_V213T",
+            "original": str(original_path),
+            "safe": str(safe_path),
+            "expected_duration_sec": float(expected_duration or 0),
+            "safe_size": safe_path.stat().st_size if safe_path.exists() else 0,
+            "created_at": now_iso(),
+        }
+        meta.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        print("[ASSEMBLY TELEGRAM SAFE META WRITE ERROR V213T]", {"path": str(meta), "error": str(exc)}, flush=True)
+
+
+def _telegram_assembly_remove_old_safe_copy_v213t(safe_path: Path) -> None:
+    # Old V213S safe files may already be under Telegram's size limit but still broken.
+    # Remove them unless a V213T metadata marker says they were generated by the fixed encoder.
+    meta = _telegram_assembly_safe_meta_path_v213t(safe_path)
+    try:
+        if safe_path.exists() and safe_path.is_file() and not meta.exists():
+            print("[ASSEMBLY TELEGRAM SAFE CACHE INVALIDATE V213T]", {"path": str(safe_path), "reason": "missing_v213t_meta"}, flush=True)
+            safe_path.unlink()
+    except Exception as exc:
+        print("[ASSEMBLY TELEGRAM SAFE CACHE INVALIDATE ERROR V213T]", {"path": str(safe_path), "error": str(exc)}, flush=True)
+    try:
+        for tmp in safe_path.parent.glob(safe_path.stem + ".tmp*" + safe_path.suffix):
+            tmp.unlink()
+    except Exception:
+        pass
+
+def _telegram_assembly_compress_for_telegram_v213s(path: Path, record: dict[str, Any], target_bytes: int = AVA_TELEGRAM_COMPRESS_TARGET_BYTES_V213S) -> Path | None:
+    try:
+        original_size = path.stat().st_size
+    except Exception:
+        original_size = 0
+    if original_size > 0 and original_size <= AVA_TELEGRAM_UPLOAD_SAFE_LIMIT_BYTES_V213S:
+        return path
+
+    dst = _telegram_assembly_compressed_path_v213s(path)
+    duration = _telegram_assembly_ffprobe_duration_v213s(path, record)
+    if duration <= 0:
+        duration = 180.0
+    _telegram_assembly_remove_old_safe_copy_v213t(dst)
+    try:
+        if (
+            dst.exists()
+            and dst.is_file()
+            and 0 < dst.stat().st_size <= AVA_TELEGRAM_UPLOAD_SAFE_LIMIT_BYTES_V213S
+            and _telegram_assembly_safe_meta_path_v213t(dst).exists()
+            and _telegram_assembly_validate_video_duration_v213t(dst, duration)
+        ):
+            return dst
+    except Exception:
+        pass
+
+    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+
+    # Keep a safety margin for container overhead; Telegram rejects close-to-limit uploads.
+    total_bps = max(700_000, int((float(target_bytes) * 8.0 * 0.90) / max(duration, 1.0)))
+    audio_bps = 96_000 if duration > 120 else 128_000
+    video_bps = max(450_000, total_bps - audio_bps)
+    video_k = max(450, int(video_bps / 1000))
+    audio_k = max(64, int(audio_bps / 1000))
+
+    attempts = [
+        {"video_k": video_k, "audio_k": audio_k, "scale": "scale='min(1280,iw)':-2"},
+        {"video_k": max(380, int(video_k * 0.78)), "audio_k": 80, "scale": "scale='min(960,iw)':-2"},
+    ]
+    for index, params in enumerate(attempts, start=1):
+        tmp = dst.with_name(dst.stem + f".tmp{index}" + dst.suffix)
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+        vf_v213t = f"fps=30,{params['scale']},setsar=1,setpts=PTS-STARTPTS"
+        cmd = [
+            ffmpeg, "-y", "-hide_banner",
+            "-fflags", "+genpts",
+            "-i", str(path),
+            "-map", "0:v:0", "-map", "0:a:0?",
+            "-t", f"{float(duration):.3f}",
+            "-vf", vf_v213t,
+            "-af", "aresample=async=1:first_pts=0",
+            "-r", "30", "-vsync", "cfr",
+            "-c:v", "libx264", "-preset", "veryfast",
+            "-profile:v", "high", "-level", "4.1",
+            "-b:v", f"{int(params['video_k'])}k",
+            "-maxrate", f"{int(params['video_k'] * 1.25)}k",
+            "-bufsize", f"{int(params['video_k'] * 2)}k",
+            "-x264-params", "keyint=60:min-keyint=30:scenecut=40",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", f"{int(params['audio_k'])}k", "-ar", "48000", "-ac", "2",
+            "-movflags", "+faststart",
+            "-avoid_negative_ts", "make_zero",
+            str(tmp),
+        ]
+        print("[ASSEMBLY TELEGRAM COMPRESS START V213S]", {
+            "path": str(path), "tmp": str(tmp), "attempt": index,
+            "originalSize": original_size, "durationSec": round(duration, 3),
+            "videoK": int(params["video_k"]), "audioK": int(params["audio_k"]),
+        }, flush=True)
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            if proc.returncode != 0:
+                print("[ASSEMBLY TELEGRAM COMPRESS ERROR V213S]", {
+                    "attempt": index, "returncode": proc.returncode,
+                    "stderr": str(proc.stderr or "")[-1200:],
+                }, flush=True)
+                continue
+            size = tmp.stat().st_size if tmp.exists() else 0
+            print("[ASSEMBLY TELEGRAM COMPRESS DONE V213S]", {
+                "attempt": index, "tmp": str(tmp), "size": size,
+                "safeLimit": AVA_TELEGRAM_UPLOAD_SAFE_LIMIT_BYTES_V213S,
+            }, flush=True)
+            if size > 0:
+                if not _telegram_assembly_validate_video_duration_v213t(tmp, duration):
+                    print("[ASSEMBLY TELEGRAM COMPRESS BAD VIDEO DURATION V213T]", {
+                        "attempt": index,
+                        "tmp": str(tmp),
+                        "expectedDurationSec": round(float(duration or 0), 3),
+                    }, flush=True)
+                    try:
+                        tmp.unlink()
+                    except Exception:
+                        pass
+                    continue
+                try:
+                    if dst.exists():
+                        dst.unlink()
+                    tmp.replace(dst)
+                except Exception:
+                    shutil.copy2(tmp, dst)
+                    try:
+                        tmp.unlink()
+                    except Exception:
+                        pass
+                if dst.stat().st_size <= AVA_TELEGRAM_UPLOAD_SAFE_LIMIT_BYTES_V213S:
+                    _telegram_assembly_mark_safe_copy_v213t(path, dst, duration)
+                    return dst
+        except Exception as exc:
+            print("[ASSEMBLY TELEGRAM COMPRESS EXCEPTION V213S]", {"attempt": index, "error": str(exc)}, flush=True)
+
+    try:
+        if dst.exists() and dst.is_file() and dst.stat().st_size > 0:
+            return dst
+    except Exception:
+        pass
+    return None
+
+
+def _telegram_assembly_caption_for_path_v213s(record: dict[str, Any], original_path: Path, send_path: Path) -> str:
+    caption = _telegram_assembly_download_caption_v213q(record, send_path)
+    try:
+        if send_path.resolve() != original_path.resolve():
+            caption += (
+                "\n\nℹ️ Отправлена сжатая Telegram-версия. "
+                f"Оригинал на сервере: {_telegram_assembly_size_text_v213s(original_path.stat().st_size)}."
+            )
+    except Exception:
+        pass
+    return caption
+
+
+def _telegram_assembly_large_file_fallback_v213s(record: dict[str, Any], path: Path, result: dict[str, Any], chat_id: str = "") -> None:
+    url = _telegram_assembly_public_download_url_v213s(record, path)
+    try:
+        size_text = _telegram_assembly_size_text_v213s(path.stat().st_size)
+    except Exception:
+        size_text = "unknown"
+    error_text = str(result.get("error") or result.get("body") or "")[:300]
+    lines = [
+        "⚠️ Telegram не принял MP4 как файл.",
+        f"Размер: <b>{_html(size_text)}</b>",
+    ]
+    if "413" in str(result.get("status") or "") or "Request Entity Too Large" in error_text:
+        lines.append("Причина: лимит размера загрузки Bot API.")
+    if url:
+        lines.extend(["", "Можно скачать по кнопке ниже:", f"<code>{_html(url)}</code>"])
+    else:
+        lines.extend(["", f"Файл есть на сервере: <code>{_html(str(path))}</code>"])
+    _send_message("\n".join(lines), reply_markup=_telegram_assembly_url_markup_v213s(url), chat_id=chat_id)
+
+def _telegram_assembly_send_document_worker_v213q(download_token: str, chat_id: str = "") -> None:
+    token = str(download_token or "").strip()
+    allowed_chat_id = str(chat_id or _telegram_chat_id() or "").strip()
+    record = _telegram_assembly_load_download_record_v213q(token)
+    if not isinstance(record, dict):
+        _send_message("⚠️ Не нашёл запись готового монтажа для скачивания. Открой Assembly и проверь результат вручную.", chat_id=allowed_chat_id)
+        return
+    path = _telegram_assembly_resolve_download_path_v213q(record)
+    if not path:
+        known_ref = str(record.get("output_api_path") or record.get("outputApiPath") or record.get("output_path") or record.get("outputPath") or "").strip()
+        _send_message(
+            "⚠️ Не нашёл MP4-файл на диске для отправки в Telegram.\n"
+            + (f"Ссылка/путь в записи: <code>{_html(known_ref)}</code>" if known_ref else "Открой Assembly и пересохрани результат."),
+            chat_id=allowed_chat_id,
+        )
+        return
+
+    send_path = path
+    try:
+        if path.stat().st_size > AVA_TELEGRAM_UPLOAD_SAFE_LIMIT_BYTES_V213S:
+            compressed_path_v213s = _telegram_assembly_compress_for_telegram_v213s(path, record)
+            if compressed_path_v213s and compressed_path_v213s.exists():
+                send_path = compressed_path_v213s
+    except Exception as exc:
+        print("[ASSEMBLY TELEGRAM PREPARE SEND ERROR V213S]", {"path": str(path), "error": str(exc)}, flush=True)
+
+    caption = _telegram_assembly_caption_for_path_v213s(record, path, send_path)
+    result = _telegram_post_multipart(
+        "sendDocument",
+        {"chat_id": allowed_chat_id, "caption": caption, "parse_mode": "HTML"},
+        {"document": send_path},
+        timeout=300,
+    )
+
+    # If the first attempt still hit Telegram 413, retry once with a stronger compressed copy.
+    if not bool(result.get("ok")) and str(result.get("status") or "").strip() == "413":
+        compressed_path_v213s = _telegram_assembly_compress_for_telegram_v213s(path, record, target_bytes=44 * 1024 * 1024)
+        if compressed_path_v213s and compressed_path_v213s.exists() and str(compressed_path_v213s) != str(send_path):
+            send_path = compressed_path_v213s
+            caption = _telegram_assembly_caption_for_path_v213s(record, path, send_path)
+            result = _telegram_post_multipart(
+                "sendDocument",
+                {"chat_id": allowed_chat_id, "caption": caption, "parse_mode": "HTML"},
+                {"document": send_path},
+                timeout=300,
+            )
+
+    sent_ok = bool(result.get("ok"))
+    at = now_iso()
+
+    def save_result(db: dict[str, Any]) -> dict[str, Any]:
+        downloads = db.setdefault("telegram_assembly_downloads_v213q", {})
+        if not isinstance(downloads, dict):
+            downloads = {}
+            db["telegram_assembly_downloads_v213q"] = downloads
+        saved = downloads.get(token) if isinstance(downloads.get(token), dict) else dict(record)
+        saved.update({
+            "download_token_v213q": token,
+            "downloadTokenV213Q": token,
+            "last_download_at_v213q": at,
+            "lastDownloadAtV213Q": at,
+            "last_download_ok_v213q": sent_ok,
+            "lastDownloadOkV213Q": sent_ok,
+            "last_download_result_v213q": result,
+            "lastDownloadResultV213Q": result,
+        })
+        downloads[token] = saved
+        return saved
+
+    try:
+        store.update(save_result)
+    except Exception as exc:
+        print("[ASSEMBLY TELEGRAM DOWNLOAD SAVE ERROR V213Q]", {"token": token, "error": str(exc)}, flush=True)
+
+    print("[ASSEMBLY TELEGRAM DOWNLOAD SEND V213Q]", {
+        "token": token,
+        "ok": sent_ok,
+        "path": str(path),
+        "sendPath": str(send_path),
+        "size": path.stat().st_size if path.exists() else 0,
+        "sendSize": send_path.stat().st_size if send_path.exists() else 0,
+        "compressedV213S": str(send_path) != str(path),
+        "status": result.get("status"),
+        "error": str(result.get("error") or "")[:300],
+    }, flush=True)
+    if not sent_ok:
+        _telegram_assembly_large_file_fallback_v213s(record, path, result, chat_id=allowed_chat_id)
+
+
+def _handle_assembly_download_v213q(download_token: str, callback_id: str, chat_id: str, message_id: int | str = "") -> dict[str, Any]:
+    token = str(download_token or "").strip()
+    if not token:
+        _answer_callback(callback_id, "Нет токена скачивания", True)
+        return {"ok": False, "error": "missing_download_token"}
+    record = _telegram_assembly_load_download_record_v213q(token)
+    if not isinstance(record, dict):
+        _answer_callback(callback_id, "Файл не найден", True)
+        return {"ok": False, "error": "download_record_not_found"}
+    _answer_callback(callback_id, "Отправляю MP4 в Telegram…")
+    thread = threading.Thread(
+        target=_telegram_assembly_send_document_worker_v213q,
+        args=(token, str(chat_id or _telegram_chat_id() or "")),
+        daemon=True,
+        name=f"ava_assembly_download_{token[:8]}",
+    )
+    thread.start()
+    return {"ok": True, "status": "assembly_download_started_v213q", "download_token": token}
+
 def telegram_assembly_render_completed(
     project_id: str = "",
     assembly_job_id: str = "",
@@ -906,6 +1492,7 @@ def telegram_assembly_render_completed(
         output_name=clean_output_name,
         output_path=clean_output_path,
     )
+    download_token_v213q = _telegram_assembly_download_token_v213q(notification_key)
 
     now = now_iso()
 
@@ -916,6 +1503,13 @@ def telegram_assembly_render_completed(
             db["telegram_assembly_notifications_v140b"] = records
         existing = records.get(notification_key)
         if isinstance(existing, dict) and (existing.get("reserved") or existing.get("sent") or existing.get("ok")):
+            existing.setdefault("download_token_v213q", download_token_v213q)
+            existing.setdefault("downloadTokenV213Q", download_token_v213q)
+            downloads = db.setdefault("telegram_assembly_downloads_v213q", {})
+            if not isinstance(downloads, dict):
+                downloads = {}
+                db["telegram_assembly_downloads_v213q"] = downloads
+            downloads[download_token_v213q] = existing
             return {
                 "ok": True,
                 "already_notified": True,
@@ -936,6 +1530,10 @@ def telegram_assembly_render_completed(
             "outputApiPath": clean_api_path,
             "output_name": clean_output_name,
             "outputName": clean_output_name,
+            "output_path": clean_output_path,
+            "outputPath": clean_output_path,
+            "download_token_v213q": download_token_v213q,
+            "downloadTokenV213Q": download_token_v213q,
             "reserved": True,
             "sent": False,
             "created_at": now,
@@ -944,6 +1542,11 @@ def telegram_assembly_render_completed(
             "updatedAt": now,
         }
         records[notification_key] = record
+        downloads = db.setdefault("telegram_assembly_downloads_v213q", {})
+        if not isinstance(downloads, dict):
+            downloads = {}
+            db["telegram_assembly_downloads_v213q"] = downloads
+        downloads[download_token_v213q] = record
         return {"ok": True, "already_notified": False, "notification_key": notification_key, "record": record}
 
     reserved = store.update(reserve_once)
@@ -988,7 +1591,7 @@ def telegram_assembly_render_completed(
     lines.extend(["", "Можно открывать Ava Studio → Assembly и проверять результат."])
     text = "\n".join(lines)
 
-    result = _send_message(text, reply_markup=None)
+    result = _send_message(text, reply_markup=_telegram_assembly_download_markup_v213q(download_token_v213q))
     sent_at = now_iso()
     sent_ok = bool(result.get("ok"))
 
@@ -1011,8 +1614,15 @@ def telegram_assembly_render_completed(
             "telegram_result": result,
             "telegramResult": result,
             "message": text,
+            "download_token_v213q": download_token_v213q,
+            "downloadTokenV213Q": download_token_v213q,
         })
         records[notification_key] = record
+        downloads = db.setdefault("telegram_assembly_downloads_v213q", {})
+        if not isinstance(downloads, dict):
+            downloads = {}
+            db["telegram_assembly_downloads_v213q"] = downloads
+        downloads[download_token_v213q] = record
         return record
 
     record = store.update(finalize_notice)
@@ -1489,6 +2099,8 @@ def _process_update(update: dict[str, Any]) -> dict[str, Any]:
                 if action == "summary":
                     _answer_callback(callback_id, "Показываю статистику")
                     return _handle_summary_request_v137h(chat_id)
+                if action == "asm_dl":
+                    return _handle_assembly_download_v213q(ident, callback_id, chat_id, message_id)
                 if action == "regen":
                     return _handle_regen_bad(ident, callback_id)
             _answer_callback(callback_id, "Неизвестная кнопка", True)

@@ -3060,11 +3060,25 @@ def _ava_project_apply_review_event_authority_v136d(source_data, current_data, f
                 "bad_video_regenerated" in str(current_event.get("reason") or "").lower()
             )
             source_is_bad_v200l = str(source_event.get("status") or "").strip().lower() == "bad"
-            if current_is_regenerated_needs_review_v200l and source_is_bad_v200l:
+            source_dt = source_event.get("dt")
+            current_dt = current_event.get("dt")
+            source_reason_v213l = str(source_event.get("reason") or "").strip().lower()
+            source_is_manual_bad_v213l = (
+                source_reason_v213l.startswith("manual_")
+                or "manual_bad" in source_reason_v213l
+                or "toggle" in source_reason_v213l
+            )
+            if current_is_regenerated_needs_review_v200l and source_is_bad_v200l and not source_is_manual_bad_v213l:
+                # AVA_PROJECT_REVIEW_MANUAL_STATUS_AUTHORITY_V213L:
+                # Keep the old protection only for stale non-manual bad events.
+                # A fresh user click "плохое" after watching "посмотри" must be allowed to win.
                 source_wins = False
+            elif current_is_regenerated_needs_review_v200l and source_is_bad_v200l and source_is_manual_bad_v213l:
+                if source_dt is not None and current_dt is not None:
+                    source_wins = source_dt >= current_dt
+                else:
+                    source_wins = True
             else:
-                source_dt = source_event.get("dt")
-                current_dt = current_event.get("dt")
                 if source_dt is not None and current_dt is not None:
                     source_wins = source_dt >= current_dt
                 else:
@@ -3387,14 +3401,30 @@ def _ava_project_apply_server_review_memory_v136e(source_data, current_data, fin
             event_status_v200m == "bad" and
             "bad_video_regenerated" not in event_reason_v200m
         ):
-            memory[scene_id] = {
-                "kind": "mark",
-                "status": "needs_review",
-                "reason": scene.get("video_review_reason") or scene.get("videoReviewReason") or "bad_video_regenerated",
-                "at": scene.get("video_review_updated_at") or scene.get("videoReviewUpdatedAt") or now_iso(),
-                "dt": _ava_project_review_memory_parse_dt_v136e(scene.get("video_review_updated_at") or scene.get("videoReviewUpdatedAt") or ""),
-            }
-            continue
+            # AVA_PROJECT_REVIEW_MANUAL_STATUS_AUTHORITY_V213L:
+            # Do not replay an older non-manual bad mark over a regenerated "посмотри" result,
+            # but do allow a newer manual user click "плохое" to become the new authority.
+            scene_dt_v213l = _ava_project_review_memory_parse_dt_v136e(scene.get("video_review_updated_at") or scene.get("videoReviewUpdatedAt") or "")
+            event_dt_v213l = event.get("dt") or _ava_project_review_memory_parse_dt_v136e(event.get("at"))
+            event_is_manual_bad_v213l = (
+                event_reason_v200m.startswith("manual_")
+                or "manual_bad" in event_reason_v200m
+                or "toggle" in event_reason_v200m
+            )
+            manual_bad_is_newer_v213l = bool(event_is_manual_bad_v213l and (
+                (event_dt_v213l is not None and scene_dt_v213l is not None and event_dt_v213l >= scene_dt_v213l)
+                or (event_dt_v213l is not None and scene_dt_v213l is None)
+                or (str(event.get("at") or "") and str(event.get("at") or "") >= str(scene.get("video_review_updated_at") or scene.get("videoReviewUpdatedAt") or ""))
+            ))
+            if not manual_bad_is_newer_v213l:
+                memory[scene_id] = {
+                    "kind": "mark",
+                    "status": "needs_review",
+                    "reason": scene.get("video_review_reason") or scene.get("videoReviewReason") or "bad_video_regenerated",
+                    "at": scene.get("video_review_updated_at") or scene.get("videoReviewUpdatedAt") or now_iso(),
+                    "dt": _ava_project_review_memory_parse_dt_v136e(scene.get("video_review_updated_at") or scene.get("videoReviewUpdatedAt") or ""),
+                }
+                continue
         if _ava_project_review_memory_apply_event_v136e(scene, event):
             after = _ava_project_review_status_v136d(scene) if "_ava_project_review_status_v136d" in globals() else str(event.get("status") or "")
             applied.append({
@@ -4078,6 +4108,128 @@ def _ava_project_copy_contract_fields_v209k(current_scene, incoming_scene) -> in
     return changed
 
 
+
+
+# AVA_PROJECT_BOARD_PROMPT_PERSISTENCE_V213D
+# Backend-side safety net: old/stale Board saves and Manual Timing authority saves may
+# carry media/timing but empty prompt fields. Keep visible user-authored prompts from
+# the current Board snapshot unless the incoming scene provides a non-empty replacement.
+_AVA_BOARD_PROMPT_KEYS_V213D = (
+    "video_prompt", "videoPrompt", "positive_prompt", "positivePrompt", "prompt",
+    "negative_prompt", "negativePrompt", "video_motion_negative", "videoMotionNegative", "final_negative_prompt", "finalNegativePrompt",
+    "sound_prompt", "soundPrompt", "mmaudio_prompt", "mmaudioPrompt",
+    "mmaudio_negative_prompt", "mmaudioNegativePrompt", "negative_sound_prompt", "negativeSoundPrompt",
+    "note", "notes", "scene_note", "sceneNote", "user_scene_note", "userSceneNote",
+)
+
+
+def _ava_v213d_text(value) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _ava_v213d_scene_id(scene, index=0) -> str:
+    if isinstance(scene, dict):
+        return str(scene.get("scene_id") or scene.get("sceneId") or scene.get("id") or f"seg_{index + 1:02d}")
+    return f"seg_{index + 1:02d}"
+
+
+def _ava_v213d_scenes(data):
+    if not isinstance(data, dict):
+        return []
+    scenes = data.get("scenes")
+    if isinstance(scenes, list):
+        return scenes
+    board = data.get("board")
+    if isinstance(board, dict) and isinstance(board.get("scenes"), list):
+        return board.get("scenes") or []
+    return []
+
+
+def _ava_v213d_prompt_score(data) -> int:
+    score = 0
+    for scene in _ava_v213d_scenes(data):
+        if not isinstance(scene, dict):
+            continue
+        for key in _AVA_BOARD_PROMPT_KEYS_V213D:
+            value = _ava_v213d_text(scene.get(key))
+            if value:
+                score += 1 + min(len(value), 500) // 80
+    return score
+
+
+def _ava_project_preserve_board_prompts_v213d(current_data, incoming_data):
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, 0
+    current_scenes = _ava_v213d_scenes(current_data)
+    incoming_scenes = _ava_v213d_scenes(incoming_data)
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, 0
+
+    current_by_id = {
+        _ava_v213d_scene_id(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+    next_data = copy.deepcopy(incoming_data)
+    next_scenes = _ava_v213d_scenes(next_data)
+    changed = 0
+    changed_scene_ids = []
+
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _ava_v213d_scene_id(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict):
+            continue
+
+        scene_changed = False
+        for key in _AVA_BOARD_PROMPT_KEYS_V213D:
+            current_value = current_scene.get(key)
+            current_text = _ava_v213d_text(current_value)
+            if not current_text:
+                continue
+            incoming_text = _ava_v213d_text(scene.get(key))
+            if incoming_text:
+                continue
+            scene[key] = copy.deepcopy(current_value)
+            scene_changed = True
+            changed += 1
+
+        # Normalize visible prompt aliases so frontend/backend read the same text.
+        video_text = _ava_v213d_text(scene.get("video_prompt") or scene.get("videoPrompt") or current_scene.get("video_prompt") or current_scene.get("videoPrompt") or current_scene.get("positive_prompt") or current_scene.get("prompt"))
+        if video_text:
+            for key in ("video_prompt", "videoPrompt", "positive_prompt", "prompt"):
+                if not _ava_v213d_text(scene.get(key)):
+                    scene[key] = video_text
+                    scene_changed = True
+                    changed += 1
+        negative_text = _ava_v213d_text(scene.get("negative_prompt") or scene.get("negativePrompt") or current_scene.get("negative_prompt") or current_scene.get("negativePrompt"))
+        if negative_text:
+            for key in ("negative_prompt", "negativePrompt"):
+                if not _ava_v213d_text(scene.get(key)):
+                    scene[key] = negative_text
+                    scene_changed = True
+                    changed += 1
+        if scene_changed:
+            changed_scene_ids.append(scene_id)
+
+    if not changed:
+        return incoming_data, 0
+    next_data["scenes"] = next_scenes
+    next_data["boardPromptsPreservedV213D"] = True
+    next_data["board_prompts_preserved_v213d"] = True
+    print("[PROJECT BOARD PROMPTS PRESERVED V213D]", {
+        "changedFields": changed,
+        "changedScenes": changed_scene_ids[:40],
+        "currentPromptScore": _ava_v213d_prompt_score(current_data),
+        "incomingPromptScoreBefore": _ava_v213d_prompt_score(incoming_data),
+        "incomingPromptScoreAfter": _ava_v213d_prompt_score(next_data),
+    }, flush=True)
+    return next_data, changed
+
 def _ava_project_board_image_upload_batch_isolation_v209k(current_snapshot, incoming_data, payload_client_version=""):
     if not isinstance(current_snapshot, dict) or not isinstance(incoming_data, dict):
         return incoming_data, 0
@@ -4198,6 +4350,17 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                                 'manualSig': manual_sig_v212s2[:3],
                                 'incomingSig': board_sig_v212s2[:3],
                             }, flush=True)
+                        incoming_data, preserved_prompts_v213d = _ava_project_preserve_board_prompts_v213d(
+                            current.get('data') if isinstance(current, dict) else {},
+                            incoming_data or {},
+                        )
+                        if preserved_prompts_v213d:
+                            print('[BOARD TIMING AUTHORITY SAVE PROMPTS PRESERVED V213D]', {
+                                'project_id': project_id,
+                                'preservedPromptFields': preserved_prompts_v213d,
+                                'manualSig': manual_sig_v212s2[:3],
+                                'incomingSig': board_sig_v212s2[:3],
+                            }, flush=True)
                         # Do not let generic old current Board preservation resurrect stale 3-second media/timing.
                         current = None
                         print('[BOARD TIMING AUTHORITY SAVE APPLIED V212S2]', {
@@ -4247,6 +4410,15 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     '_skip_store_write_v200c': True,
                 }
             incoming_data, preserved_media_refs = preserve_media_refs(current.get('data') or {}, incoming_data)
+            incoming_data, preserved_prompt_fields_v213d = _ava_project_preserve_board_prompts_v213d(current.get('data') or {}, incoming_data)
+            if preserved_prompt_fields_v213d:
+                preserved_media_refs += preserved_prompt_fields_v213d
+                print('[PROJECT BOARD PROMPT FIELDS PRESERVED V213D]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'preservedPromptFields': preserved_prompt_fields_v213d,
+                    **media_refs_summary(incoming_data),
+                }, flush=True)
         else:
             preserved_media_refs = 0
 
