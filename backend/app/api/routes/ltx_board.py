@@ -1,3 +1,4 @@
+# AVA_BOARD_VIDEO_FRESH_AFTER_REGEN_CONTRACT_V213Z
 # AVA_STABLE_AUDIO_GENERATE_HARD_DIAGNOSTICS_V211C: installed
 # AVA_BOARD_BATCH_SERVER_HANG_UNICODE_START_FIX_V209E: safe ffmpeg/ffprobe decoding + normalize first scene start=0 for server batch.
 # V204G13_STAU_VOLUME_DRAFT_APPLY_PREVIEW
@@ -4055,6 +4056,30 @@ def _board_batch_result_patch(data: dict[str, Any], job: dict[str, Any]) -> dict
         "videoResult": data or None,
         "video_ready_at": _board_batch_now(),
         "videoReadyAt": _board_batch_now(),
+        "output_video_url": url,
+        "outputVideoUrl": url,
+        "output_video_api_path": api_path or url,
+        "outputVideoApiPath": api_path or url,
+        "result_video_url": url,
+        "resultVideoUrl": url,
+        "result_video_api_path": api_path or url,
+        "resultVideoApiPath": api_path or url,
+        "result_video_asset_id": asset_id,
+        "resultVideoAssetId": asset_id,
+        "video_fresh_after_regen_v213z": True,
+        "videoFreshAfterRegenV213Z": True,
+        "video_stale_after_image_change_v129p": False,
+        "videoStaleAfterImageChangeV129P": False,
+        "video_reset_reason": "",
+        "videoResetReason": "",
+        "source_image_changed_at": "",
+        "sourceImageChangedAt": "",
+        "image_deleted_v129o": False,
+        "imageDeletedV129O": False,
+        "first_image_deleted_v129o": False,
+        "firstImageDeletedV129O": False,
+        "last_image_deleted_v129o": False,
+        "lastImageDeletedV129O": False,
         "server_batch_job_id": job.get("jobId") or job.get("job_id") or "",
         "serverBatchJobId": job.get("jobId") or job.get("job_id") or "",
 
@@ -6736,6 +6761,22 @@ def _assembly_make_local_player_safe_v196f(
 # Backend safety net: if frontend marks an item as deleted/stale, never fallback to old
 # resultVideo/result_video aliases from an older board_assembly snapshot.
 def _assembly_item_video_suppressed_v213p(item: dict[str, Any]) -> bool:
+    # BACKEND VIDEO FRESH CONTRACT V213Z: A freshly regenerated ready video wins over stale flags.
+    def _has_video_ref_v213z() -> bool:
+        result_video_v213z = item.get("resultVideo") if isinstance(item.get("resultVideo"), dict) else {}
+        video_result_v213z = item.get("video_result") if isinstance(item.get("video_result"), dict) else {}
+        return bool(
+            item.get("video_api_path") or item.get("videoApiPath") or item.get("video_url") or item.get("videoUrl") or
+            item.get("result_video_api_path") or item.get("resultVideoApiPath") or item.get("result_video_url") or item.get("resultVideoUrl") or
+            item.get("output_video_api_path") or item.get("outputVideoApiPath") or item.get("output_video_url") or item.get("outputVideoUrl") or
+            video_result_v213z.get("video_api_path") or video_result_v213z.get("videoApiPath") or video_result_v213z.get("api_path") or video_result_v213z.get("url") or
+            result_video_v213z.get("video_api_path") or result_video_v213z.get("videoApiPath") or result_video_v213z.get("api_path") or result_video_v213z.get("url")
+        )
+    try:
+        if _has_video_ref_v213z() and _assembly_bool(item.get("video_fresh_after_regen_v213z") or item.get("videoFreshAfterRegenV213Z")):
+            return False
+    except Exception:
+        pass
     if not isinstance(item, dict):
         return False
     if any(_assembly_bool(item.get(key)) for key in (

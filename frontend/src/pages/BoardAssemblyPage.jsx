@@ -1,3 +1,4 @@
+/* AVA_BOARD_VIDEO_FRESH_AFTER_REGEN_CONTRACT_V213Z */
 // AVA_ASSEMBLY_TRANSITION_VISUAL_MODE_V196E: choose xfade or fade-to-black for timing-safe transitions.
 // AVA_ASSEMBLY_TWO_TRANSITION_MODES_V134G: two mutually-exclusive transition modes: shorten vs preserve timing.
 // AVA_ASSEMBLY_FORCE_POST_XFADE_PAYLOAD_V134F: send transition checkbox as the real backend switch.
@@ -1085,6 +1086,7 @@ function mergeAudioStudioMmaudioIntoBoardV212I(board = {}, audioStudioRaw = {}) 
 // later deleted, cleared, or regenerated in Board.  Current Board must be the authority for
 // scene list + media refs; absent current aliases intentionally clear stale Assembly aliases.
 const ASSEMBLY_SCENE_MEDIA_KEYS_V213P = [
+  'video_fresh_after_regen_v213z', 'videoFreshAfterRegenV213Z',
   'video_url', 'videoUrl', 'video_api_path', 'videoApiPath', 'video_asset_id', 'videoAssetId',
   'output_video_url', 'outputVideoUrl', 'output_video_api_path', 'outputVideoApiPath',
   'result_url', 'resultUrl', 'result_video_url', 'resultVideoUrl', 'result_video_api_path', 'resultVideoApiPath', 'result_video_asset_id', 'resultVideoAssetId',
@@ -1132,6 +1134,20 @@ function assemblySceneVideoRefsSuppressedV213P(scene = {}) {
 
   const imageMutationMs = assemblyDateMsV213P(scene?.source_image_changed_at, scene?.sourceImageChangedAt, scene?.image_mutation_at, scene?.imageMutationAt)
   const videoReadyMs = assemblyDateMsV213P(scene?.video_ready_at, scene?.videoReadyAt)
+  const hasConcreteVideoRefV213Z = Boolean(
+    scene?.video_api_path || scene?.videoApiPath || scene?.video_url || scene?.videoUrl ||
+    scene?.result_video_api_path || scene?.resultVideoApiPath || scene?.result_video_url || scene?.resultVideoUrl ||
+    scene?.output_video_api_path || scene?.outputVideoApiPath || scene?.output_video_url || scene?.outputVideoUrl
+  )
+  const imageEpochV213Z = Number(scene?.image_mutation_epoch ?? scene?.imageMutationEpoch ?? 0)
+  const videoEpochV213Z = Number(scene?.video_source_image_mutation_epoch ?? scene?.videoSourceImageMutationEpoch ?? 0)
+  const epochMatchesV213Z = Boolean(imageEpochV213Z > 0 && videoEpochV213Z > 0 && Math.abs(imageEpochV213Z - videoEpochV213Z) <= 1000)
+  const readyAfterImageV213Z = Boolean(imageMutationMs && videoReadyMs && videoReadyMs + 250 >= imageMutationMs)
+  const freshVideoV213Z = Boolean(scene?.video_fresh_after_regen_v213z || scene?.videoFreshAfterRegenV213Z)
+  if (hasConcreteVideoRefV213Z && (status === 'ready' || freshVideoV213Z) && (!imageMutationMs || readyAfterImageV213Z || epochMatchesV213Z)) {
+    console.log('[ASSEMBLY VIDEO FRESH CONTRACT V213Z]', { sceneId: scene?.id || scene?.scene_id || scene?.sceneId || '', status, freshVideoV213Z, readyAfterImageV213Z, epochMatchesV213Z })
+    return false
+  }
   if (imageMutationMs && videoReadyMs && videoReadyMs + 250 < imageMutationMs) return true
 
   const resetReason = String(scene?.video_reset_reason || scene?.videoResetReason || scene?.mmaudio_reset_reason || scene?.mmaudioResetReason || '').toLowerCase()
@@ -2778,6 +2794,24 @@ function clearBoardAssemblyWorkflowEntryV200O() {
           videoJobId: item.videoJobId || '',
           video_status_endpoint: item.videoStatusEndpoint || '',
           videoStatusEndpoint: item.videoStatusEndpoint || '',
+          video_fresh_after_regen_v213z: Boolean(raw.video_fresh_after_regen_v213z || raw.videoFreshAfterRegenV213Z),
+          videoFreshAfterRegenV213Z: Boolean(raw.videoFreshAfterRegenV213Z || raw.video_fresh_after_regen_v213z),
+          video_ready_at: raw.video_ready_at || raw.videoReadyAt || '',
+          videoReadyAt: raw.videoReadyAt || raw.video_ready_at || '',
+          video_source_image_mutation_epoch: raw.video_source_image_mutation_epoch || raw.videoSourceImageMutationEpoch || '',
+          videoSourceImageMutationEpoch: raw.videoSourceImageMutationEpoch || raw.video_source_image_mutation_epoch || '',
+          image_mutation_epoch: raw.image_mutation_epoch || raw.imageMutationEpoch || '',
+          imageMutationEpoch: raw.imageMutationEpoch || raw.image_mutation_epoch || '',
+          result_video_url: raw.result_video_url || raw.resultVideoUrl || raw.output_video_url || raw.outputVideoUrl || '',
+          resultVideoUrl: raw.resultVideoUrl || raw.result_video_url || raw.outputVideoUrl || raw.output_video_url || '',
+          result_video_api_path: raw.result_video_api_path || raw.resultVideoApiPath || raw.output_video_api_path || raw.outputVideoApiPath || '',
+          resultVideoApiPath: raw.resultVideoApiPath || raw.result_video_api_path || raw.outputVideoApiPath || raw.output_video_api_path || '',
+          image_url: raw.image_url || raw.imageUrl || raw.first_image_url || raw.firstImageUrl || raw.start_image_url || raw.startImageUrl || raw.first_frame_url || raw.firstFrameUrl || '',
+          imageUrl: raw.imageUrl || raw.image_url || raw.firstImageUrl || raw.first_image_url || raw.startImageUrl || raw.start_image_url || raw.firstFrameUrl || raw.first_frame_url || '',
+          image_api_path: raw.image_api_path || raw.imageApiPath || raw.first_image_api_path || raw.firstImageApiPath || raw.start_image_api_path || raw.startImageApiPath || raw.first_frame_api_path || raw.firstFrameApiPath || '',
+          imageApiPath: raw.imageApiPath || raw.image_api_path || raw.firstImageApiPath || raw.first_image_api_path || raw.startImageApiPath || raw.start_image_api_path || raw.firstFrameApiPath || raw.first_frame_api_path || '',
+          image_asset_id: raw.image_asset_id || raw.imageAssetId || raw.first_image_asset_id || raw.firstImageAssetId || raw.start_image_asset_id || raw.startImageAssetId || raw.first_frame_asset_id || raw.firstFrameAssetId || '',
+          imageAssetId: raw.imageAssetId || raw.image_asset_id || raw.firstImageAssetId || raw.first_image_asset_id || raw.startImageAssetId || raw.start_image_asset_id || raw.firstFrameAssetId || raw.first_frame_asset_id || '',
           video_suppressed_v213p: Boolean(item.videoSuppressedV213P),
           videoSuppressedV213P: Boolean(item.videoSuppressedV213P),
           image_deleted_v129o: Boolean(raw.image_deleted_v129o || raw.imageDeletedV129O),

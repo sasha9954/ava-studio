@@ -1,3 +1,4 @@
+/* AVA_BOARD_VIDEO_FRESH_AFTER_REGEN_CONTRACT_V213Z */
 /* AVA_BOARD_BATCH_LIVE_SET_REPLACES_RUNTIME_V210A: live server-batch IDs replace stale runtime overlays. */
 /* AVA_BOARD_COMPLETED_RUNTIME_CLEAR_FLEX_V209Z2: completed batch scenes leave runtime overlays immediately. */
 /* AVA_BOARD_SERVER_BATCH_RUNTIME_OVERLAY_V209R: explicit server-batch runtime overlay keeps Board statuses stable while backend owns generation. */
@@ -1515,6 +1516,21 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
       next.videoRuntimeStatusEndpointV136I = ''
       next.video_ready_at = next.video_ready_at || next.videoReadyAt || nowV131O
       next.videoReadyAt = next.videoReadyAt || next.video_ready_at || nowV131O
+      next.video_fresh_after_regen_v213z = true
+      next.videoFreshAfterRegenV213Z = true
+      next.video_stale_after_image_change_v129p = false
+      next.videoStaleAfterImageChangeV129P = false
+      next.video_reset_reason = ''
+      next.videoResetReason = ''
+      next.source_image_changed_at = ''
+      next.sourceImageChangedAt = ''
+      next.image_deleted_v129o = false
+      next.imageDeletedV129O = false
+      next.first_image_deleted_v129o = false
+      next.firstImageDeletedV129O = false
+      next.last_image_deleted_v129o = false
+      next.lastImageDeletedV129O = false
+      console.log('[BOARD SERVER VIDEO FRESH CONTRACT V213Z]', { sceneId: id, videoApiPath: next.video_api_path || next.videoApiPath || next.result_video_api_path || next.resultVideoApiPath || '', videoUrl: next.video_url || next.videoUrl || next.result_video_url || next.resultVideoUrl || '' })
     }
 
     changed = true
@@ -5521,6 +5537,125 @@ function boardProtectLivePromptFieldsForSaveV213D(nextBoard = {}, liveBoard = {}
   return boardMergePromptStateV213D(nextBoard || {}, liveBoard || {}, { reason: 'save_payload_live_prompt_guard' })
 }
 
+
+// AVA_BOARD_UPLOAD_PRESERVE_PROMPT_MODEL_FORMAT_V214A:
+// Replacing/uploading Board stills is a media mutation only. It must not reset
+// user-authored prompts, model/workflow choices, format/aspect, duration, or current selection.
+const BOARD_GENERATION_CONFIG_FIELD_KEYS_V214A = [
+  'route', 'video_route', 'videoRoute', 'generation_route', 'generationRoute',
+  'model', 'modelKey', 'model_key', 'modelId', 'model_id', 'selectedModel', 'selected_model',
+  'videoModel', 'video_model', 'imageModel', 'image_model', 'generationModel', 'generation_model',
+  'workflowKey', 'workflow_key', 'resolvedWorkflowKey', 'resolved_workflow_key',
+  'workflow', 'workflowName', 'workflow_name', 'modelWorkflow', 'model_workflow',
+  'format', 'aspect_ratio', 'aspectRatio', 'output_format', 'outputFormat', 'payload_aspect', 'payloadAspect',
+  'width', 'height', 'target_width', 'targetWidth', 'target_height', 'targetHeight',
+  'fps', 'frameRate', 'frame_rate', 'duration', 'duration_sec', 'durationSec', 'seconds',
+  'fit_mode', 'fitMode', 'motion_strength', 'motionStrength', 'seed', 'cfg', 'steps',
+]
+
+const BOARD_LOCKED_ON_MEDIA_UPLOAD_KEYS_V214A = [
+  ...BOARD_PROMPT_FIELD_KEYS_V213D,
+  ...BOARD_GENERATION_CONFIG_FIELD_KEYS_V214A,
+]
+
+function boardValueIsMeaningfulV214A(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim() !== ''
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (typeof value === 'boolean') return true
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function boardIsMediaMutationPayloadV214A(boardData = {}) {
+  const saveMode = String(boardData?.saveMode || boardData?.save_mode || '').toLowerCase()
+  if (boardData?.mediaMutationReplaceSave || boardData?.forceReplaceSave) return true
+  if (saveMode.includes('media') || saveMode.includes('image') || saveMode.includes('still')) return true
+  return asSceneArray(boardData?.scenes).some((scene) => Boolean(
+    scene?.mediaMutationReplaceSave || scene?.forceReplaceSave ||
+    scene?.image_asset_committed_v132n4 || scene?.imageAssetCommittedV132N4 ||
+    scene?.image_uploading_v129q || scene?.imageUploadingV129Q ||
+    scene?.source_image_changed_at || scene?.sourceImageChangedAt ||
+    scene?.image_replace_reason_v132n4 || scene?.imageReplaceReasonV132N4
+  ))
+}
+
+function boardCopyLockedSceneFieldsOnMediaMutationV214A(target = {}, source = {}) {
+  const next = { ...(target || {}) }
+  let changed = false
+  for (const key of BOARD_LOCKED_ON_MEDIA_UPLOAD_KEYS_V214A) {
+    if (!Object.prototype.hasOwnProperty.call(source || {}, key)) continue
+    const sourceValue = source?.[key]
+    if (!boardValueIsMeaningfulV214A(sourceValue)) continue
+    const targetValue = next?.[key]
+    const same = JSON.stringify(targetValue ?? null) === JSON.stringify(sourceValue ?? null)
+    if (same) continue
+    next[key] = sourceValue
+    changed = true
+  }
+
+  const sourceFormat = source?.format || source?.aspect_ratio || source?.aspectRatio || source?.output_format || source?.outputFormat
+  if (boardValueIsMeaningfulV214A(sourceFormat)) {
+    for (const key of ['format', 'aspect_ratio', 'aspectRatio', 'output_format', 'outputFormat']) {
+      if (next[key] !== sourceFormat) { next[key] = sourceFormat; changed = true }
+    }
+  }
+
+  const sourceWorkflow = source?.workflowKey || source?.workflow_key || source?.resolvedWorkflowKey || source?.resolved_workflow_key
+  if (boardValueIsMeaningfulV214A(sourceWorkflow)) {
+    for (const key of ['workflowKey', 'workflow_key', 'resolvedWorkflowKey', 'resolved_workflow_key']) {
+      if (!boardValueIsMeaningfulV214A(next[key]) || String(next[key]) !== String(sourceWorkflow)) { next[key] = sourceWorkflow; changed = true }
+    }
+  }
+
+  return changed ? next : target
+}
+
+function boardPreserveGenerationConfigOnMediaMutationV214A(nextBoard = {}, liveBoard = {}, options = {}) {
+  const force = Boolean(options?.force)
+  if (!force && !boardIsMediaMutationPayloadV214A(nextBoard)) return nextBoard || {}
+  const nextScenes = asSceneArray(nextBoard?.scenes)
+  const liveScenes = asSceneArray(liveBoard?.scenes)
+  if (!nextScenes.length || !liveScenes.length) return nextBoard || {}
+
+  const liveById = new Map(liveScenes.map((scene, index) => [
+    asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`),
+    scene,
+  ]).filter(([id]) => id))
+
+  let touched = 0
+  const scenes = nextScenes.map((scene, index) => {
+    const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`)
+    const liveScene = liveById.get(sceneId)
+    if (!liveScene) return scene
+    const merged = boardCopyLockedSceneFieldsOnMediaMutationV214A(scene, liveScene)
+    if (merged !== scene) touched += 1
+    return merged
+  })
+
+  let selectedSceneId = asText(liveBoard?.selectedSceneId || liveBoard?.selected_scene_id || nextBoard?.selectedSceneId || nextBoard?.selected_scene_id)
+  if (selectedSceneId && !scenes.some((scene, index) => asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`) === selectedSceneId)) {
+    selectedSceneId = asText(nextBoard?.selectedSceneId || nextBoard?.selected_scene_id || scenes[0]?.id || scenes[0]?.scene_id || '')
+  }
+
+  if (!touched && selectedSceneId === asText(nextBoard?.selectedSceneId || nextBoard?.selected_scene_id)) return nextBoard || {}
+  console.log('[BOARD UPLOAD PROMPT MODEL FORMAT PRESERVED V214A]', {
+    reason: options?.reason || 'media_mutation_guard',
+    touchedScenes: touched,
+    selectedSceneId,
+  })
+  return {
+    ...(nextBoard || {}),
+    scenes,
+    selectedSceneId: selectedSceneId || nextBoard?.selectedSceneId || '',
+    selected_scene_id: selectedSceneId || nextBoard?.selected_scene_id || '',
+    uploadPromptModelFormatPreservedV214A: true,
+    upload_prompt_model_format_preserved_v214a: true,
+  }
+}
+
+
 function boardPatchTouchesPromptV213D(patch = {}) {
   if (!patch || typeof patch !== 'object') return false
   return BOARD_PROMPT_FIELD_KEYS_V213D.some((key) => Object.prototype.hasOwnProperty.call(patch, key))
@@ -7586,6 +7721,16 @@ function sceneVideoActionState(scene) {
       videoAssetId: assetId,
       video_api_path: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
       videoApiPath: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
+      output_video_url: videoUrl,
+      outputVideoUrl: videoUrl,
+      output_video_api_path: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
+      outputVideoApiPath: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
+      result_video_url: videoUrl,
+      resultVideoUrl: videoUrl,
+      result_video_api_path: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
+      resultVideoApiPath: assetApiPath || data?.videoApiPath || data?.video_api_path || '',
+      result_video_asset_id: assetId,
+      resultVideoAssetId: assetId,
       video_name: data?.videoName || data?.video_name || (videoUrl ? 'video.mp4' : ''),
       original_video_url: data?.originalVideoUrl || data?.original_video_url || '',
       video_status: 'ready',
@@ -7594,6 +7739,21 @@ function sceneVideoActionState(scene) {
       video_error: '',
       video_result: data || null,
       video_ready_at: new Date().toISOString(),
+      videoReadyAt: new Date().toISOString(),
+      video_fresh_after_regen_v213z: true,
+      videoFreshAfterRegenV213Z: true,
+      video_stale_after_image_change_v129p: false,
+      videoStaleAfterImageChangeV129P: false,
+      video_reset_reason: '',
+      videoResetReason: '',
+      source_image_changed_at: '',
+      sourceImageChangedAt: '',
+      image_deleted_v129o: false,
+      imageDeletedV129O: false,
+      first_image_deleted_v129o: false,
+      firstImageDeletedV129O: false,
+      last_image_deleted_v129o: false,
+      lastImageDeletedV129O: false,
     }
   }
 
@@ -7824,9 +7984,28 @@ function sceneVideoActionState(scene) {
             readyPatch.videoSourceImageMutationAt = readyPatch.video_source_image_mutation_at
           }
           readyPatch.video_status = 'ready'
+          readyPatch.videoStatus = 'ready'
           readyPatch.video_job_id = ''
+          readyPatch.videoJobId = ''
           readyPatch.video_status_endpoint = ''
+          readyPatch.videoStatusEndpoint = ''
           readyPatch.video_queue_position = 0
+          readyPatch.videoQueuePosition = 0
+          readyPatch.video_fresh_after_regen_v213z = true
+          readyPatch.videoFreshAfterRegenV213Z = true
+          readyPatch.video_stale_after_image_change_v129p = false
+          readyPatch.videoStaleAfterImageChangeV129P = false
+          readyPatch.video_reset_reason = ''
+          readyPatch.videoResetReason = ''
+          readyPatch.source_image_changed_at = ''
+          readyPatch.sourceImageChangedAt = ''
+          readyPatch.image_deleted_v129o = false
+          readyPatch.imageDeletedV129O = false
+          readyPatch.first_image_deleted_v129o = false
+          readyPatch.firstImageDeletedV129O = false
+          readyPatch.last_image_deleted_v129o = false
+          readyPatch.lastImageDeletedV129O = false
+          console.log('[BOARD VIDEO READY FRESH CONTRACT V213Z]', { sceneId, jobId: data?.jobId || data?.job_id || jobId || '', videoApiPath: readyPatch.video_api_path || readyPatch.videoApiPath || '', videoUrl: readyPatch.video_url || readyPatch.videoUrl || '' })
           const wasBadReviewRegenerationV130J = boardVideoWasBadBeforeRegenerate(liveSceneForReadyV129P) || boardSceneHasBadVideoReview(liveSceneForReadyV129P)
           Object.assign(readyPatch, boardVideoReviewRegenerateFlagPatch(false, 'completed'))
           if (wasBadReviewRegenerationV130J) {
@@ -9807,7 +9986,8 @@ function sceneVideoActionState(scene) {
 
   async function saveBoard(nextBoard = board, quiet = false) {
     const sourceBoardForSaveV213D = boardProtectLivePromptFieldsForSaveV213D(nextBoard, boardRef.current)
-    const sourceBoardForSaveV129O = boardProtectRecentImageMutationsForSaveV129O(sourceBoardForSaveV213D, boardRef.current)
+    const sourceBoardForSaveV214A = boardPreserveGenerationConfigOnMediaMutationV214A(sourceBoardForSaveV213D, boardRef.current, { reason: 'save_board_media_mutation_guard_v214a' })
+    const sourceBoardForSaveV129O = boardProtectRecentImageMutationsForSaveV129O(sourceBoardForSaveV214A, boardRef.current)
     const canonicalBoardBaseV57B = sanitizeBoardActiveVideoJobsForSaveV55(canonicalizeBoardMediaRefs(sourceBoardForSaveV129O))
     const canonicalBoard = boardWithVideoQueueSnapshotV57B(canonicalBoardBaseV57B, { reason: 'saveBoard_v57B' })
     const useReplaceForActiveVideoJobsV56 = boardHasActiveVideoJobsForReplaceSaveV56(canonicalBoard)
@@ -9883,9 +10063,18 @@ function sceneVideoActionState(scene) {
         })
       }
       if (!serverBoardAcceptedV212X && !workspaceMode && avaBoardShouldAcceptServerCorrectionV212S4C(payload, serverCorrectedBoardV212S4C)) {
+        const correctedBoardLocalStateV214A = boardPreserveSelectedSceneV213E(
+          boardPreserveGenerationConfigOnMediaMutationV214A(
+            boardMergePromptStateV213D(serverCorrectedBoardV212S4C || {}, boardRef.current || {}, { reason: 'server_correction_prompt_guard_v214a' }),
+            boardRef.current || {},
+            { force: true, reason: 'server_correction_media_upload_config_guard_v214a' }
+          ),
+          boardRef.current || {},
+          'server_correction_media_upload_config_guard_v214a'
+        )
         const acceptedBoardV212S4C = normalizeLoadedBoardVideoStatuses({
-          ...serverCorrectedBoardV212S4C,
-          updatedAt: serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
+          ...correctedBoardLocalStateV214A,
+          updatedAt: correctedBoardLocalStateV214A?.updatedAt || serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
         })
         boardRef.current = acceptedBoardV212S4C
         setBoard(acceptedBoardV212S4C)
