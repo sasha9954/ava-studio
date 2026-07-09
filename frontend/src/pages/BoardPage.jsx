@@ -1384,6 +1384,16 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
     const hasServerReviewStatusV132T = ['bad', 'poor', 'reject', 'rejected', 'плохое', 'плохая', 'needs_review', 'review', 'check', 'посмотри', 'на проверку'].includes(serverReviewStatusV132T)
     const localReviewWinsV213L = boardLocalReviewEventWinsV213L(scene, serverScene)
     const manualReviewLockWinsV213M = boardManualReviewLockWinsServerV213M(scene, serverScene)
+    const serverVideoStaleForLocalImageV214D = boardServerVideoStaleForLocalImageV214D(scene, serverScene)
+    if (serverVideoStaleForLocalImageV214D) {
+      console.warn('[BOARD SERVER VIDEO STALE FOR NEW IMAGE V214D]', {
+        sceneId: id,
+        localImageEpoch: boardImageMutationEpochForVideoV129P(scene),
+        serverVideoEpoch: boardVideoSourceImageEpochV129P(serverScene),
+        localImageAssetId: boardSceneImageAssetIdForFreshnessV214D(scene),
+        serverVideoSourceImageAssetId: boardSceneVideoSourceImageAssetIdV214D(serverScene),
+      })
+    }
     // AVA_BOARD_SERVER_CLEAR_WINS_V200I:
     // V200H can clear an orphaned job in the saved server snapshot. That cleaned
     // server scene has a LOWER score than the stale local scene because the job id
@@ -1409,7 +1419,7 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
         serverClearReasonV200I.includes('v200h') ||
         serverClearReasonV200I.includes('board_video_job_orphaned')
       )
-    const shouldCopy = serverLooksClearedV200I || serverScore > localScore || hasServerVideoRefV132T || (hasServerReviewStatusV132T && !localReviewWinsV213L && !manualReviewLockWinsV213M)
+    const shouldCopy = serverLooksClearedV200I || serverScore > localScore || (hasServerVideoRefV132T && !serverVideoStaleForLocalImageV214D) || (hasServerReviewStatusV132T && !localReviewWinsV213L && !manualReviewLockWinsV213M)
     if (!shouldCopy) return scene
 
     const next = { ...scene }
@@ -1470,7 +1480,7 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
       })
     }
 
-    if (hasServerVideoRefV131O) {
+    if (hasServerVideoRefV131O && !serverVideoStaleForLocalImageV214D) {
       const imageEpochV131O = Number(
         next.image_mutation_epoch ?? next.imageMutationEpoch ??
         serverScene.image_mutation_epoch ?? serverScene.imageMutationEpoch ??
@@ -3472,11 +3482,100 @@ function boardVideoSourceImageEpochV129P(scene = {}) {
   return parsed
 }
 
+
+// AVA_BOARD_IMAGE_REPLACE_NEEDS_REGEN_V214D:
+// When a user replaces a still after a video was already generated, any older
+// /board/video-batch/status snapshot must not resurrect that old video and make
+// "Сгенерить все" skip the scene. A video is current only if it is explicitly
+// bound to the same/newer image mutation epoch, or it was created after the image change.
+function boardSceneImageAssetIdForFreshnessV214D(scene = {}) {
+  return asText(
+    scene?.image_asset_id || scene?.imageAssetId ||
+    scene?.first_image_asset_id || scene?.firstImageAssetId ||
+    scene?.first_frame_asset_id || scene?.firstFrameAssetId ||
+    scene?.start_image_asset_id || scene?.startImageAssetId ||
+    scene?.last_image_asset_id || scene?.lastImageAssetId ||
+    scene?.end_image_asset_id || scene?.endImageAssetId ||
+    ''
+  )
+}
+
+function boardSceneVideoSourceImageAssetIdV214D(scene = {}) {
+  return asText(
+    scene?.video_source_image_asset_id || scene?.videoSourceImageAssetId ||
+    scene?.video_result?.sourceImageAssetId || scene?.video_result?.source_image_asset_id ||
+    scene?.videoResult?.sourceImageAssetId || scene?.videoResult?.source_image_asset_id ||
+    ''
+  )
+}
+
+function boardSceneHasExplicitImageChangedFlagV214D(scene = {}) {
+  return Boolean(
+    scene?.video_stale_after_image_change_v129p || scene?.videoStaleAfterImageChangeV129P ||
+    scene?.source_image_changed_at || scene?.sourceImageChangedAt ||
+    scene?.image_asset_committed_v132n4 || scene?.imageAssetCommittedV132N4 ||
+    scene?.image_replace_reason_v132n4 || scene?.imageReplaceReasonV132N4 ||
+    scene?.media_reset_generation_v129s || scene?.mediaResetGenerationV129S ||
+    scene?.media_reset_generation_v129t || scene?.mediaResetGenerationV129T ||
+    scene?.media_reset_generation_v129u || scene?.mediaResetGenerationV129U
+  )
+}
+
+function boardSceneVideoReadyMsV214D(scene = {}) {
+  const value = Date.parse(
+    scene?.video_ready_at || scene?.videoReadyAt ||
+    scene?.video_updated_at || scene?.videoUpdatedAt ||
+    scene?.video_result?.createdAt || scene?.video_result?.created_at ||
+    scene?.videoResult?.createdAt || scene?.videoResult?.created_at ||
+    ''
+  )
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+
+function boardServerVideoStaleForLocalImageV214D(localScene = {}, serverScene = {}) {
+  const hasServerVideoRef = Boolean(
+    serverScene?.video_asset_id || serverScene?.videoAssetId ||
+    serverScene?.video_api_path || serverScene?.videoApiPath ||
+    serverScene?.video_url || serverScene?.videoUrl ||
+    serverScene?.result_video_asset_id || serverScene?.resultVideoAssetId ||
+    serverScene?.result_video_api_path || serverScene?.resultVideoApiPath ||
+    serverScene?.result_video_url || serverScene?.resultVideoUrl ||
+    serverScene?.result_url || serverScene?.resultUrl
+  )
+  if (!hasServerVideoRef) return false
+
+  const localImageEpoch = boardImageMutationEpochForVideoV129P(localScene)
+  if (!localImageEpoch) return false
+
+  const serverVideoEpoch = boardVideoSourceImageEpochV129P(serverScene)
+  if (serverVideoEpoch && serverVideoEpoch >= localImageEpoch) return false
+
+  const localImageAssetId = boardSceneImageAssetIdForFreshnessV214D(localScene)
+  const serverVideoSourceImageAssetId = boardSceneVideoSourceImageAssetIdV214D(serverScene)
+  if (localImageAssetId && serverVideoSourceImageAssetId && localImageAssetId === serverVideoSourceImageAssetId) return false
+
+  const serverVideoReadyMs = boardSceneVideoReadyMsV214D(serverScene)
+  if (serverVideoReadyMs && serverVideoReadyMs >= localImageEpoch) return false
+
+  return true
+}
+
 function boardVideoMatchesCurrentImageV129P(scene = {}) {
   const imageEpoch = boardImageMutationEpochForVideoV129P(scene)
-  if (!imageEpoch) return true
+  const explicitImageChangedV214D = boardSceneHasExplicitImageChangedFlagV214D(scene)
+  if (!imageEpoch) return !explicitImageChangedV214D
+
   const videoEpoch = boardVideoSourceImageEpochV129P(scene)
-  return Boolean(videoEpoch && videoEpoch >= imageEpoch)
+  if (videoEpoch && videoEpoch >= imageEpoch) return true
+
+  const imageAssetIdV214D = boardSceneImageAssetIdForFreshnessV214D(scene)
+  const videoSourceImageAssetIdV214D = boardSceneVideoSourceImageAssetIdV214D(scene)
+  if (imageAssetIdV214D && videoSourceImageAssetIdV214D && imageAssetIdV214D === videoSourceImageAssetIdV214D) return true
+
+  const videoReadyMsV214D = boardSceneVideoReadyMsV214D(scene)
+  if (videoReadyMsV214D && videoReadyMsV214D >= imageEpoch && !explicitImageChangedV214D) return true
+
+  return false
 }
 
 // AVA_BOARD_MEDIA_STATUS_INDICATORS_V132O:
@@ -8148,6 +8247,11 @@ function sceneVideoActionState(scene) {
   // videos/statuses, but must not steal focus from the scene the user clicked.
   const boardUserSelectedSceneIdRefV213E = useRef('')
   const boardUserSelectedSceneAtRefV213E = useRef(0)
+  // AVA_BOARD_TO_MONTAGE_PAUSE_SIDE_EFFECTS_V214C:
+  // When user confirms Board -> Montage, Board must stop publishing late autosaves
+  // and must stop applying /board/video-batch/status results. Otherwise an in-flight
+  // timer/poll can keep Board alive and visually block the Montage route.
+  const boardLeavingToAssemblyRefV214C = useRef(false)
   const skipNextBoardAutosaveRefV145A = useRef(false)
   const localVideoQueueRef = useRef([])
   const localVideoQueueStartLockRef = useRef('')
@@ -8312,6 +8416,7 @@ function sceneVideoActionState(scene) {
   }
 
   function boardBatchRefreshShouldRunV200M() {
+    if (boardLeavingToAssemblyRefV214C.current) return false
     if (boardAssemblyRouteLockActiveV213N()) return false
     if (workspaceMode || !projectId) return false
     return Boolean(
@@ -9279,6 +9384,11 @@ function sceneVideoActionState(scene) {
     let timer = null
 
     const tick = async () => {
+      if (boardLeavingToAssemblyRefV214C.current || boardAssemblyRouteLockActiveV213N()) {
+        cancelled = true
+        console.log('[BOARD BATCH POLL CANCELLED FOR MONTAGE HANDOFF V214C]', { projectId: projectId || '' })
+        return
+      }
       try {
         let batchStatusDataV136J = null
         try {
@@ -9299,7 +9409,7 @@ function sceneVideoActionState(scene) {
           serverBoardDataRawV213G,
           'server_batch_refresh_status_v213g'
         )
-        if (cancelled || !serverBoardData || !Array.isArray(serverBoardData.scenes)) return
+        if (cancelled || boardLeavingToAssemblyRefV214C.current || boardAssemblyRouteLockActiveV213N() || !serverBoardData || !Array.isArray(serverBoardData.scenes)) return
         const orphanCleanedV200E = Boolean(
           batchStatusDataV136J?.orphanCleaned ||
           batchStatusDataV136J?.orphan_cleaned ||
@@ -9371,7 +9481,7 @@ function sceneVideoActionState(scene) {
       } catch (error) {
         console.warn('[BOARD SERVER BATCH REFRESH V131N] failed', error)
       } finally {
-        if (!cancelled && boardBatchRefreshShouldRunV200M()) timer = window.setTimeout(tick, 2500)
+        if (!cancelled && !boardLeavingToAssemblyRefV214C.current && !boardAssemblyRouteLockActiveV213N() && boardBatchRefreshShouldRunV200M()) timer = window.setTimeout(tick, 2500)
       }
     }
 
@@ -9711,6 +9821,10 @@ function sceneVideoActionState(scene) {
     }
 
     const timer = window.setTimeout(() => {
+      if (boardLeavingToAssemblyRefV214C.current || boardAssemblyRouteLockActiveV213N()) {
+        console.log('[BOARD AUTOSAVE TIMER CANCELLED FOR MONTAGE HANDOFF V214C]', { projectId: projectId || '', workspaceMode })
+        return
+      }
       saveBoard(board, true).then(() => {
         lastBoardAutosaveFingerprintRefV200C.current = autosaveFingerprintV200C
       })
@@ -10433,7 +10547,10 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
       return
     }
     const toPathV213N = projectId ? `/app/projects/${projectId}/board-assembly` : '/app/workspace/board-assembly'
+    boardLeavingToAssemblyRefV214C.current = true
+    try { window.__AVA_BOARD_LEAVING_TO_ASSEMBLY_V214C__ = true } catch (_) {}
     boardSetAssemblyRouteLockV213N(toPathV213N)
+    console.log('[BOARD TO MONTAGE LEAVE LOCK V214C]', { toPath: toPathV213N, projectId: projectId || '', workspaceMode })
     setAssemblyConfirmBusy(true)
     setAssemblyConfirmError('')
     setStatus('Переносим Доску в монтажник…')
@@ -10486,6 +10603,8 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
         },
       })
     } catch (error) {
+      boardLeavingToAssemblyRefV214C.current = false
+      try { window.__AVA_BOARD_LEAVING_TO_ASSEMBLY_V214C__ = false } catch (_) {}
       boardClearAssemblyRouteLockV213N('handoff_failed')
       console.warn('[BOARD TO ASSEMBLY HANDOFF FAILED]', error)
       setAssemblyConfirmError(`Не удалось перенести в монтажник: ${error?.message || error}`)
@@ -12416,6 +12535,23 @@ function updateSelectedSceneDuration(nextValue) {
         dataUrl,
         reason: `manual_image_replaced_${fieldUrl}_v132n4`,
       }))
+
+      // AVA_BOARD_IMAGE_REPLACE_NEEDS_REGEN_V214D:
+      // This scene has a new source still. It must leave any old queue/runtime state
+      // from the completed previous generation, otherwise "Сгенерить все" can skip it
+      // as already queued/ready even though the old video was cleared.
+      try {
+        localVideoQueueRef.current = (localVideoQueueRef.current || []).filter((id) => asText(id) !== sceneId)
+        if (typeof clearBadRegenRuntimeStatusesV136I === 'function') clearBadRegenRuntimeStatusesV136I([sceneId])
+        if (typeof window !== 'undefined' && window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__) {
+          const nextRuntimeV214D = { ...(window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}) }
+          delete nextRuntimeV214D[sceneId]
+          window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ = nextRuntimeV214D
+        }
+        console.log('[BOARD IMAGE REPLACE QUEUE STATE CLEARED V214D]', { sceneId, assetId, assetApiPath })
+      } catch (error) {
+        console.warn('[BOARD IMAGE REPLACE QUEUE STATE CLEAR V214D] failed', error)
+      }
 
       let nextBoardForSave = null
       setBoard((current) => {
