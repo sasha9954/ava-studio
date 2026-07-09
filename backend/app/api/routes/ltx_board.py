@@ -1,3 +1,4 @@
+# AVA_BOARD_COMPLETED_BATCH_POSMOTRI_STATUS_V214G: every successful Board batch output becomes needs_review/posmotri.
 # AVA_BOARD_VIDEO_FRESH_AFTER_REGEN_CONTRACT_V213Z
 # AVA_STABLE_AUDIO_GENERATE_HARD_DIAGNOSTICS_V211C: installed
 # AVA_BOARD_BATCH_SERVER_HANG_UNICODE_START_FIX_V209E: safe ffmpeg/ffprobe decoding + normalize first scene start=0 for server batch.
@@ -3956,6 +3957,69 @@ def _board_batch_scene_has_bad_review(scene: dict[str, Any] | None) -> bool:
     return _board_batch_review_status(scene) == "bad"
 
 
+
+
+# AVA_BOARD_BATCH_HARD_REPLACE_NEEDS_REGEN_V214I
+# If a scene was hard-reset by replacing its source photo, any old video refs still present in
+# a stale snapshot must not make the server skip this scene as ready. Once a newly generated
+# video is explicitly bound to the current image asset/epoch, the latch is considered resolved.
+def _board_batch_scene_hard_image_replace_needs_regen_v214i(scene: dict[str, Any] | None) -> bool:
+    if not isinstance(scene, dict):
+        return False
+
+    has_latch = False
+    for key in (
+        'image_hard_replace_v214i', 'imageHardReplaceV214I',
+        'force_regenerate_after_image_replace_v214i', 'forceRegenerateAfterImageReplaceV214I',
+        'media_reset_generation_v214i', 'mediaResetGenerationV214I',
+        'media_reset_generation_v129s', 'mediaResetGenerationV129S',
+        'media_reset_generation_v129t', 'mediaResetGenerationV129T',
+        'media_reset_generation_v129u', 'mediaResetGenerationV129U',
+        'video_stale_after_image_change_v129p', 'videoStaleAfterImageChangeV129P',
+        'source_image_changed_at', 'sourceImageChangedAt',
+    ):
+        value = scene.get(key)
+        if value not in (None, '', False, 0):
+            has_latch = True
+            break
+    if not has_latch:
+        return False
+
+    image_asset_id = str(
+        scene.get('image_asset_id') or scene.get('imageAssetId') or
+        scene.get('first_image_asset_id') or scene.get('firstImageAssetId') or
+        scene.get('first_frame_asset_id') or scene.get('firstFrameAssetId') or
+        scene.get('start_image_asset_id') or scene.get('startImageAssetId') or
+        scene.get('last_image_asset_id') or scene.get('lastImageAssetId') or
+        scene.get('end_image_asset_id') or scene.get('endImageAssetId') or ''
+    ).strip()
+    video_result_obj = scene.get('video_result') if isinstance(scene.get('video_result'), dict) else {}
+    video_result_camel_obj = scene.get('videoResult') if isinstance(scene.get('videoResult'), dict) else {}
+    video_source_image_asset_id = str(
+        scene.get('video_source_image_asset_id') or scene.get('videoSourceImageAssetId') or
+        video_result_obj.get('sourceImageAssetId') or video_result_obj.get('source_image_asset_id') or
+        video_result_camel_obj.get('sourceImageAssetId') or video_result_camel_obj.get('source_image_asset_id') or
+        ''
+    ).strip()
+    if image_asset_id and video_source_image_asset_id and image_asset_id == video_source_image_asset_id:
+        return False
+
+    try:
+        image_epoch = float(scene.get('source_image_changed_epoch') or scene.get('sourceImageChangedEpoch') or scene.get('image_mutation_epoch') or scene.get('imageMutationEpoch') or 0)
+        video_epoch = float(scene.get('video_source_image_mutation_epoch') or scene.get('videoSourceImageMutationEpoch') or 0)
+        if image_epoch > 0 and video_epoch >= image_epoch:
+            return False
+    except Exception:
+        pass
+
+    return True
+
+
+def _board_batch_mode_is_overwrite_v214i(mode: str | None) -> bool:
+    text = str(mode or '').strip().lower()
+    return text in {'overwrite', 'regenerate', 'rerun', 'replace', 'rebuild', 'force', 'all'}
+
+
 def _board_batch_scene_was_bad_before_regenerate(scene: dict[str, Any] | None) -> bool:
     if not isinstance(scene, dict):
         return False
@@ -4777,6 +4841,45 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                         "sourceImageEpoch": ready_patch_v132a.get("video_source_image_mutation_epoch") or ready_patch_v132a.get("videoSourceImageMutationEpoch"),
                     }, flush=True)
                 ready_patch_v132a.update(_board_batch_review_regenerate_flag_patch(False, "completed"))
+                # AVA_BOARD_COMPLETED_BATCH_POSMOTRI_STATUS_V214G:
+                # A newly generated server-batch video must immediately enter orange
+                # review status ("посмотри"), not plain ready, even while later
+                # scenes in the same batch are still running.
+                review_now_v214g = now_iso()
+                ready_patch_v132a.update(_board_batch_review_patch("needs_review", "server_batch_video_generated_v214g"))
+                ready_patch_v132a.update({
+                    "video_status": "ready",
+                    "videoStatus": "ready",
+                    "video_review_status": "needs_review",
+                    "videoReviewStatus": "needs_review",
+                    "review_status": "needs_review",
+                    "reviewStatus": "needs_review",
+                    "video_review_reason": "server_batch_video_generated_v214g",
+                    "videoReviewReason": "server_batch_video_generated_v214g",
+                    "video_review_updated_at": review_now_v214g,
+                    "videoReviewUpdatedAt": review_now_v214g,
+                    "pending_review": True,
+                    "pendingReview": True,
+                    "needs_review": True,
+                    "needsReview": True,
+                    "review_required": True,
+                    "reviewRequired": True,
+                    "bad_video_review": False,
+                    "badVideoReview": False,
+                    "video_review_bad": False,
+                    "videoReviewBad": False,
+                    "video_bad": False,
+                    "videoBad": False,
+                    "is_bad_video": False,
+                    "isBadVideo": False,
+                })
+                print("[BOARD SERVER BATCH REVIEW NEEDS_REVIEW V214G]", {
+                    "project_id": project_id,
+                    "batch_id": batch_id,
+                    "scene_id": scene_id,
+                    "job_id": job_id,
+                    "reason": "server_batch_video_generated_v214g",
+                }, flush=True)
                 if was_bad_review_regeneration_v132a:
                     # AVA_BOARD_BATCH_POSMOTRI_UPDATED_AT_V200L:
                     # Persist a fresh review timestamp so project snapshot review-event authority
@@ -5210,7 +5313,13 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
                 filtered_early_v213f = []
                 for sid_v213f in early_candidate_ids_v209x:
                     scene_v213f = scenes_by_id_v213f.get(sid_v213f) or {}
-                    if _board_batch_scene_has_video(scene_v213f) and not _board_batch_scene_has_bad_review(scene_v213f) and sid_v213f not in force_regenerate_ids_v213k:
+                    if (
+                            _board_batch_scene_has_video(scene_v213f)
+                            and not _board_batch_scene_has_bad_review(scene_v213f)
+                            and sid_v213f not in force_regenerate_ids_v213k
+                            and not _board_batch_scene_hard_image_replace_needs_regen_v214i(scene_v213f)
+                            and not _board_batch_mode_is_overwrite_v214i(mode)
+                        ):
                         skipped_ready_early_v213f.append(sid_v213f)
                         continue
                     filtered_early_v213f.append(sid_v213f)
@@ -5354,7 +5463,13 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
         # AVA_BOARD_BATCH_READY_VIDEO_AUTHORITATIVE_SKIP_V213F:
         # Generate All is missing/bad authority, not blind overwrite. If the browser sends a stale
         # requested id for a ready scene, do not queue it unless it is explicitly red "bad" right now.
-        if _board_batch_scene_has_video(scene) and not _board_batch_scene_has_bad_review(scene) and scene_id not in force_regenerate_ids_v213k:
+        if (
+            _board_batch_scene_has_video(scene)
+            and not _board_batch_scene_has_bad_review(scene)
+            and scene_id not in force_regenerate_ids_v213k
+            and not _board_batch_scene_hard_image_replace_needs_regen_v214i(scene)
+            and not _board_batch_mode_is_overwrite_v214i(mode)
+        ):
             print("[BOARD BATCH READY VIDEO AUTHORITATIVE SKIP V213F]", {
                 "project_id": project_id,
                 "stage": "final_waiting_ids",
