@@ -1,3 +1,5 @@
+# AVA_BOARD_MEDIA_REDUCER_CONTRACT_V216A: V216A media mutation is an explicit reset.
+# AVA_IMAGE_DELETE_TOMBSTONE_BACKEND_V214U
 from __future__ import annotations
 
 from copy import deepcopy
@@ -52,8 +54,43 @@ MEDIA_RESET_MARKER_KEYS = {
     "imageDeleteReasonV129S",
     "image_delete_reason_v129t",
     "imageDeleteReasonV129T",
+    # AVA_IMAGE_DELETE_TOMBSTONE_BACKEND_V214T:
+    # Frontend manual delete/replace uses v129u and v214t tombstones.
+    # Treat them as explicit reset markers so safe_merge/preserve_media_refs
+    # cannot resurrect old deleted image refs from the previous snapshot.
+    "media_reset_generation_v129u",
+    "mediaResetGenerationV129U",
+    "image_delete_reason_v129u",
+    "imageDeleteReasonV129U",
+    "imageDeletedAtV213G",
+    "image_deleted_at_v213g",
+    "image_delete_tombstone_v214t",
+    "imageDeleteTombstoneV214T",
+    "manual_image_replace_tombstone_v214t",
+    "manualImageReplaceTombstoneV214T",
+    "manual_image_upload_lock_v214s",
+    "manualImageUploadLockV214S",
+    # AVA_IMAGE_DELETE_TOMBSTONE_BACKEND_V214U fallback insert
+    "media_reset_generation_v129u",
+    "mediaResetGenerationV129U",
+    "image_delete_reason_v129u",
+    "imageDeleteReasonV129U",
+    "imageDeletedAtV213G",
+    "image_deleted_at_v213g",
+    "image_delete_tombstone_v214t",
+    "imageDeleteTombstoneV214T",
+    "image_delete_tombstone_v214u",
+    "imageDeleteTombstoneV214U",
+    "manual_image_replace_tombstone_v214t",
+    "manualImageReplaceTombstoneV214T",
+    "manual_image_replace_tombstone_v214u",
+    "manualImageReplaceTombstoneV214U",
     "source_image_changed_at",
     "sourceImageChangedAt",
+    "media_reset_intent_v216a",
+    "mediaResetIntentV216A",
+    "media_revision_v216a",
+    "mediaRevisionV216A",
     "video_stale_after_image_change_v129p",
     "videoStaleAfterImageChangeV129P",
     # AVA_VIDEO_NODE_MEDIA_RELINK_GUARD_V206B:

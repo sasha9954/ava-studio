@@ -1,3 +1,4 @@
+# AVA_ASSET_STREAM_QUERY_TOKEN_V214Y: asset file endpoint accepts access_token query for streaming video previews.
 import json
 import mimetypes
 import re
@@ -6,7 +7,7 @@ import subprocess
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -851,9 +852,33 @@ def delete_asset(asset_id: str, user: dict = Depends(get_current_user)):
 
     return store.update(op)
 
+# AVA_ASSET_STREAM_QUERY_TOKEN_V214Y:
+# Allow media tags to stream protected assets through a short local query-token URL.
+# This keeps the normal Bearer path working, but lets <video> use Range/FileResponse
+# instead of waiting for fetchProtectedBlobUrl() to download the whole MP4 first.
 @router.get('/{asset_id}/file')
-def read_asset_file(asset_id: str, user: dict = Depends(get_current_user)):
+def read_asset_file(
+    asset_id: str,
+    access_token: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+):
+    token = ''
+    if authorization and authorization.lower().startswith('bearer '):
+        token = authorization.split(' ', 1)[1].strip()
+    elif access_token:
+        token = str(access_token or '').strip()
+
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Missing bearer token')
+
     db = store.get_db()
+    session = db.get('sessions', {}).get(token)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
+    user = db.get('users', {}).get(session.get('user_id'))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User not found')
+
     asset = db.get('assets', {}).get(asset_id)
     if not asset or asset.get('user_id') != user['id']:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Asset not found')

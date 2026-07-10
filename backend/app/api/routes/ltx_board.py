@@ -1,3 +1,6 @@
+# AVA_BOARD_DEAD_QUEUE_CLEANUP_V216J: dead persisted queue membership is cleared automatically.
+# AVA_BOARD_UNIFIED_VIDEO_QUEUE_BACKEND_V216H: one appendable backend queue for manual and Generate-All.
+# AVA_BOARD_MEDIA_REDUCER_CONTRACT_V216A: revision-based Board batch authority.
 # AVA_BOARD_COMPLETED_BATCH_POSMOTRI_STATUS_V214G: every successful Board batch output becomes needs_review/posmotri.
 # AVA_BOARD_VIDEO_FRESH_AFTER_REGEN_CONTRACT_V213Z
 # AVA_STABLE_AUDIO_GENERATE_HARD_DIAGNOSTICS_V211C: installed
@@ -21,6 +24,9 @@
 # AVA_BOARD_SERVER_BATCH_REMOVE_TIME_NAME_V131L: direct time.<member> references are replaced with __import__('time').<member>.
 # AVA_BOARD_SERVER_BATCH_SAFE_TIME_SLEEP_V131K: replaced __import__('time').sleep with __import__('time').sleep to avoid stale import scope issues.
 from __future__ import annotations
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
 
 import base64
 import copy
@@ -84,6 +90,7 @@ BOARD_MMAUDIO_JOBS: dict[str, dict[str, Any]] = {}
 BOARD_ASSEMBLY_JOBS: dict[str, dict[str, Any]] = {}
 BOARD_VIDEO_BATCHES: dict[str, dict[str, Any]] = {}
 BOARD_VIDEO_BATCH_THREADS: dict[str, threading.Thread] = {}
+BOARD_VIDEO_BATCH_QUEUE_LOCK_V216H = threading.RLock()
 
 
 # AVA_BOARD_VIDEO_JOB_PERSIST_V62:
@@ -3898,12 +3905,140 @@ def _ava_v213g_apply_fresh_image_authority(project_id: str, board_data: dict[str
         return board_data or {}
 
 
+
+# AVA_BOARD_MEDIA_REDUCER_CONTRACT_V216A
+_AVA_V216A_SCENE_MEDIA_KEYS = (
+    'image_url','imageUrl','image_api_path','imageApiPath','image_asset_id','imageAssetId','image_name','imageName','image_data_url','imageDataUrl','mediaUrl','media_url',
+    'first_frame_url','firstFrameUrl','first_frame_api_path','firstFrameApiPath','first_frame_asset_id','firstFrameAssetId','first_frame_name','firstFrameName',
+    'start_image_url','startImageUrl','start_image_api_path','startImageApiPath','start_image_asset_id','startImageAssetId','start_image_name','startImageName','start_image_data_url','startImageDataUrl',
+    'first_image_url','firstImageUrl','first_image_api_path','firstImageApiPath','first_image_asset_id','firstImageAssetId','first_image_name','firstImageName',
+    'last_frame_url','lastFrameUrl','last_frame_api_path','lastFrameApiPath','last_frame_asset_id','lastFrameAssetId','last_frame_name','lastFrameName',
+    'end_image_url','endImageUrl','end_image_api_path','endImageApiPath','end_image_asset_id','endImageAssetId','end_image_name','endImageName','end_image_data_url','endImageDataUrl',
+    'last_image_url','lastImageUrl','last_image_api_path','lastImageApiPath','last_image_asset_id','lastImageAssetId','last_image_name','lastImageName',
+    'image_status','imageStatus','photo_status','photoStatus','image_uploading','imageUploading','photo_uploading','photoUploading',
+    'video_status','videoStatus','generation_status','generationStatus','batch_status','batchStatus','video_error','videoError','video_job_id','videoJobId','job_id','jobId',
+    'video_status_endpoint','videoStatusEndpoint','video_queue_position','videoQueuePosition','video_queue_source','videoQueueSource',
+    'video_url','videoUrl','video_api_path','videoApiPath','video_asset_id','videoAssetId','video_name','videoName','video_result','videoResult',
+    'result_url','resultUrl','result_video_url','resultVideoUrl','result_video_api_path','resultVideoApiPath','result_video_asset_id','resultVideoAssetId','result_video_name','resultVideoName',
+    'ready_video_url','readyVideoUrl','ready_video_api_path','readyVideoApiPath','ready_video_asset_id','readyVideoAssetId',
+    'generated_video_url','generatedVideoUrl','generated_video_api_path','generatedVideoApiPath','generated_video_asset_id','generatedVideoAssetId',
+    'output_video_url','outputVideoUrl','output_video_api_path','outputVideoApiPath','output_video_asset_id','outputVideoAssetId',
+    'video_source_image_asset_id','videoSourceImageAssetId','video_source_image_api_path','videoSourceImageApiPath','video_source_image_mutation_epoch','videoSourceImageMutationEpoch',
+    'video_source_revision_v216a','videoSourceRevisionV216A','generation_media_revision_v216a','generationMediaRevisionV216A','generation_source_image_asset_id_v216a','generationSourceImageAssetIdV216A',
+    'review_status','reviewStatus','video_review_status','videoReviewStatus','pending_review','pendingReview','review_required','reviewRequired','needs_review','needsReview',
+    'bad_video','badVideo','video_bad','videoBad','is_bad_video','isBadVideo','telegram_review_id','telegramReviewId','telegram_review_asset_id','telegramReviewAssetId','telegram_review_status','telegramReviewStatus',
+    'mmaudio_status','mmaudioStatus','mmaudio_error','mmaudioError','mmaudio_job_id','mmaudioJobId','mmaudio_status_endpoint','mmaudioStatusEndpoint',
+    'mmaudio_video_url','mmaudioVideoUrl','mmaudio_video_api_path','mmaudioVideoApiPath','mmaudio_video_asset_id','mmaudioVideoAssetId','mmaudio_video_name','mmaudioVideoName','mmaudio_result','mmaudioResult',
+    'media_revision_v216a','mediaRevisionV216A','image_revision_v216a','imageRevisionV216A','media_revision_at_v216a','mediaRevisionAtV216A','media_reset_intent_v216a','mediaResetIntentV216A','media_authority_v216a','mediaAuthorityV216A',
+    'image_mutation_epoch','imageMutationEpoch','source_image_changed_epoch','sourceImageChangedEpoch','source_image_changed_at','sourceImageChangedAt',
+)
+
+def _ava_v216a_scene_id(scene: dict[str, Any] | None, index: int = 0) -> str:
+    if not isinstance(scene, dict):
+        return f'seg_{index + 1:02d}'
+    return str(scene.get('scene_id') or scene.get('sceneId') or scene.get('id') or f'seg_{index + 1:02d}').strip()
+
+def _ava_v216a_number(value: Any) -> float:
+    try:
+        result = float(value or 0)
+        return result if result == result else 0.0
+    except Exception:
+        return 0.0
+
+def _ava_v216a_media_revision(scene: dict[str, Any] | None) -> float:
+    if not isinstance(scene, dict):
+        return 0.0
+    return max(
+        _ava_v216a_number(scene.get('media_revision_v216a')),
+        _ava_v216a_number(scene.get('mediaRevisionV216A')),
+        _ava_v216a_number(scene.get('image_revision_v216a')),
+        _ava_v216a_number(scene.get('imageRevisionV216A')),
+        _ava_v216a_number(scene.get('image_mutation_epoch')),
+        _ava_v216a_number(scene.get('imageMutationEpoch')),
+        _ava_v216a_number(scene.get('source_image_changed_epoch')),
+        _ava_v216a_number(scene.get('sourceImageChangedEpoch')),
+        0.0,
+    )
+
+def _ava_v216a_preserve_newer_scene_media(current_data: dict[str, Any] | None, incoming_data: dict[str, Any] | None, source: str = '') -> tuple[dict[str, Any] | None, int]:
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, 0
+    current_scenes = current_data.get('scenes') if isinstance(current_data.get('scenes'), list) else []
+    incoming_scenes = incoming_data.get('scenes') if isinstance(incoming_data.get('scenes'), list) else []
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, 0
+    current_by_id = {_ava_v216a_scene_id(scene, index): scene for index, scene in enumerate(current_scenes) if isinstance(scene, dict)}
+    changed = 0
+    next_scenes = []
+    for index, incoming_scene in enumerate(incoming_scenes):
+        if not isinstance(incoming_scene, dict):
+            next_scenes.append(incoming_scene)
+            continue
+        sid = _ava_v216a_scene_id(incoming_scene, index)
+        current_scene = current_by_id.get(sid)
+        if not isinstance(current_scene, dict):
+            next_scenes.append(incoming_scene)
+            continue
+        current_rev = _ava_v216a_media_revision(current_scene)
+        incoming_rev = _ava_v216a_media_revision(incoming_scene)
+        if current_rev > 0 and incoming_rev < current_rev:
+            merged = dict(incoming_scene)
+            for key in _AVA_V216A_SCENE_MEDIA_KEYS:
+                if key in current_scene:
+                    merged[key] = copy.deepcopy(current_scene.get(key))
+                else:
+                    merged.pop(key, None)
+            merged['stale_media_save_rejected_v216a'] = True
+            merged['staleMediaSaveRejectedV216A'] = True
+            merged['stale_media_save_source_v216a'] = source
+            merged['staleMediaSaveSourceV216A'] = source
+            next_scenes.append(merged)
+            changed += 1
+        else:
+            next_scenes.append(incoming_scene)
+    if not changed:
+        return incoming_data, 0
+    result = dict(incoming_data)
+    result['scenes'] = next_scenes
+    result['stale_media_saves_rejected_v216a'] = changed
+    result['staleMediaSavesRejectedV216A'] = changed
+    print('[BOARD STALE MEDIA SAVE REJECTED V216A]', {'source': source, 'scenes': changed}, flush=True)
+    return result, changed
+
+
+def _ava_v216a_scene_image_asset_id(scene: dict[str, Any] | None) -> str:
+    if not isinstance(scene, dict):
+        return ''
+    for key in ('image_asset_id','imageAssetId','start_image_asset_id','startImageAssetId','first_image_asset_id','firstImageAssetId','first_frame_asset_id','firstFrameAssetId','last_image_asset_id','lastImageAssetId','end_image_asset_id','endImageAssetId'):
+        value = str(scene.get(key) or '').strip()
+        if value:
+            return value
+    return ''
+
+def _ava_v216a_generation_result_is_stale(start_scene: dict[str, Any] | None, live_scene: dict[str, Any] | None) -> bool:
+    if not isinstance(start_scene, dict) or not isinstance(live_scene, dict):
+        return False
+    start_rev = _ava_v216a_media_revision(start_scene)
+    live_rev = _ava_v216a_media_revision(live_scene)
+    start_image = _ava_v216a_scene_image_asset_id(start_scene)
+    live_image = _ava_v216a_scene_image_asset_id(live_scene)
+    if start_rev > 0 and live_rev > 0 and start_rev != live_rev:
+        return True
+    if start_image and live_image and start_image != live_image:
+        return True
+    return False
+
 def _board_batch_save_snapshot(project_id: str, board_data: dict[str, Any], client_version: str = "board-server-video-batch-v131a") -> None:
     def op(db: dict[str, Any]) -> dict[str, Any]:
         db.setdefault("snapshots", {}).setdefault(project_id, {})
         current = db["snapshots"].get(project_id, {}).get("board") or {}
         current_data = current.get("data") if isinstance(current, dict) else {}
         incoming_raw_v213g = copy.deepcopy(board_data or {})
+        incoming_raw_v213g, rejected_stale_media_v216a = _ava_v216a_preserve_newer_scene_media(
+            current_data or {},
+            incoming_raw_v213g,
+            source=f'board_batch_snapshot:{client_version}',
+        )
         incoming_raw_v213g, preserved_image_authority_v213g = _ava_v213g_preserve_current_image_media(
             current_data or {},
             incoming_raw_v213g,
@@ -4204,6 +4339,10 @@ def _board_batch_job_active_patch(start_data: dict[str, Any], scene: dict[str, A
         "videoApiPath": "",
         "video_asset_id": "",
         "videoAssetId": "",
+        "generation_media_revision_v216a": _ava_v216a_media_revision(scene),
+        "generationMediaRevisionV216A": _ava_v216a_media_revision(scene),
+        "generation_source_image_asset_id_v216a": _ava_v216a_scene_image_asset_id(scene),
+        "generationSourceImageAssetIdV216A": _ava_v216a_scene_image_asset_id(scene),
     }
 
 
@@ -4416,6 +4555,26 @@ def _board_batch_update_scene(project_id: str, scene_id: str, patch: dict[str, A
     if changed:
         board_data["scenes"] = next_scenes
     if batch_patch is not None:
+        batch_patch = dict(batch_patch)
+        batch_id_v216h = str(
+            batch_patch.get("batchId") or batch_patch.get("batch_id") or
+            (board_data.get("board_video_batch") or {}).get("batchId") or
+            (board_data.get("board_video_batch") or {}).get("batch_id") or ""
+        ).strip()
+        live_batch_v216h = BOARD_VIDEO_BATCHES.get(batch_id_v216h) if batch_id_v216h else None
+        if isinstance(live_batch_v216h, dict):
+            live_waiting_v216h = _board_batch_live_waiting_v216h(live_batch_v216h)
+            batch_patch["waitingSceneIds"] = live_waiting_v216h
+            batch_patch["waiting_scene_ids"] = live_waiting_v216h
+            if live_waiting_v216h:
+                batch_patch["status"] = "running"
+                batch_patch["batch_status"] = "running"
+            q_patch_v216h = batch_patch.get("video_queue") if isinstance(batch_patch.get("video_queue"), dict) else {}
+            batch_patch["video_queue"] = {
+                **q_patch_v216h,
+                "waitingSceneIds": live_waiting_v216h,
+                "waiting_scene_ids": live_waiting_v216h,
+            }
         current_batch = board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict) else {}
         board_data["board_video_batch"] = {**current_batch, **batch_patch, "updatedAt": _board_batch_now(), "updated_at": _board_batch_now()}
         q_patch = batch_patch.get("video_queue") if isinstance(batch_patch.get("video_queue"), dict) else None
@@ -4628,6 +4787,49 @@ def _board_batch_wait_job(project_id: str, batch_id: str, scene_id: str, job_id:
     return _timeout_payload_v203a("board server batch polling timeout watchdog reached", last_data_v203a)
 
 
+
+
+# AVA_BOARD_UNIFIED_VIDEO_QUEUE_BACKEND_V216H
+_BOARD_VIDEO_BATCH_ACTIVE_STATUSES_V216H = {
+    "queued", "running", "starting", "preparing", "submitting", "processing", "cancel_requested"
+}
+
+
+def _board_active_batch_for_project_v216h(project_id: str) -> tuple[str, dict[str, Any]] | tuple[str, None]:
+    """Return the one live in-memory queue for this project."""
+    with BOARD_VIDEO_BATCH_QUEUE_LOCK_V216H:
+        for batch_id, batch in list(BOARD_VIDEO_BATCHES.items()):
+            if not isinstance(batch, dict):
+                continue
+            same_project = str(batch.get("projectId") or batch.get("project_id") or "").strip() == str(project_id).strip()
+            status = str(batch.get("status") or batch.get("batch_status") or "").strip().lower()
+            if same_project and status in _BOARD_VIDEO_BATCH_ACTIVE_STATUSES_V216H and not batch.get("cancelRequested"):
+                return batch_id, batch
+    return "", None
+
+
+def _board_batch_live_waiting_v216h(batch: dict[str, Any] | None) -> list[str]:
+    if not isinstance(batch, dict):
+        return []
+    raw = batch.get("waitingSceneIds") or batch.get("waiting_scene_ids") or []
+    result: list[str] = []
+    for item in raw if isinstance(raw, list) else []:
+        scene_id = str(item or "").strip()
+        if scene_id and scene_id not in result:
+            result.append(scene_id)
+    return result
+
+
+def _board_batch_live_ids_v216h(batch: dict[str, Any] | None) -> set[str]:
+    if not isinstance(batch, dict):
+        return set()
+    ids = set(_board_batch_live_waiting_v216h(batch))
+    active = str(batch.get("activeSceneId") or batch.get("active_scene_id") or "").strip()
+    if active:
+        ids.add(active)
+    return ids
+
+
 def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, Any]) -> None:
     # AVA_BOARD_SERVER_BATCH_LOCAL_TIME_IMPORT_V131H: runner uses __import__('time').sleep while polling Comfy/job status.
     import time
@@ -4635,14 +4837,29 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
     if not isinstance(batch, dict):
         return
     try:
-        waiting_ids = list(batch.get("waitingSceneIds") or [])
-        completed: list[str] = []
-        failed: list[str] = []
-        while waiting_ids:
+        completed: list[str] = list(batch.get("completedSceneIds") or batch.get("completed_scene_ids") or [])
+        failed: list[str] = list(batch.get("failedSceneIds") or batch.get("failed_scene_ids") or [])
+        while True:
             if batch.get("cancelRequested"):
                 batch["status"] = "canceled"
                 break
-            scene_id = waiting_ids.pop(0)
+
+            with BOARD_VIDEO_BATCH_QUEUE_LOCK_V216H:
+                waiting_ids = _board_batch_live_waiting_v216h(batch)
+                if waiting_ids:
+                    scene_id = waiting_ids.pop(0)
+                    batch["waitingSceneIds"] = waiting_ids
+                    batch["waiting_scene_ids"] = waiting_ids
+                else:
+                    scene_id = ""
+
+            if not scene_id:
+                time.sleep(0.35)
+                with BOARD_VIDEO_BATCH_QUEUE_LOCK_V216H:
+                    waiting_ids = _board_batch_live_waiting_v216h(batch)
+                    if waiting_ids:
+                        continue
+                break
             board_data = _board_batch_read_snapshot(project_id)
             scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
             scene = next((item for item in scenes if _board_batch_scene_id(item) == scene_id), None)
@@ -4718,7 +4935,16 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                 })
                 continue
 
-            batch.update({"activeSceneId": scene_id, "waitingSceneIds": waiting_ids, "updatedAt": _board_batch_now()})
+            with BOARD_VIDEO_BATCH_QUEUE_LOCK_V216H:
+                batch.update({
+                    "activeSceneId": scene_id,
+                    "active_scene_id": scene_id,
+                    "waitingSceneIds": _board_batch_live_waiting_v216h(batch),
+                    "waiting_scene_ids": _board_batch_live_waiting_v216h(batch),
+                    "status": "running",
+                    "batch_status": "running",
+                    "updatedAt": _board_batch_now(),
+                })
             job_id = ""
             try:
                 job_id, start_data = _board_batch_start_scene(project_id, batch_id, scene, user)
@@ -4753,10 +4979,59 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
 
             result_status, result_data = _board_batch_wait_job(project_id, batch_id, scene_id, job_id, user)
             if result_status == "ready":
-                completed.append(scene_id)
                 live_board_data_v132b = _board_batch_read_snapshot(project_id)
                 live_scenes_v132b = live_board_data_v132b.get("scenes") if isinstance(live_board_data_v132b.get("scenes"), list) else []
                 live_scene_for_ready_v132b = next((item for item in live_scenes_v132b if _board_batch_scene_id(item) == scene_id), {}) or {}
+                if _ava_v216a_generation_result_is_stale(scene, live_scene_for_ready_v132b):
+                    completed.append(scene_id)
+                    stale_now_v216a = now_iso()
+                    _board_batch_update_scene(project_id, scene_id, {
+                        "video_status": "",
+                        "videoStatus": "",
+                        "generation_status": "photo_prompt_ready",
+                        "generationStatus": "photo_prompt_ready",
+                        "video_error": "",
+                        "videoError": "",
+                        "video_job_id": "",
+                        "videoJobId": "",
+                        "video_status_endpoint": "",
+                        "videoStatusEndpoint": "",
+                        "video_queue_position": 0,
+                        "videoQueuePosition": 0,
+                        "generation_result_discarded_v216a": True,
+                        "generationResultDiscardedV216A": True,
+                        "generation_result_discarded_reason_v216a": "source_image_or_revision_changed",
+                        "generationResultDiscardedReasonV216A": "source_image_or_revision_changed",
+                        "generation_result_discarded_at_v216a": stale_now_v216a,
+                        "generationResultDiscardedAtV216A": stale_now_v216a,
+                    }, {
+                        "batch_id": batch_id,
+                        "batchId": batch_id,
+                        "status": "running" if waiting_ids else "finished",
+                        "active_scene_id": "",
+                        "activeSceneId": "",
+                        "active_job_id": "",
+                        "activeJobId": "",
+                        "active_status_endpoint": "",
+                        "activeStatusEndpoint": "",
+                        "completed_scene_ids": completed,
+                        "completedSceneIds": completed,
+                        "failed_scene_ids": failed,
+                        "failedSceneIds": failed,
+                        "waiting_scene_ids": waiting_ids,
+                        "waitingSceneIds": waiting_ids,
+                    })
+                    print('[BOARD GENERATION RESULT DISCARDED STALE SOURCE V216A]', {
+                        'project_id': project_id,
+                        'batch_id': batch_id,
+                        'scene_id': scene_id,
+                        'startRevision': _ava_v216a_media_revision(scene),
+                        'liveRevision': _ava_v216a_media_revision(live_scene_for_ready_v132b),
+                        'startImage': _ava_v216a_scene_image_asset_id(scene),
+                        'liveImage': _ava_v216a_scene_image_asset_id(live_scene_for_ready_v132b),
+                    }, flush=True)
+                    continue
+                completed.append(scene_id)
                 bad_review_ids_v132b = set(batch.get("badReviewSceneIds") or batch.get("bad_review_scene_ids") or [])
                 was_bad_review_regeneration_v132a = (
                     scene_id in bad_review_ids_v132b
@@ -4840,6 +5115,12 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                         "sourceImageApiPath": ready_patch_v132a.get("video_source_image_api_path") or ready_patch_v132a.get("videoSourceImageApiPath"),
                         "sourceImageEpoch": ready_patch_v132a.get("video_source_image_mutation_epoch") or ready_patch_v132a.get("videoSourceImageMutationEpoch"),
                     }, flush=True)
+                generation_revision_v216a = _ava_v216a_media_revision(source_scene_for_video_current_v132i)
+                if generation_revision_v216a > 0:
+                    ready_patch_v132a["video_source_revision_v216a"] = generation_revision_v216a
+                    ready_patch_v132a["videoSourceRevisionV216A"] = generation_revision_v216a
+                    ready_patch_v132a["generation_media_revision_v216a"] = generation_revision_v216a
+                    ready_patch_v132a["generationMediaRevisionV216A"] = generation_revision_v216a
                 ready_patch_v132a.update(_board_batch_review_regenerate_flag_patch(False, "completed"))
                 # AVA_BOARD_COMPLETED_BATCH_POSMOTRI_STATUS_V214G:
                 # A newly generated server-batch video must immediately enter orange
@@ -4988,7 +5269,6 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                 })
                 print("[BOARD SERVER BATCH READY SCENE]", {"project_id": project_id, "batch_id": batch_id, "scene_id": scene_id, "job_id": job_id, "waiting": len(waiting_ids)}, flush=True)
                 try:
-                    import threading
                     def _telegram_scene_ready_worker_v149a(
                         project_id_v149a=project_id,
                         scene_id_v149a=scene_id,
@@ -5274,11 +5554,16 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     ]
     incoming_scenes = payload.scenes if isinstance(payload.scenes, list) else None
     board_data = _board_batch_read_snapshot(project_id)
+    board_data, _dead_queue_scene_ids_start_v216j = _board_clear_dead_unified_queue_v216j(
+        project_id, board_data, source="start_preflight_dead_queue_v216j"
+    )
     if incoming_scenes is not None:
         board_data["scenes"] = copy.deepcopy(incoming_scenes)
     scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
     if not scenes:
         raise HTTPException(status_code=400, detail="Board snapshot has no scenes")
+
+    active_append_batch_id_v216h, active_append_batch_v216h = _board_active_batch_for_project_v216h(project_id)
 
     # AVA_BOARD_BATCH_PREPARE_STATUS_AUTHORITY_V209X:
     # Publish a truthful server-batch marker BEFORE slow autoslice/recut.
@@ -5337,7 +5622,7 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
                     "error": str(exc_v213f),
                 }, flush=True)
 
-        if early_candidate_ids_v209x:
+        if early_candidate_ids_v209x and not active_append_batch_v216h:
             early_batch_id_v209x = f"boardbatch_{uuid4().hex[:14]}"
             early_now_v209x = _board_batch_now()
             early_set_v209x = set(early_candidate_ids_v209x)
@@ -5658,6 +5943,144 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
             "board": board_data,
         }
 
+
+    # AVA_BOARD_UNIFIED_VIDEO_QUEUE_APPEND_V216H:
+    # Manual and Generate-All requests append to the same live backend queue.
+    active_append_batch_id_v216h, active_append_batch_v216h = _board_active_batch_for_project_v216h(project_id)
+    if active_append_batch_id_v216h and isinstance(active_append_batch_v216h, dict):
+        with BOARD_VIDEO_BATCH_QUEUE_LOCK_V216H:
+            existing_live_ids_v216h = _board_batch_live_ids_v216h(active_append_batch_v216h)
+            append_ids_v216h = [
+                scene_id for scene_id in waiting_ids
+                if scene_id and scene_id not in existing_live_ids_v216h
+            ]
+
+            existing_waiting_v216h = _board_batch_live_waiting_v216h(active_append_batch_v216h)
+            combined_waiting_v216h = existing_waiting_v216h + [
+                scene_id for scene_id in append_ids_v216h
+                if scene_id not in existing_waiting_v216h
+            ]
+            active_append_batch_v216h["waitingSceneIds"] = combined_waiting_v216h
+            active_append_batch_v216h["waiting_scene_ids"] = combined_waiting_v216h
+            active_append_batch_v216h["status"] = "running"
+            active_append_batch_v216h["batch_status"] = "running"
+            active_append_batch_v216h["updatedAt"] = _board_batch_now()
+            active_append_batch_v216h["updated_at"] = active_append_batch_v216h["updatedAt"]
+
+            bad_ids_v216h = set(
+                active_append_batch_v216h.get("badReviewSceneIds") or
+                active_append_batch_v216h.get("bad_review_scene_ids") or []
+            )
+            bad_ids_v216h.update(scene_id for scene_id in append_ids_v216h if scene_id in force_regenerate_ids_v213k)
+            active_append_batch_v216h["badReviewSceneIds"] = list(bad_ids_v216h)
+            active_append_batch_v216h["bad_review_scene_ids"] = list(bad_ids_v216h)
+
+        now_append_v216h = _board_batch_now()
+        append_set_v216h = set(append_ids_v216h)
+        combined_waiting_snapshot_v216h = _board_batch_live_waiting_v216h(active_append_batch_v216h)
+        existing_wait_count_v216h = max(0, len(combined_waiting_snapshot_v216h) - len(append_ids_v216h))
+        next_scenes_append_v216h: list[Any] = []
+
+        for scene_v216h in scenes:
+            if not isinstance(scene_v216h, dict):
+                next_scenes_append_v216h.append(scene_v216h)
+                continue
+            scene_id_v216h = _board_batch_scene_id(scene_v216h)
+            if scene_id_v216h not in append_set_v216h:
+                next_scenes_append_v216h.append(scene_v216h)
+                continue
+
+            position_v216h = existing_wait_count_v216h + append_ids_v216h.index(scene_id_v216h) + 1
+            patched_v216h = {
+                **scene_v216h,
+                "video_status": "queued",
+                "videoStatus": "queued",
+                "video_error": "",
+                "videoError": "",
+                "video_job_id": "",
+                "videoJobId": "",
+                "video_status_endpoint": "",
+                "videoStatusEndpoint": "",
+                "video_queue_position": position_v216h,
+                "videoQueuePosition": position_v216h,
+                "video_queue_source": "unified_server_queue_append_v216h",
+                "videoQueueSource": "unified_server_queue_append_v216h",
+                "server_batch_id": active_append_batch_id_v216h,
+                "serverBatchId": active_append_batch_id_v216h,
+                "server_batch_status": "queued",
+                "serverBatchStatus": "queued",
+                "video_updated_at": now_append_v216h,
+                "videoUpdatedAt": now_append_v216h,
+            }
+            next_scenes_append_v216h.append(patched_v216h)
+
+        board_data["scenes"] = next_scenes_append_v216h
+        live_batch_snapshot_v216h = dict(active_append_batch_v216h)
+        board_data["board_video_batch"] = live_batch_snapshot_v216h
+        board_data["boardVideoBatch"] = dict(live_batch_snapshot_v216h)
+        board_data["video_batch"] = dict(live_batch_snapshot_v216h)
+        board_data["videoBatch"] = dict(live_batch_snapshot_v216h)
+
+        current_queue_v216h = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
+        board_data["video_queue"] = {
+            **current_queue_v216h,
+            "status": "running",
+            "batch_status": "running",
+            "batchId": active_append_batch_id_v216h,
+            "batch_id": active_append_batch_id_v216h,
+            "activeSceneId": active_append_batch_v216h.get("activeSceneId") or "",
+            "active_scene_id": active_append_batch_v216h.get("activeSceneId") or "",
+            "activeJobId": active_append_batch_v216h.get("activeJobId") or "",
+            "active_job_id": active_append_batch_v216h.get("activeJobId") or "",
+            "activeStatusEndpoint": active_append_batch_v216h.get("activeStatusEndpoint") or "",
+            "active_status_endpoint": active_append_batch_v216h.get("activeStatusEndpoint") or "",
+            "waitingSceneIds": combined_waiting_snapshot_v216h,
+            "waiting_scene_ids": combined_waiting_snapshot_v216h,
+            "source": "unified_server_queue_append_v216h",
+            "updatedAt": now_append_v216h,
+            "updated_at": now_append_v216h,
+        }
+        board_data["videoQueue"] = dict(board_data["video_queue"])
+        board_data["updatedAt"] = now_append_v216h
+        board_data["updated_at"] = now_append_v216h
+        _board_batch_save_snapshot(project_id, board_data, client_version="board-unified-queue-append-v216h")
+
+        # AVA_BOARD_UNIFIED_QUEUE_FIRST_WORKER_V216I:
+        # The first request already placed its scene into waitingSceneIds during the
+        # preparing snapshot, so append_ids_v216h can legitimately be empty here.
+        # Start/restart the worker whenever the shared queue has waiting work.
+        thread_v216h = BOARD_VIDEO_BATCH_THREADS.get(active_append_batch_id_v216h)
+        if combined_waiting_snapshot_v216h and (thread_v216h is None or not thread_v216h.is_alive()):
+            thread_v216h = threading.Thread(
+                target=_board_video_batch_runner,
+                args=(project_id, active_append_batch_id_v216h, dict(user)),
+                daemon=True,
+            )
+            BOARD_VIDEO_BATCH_THREADS[active_append_batch_id_v216h] = thread_v216h
+            thread_v216h.start()
+
+        print("[BOARD UNIFIED QUEUE APPEND V216H]", {
+            "project_id": project_id,
+            "batch_id": active_append_batch_id_v216h,
+            "appended": append_ids_v216h,
+            "waiting": combined_waiting_snapshot_v216h,
+        }, flush=True)
+
+        return {
+            "ok": True,
+            "status": "queued",
+            "appended": True,
+            "batchId": active_append_batch_id_v216h,
+            "batch_id": active_append_batch_id_v216h,
+            "queued": append_ids_v216h,
+            "queuedSceneIds": append_ids_v216h,
+            "queued_scene_ids": append_ids_v216h,
+            "allWaitingSceneIds": combined_waiting_snapshot_v216h,
+            "all_waiting_scene_ids": combined_waiting_snapshot_v216h,
+            "invalid": invalid,
+            "board": board_data,
+        }
+
     batch_id = early_batch_id_v209x or f"boardbatch_{uuid4().hex[:14]}"
     now_value = _board_batch_now()
     waiting_set = set(waiting_ids)
@@ -5745,7 +6168,6 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-start-v131a")
 
     # AVA_BOARD_SERVER_BATCH_LOCAL_THREADING_IMPORT_V131G: keep the import local so this endpoint works even if module-level imports were not patched.
-    import threading
     thread = threading.Thread(target=_board_video_batch_runner, args=(project_id, batch_id, dict(user)), daemon=True)
     BOARD_VIDEO_BATCH_THREADS[batch_id] = thread
     thread.start()
@@ -5904,6 +6326,164 @@ def _board_batch_clear_snapshot_stale_scene_jobs_v200h(project_id: str, board_da
     print("[BOARD STALE SCENE JOB CLEAR V200H]", {"project_id": project_id, "clearedSceneIds": cleared}, flush=True)
     return next_board, cleared
 
+
+
+# AVA_BOARD_DEAD_QUEUE_CLEANUP_V216J
+_BOARD_DEAD_QUEUE_ACTIVE_STATUSES_V216J = {
+    "queued", "waiting", "starting", "preparing", "submitting",
+    "running", "processing", "cancel_requested"
+}
+
+
+def _board_clear_dead_unified_queue_v216j(
+    project_id: str,
+    board_data: dict[str, Any],
+    *,
+    source: str,
+) -> tuple[dict[str, Any], list[str]]:
+    # Clear persisted membership only when no live in-memory batch exists.
+    if not isinstance(board_data, dict):
+        return board_data, []
+
+    batch = (
+        board_data.get("board_video_batch")
+        if isinstance(board_data.get("board_video_batch"), dict)
+        else board_data.get("boardVideoBatch")
+        if isinstance(board_data.get("boardVideoBatch"), dict)
+        else board_data.get("video_batch")
+        if isinstance(board_data.get("video_batch"), dict)
+        else board_data.get("videoBatch")
+        if isinstance(board_data.get("videoBatch"), dict)
+        else {}
+    )
+    batch_id = str(batch.get("batchId") or batch.get("batch_id") or "").strip()
+    live = BOARD_VIDEO_BATCHES.get(batch_id) if batch_id else None
+    if isinstance(live, dict):
+        return board_data, []
+
+    waiting = batch.get("waitingSceneIds") or batch.get("waiting_scene_ids") or []
+    queued = batch.get("queuedSceneIds") or batch.get("queued_scene_ids") or []
+    active_scene_id = str(batch.get("activeSceneId") or batch.get("active_scene_id") or "").strip()
+    active_job_id = str(batch.get("activeJobId") or batch.get("active_job_id") or "").strip()
+    active_endpoint = str(batch.get("activeStatusEndpoint") or batch.get("active_status_endpoint") or "").strip()
+    status = str(batch.get("status") or batch.get("batch_status") or "").strip().lower()
+
+    stale_ids: list[str] = []
+    for item in list(waiting) + list(queued) + ([active_scene_id] if active_scene_id else []):
+        scene_id = str(item or "").strip()
+        if scene_id and scene_id not in stale_ids:
+            stale_ids.append(scene_id)
+
+    looks_dead = bool(stale_ids or status in _BOARD_DEAD_QUEUE_ACTIVE_STATUSES_V216J)
+    if not looks_dead or active_job_id or active_endpoint:
+        return board_data, []
+
+    now_value = _board_batch_now()
+    next_board = dict(board_data)
+    next_scenes: list[Any] = []
+    busy_statuses = {
+        "queued", "waiting", "starting", "preparing",
+        "submitting", "running", "processing", "queued_no_prompt_id"
+    }
+
+    for scene in next_board.get("scenes") if isinstance(next_board.get("scenes"), list) else []:
+        if not isinstance(scene, dict):
+            next_scenes.append(scene)
+            continue
+        scene_id = str(scene.get("id") or scene.get("scene_id") or "").strip()
+        scene_status = str(scene.get("video_status") or scene.get("videoStatus") or "").strip().lower()
+        scene_batch_id = str(scene.get("server_batch_id") or scene.get("serverBatchId") or "").strip()
+        belongs_to_dead_queue = bool(
+            scene_id in stale_ids
+            or (batch_id and scene_batch_id == batch_id)
+            or scene_status in busy_statuses
+        )
+        if not belongs_to_dead_queue:
+            next_scenes.append(scene)
+            continue
+
+        patched = dict(scene)
+        has_video = any(str(patched.get(key) or "").strip() for key in (
+            "video_asset_id", "videoAssetId", "video_api_path", "videoApiPath",
+            "video_url", "videoUrl", "result_video_asset_id", "resultVideoAssetId",
+            "result_video_api_path", "resultVideoApiPath", "result_video_url", "resultVideoUrl",
+        ))
+        ready_status = "ready" if has_video else ""
+        patched["video_status"] = ready_status
+        patched["videoStatus"] = ready_status
+
+        for key in (
+            "video_job_id", "videoJobId", "video_prompt_id", "videoPromptId",
+            "video_status_endpoint", "videoStatusEndpoint", "server_batch_id", "serverBatchId",
+            "server_batch_job_id", "serverBatchJobId", "server_batch_status", "serverBatchStatus",
+            "server_batch_status_endpoint", "serverBatchStatusEndpoint",
+            "video_queue_source", "videoQueueSource", "video_error", "videoError",
+        ):
+            patched[key] = ""
+        for key in ("video_queue_position", "videoQueuePosition", "video_progress", "videoProgress"):
+            patched[key] = 0
+
+        patched["video_interrupted_reason"] = "dead_unified_queue_cleared_v216j"
+        patched["videoInterruptedReason"] = "dead_unified_queue_cleared_v216j"
+        patched["video_updated_at"] = now_value
+        patched["videoUpdatedAt"] = now_value
+
+        media = patched.get("media") if isinstance(patched.get("media"), dict) else None
+        if isinstance(media, dict):
+            video_media = media.get("video") if isinstance(media.get("video"), dict) else None
+            if isinstance(video_media, dict):
+                video_media["status"] = ready_status
+                video_media["jobId"] = ""
+                video_media["job_id"] = ""
+                video_media["statusEndpoint"] = ""
+                video_media["status_endpoint"] = ""
+                video_media["progress"] = 0
+                video_media["error"] = ""
+        next_scenes.append(patched)
+
+    next_board["scenes"] = next_scenes
+    cleared_batch = {
+        **batch,
+        "status": "idle", "batch_status": "idle",
+        "activeSceneId": "", "active_scene_id": "",
+        "activeJobId": "", "active_job_id": "",
+        "activeStatusEndpoint": "", "active_status_endpoint": "",
+        "waitingSceneIds": [], "waiting_scene_ids": [],
+        "queuedSceneIds": [], "queued_scene_ids": [],
+        "cancelRequested": False, "cancel_requested": False,
+        "source": source, "updatedAt": now_value, "updated_at": now_value,
+    }
+    for key in ("board_video_batch", "boardVideoBatch", "video_batch", "videoBatch"):
+        next_board[key] = dict(cleared_batch)
+
+    queue = (
+        next_board.get("video_queue") if isinstance(next_board.get("video_queue"), dict)
+        else next_board.get("videoQueue") if isinstance(next_board.get("videoQueue"), dict)
+        else {}
+    )
+    cleared_queue = {
+        **queue,
+        "status": "idle", "batch_status": "idle",
+        "activeSceneId": "", "active_scene_id": "",
+        "activeJobId": "", "active_job_id": "",
+        "activeStatusEndpoint": "", "active_status_endpoint": "",
+        "waitingSceneIds": [], "waiting_scene_ids": [],
+        "queuedSceneIds": [], "queued_scene_ids": [],
+        "source": source, "updatedAt": now_value, "updated_at": now_value,
+    }
+    next_board["video_queue"] = dict(cleared_queue)
+    next_board["videoQueue"] = dict(cleared_queue)
+    next_board["updatedAt"] = now_value
+    next_board["updated_at"] = now_value
+
+    _board_batch_save_snapshot(project_id, next_board, client_version="board-dead-unified-queue-clear-v216j")
+    print("[BOARD DEAD UNIFIED QUEUE CLEARED V216J]", {
+        "project_id": project_id, "batch_id": batch_id,
+        "sceneIds": stale_ids, "source": source,
+    }, flush=True)
+    return next_board, stale_ids
+
+
 @router.get("/projects/{project_id}/board/video-batch/status")
 def board_video_batch_status(project_id: str, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     # AVA_BOARD_BATCH_STATUS_RETURNS_BOARD_V200I
@@ -5917,6 +6497,13 @@ def board_video_batch_status(project_id: str, user: dict = Depends(get_current_u
     batch_id = str(batch.get("batchId") or batch.get("batch_id") or "").strip()
     live = BOARD_VIDEO_BATCHES.get(batch_id) if batch_id else None
     if live is None:
+        board_data, dead_queue_scene_ids_v216j = _board_clear_dead_unified_queue_v216j(
+            project_id, board_data, source="status_poll_dead_queue_v216j"
+        )
+        if dead_queue_scene_ids_v216j:
+            batch = board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict) else {}
+            batch_id = str(batch.get("batchId") or batch.get("batch_id") or "").strip()
+            live = None
         cleaned = _board_batch_cleanup_orphaned_after_reload_v150a(project_id, board_data, batch)
         if cleaned is not None:
             board_data = _ava_v213g_apply_fresh_image_authority(project_id, board_data, source='orphan_cleaned_return')
@@ -5936,9 +6523,36 @@ def stop_board_video_batch(project_id: str, payload: BoardVideoBatchStopIn | Non
         live["cancelRequested"] = True
         live["status"] = "cancel_requested"
         live["updatedAt"] = _board_batch_now()
-    board_data["board_video_batch"] = {**batch, "status": "cancel_requested", "cancelRequested": True, "stopReason": getattr(payload, "reason", None) if payload else "", "updatedAt": _board_batch_now()}
+    stop_now_v216j = _board_batch_now()
+    stopped_batch_v216j = {
+        **batch,
+        "status": "cancel_requested", "batch_status": "cancel_requested",
+        "cancelRequested": True, "cancel_requested": True,
+        "stopReason": getattr(payload, "reason", None) if payload else "",
+        "activeSceneId": "", "active_scene_id": "",
+        "activeJobId": "", "active_job_id": "",
+        "activeStatusEndpoint": "", "active_status_endpoint": "",
+        "waitingSceneIds": [], "waiting_scene_ids": [],
+        "queuedSceneIds": [], "queued_scene_ids": [],
+        "updatedAt": stop_now_v216j, "updated_at": stop_now_v216j,
+    }
+    for batch_key_v216j in ("board_video_batch", "boardVideoBatch", "video_batch", "videoBatch"):
+        board_data[batch_key_v216j] = dict(stopped_batch_v216j)
+
     q = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
-    board_data["video_queue"] = {**q, "waitingSceneIds": [], "waiting_scene_ids": [], "source": "server_batch_stop_v131a", "updatedAt": _board_batch_now()}
+    stopped_queue_v216j = {
+        **q,
+        "status": "cancel_requested", "batch_status": "cancel_requested",
+        "activeSceneId": "", "active_scene_id": "",
+        "activeJobId": "", "active_job_id": "",
+        "activeStatusEndpoint": "", "active_status_endpoint": "",
+        "waitingSceneIds": [], "waiting_scene_ids": [],
+        "queuedSceneIds": [], "queued_scene_ids": [],
+        "source": "server_batch_stop_v216j",
+        "updatedAt": stop_now_v216j, "updated_at": stop_now_v216j,
+    }
+    board_data["video_queue"] = dict(stopped_queue_v216j)
+    board_data["videoQueue"] = dict(stopped_queue_v216j)
 
     # V200X: The same UI button is used to clear server queue and manual single-scene
     # /clip/video/start jobs. Clear stuck scene job ids/endpoints in the persisted Board
@@ -6500,7 +7114,6 @@ def start_mmaudio(payload: dict[str, Any], user: dict = Depends(get_current_user
     BOARD_MMAUDIO_JOBS[job_id] = job
 
     try:
-        import threading
         threading.Thread(target=_run_mmaudio_submit_job, args=(job_id,), daemon=True).start()
     except Exception as exc:
         job["status"] = "error"
@@ -11180,7 +11793,6 @@ def start_board_assembly(payload: dict[str, Any], user: dict = Depends(get_curre
     BOARD_ASSEMBLY_JOBS[job_id] = job
 
     try:
-        import threading
         threading.Thread(target=_run_board_assembly_job, args=(job_id,), daemon=True).start()
     except Exception as exc:
         job["status"] = "error"
@@ -12938,6 +13550,11 @@ class AudioStudioStablePreviewIn(BaseModel):
     stableAudio: dict[str, Any] | None = None
     stable_audio: dict[str, Any] | None = None
     source: str | None = None
+    # V216R1: explicit flags used by the full-project quick preview.
+    preview_map: bool | None = False
+    previewMap: bool | None = False
+    draft_quality: str | None = None
+    draftQuality: str | None = None
 
 
 def _audio_studio_float_v204g12b(value: Any, fallback: float = 100.0) -> float:
@@ -13670,6 +14287,614 @@ def audio_studio_stable_audio_generate_v204g6(payload: AudioStudioStableGenerate
         "targetComfyBaseUrl": base_url,
     }
 
+
+
+# AVA_AUDIO_STUDIO_QUICK_PREVIEW_PROXY_CACHE_V216R1:
+# Full-project Preview / Разметка must be a cheap diagnostic render, not a second
+# final Assembly. Each scene gets a persistent 360p/10fps proxy. Unchanged scenes
+# are reused; after one scene is fixed only that proxy is rebuilt. The final file is
+# assembled with stream copy, so the backend stays responsive and F5 snapshot reads
+# are not starved by 54 sequential 720p/30fps encodes.
+def _audio_studio_quick_preview_requested_v216r1(payload: AudioStudioStablePreviewIn) -> bool:
+    source = str(getattr(payload, "source", None) or "").strip().lower()
+    quality = str(
+        getattr(payload, "draft_quality", None)
+        or getattr(payload, "draftQuality", None)
+        or ""
+    ).strip().lower()
+    return bool(
+        getattr(payload, "preview_map", False)
+        or getattr(payload, "previewMap", False)
+        or source == "audio_studio_full_preview_map_v211f"
+        or ("full_preview_map" in source and quality in {"", "low", "draft", "quick"})
+    )
+
+
+# AVA_AUDIO_STUDIO_QUICK_PREVIEW_MASTER_RANGE_V216R3:
+def _audio_studio_quick_preview_master_audio_v216r3(project_id: str) -> tuple[Path | None, str, str, dict[str, Any]]:
+    context = store.get_project_audio_context(project_id)
+    timing = context.get("_timing_v216r3") or {}
+    assets = [item for item in (context.get("audio_assets") or []) if isinstance(item, dict)]
+    assets_by_id = {str(item.get("id") or "").strip(): item for item in assets if str(item.get("id") or "").strip()}
+
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_mapping(value: Any, source: str) -> None:
+        if not isinstance(value, dict):
+            return
+        ref, aid = _board_batch_audio_ref_from_mapping_v151a(value)
+        key = (str(ref or ""), str(aid or ""))
+        if (ref or aid) and key not in seen:
+            seen.add(key)
+            candidates.append({"ref": ref, "asset_id": aid, "source": source})
+
+    for stage_key in ("manual_timing_snapshot", "board_snapshot"):
+        snap = context.get(stage_key)
+        data = snap.get("data") if isinstance(snap, dict) else None
+        if not isinstance(data, dict):
+            continue
+        add_mapping(data.get("audio"), f"{stage_key}.audio")
+        add_mapping(data, f"{stage_key}.root")
+
+    assets.sort(
+        key=lambda item: str(item.get("updated_at") or item.get("updatedAt") or item.get("created_at") or item.get("createdAt") or ""),
+        reverse=True,
+    )
+    for asset in assets:
+        aid = str(asset.get("id") or "").strip()
+        if not aid:
+            continue
+        key = (f"/assets/{aid}/file", aid)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append({"ref": key[0], "asset_id": aid, "source": "project_audio_assets_v216r3"})
+
+    errors: list[dict[str, str]] = []
+    for candidate in candidates:
+        ref = str(candidate.get("ref") or "").strip()
+        aid = str(candidate.get("asset_id") or "").strip()
+        source = str(candidate.get("source") or "").strip()
+        asset = assets_by_id.get(aid) or {}
+        try:
+            path: Path | None = None
+            if asset:
+                path = _asset_file_path_from_record(asset)
+            if not path or not path.exists() or not path.is_file():
+                path = _resolve_local_file(ref, asset_id=aid)
+            if _board_batch_text_looks_vocal_only_v199g(source, ref, aid, path, _board_batch_audio_record_text_v199e(asset)):
+                errors.append({"source": source, "ref": ref, "asset_id": aid, "error": "vocal_only_rejected_v216r3"})
+                continue
+            if path and path.exists() and path.is_file():
+                print("[AUDIO STUDIO QUICK PREVIEW MASTER AUDIO READY V216R3]", {
+                    "projectId": project_id,
+                    "source": source,
+                    "ref": ref,
+                    "assetId": aid,
+                    "path": str(path),
+                    "lockWaitMs": timing.get("lock_wait_ms"),
+                    "dbReadMs": timing.get("db_read_ms"),
+                    "extractMs": timing.get("extract_ms"),
+                    "totalMs": timing.get("total_ms"),
+                }, flush=True)
+                return path, ref, aid, timing
+            errors.append({"source": source, "ref": ref, "asset_id": aid, "error": "path_missing"})
+        except Exception as exc:
+            errors.append({"source": source, "ref": ref, "asset_id": aid, "error": str(exc)})
+
+    print("[AUDIO STUDIO QUICK PREVIEW MASTER AUDIO MISSING V216R3]", {
+        "projectId": project_id,
+        "candidateCount": len(candidates),
+        "errors": errors[:8],
+        "lockWaitMs": timing.get("lock_wait_ms"),
+        "dbReadMs": timing.get("db_read_ms"),
+        "extractMs": timing.get("extract_ms"),
+        "totalMs": timing.get("total_ms"),
+    }, flush=True)
+    return None, "", "", timing
+
+
+def _audio_studio_quick_preview_cache_root_v216r1(project_id: str) -> Path:
+    safe_project = _safe_name(project_id or "workspace", "workspace")
+    root = BACKEND_DIR / "storage" / "audio_studio_quick_preview_cache_v216r1" / safe_project
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _audio_studio_quick_preview_signature_v216r1(data: dict[str, Any]) -> str:
+    raw = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(raw.encode("utf-8", errors="replace")).hexdigest()[:20]
+
+
+def _audio_studio_quick_preview_file_identity_v216r1(path: Path | None) -> dict[str, Any]:
+    if not path:
+        return {"path": "", "size": 0, "mtime_ns": 0}
+    try:
+        stat = path.stat()
+        return {
+            "path": str(path.resolve()),
+            "size": int(stat.st_size),
+            "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
+        }
+    except Exception:
+        return {"path": str(path), "size": 0, "mtime_ns": 0}
+
+
+# AVA_AUDIO_STUDIO_QUICK_PREVIEW_SINGLE_MASTER_AUDIO_V216R5:
+def _audio_studio_make_quick_proxy_v216r1(
+    *,
+    video_path: Path,
+    timing_audio_path: Path | None,
+    timing_audio_start_sec: float = 0.0,
+    out_path: Path,
+    duration_sec: float,
+    width: int,
+    height: int,
+    fps: int,
+    video_audio_volume_percent: float,
+    timing_audio_volume_percent: float,
+) -> None:
+    # Full-project Quick Preview proxies are VISUAL ONLY. The old V216R1/R3 path
+    # encoded source-video audio plus one master-audio slice inside every scene,
+    # then concatenated 54 independent AAC streams. That caused repeated starts,
+    # audible joins and accidental double audio. V216R5 attaches one continuous
+    # master track only after all visual proxies have been concatenated.
+    duration = max(0.08, float(duration_sec or 0.0))
+    video_filter = (
+        f"[0:v:0]setpts=PTS-STARTPTS,"
+        f"fps={int(fps)},"
+        f"scale={int(width)}:{int(height)}:force_original_aspect_ratio=decrease,"
+        f"pad={int(width)}:{int(height)}:(ow-iw)/2:(oh-ih)/2,"
+        f"setsar=1,"
+        f"tpad=stop_mode=clone:stop_duration={duration + 1.0:.6f},"
+        f"trim=duration={duration:.6f},setpts=PTS-STARTPTS,format=yuv420p[v]"
+    )
+
+    tmp_path = out_path.with_name(f"{out_path.stem}.{uuid4().hex[:8]}.tmp.mp4")
+    try:
+        _run_ffmpeg([
+            "-y",
+            "-i", str(video_path),
+            "-filter_complex", video_filter,
+            "-map", "[v]",
+            "-an",
+            "-t", f"{duration:.6f}",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-tune", "fastdecode",
+            "-crf", "32",
+            "-threads", "1",
+            "-r", str(int(fps)),
+            "-g", str(max(15, int(fps) * 2)),
+            "-keyint_min", str(max(15, int(fps) * 2)),
+            "-sc_threshold", "0",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            str(tmp_path),
+        ])
+        if not tmp_path.exists() or tmp_path.stat().st_size < 1024:
+            raise HTTPException(status_code=500, detail="quick_preview_proxy_missing_v216r5")
+        os.replace(tmp_path, out_path)
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# AVA_AUDIO_STUDIO_QUICK_PREVIEW_FAST_PREP_V216R4:
+def _audio_studio_quick_preview_video_asset_ids_v216r4(scenes: list[dict[str, Any]]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            continue
+        ref = _audio_studio_scene_video_ref_v204g1(scene)
+        asset_id = _asset_id_from_text(ref)
+        if asset_id and asset_id not in seen:
+            seen.add(asset_id)
+            result.append(asset_id)
+    return result
+
+
+def _audio_studio_quick_preview_resolve_video_v216r4(value: str, asset_records: dict[str, dict[str, Any]]) -> Path:
+    asset_id = _asset_id_from_text(value)
+    if asset_id:
+        asset = asset_records.get(asset_id)
+        if not isinstance(asset, dict):
+            raise HTTPException(status_code=404, detail=f"Quick preview asset record not found: {asset_id}")
+        path = _asset_file_path_from_record(asset)
+        if path and path.exists() and path.is_file():
+            return path
+        raise HTTPException(status_code=404, detail=f"Quick preview asset file not found: {asset_id}")
+    # Static/manual paths do not trigger a DB read in _resolve_local_file.
+    return _resolve_local_file(value)
+
+
+def _audio_studio_quick_preview_duration_v216r4(scene: dict[str, Any], video_path: Path) -> float:
+    try:
+        direct = float(scene.get("durationSec", scene.get("duration_sec", 0)) or 0)
+    except Exception:
+        direct = 0.0
+    if direct > 0.03:
+        return direct
+    scene_range = _board_batch_scene_audio_range(scene)
+    if scene_range and float(scene_range[1]) > float(scene_range[0]):
+        return float(scene_range[1]) - float(scene_range[0])
+    # ffprobe is now a true fallback only, instead of running eagerly for all 54 scenes.
+    return max(0.05, float(_ffprobe_duration(video_path) or 0.0))
+
+
+def _audio_studio_quick_preview_map_v216r1(
+    *,
+    payload: AudioStudioStablePreviewIn,
+    scenes: list[dict[str, Any]],
+    project_id: str,
+    user: dict,
+) -> dict[str, Any]:
+    started = __import__("time").monotonic()
+    cache_root = _audio_studio_quick_preview_cache_root_v216r1(project_id)
+    master_audio_path_v216r3, master_audio_ref_v216r3, master_audio_asset_id_v216r3, _master_timing_v216r3 = _audio_studio_quick_preview_master_audio_v216r3(project_id)
+
+    video_asset_ids_v216r4 = _audio_studio_quick_preview_video_asset_ids_v216r4(scenes)
+    asset_context_v216r4 = store.get_project_asset_records(project_id, video_asset_ids_v216r4)
+    video_asset_records_v216r4 = asset_context_v216r4.get("assets") or {}
+    asset_timing_v216r4 = asset_context_v216r4.get("_timing_v216r4") or {}
+    print("[AUDIO STUDIO QUICK PREVIEW ASSET PREFETCH READY V216R4]", {
+        "projectId": project_id,
+        "requested": len(video_asset_ids_v216r4),
+        "found": len(video_asset_records_v216r4),
+        "missing": asset_context_v216r4.get("missing_asset_ids") or [],
+        "foreign": asset_context_v216r4.get("foreign_asset_ids") or [],
+        "lockWaitMs": asset_timing_v216r4.get("lock_wait_ms"),
+        "dbReadMs": asset_timing_v216r4.get("db_read_ms"),
+        "extractMs": asset_timing_v216r4.get("extract_ms"),
+        "totalMs": asset_timing_v216r4.get("total_ms"),
+    }, flush=True)
+
+    first_video_path: Path | None = None
+    prepared: list[dict[str, Any]] = []
+    for index, scene in enumerate(scenes):
+        scene_id = _audio_studio_scene_id_v204g1(scene, index)
+        video_ref = _audio_studio_scene_video_ref_v204g1(scene)
+        if not video_ref:
+            raise HTTPException(status_code=400, detail=f"Scene {scene_id} has no video for quick preview")
+        video_path = _audio_studio_quick_preview_resolve_video_v216r4(video_ref, video_asset_records_v216r4)
+        if first_video_path is None:
+            first_video_path = video_path
+
+        timing_ref = _audio_studio_scene_timing_audio_ref_v204g1(scene)
+        timing_path: Path | None = None
+        # V216R3 uses the master song for the full map. Do not resolve 40 existing
+        # scene MP3s only to overwrite them with master_audio_path two lines later.
+        if master_audio_path_v216r3 is None and timing_ref:
+            try:
+                timing_path = _resolve_local_file(timing_ref)
+            except Exception as exc:
+                print("[AUDIO STUDIO QUICK PREVIEW TIMING AUDIO SKIP V216R1]", {
+                    "sceneId": scene_id,
+                    "timingRef": timing_ref,
+                    "error": str(exc),
+                }, flush=True)
+                timing_path = None
+
+        source_video = scene.get("sourceVideo") if isinstance(scene.get("sourceVideo"), dict) else scene.get("source_video")
+        if not isinstance(source_video, dict):
+            source_video = {}
+        video_audio_already_baked = bool(
+            scene.get("previewVideoAudioAlreadyBakedV204H7")
+            or scene.get("preview_video_audio_already_baked_v204h7")
+            or source_video.get("volumeBaked")
+            or source_video.get("volume_baked")
+            or source_video.get("audioBaked")
+            or source_video.get("audio_baked")
+        )
+        timing_audio_start_sec_v216r3 = 0.0
+        timing_audio_source_v216r3 = "scene_slice" if timing_path else "none"
+        if video_audio_already_baked:
+            timing_path = None
+            timing_audio_source_v216r3 = "skipped_baked_video"
+        elif master_audio_path_v216r3 is not None:
+            # Full project preview reads one master song directly. Seek to the scene
+            # start instead of creating/saving 54 temporary MP3 slices first.
+            range_v216r3 = _board_batch_scene_audio_range(scene)
+            timing_audio_start_sec_v216r3 = float(range_v216r3[0]) if range_v216r3 else 0.0
+            timing_path = master_audio_path_v216r3
+            timing_audio_source_v216r3 = "master_range_v216r3"
+
+        duration = _audio_studio_quick_preview_duration_v216r4(scene, video_path)
+        video_volume = _audio_studio_float_v204g12b(
+            scene.get("previewVideoAudioVolumePercentV204H7", scene.get("preview_video_audio_volume_percent_v204h7", 100.0)),
+            100.0,
+        )
+        timing_volume = _audio_studio_float_v204g12b(
+            scene.get("previewTimingAudioVolumePercentV204H7", scene.get("preview_timing_audio_volume_percent_v204h7", 100.0)),
+            100.0,
+        )
+        prepared.append({
+            "index": index,
+            "scene": scene,
+            "scene_id": scene_id,
+            "video_ref": video_ref,
+            "video_path": video_path,
+            "timing_path": timing_path,
+            "timing_start": timing_audio_start_sec_v216r3,
+            "timing_source": timing_audio_source_v216r3,
+            "duration": max(0.08, float(duration or 0.0)),
+            "video_volume": float(video_volume),
+            "timing_volume": float(timing_volume),
+            "video_audio_already_baked": video_audio_already_baked,
+        })
+        prepared_count_v216r4 = index + 1
+        if prepared_count_v216r4 == 1 or prepared_count_v216r4 == len(scenes) or prepared_count_v216r4 % 10 == 0:
+            print("[AUDIO STUDIO QUICK PREVIEW SCENE PREP PROGRESS V216R4]", {
+                "projectId": project_id,
+                "prepared": prepared_count_v216r4,
+                "total": len(scenes),
+                "sceneId": scene_id,
+            }, flush=True)
+
+    if first_video_path is None or not prepared:
+        raise HTTPException(status_code=400, detail="No video paths resolved for quick preview")
+
+    original_width, original_height = _audio_studio_probe_size_v204g1(first_video_path)
+    if original_width >= original_height:
+        width, height = 640, 360
+    else:
+        width, height = 360, 640
+    fps = 15
+
+    proxy_paths: list[Path] = []
+    render_tasks: list[dict[str, Any]] = []
+    scene_debug: list[dict[str, Any]] = []
+    for item in prepared:
+        signature = _audio_studio_quick_preview_signature_v216r1({
+            "scene_id": item["scene_id"],
+            "video": _audio_studio_quick_preview_file_identity_v216r1(item["video_path"]),
+            "duration": round(float(item["duration"]), 6),
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "audio_mode": "video_only_proxy_v216r5",
+            "version": "v216r5",
+        })
+        proxy_name = f"{item['index'] + 1:03d}_{_safe_name(item['scene_id'], 'scene')}_{signature}.mp4"
+        proxy_path = cache_root / proxy_name
+        cache_hit = bool(proxy_path.exists() and proxy_path.is_file() and proxy_path.stat().st_size >= 1024)
+        item["proxy_path"] = proxy_path
+        item["signature"] = signature
+        item["cache_hit"] = cache_hit
+        proxy_paths.append(proxy_path)
+        if not cache_hit:
+            render_tasks.append(item)
+        scene_debug.append({
+            "sceneId": item["scene_id"],
+            "durationSec": round(float(item["duration"]), 3),
+            "cacheHit": cache_hit,
+            "proxy": str(proxy_path),
+            "audioMode": "video_only_proxy_v216r5",
+            "masterAudioAttachedPerScene": False,
+        })
+
+    worker_count = max(1, min(3, len(render_tasks)))
+    print("[AUDIO STUDIO QUICK PREVIEW CACHE PLAN V216R1]", {
+        "projectId": project_id,
+        "scenes": len(prepared),
+        "cacheHits": len(prepared) - len(render_tasks),
+        "rebuild": len(render_tasks),
+        "workers": worker_count,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "masterAudio": bool(master_audio_path_v216r3),
+        "masterAudioRef": master_audio_ref_v216r3,
+        "masterAudioAssetId": master_audio_asset_id_v216r3,
+    }, flush=True)
+
+    def render_proxy(item: dict[str, Any]) -> str:
+        _audio_studio_make_quick_proxy_v216r1(
+            video_path=item["video_path"],
+            timing_audio_path=item["timing_path"],
+            timing_audio_start_sec=float(item.get("timing_start") or 0.0),
+            out_path=item["proxy_path"],
+            duration_sec=item["duration"],
+            width=width,
+            height=height,
+            fps=fps,
+            video_audio_volume_percent=item["video_volume"],
+            timing_audio_volume_percent=item["timing_volume"],
+        )
+        return str(item["scene_id"])
+
+    if render_tasks:
+        completed = 0
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="ava_quick_preview_v216r1") as pool:
+            futures = {pool.submit(render_proxy, item): item for item in render_tasks}
+            for future in as_completed(futures):
+                item = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    print("[AUDIO STUDIO QUICK PREVIEW PROXY ERROR V216R1]", {
+                        "projectId": project_id,
+                        "sceneId": item.get("scene_id"),
+                        "error": str(exc),
+                    }, flush=True)
+                    raise
+                completed += 1
+                if completed == 1 or completed == len(render_tasks) or completed % 5 == 0:
+                    print("[AUDIO STUDIO QUICK PREVIEW PROXY PROGRESS V216R1]", {
+                        "projectId": project_id,
+                        "completed": completed,
+                        "total": len(render_tasks),
+                        "sceneId": item.get("scene_id"),
+                    }, flush=True)
+
+    missing_proxies = [str(path) for path in proxy_paths if not path.exists() or path.stat().st_size < 1024]
+    if missing_proxies:
+        raise HTTPException(status_code=500, detail={
+            "code": "quick_preview_proxy_missing_v216r1",
+            "missing": missing_proxies[:8],
+            "count": len(missing_proxies),
+        })
+
+    duration_target_v216r5 = sum(float(item["duration"]) for item in prepared)
+    full_signature = _audio_studio_quick_preview_signature_v216r1({
+        "proxies": [path.name for path in proxy_paths],
+        "master_audio": _audio_studio_quick_preview_file_identity_v216r1(master_audio_path_v216r3),
+        "duration": round(float(duration_target_v216r5), 6),
+        "audio_mode": "single_continuous_master_v216r5",
+        "version": "v216r5",
+    })
+    final_cache_path = cache_root / f"full_preview_{full_signature}.mp4"
+    final_cache_hit = bool(final_cache_path.exists() and final_cache_path.stat().st_size >= 1024)
+
+    if not final_cache_hit:
+        concat_file = cache_root / f"concat_{full_signature}.txt"
+        concat_file.write_text(
+            "".join(f"file '{path.as_posix().replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'\n" for path in proxy_paths),
+            encoding="utf-8",
+        )
+        tmp_final = cache_root / f"full_preview_{full_signature}.{uuid4().hex[:8]}.tmp.mp4"
+        try:
+            print("[AUDIO STUDIO QUICK PREVIEW SINGLE MASTER MUX START V216R5]", {
+                "projectId": project_id,
+                "scenes": len(proxy_paths),
+                "durationSec": round(float(duration_target_v216r5), 3),
+                "fps": fps,
+                "masterAudio": bool(master_audio_path_v216r3),
+                "target": str(final_cache_path),
+            }, flush=True)
+            mux_args = [
+                "-y",
+                "-fflags", "+genpts",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(concat_file),
+            ]
+            if master_audio_path_v216r3 is not None:
+                mux_args += [
+                    "-i", str(master_audio_path_v216r3),
+                    "-map", "0:v:0",
+                    "-map", "1:a:0",
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-b:a", "160k",
+                    "-ar", "48000",
+                    "-ac", "2",
+                    "-t", f"{duration_target_v216r5:.6f}",
+                    "-avoid_negative_ts", "make_zero",
+                    "-movflags", "+faststart",
+                    str(tmp_final),
+                ]
+            else:
+                mux_args += [
+                    "-map", "0:v:0",
+                    "-c:v", "copy",
+                    "-an",
+                    "-t", f"{duration_target_v216r5:.6f}",
+                    "-avoid_negative_ts", "make_zero",
+                    "-movflags", "+faststart",
+                    str(tmp_final),
+                ]
+            _run_ffmpeg(mux_args)
+            if not tmp_final.exists() or tmp_final.stat().st_size < 1024:
+                raise HTTPException(status_code=500, detail="quick_preview_single_master_mux_missing_v216r5")
+            os.replace(tmp_final, final_cache_path)
+            print("[AUDIO STUDIO QUICK PREVIEW SINGLE MASTER MUX READY V216R5]", {
+                "projectId": project_id,
+                "target": str(final_cache_path),
+                "size": int(final_cache_path.stat().st_size),
+                "masterAudio": bool(master_audio_path_v216r3),
+            }, flush=True)
+        finally:
+            try:
+                tmp_final.unlink(missing_ok=True)
+            except Exception:
+                pass
+            try:
+                concat_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    duration_total = _ffprobe_duration(final_cache_path) or duration_target_v216r5
+    public = _register_board_output_asset(
+        final_cache_path,
+        job={
+            "jobId": f"audio_studio_quick_preview_{uuid4().hex[:8]}",
+            "projectId": project_id,
+            "userId": user.get("id"),
+            "sceneId": _audio_studio_first_text_v204g1(payload.block_id, payload.blockId, "preview_map_full_project_v211f"),
+        },
+        kind="video",
+        stage="audio_studio",
+        original_name="audio_studio_quick_preview_v216r5.mp4",
+    )
+    if not public:
+        raise HTTPException(status_code=500, detail="quick_preview_asset_register_failed_v216r1")
+
+    keep_paths = {path.resolve() for path in proxy_paths}
+    keep_paths.add(final_cache_path.resolve())
+    removed_old = 0
+    for old_path in cache_root.glob("*.mp4"):
+        try:
+            if old_path.resolve() not in keep_paths:
+                old_path.unlink()
+                removed_old += 1
+        except Exception:
+            pass
+
+    elapsed = max(0.0, __import__("time").monotonic() - started)
+    cache_hits = len(prepared) - len(render_tasks)
+    print("[AUDIO STUDIO QUICK PREVIEW READY V216R1]", {
+        "projectId": project_id,
+        "sceneCount": len(prepared),
+        "durationSec": round(float(duration_total), 3),
+        "renderSeconds": round(float(elapsed), 3),
+        "cacheHits": cache_hits,
+        "rebuiltProxies": len(render_tasks),
+        "finalCacheHit": final_cache_hit,
+        "removedOldCacheFiles": removed_old,
+        "assetApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        "audioMode": "single_continuous_master_v216r5",
+        "fps": fps,
+    }, flush=True)
+
+    return {
+        "ok": True,
+        "sceneCount": len(prepared),
+        "scene_count": len(prepared),
+        "durationSec": round(float(duration_total), 3),
+        "duration_sec": round(float(duration_total), 3),
+        "previewVideoApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        "preview_video_api_path": public.get("asset_api_path") or public.get("assetApiPath"),
+        "previewVideoUrl": public.get("asset_url") or public.get("assetUrl"),
+        "preview_video_url": public.get("asset_url") or public.get("assetUrl"),
+        "previewVideoAssetId": public.get("asset_id") or public.get("assetId"),
+        "preview_video_asset_id": public.get("asset_id") or public.get("assetId"),
+        "assetApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        "asset_api_path": public.get("asset_api_path") or public.get("assetApiPath"),
+        "assetUrl": public.get("asset_url") or public.get("assetUrl"),
+        "asset_url": public.get("asset_url") or public.get("assetUrl"),
+        "assetId": public.get("asset_id") or public.get("assetId"),
+        "asset_id": public.get("asset_id") or public.get("assetId"),
+        "source": "audio_studio_quick_preview_single_master_v216r5",
+        "quickPreview": True,
+        "quick_preview": True,
+        "renderSeconds": round(float(elapsed), 3),
+        "render_seconds": round(float(elapsed), 3),
+        "cacheHits": cache_hits,
+        "cache_hits": cache_hits,
+        "rebuiltProxies": len(render_tasks),
+        "rebuilt_proxies": len(render_tasks),
+        "finalCacheHit": final_cache_hit,
+        "final_cache_hit": final_cache_hit,
+        "layers": ["scene_video_only_proxies", "single_continuous_master_audio", "quick_proxy_cache"],
+        "scenes": scene_debug,
+    }
+
+
 @router.post("/audio-studio/stable-preview/block")
 def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     project_id = _clean_project_id(payload.project_id or payload.projectId)
@@ -13688,6 +14913,17 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
         }, flush=True)
     if not scenes:
         raise HTTPException(status_code=400, detail="No usable scenes for Stable block preview")
+
+    # V216R1: the full-project scene map is not a Stable block render.
+    # It must use persistent low-resolution per-scene proxies and stream-copy concat,
+    # never the legacy 1280x720/30fps re-encode loop below.
+    if _audio_studio_quick_preview_requested_v216r1(payload):
+        return _audio_studio_quick_preview_map_v216r1(
+            payload=payload,
+            scenes=scenes,
+            project_id=project_id,
+            user=user,
+        )
 
     block_title = _safe_name(payload.title or "stable_block_preview", "stable_block_preview")
     with tempfile.TemporaryDirectory(prefix="ava_audio_stable_preview_v204g1_") as tmp_raw:

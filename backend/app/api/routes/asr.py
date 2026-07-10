@@ -174,6 +174,7 @@ class ManualTimingAsrSettings:
     min_phrase_sec: float = 1.2
     padding_sec: float = 0.0
     model_size: str = "small"
+    vad_filter: bool = True
     split_on_punctuation: bool = True
     split_by_long_gap: bool = True
     split_by_max_duration: bool = True
@@ -272,6 +273,7 @@ def _clamp_settings(settings: ManualTimingAsrSettings) -> ManualTimingAsrSetting
         min_phrase_sec=min_phrase,
         padding_sec=padding,
         model_size=model_size,
+        vad_filter=bool(getattr(settings, "vad_filter", True)),
         split_on_punctuation=bool(getattr(settings, "split_on_punctuation", True)),
         split_by_long_gap=bool(getattr(settings, "split_by_long_gap", True)),
         split_by_max_duration=bool(getattr(settings, "split_by_max_duration", True)),
@@ -366,16 +368,38 @@ def transcribe_words_faster_whisper(audio_path: Path, settings: ManualTimingAsrS
         str(audio_path),
         language=normalize_asr_language(safe.language),
         word_timestamps=True,
-        vad_filter=True,
+        vad_filter=bool(getattr(safe, "vad_filter", True)),
         beam_size=int(_safe_float(os.getenv("MANUAL_TIMING_ASR_BEAM_SIZE") or 5, 5)),
     )
 
     words: list[dict[str, Any]] = []
+    segment_text_fallback_count = 0
     for segment in segments:
-        for raw_word in list(getattr(segment, "words", None) or []):
+        raw_words = list(getattr(segment, "words", None) or [])
+        added_words = 0
+        for raw_word in raw_words:
             normalized = _normalize_word(raw_word, len(words))
             if normalized:
                 words.append(normalized)
+                added_words += 1
+
+        # Faster-whisper can occasionally return a segment text but no word timestamps,
+        # especially with English vocals, noisy stems, or language mismatch. The old code
+        # silently dropped those segments, so the UI showed only part of the transcript.
+        if added_words <= 0:
+            segment_text = _clean_text(getattr(segment, "text", "") or "")
+            segment_start = _safe_float(getattr(segment, "start", None), -1.0)
+            segment_end = _safe_float(getattr(segment, "end", None), -1.0)
+            if segment_text and segment_start >= 0 and segment_end > segment_start:
+                words.append({
+                    "word": segment_text,
+                    "start_sec": _round_sec(segment_start),
+                    "end_sec": _round_sec(segment_end),
+                    "confidence": 0.0,
+                    "_idx": len(words),
+                    "fallback_segment_text_v213a": True,
+                })
+                segment_text_fallback_count += 1
 
     words.sort(key=lambda item: (float(item["start_sec"]), float(item["end_sec"])))
     for item in words:
@@ -391,6 +415,8 @@ def transcribe_words_faster_whisper(audio_path: Path, settings: ManualTimingAsrS
         "duration_sec": duration_sec,
         "language": getattr(info, "language", safe.language),
         "language_probability": _safe_float(getattr(info, "language_probability", 0.0), 0.0),
+        "vad_filter": bool(getattr(safe, "vad_filter", True)),
+        "segment_text_fallback_count_v213a": segment_text_fallback_count,
     }
     return words, metadata
 
@@ -936,6 +962,7 @@ def transcribe_audio_asset(payload: AsrTranscribeRequest, user: dict = Depends(g
         min_phrase_sec=1.2,
         padding_sec=0.0,
         model_size=model_size,
+        vad_filter=True if payload.vad_filter is None else bool(payload.vad_filter),
         split_on_punctuation=True,
         split_by_long_gap=True,
         split_by_max_duration=True,
@@ -1004,6 +1031,20 @@ def transcribe_audio_asset(payload: AsrTranscribeRequest, user: dict = Depends(g
 
     full_text = " ".join(segment.get("text", "") for segment in speech_segments).strip()
 
+    logger.info(
+        "ASR_TRANSCRIBE_V213A project_id=%s asset_id=%s mode=%s language_request=%s detected=%s vad_filter=%s words=%s phrases=%s fallback_segments=%s duration=%s",
+        payload.project_id,
+        payload.asset_id,
+        effective_mode,
+        payload.language or "auto",
+        detected_language or "auto",
+        bool(getattr(safe, "vad_filter", True)),
+        len(words),
+        len(phrases),
+        int(metadata.get("segment_text_fallback_count_v213a") or 0),
+        duration,
+    )
+
     credits_meta = _charge_manual_timing_credit(
         user,
         action_type=action_type,
@@ -1014,6 +1055,9 @@ def transcribe_audio_asset(payload: AsrTranscribeRequest, user: dict = Depends(g
             "role_id": role_id,
             "role_label": role_label,
             "mode": effective_mode,
+            "language_request": payload.language or "auto",
+            "detected_language": detected_language or "auto",
+            "vad_filter": bool(getattr(safe, "vad_filter", True)),
             "timing_engine": TIMING_ENGINE,
         },
     )
@@ -1025,12 +1069,13 @@ def transcribe_audio_asset(payload: AsrTranscribeRequest, user: dict = Depends(g
         "mode": asr_mode_raw,
         "effective_mode": effective_mode,
         "timing_engine": TIMING_ENGINE,
-        "vad_filter": True,
+        "vad_filter": bool(getattr(safe, "vad_filter", True)),
         "word_timestamps": True,
         "word_count": len(words),
         "phrase_count": len(phrases),
         "gap_count": len(asr_gaps),
         "language": detected_language,
+        "asr_metadata_v213a": metadata,
         "text": full_text,
         "roles": [{
             "roleId": role_id,

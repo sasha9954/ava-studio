@@ -1,3 +1,5 @@
+// AVA_AUDIO_STUDIO_SKIP_REDUNDANT_POST_HANDOFF_LOAD_V216Q4B: committed Board import skips the duplicate snapshot load.
+// AVA_AUDIO_STUDIO_ENTRY_AND_QUICK_PREVIEW_V216Q3: immediate Board import, no empty overwrite, direct quick video preview.
 // AVA_AUDIO_STUDIO_PREVIEW_NOTES_PRESERVE_NEWLINES_V211N: installed
 // AVA_AUDIO_STUDIO_PREVIEW_NOTES_NATIVE_MULTILINE_V211M: installed
 // AVA_AUDIO_STUDIO_PREVIEW_NOTES_REAL_MULTILINE_EDITOR_V211L: installed
@@ -1718,6 +1720,10 @@ function PreviewVideo({ source = '', title = '', className = '', volume = 1, con
   const [blobUrl, setBlobUrl] = useState('')
   const [error, setError] = useState('')
   const videoRef = useRef(null)
+  // AVA_AUDIO_STUDIO_PREVIEW_SINGLE_AUTOPLAY_V216R5:
+  // One fresh preview result gets one autoplay attempt. The previous three timers
+  // reset currentTime to 0 at 80/240/650 ms and sounded like repeated restarts.
+  const autoPlayAttemptKeyRefV216R5 = useRef('')
   const cleanSource = cleanId(source)
   const uiVolumeV204H10 = normalizeAudioStudioUiVolume01V204H10C(volume, 1)
   const applyPreviewVideoVolumeV204H10 = useCallback((node = videoRef.current) => {
@@ -1768,8 +1774,12 @@ function PreviewVideo({ source = '', title = '', className = '', volume = 1, con
   // remain visible but do not unexpectedly start playing in the wrong tab/panel.
   useEffect(() => {
     if (!autoPlayKeyV204G9 || !src || !videoRef.current) return undefined
+    const attemptKeyV216R5 = `${autoPlayKeyV204G9}|${src}`
+    if (autoPlayAttemptKeyRefV216R5.current === attemptKeyV216R5) return undefined
+    autoPlayAttemptKeyRefV216R5.current = attemptKeyV216R5
+
     let cancelled = false
-    const playOnce = () => {
+    const timer = window.setTimeout(() => {
       if (cancelled || !videoRef.current) return
       try {
         const node = videoRef.current
@@ -1781,13 +1791,12 @@ function PreviewVideo({ source = '', title = '', className = '', volume = 1, con
       } catch (_err) {
         // Browser may block autoplay with sound; the video remains ready for manual play.
       }
-    }
-    const timers = [80, 240, 650].map((ms) => window.setTimeout(playOnce, ms))
+    }, 120)
     return () => {
       cancelled = true
-      timers.forEach((timer) => window.clearTimeout(timer))
+      window.clearTimeout(timer)
     }
-  }, [autoPlayKeyV204G9, src])
+  }, [applyPreviewVideoVolumeV204H10, autoPlayKeyV204G9, src])
 
   if (!cleanSource) {
     return <div className={`avaAudioPreviewEmpty ${className}`}>Нет видео</div>
@@ -1808,7 +1817,10 @@ function PreviewVideo({ source = '', title = '', className = '', volume = 1, con
       playsInline
       onLoadedMetadata={() => applyPreviewVideoVolumeV204H10()}
       onCanPlay={() => applyPreviewVideoVolumeV204H10()}
-      onPlay={() => applyPreviewVideoVolumeV204H10()}
+      onPlay={() => {
+        pauseAudioStudioMediaV204H7(videoRef.current)
+        applyPreviewVideoVolumeV204H10()
+      }}
       onTimeUpdate={onTimeUpdate || undefined}
     />
   )
@@ -2555,6 +2567,23 @@ export default function AudioStudioPage() {
   useEffect(() => {
     let alive = true
     async function load() {
+      // AVA_AUDIO_STUDIO_SKIP_REDUNDANT_POST_HANDOFF_LOAD_V216Q4B:
+      // After V216Q3 commits the imported Board, navigate(..., replace)
+      // removes the large Board object from route state. That state change
+      // triggers this effect once more. Keep the already committed in-memory
+      // snapshot instead of starting a second 12-second snapshot read.
+      const postHandoffCommittedV216Q4 = Boolean(
+        location.state?.audioStudioHandoffCommittedV216Q4
+      )
+      const currentSceneCountV216Q4 = asArray(snapshotRef.current?.scenes).length
+      if (postHandoffCommittedV216Q4 && didLoadRef.current && currentSceneCountV216Q4) {
+        console.info('[AUDIO STUDIO REDUNDANT POST-HANDOFF LOAD SKIPPED V216Q4]', {
+          projectId: projectId || '',
+          scenes: currentSceneCountV216Q4,
+        })
+        return
+      }
+
       didLoadRef.current = false
       if (!initialLoadDoneRefV204B.current) setLoading(true)
       setLoadMessage('Открываю Audio Studio…')
@@ -2573,16 +2602,35 @@ export default function AudioStudioPage() {
         const consumedKeyV204B7 = `ava_audio_studio_import_consumed_${projectId || 'workspace'}_${importTokenV204B7}`
         let importAlreadyConsumedV204B7 = false
         try { importAlreadyConsumedV204B7 = sessionStorage.getItem(consumedKeyV204B7) === '1' } catch {}
-        const forceImport = requestedForceImportV204B7 && !importAlreadyConsumedV204B7
+
+        // AVA_AUDIO_STUDIO_ENTRY_AND_QUICK_PREVIEW_V216Q3:
+        // A confirmed Board handoff already contains the full current Board.
+        // Import it immediately. Waiting for an old audio_studio snapshot first
+        // caused the 12-second empty screen and StrictMode/consumed-token race.
+        const forceImport = requestedForceImportV204B7
+        let snapshotLoadFailedV216Q3 = false
+        let audioData = {}
+
         setLoadMessage(forceImport ? 'Переношу сцены из Доски…' : 'Читаю snapshot Audio Studio…')
-        const audioData = await withUiTimeout(
-          workspaceMode ? projectApiRef.current.loadWorkspaceStage(STAGE) : projectApiRef.current.loadStage(projectId, STAGE),
-          12000,
-          'load audio_studio snapshot',
-        ).catch((err) => {
-          console.warn('[AUDIO STUDIO LOAD SNAPSHOT V204A3]', err)
-          return {}
-        })
+
+        if (forceImport && stateBoard) {
+          console.info('[AUDIO STUDIO BOARD HANDOFF BYPASSES SNAPSHOT WAIT V216Q3]', {
+            projectId: projectId || '',
+            scenes: asArray(stateBoard.scenes).length,
+            importAlreadyConsumed: importAlreadyConsumedV204B7,
+          })
+        } else {
+          audioData = await withUiTimeout(
+            workspaceMode ? projectApiRef.current.loadWorkspaceStage(STAGE) : projectApiRef.current.loadStage(projectId, STAGE),
+            12000,
+            'load audio_studio snapshot',
+          ).catch((err) => {
+            snapshotLoadFailedV216Q3 = true
+            console.warn('[AUDIO STUDIO LOAD SNAPSHOT V204A3]', err)
+            return null
+          })
+        }
+
         let next = audioData && typeof audioData === 'object' ? audioData : {}
         let shouldPersist = false
         if (!forceImport) {
@@ -2599,18 +2647,18 @@ export default function AudioStudioPage() {
           }
         }
 
+        if (!forceImport && snapshotLoadFailedV216Q3 && !asArray(next.scenes).length) {
+          console.warn('[AUDIO STUDIO EMPTY SNAPSHOT AUTOSAVE BLOCKED V216Q3]', {
+            projectId: projectId || '',
+          })
+          throw new Error('Snapshot Audio Studio не ответил. Пустое состояние не сохранено — повтори вход или обнови страницу.')
+        }
+
         if (forceImport && stateBoard) {
           next = buildAudioSnapshotFromBoard(stateBoard, { projectId, source: 'board_reset_import_v204b8' })
           next.boardImportToken = importTokenV204B7
           next.boardImportConsumedAt = nowIso()
           shouldPersist = true
-          try { sessionStorage.setItem(consumedKeyV204B7, '1') } catch {}
-          try {
-            navigate(location.pathname, {
-              replace: true,
-              state: { workflowEntry: location.state?.workflowEntry || null, source: 'audio_studio_loaded' },
-            })
-          } catch {}
           forgetAudioSnapshotSafeBackupV204B9(projectId || 'workspace')
           setStatus(`Audio Studio очищена и заново перенесена из Доски: ${asArray(next.scenes).length} сцен`)
         } else if (asArray(next.scenes).length) {
@@ -2646,7 +2694,25 @@ export default function AudioStudioPage() {
         if (!next.selectedSceneId && asArray(next.scenes).length) next.selectedSceneId = next.scenes[0].id
         if (shouldPersist) {
           setLoadMessage('Сохраняю Audio Studio, чтобы F5 держал сцены…')
-          await persistSnapshotSilently(sanitizeAudioSnapshot(next), forceImport ? 'board_import_persist_v204b8' : 'board_auto_import_empty_audio_v204b8')
+          await persistSnapshotSilently(
+            sanitizeAudioSnapshot(next),
+            forceImport ? 'board_import_persist_v216q3' : 'safe_snapshot_restore_v216q3'
+          )
+
+          if (forceImport && stateBoard) {
+            try { sessionStorage.setItem(consumedKeyV204B7, '1') } catch {}
+            try {
+              navigate(location.pathname, {
+                replace: true,
+                state: { workflowEntry: location.state?.workflowEntry || null, source: 'audio_studio_loaded',
+                  audioStudioHandoffCommittedV216Q4: true,},
+              })
+            } catch {}
+            console.info('[AUDIO STUDIO BOARD HANDOFF COMMITTED V216Q3]', {
+              projectId: projectId || '',
+              scenes: asArray(next.scenes).length,
+            })
+          }
         }
         if (alive) {
           setSnapshot(next)
@@ -4711,39 +4777,33 @@ export default function AudioStudioPage() {
     }
   }, [prepareTimingAudioForSceneV204E10, selectedScene])
 
-  // Background warm-up: one at a time, cached in the snapshot. Current scene first, then the rest.
+  // AVA_AUDIO_STUDIO_QUICK_PREVIEW_NO_PRESLICE_V216R3:
+  // Never pre-slice the entire project on page load. Timing audio is prepared only
+  // for the selected scene (or explicitly by Stable block / Mix actions). This avoids
+  // 54 sequential slice requests and 54 whole-snapshot saves before Quick Preview.
   useEffect(() => {
-    const scenes = asArray(snapshot.scenes)
-    if (!scenes.length || !projectId) return undefined
+    if (!projectId || stableBlockPreviewLoadingV204G1) return undefined
+    const scene = selectedScene
+    const sceneId = cleanId(scene?.id || scene?.sceneId)
+    if (!scene || !sceneId || audioStudioTimingAudioRefV204E10(scene)) return undefined
 
-    const pending = scenes.filter((scene) => !audioStudioTimingAudioRefV204E10(scene))
-    if (!pending.length) return undefined
-
-    const selectedId = cleanId(selectedScene?.id || selectedScene?.sceneId)
-    const ordered = [
-      ...pending.filter((scene) => cleanId(scene.id || scene.sceneId) === selectedId),
-      ...pending.filter((scene) => cleanId(scene.id || scene.sceneId) !== selectedId),
-    ]
-
-    const key = ordered.map((scene) => cleanId(scene.id || scene.sceneId)).join('|')
-    if (!key || timingAudioAutoWarmKeyRefV204E10.current === key) return undefined
+    const key = `selected:${sceneId}`
+    if (timingAudioAutoWarmKeyRefV204E10.current === key) return undefined
     timingAudioAutoWarmKeyRefV204E10.current = key
 
     let cancelled = false
     ;(async () => {
-      for (const scene of ordered) {
-        if (cancelled) return
-        try {
-          await prepareTimingAudioForSceneV204E10(scene, { reason: 'auto_preload_audio_studio_v204e10', silent: true })
-        } catch (err) {
-          console.warn('[AUDIO STUDIO TIMING AUDIO AUTO PRELOAD FAILED V204E10]', cleanId(scene.id || scene.sceneId), err)
-          return
+      try {
+        await prepareTimingAudioForSceneV204E10(scene, { reason: 'selected_scene_preload_v216r3', silent: true })
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('[AUDIO STUDIO SELECTED TIMING AUDIO PRELOAD FAILED V216R3]', sceneId, err)
         }
       }
     })()
 
     return () => { cancelled = true }
-  }, [projectId, selectedScene?.id, selectedScene?.sceneId, snapshot.scenes, prepareTimingAudioForSceneV204E10])
+  }, [projectId, selectedScene, stableBlockPreviewLoadingV204G1, prepareTimingAudioForSceneV204E10])
 
   const previewTimingAudioMmaudioMixV204E10 = useCallback(async () => {
     setError('')
@@ -5063,32 +5123,111 @@ export default function AudioStudioPage() {
 
     try {
       const preparedScenes = []
+      const missingVideoSceneIdsV216Q3 = []
+      let existingTimingAudioCountV216R3 = 0
+      let masterRangeFallbackCountV216R3 = 0
+
       for (const scene of allScenes) {
         if (!scene || typeof scene !== 'object' || Array.isArray(scene)) {
           console.warn('[AUDIO STUDIO FULL PREVIEW BAD SCENE SKIP V211V]', { valueType: typeof scene })
           continue
         }
-        let timingRef = audioStudioTimingAudioRefV204E10(scene)
-        try {
-          // Function exists lower in this component. Do not put it into deps: this file already avoids TDZ for it.
-          if (!timingRef && typeof prepareTimingAudioForSceneV204E10 === 'function') {
-            timingRef = await prepareTimingAudioForSceneV204E10(scene, { reason: 'full_preview_map_v211v', silent: true })
-          }
-        } catch (sliceErr) {
-          console.warn('[AUDIO STUDIO FULL PREVIEW TIMING SLICE WARN V211V]', {
-            sceneId: firstText(scene?.id, scene?.sceneId, scene?.scene_id),
-            error: String(sliceErr?.message || sliceErr),
-          })
+
+        const sceneIdV216Q3 = firstText(
+          scene?.id,
+          scene?.sceneId,
+          scene?.scene_id,
+          `seg_${String(preparedScenes.length + 1).padStart(2, '0')}`
+        )
+        const previewVideoRefV216Q3 = firstText(
+          scene?.sourceVideo?.apiPath,
+          scene?.sourceVideo?.url,
+          scene?.source_video?.api_path,
+          scene?.source_video?.url,
+          scene?.videoApiPath,
+          scene?.video_api_path,
+          scene?.videoUrl,
+          scene?.video_url,
+          scene?.boardRaw ? boardSourceVideoRef(scene.boardRaw) : ''
+        )
+
+        if (!previewVideoRefV216Q3) {
+          missingVideoSceneIdsV216Q3.push(sceneIdV216Q3)
+          continue
         }
+
+        const sourceVideoBaseV216Q3 = scene.sourceVideo && typeof scene.sourceVideo === 'object' && !Array.isArray(scene.sourceVideo)
+          ? scene.sourceVideo
+          : {}
+        const normalizedVideoV216Q3 = normalizeRef(previewVideoRefV216Q3)
+        const explicitSourceVideoV216Q3 = {
+          ...sourceVideoBaseV216Q3,
+          apiPath: firstText(
+            sourceVideoBaseV216Q3.apiPath,
+            sourceVideoBaseV216Q3.api_path,
+            normalizedVideoV216Q3.apiPath,
+            previewVideoRefV216Q3
+          ),
+          url: firstText(
+            sourceVideoBaseV216Q3.url,
+            normalizedVideoV216Q3.url,
+            previewVideoRefV216Q3
+          ),
+          assetId: firstText(
+            sourceVideoBaseV216Q3.assetId,
+            sourceVideoBaseV216Q3.asset_id,
+            normalizedVideoV216Q3.assetId
+          ),
+        }
+
+        // V216R3: Quick Preview must submit immediately. Existing scene slices may
+        // be reused, but missing slices are NOT generated here. Backend reads the one
+        // master song and seeks to each scene start/end while building low-res proxies.
+        const timingRef = audioStudioTimingAudioRefV204E10(scene)
+        if (timingRef) existingTimingAudioCountV216R3 += 1
+        else masterRangeFallbackCountV216R3 += 1
+
         const sourceAudioBaseV211V = scene.sourceAudio && typeof scene.sourceAudio === 'object' && !Array.isArray(scene.sourceAudio)
           ? scene.sourceAudio
           : {}
-        preparedScenes.push(timingRef ? {
+
+        preparedScenes.push({
           ...scene,
-          sourceAudio: { ...sourceAudioBaseV211V, apiPath: timingRef, url: timingRef },
-          timingAudioReadyV204E10: true,
-        } : { ...scene })
+          sourceVideo: explicitSourceVideoV216Q3,
+          source_video: {
+            ...(scene.source_video && typeof scene.source_video === 'object' ? scene.source_video : {}),
+            api_path: explicitSourceVideoV216Q3.apiPath,
+            url: explicitSourceVideoV216Q3.url,
+            asset_id: explicitSourceVideoV216Q3.assetId,
+          },
+          ...(timingRef
+            ? {
+                sourceAudio: { ...sourceAudioBaseV211V, apiPath: timingRef, url: timingRef },
+                timingAudioReadyV204E10: true,
+              }
+            : {}),
+        })
       }
+
+      console.info('[AUDIO STUDIO QUICK PREVIEW TIMING PRESLICE BYPASSED V216R3]', {
+        projectId: projectId || '',
+        scenes: preparedScenes.length,
+        existingTimingAudio: existingTimingAudioCountV216R3,
+        masterRangeFallback: masterRangeFallbackCountV216R3,
+      })
+
+      if (missingVideoSceneIdsV216Q3.length) {
+        throw new Error(
+          `Быстрое Preview остановлено: нет видео у ${missingVideoSceneIdsV216Q3.length} сцен (${missingVideoSceneIdsV216Q3.slice(0, 8).join(', ')}${missingVideoSceneIdsV216Q3.length > 8 ? '…' : ''}).`
+        )
+      }
+
+      console.info('[AUDIO STUDIO QUICK PREVIEW VIDEO PREFLIGHT V216Q3]', {
+        projectId: projectId || '',
+        scenes: preparedScenes.length,
+        missingVideoScenes: missingVideoSceneIdsV216Q3,
+      })
+
       if (!preparedScenes.length) {
         throw new Error('Нет валидных сцен для карты. Нажми “Обновить из Доски” и попробуй снова.')
       }
@@ -5169,6 +5308,9 @@ export default function AudioStudioPage() {
         throw new Error('Backend не вернул full preview video.')
       }
 
+      // V216R5: stop an old preview, scene player or hidden timing/STAU player
+      // before exposing and autoplaying the newly built full-project preview.
+      pauseAudioStudioMediaV204H7()
       setStableBlockPreviewVideoV204G1(previewVideo)
       setStableBlockPreviewLoadingV204G1(false)
       setStableBlockPreviewUiPhaseV204G4('ready')
@@ -5217,12 +5359,14 @@ export default function AudioStudioPage() {
   if (loading) {
     return (
       <div className="avaAudioStudioPage">
-      <audio
-        ref={mixTimingAudioRefV204E7}
-        src={mixTimingAudioSrcV204E7}
-        preload="auto"
-        style={{ display: 'none' }}
-      />
+      {mixTimingAudioSrcV204E7 ? (
+        <audio
+          ref={mixTimingAudioRefV204E7}
+          src={mixTimingAudioSrcV204E7}
+          preload="auto"
+          style={{ display: 'none' }}
+        />
+      ) : null}
         <div className="avaAudioLoading">
           <div className="avaAudioLoadingOrb"><AudioLines size={26} /></div>
           <strong>{loadMessage || 'Загружаю Audio Studio…'}</strong>
@@ -5583,20 +5727,37 @@ export default function AudioStudioPage() {
                 <div className="avaAudioPreviewMapBuildRowV211D">
                   <button
                     type="button"
-                    className={`avaAudioStablePreviewActionV204G4 ${previewFullProjectLoadingV211E ? 'isLoading' : ''}`}
-                    onClick={loadFullProjectPreviewV211E}
-                    disabled={previewFullProjectLoadingV211E}
-                    title="Подтянуть полную сборку из монтажки и сохранить её как Preview / Разметка. После F5 не пересобирается."
+                    className={`avaAudioStablePreviewActionV204G4 ${stableBlockPreviewLoadingV204G1 ? 'isLoading' : ''}`}
+                    onClick={buildFullPreviewMapV211F}
+                    disabled={stableBlockPreviewLoadingV204G1 || previewFullProjectLoadingV211E}
+                    title="Быстро собрать черновое полное видео прямо из текущих видео сцен Audio Studio. Монтажка не требуется."
                   >
-                    {previewFullProjectLoadingV211E ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Play size={16} />}
-                    <span>{previewFullProjectLoadingV211E ? 'Собираю карту сцен…' : previewMapVideoV211D ? 'Обновить полное видео' : 'Собрать карту сцен'}</span>
+                    {stableBlockPreviewLoadingV204G1 ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Play size={16} />}
+                    <span>
+                      {stableBlockPreviewLoadingV204G1
+                        ? 'Собираю черновик…'
+                        : previewMapVideoV211D
+                          ? 'Пересобрать из сцен'
+                          : 'Быстро собрать из сцен'}
+                    </span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={loadFullProjectPreviewV211E}
+                    disabled={previewFullProjectLoadingV211E || stableBlockPreviewLoadingV204G1}
+                    title="Подтянуть уже готовую полную сборку из монтажки и сохранить её в Preview / Разметка."
+                  >
+                    {previewFullProjectLoadingV211E ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Film size={16} />}
+                    <span>{previewFullProjectLoadingV211E ? 'Ищу сборку…' : 'Подтянуть из монтажки'}</span>
+                  </button>
+
                   <button type="button" onClick={() => navigate(assemblyPath)}>
                     <Film size={16} /> В монтажку
                   </button>
                 </div>
                 <div className="avaAudioPreviewMapHintV211D">
-                  Используется полная сборка из монтажки. Номер текущей сцены считается по таймингу Audio Studio и показывается поверх плеера.
+                  «Быстро собрать из сцен» делает черновое полное видео из текущих роликов Доски. «Подтянуть из монтажки» использует уже готовую финальную сборку.
                 </div>
               </section>
 

@@ -40,10 +40,12 @@ export function normalizeAssetFileUrl(value = '') {
     url = `${API_ORIGIN}${nextPath}${search}${hash}`
   }
 
-  if (url !== raw) {
+  // AVA_AUDIO_ASSET_CONSOLE_SPAM_OFF_V214R:
+  // These logs were firing on every Board render and freezing prompt typing.
+  if (false && url !== raw) {
     console.log('[AUDIO ASSET URL NORMALIZED]', { from: raw, to: url, assetId })
   }
-  if (assetId) {
+  if (false && assetId) {
     console.log('[AUDIO ASSET RESTORE]', { assetId, apiPath, url })
   }
 

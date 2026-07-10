@@ -9084,3 +9084,38 @@ body select option:disabled {
 }
 /* BOARD_COMPACT_VIDEO_SETUP_V212W_END */
 
+/* AVA_BOARD_TOP_SCENE_PHOTO_SPINNER_CSS_V216E */
+.avaBoardSceneCard .avaBoardStatusBadge.isImageUploading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.avaBoardSceneCard .avaBoardStatusBadge.isImageUploading::before {
+  content: none !important;
+  display: none !important;
+}
+
+.avaBoardTopPhotoSpinnerV216E {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: avaBoardTopPhotoSpinV216E 0.72s linear infinite;
+}
+
+@keyframes avaBoardTopPhotoSpinV216E {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avaBoardTopPhotoSpinnerV216E {
+    animation-duration: 1.8s;
+  }
+}
+

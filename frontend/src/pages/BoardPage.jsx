@@ -1,3 +1,27 @@
+/* AVA_BOARD_MANUAL_REVIEW_SAME_VIDEO_AUTHORITY_V216P: human review decision wins system replay only for the same video. */
+/* AVA_BOARD_MANUAL_REGENERATE_NOT_BAD_V216O: manual force regeneration is independent from bad review. */
+/* AVA_BOARD_CLEAR_REVIEW_WITHOUT_VIDEO_V216N: review cannot exist without a current video. */
+/* AVA_BOARD_QUEUE_UI_CLEANUP_V216M: truthful photo state, locked media controls, stale runtime cleanup. */
+/* AVA_BOARD_DELETE_GHOST_AND_OLD_BATCH_RUNTIME_FIX_V216L: deleted photo stays deleted; old batch cannot clear new runtime. */
+/* AVA_BOARD_TELEGRAM_REVIEW_AUTHORITY_V216K3: Telegram/manual review beats batch replay. */
+/* AVA_BOARD_LIVE_QUEUE_AUTHORITY_V216J: persisted queue membership cannot block manual generation. */
+/* AVA_BOARD_UNIFIED_VIDEO_QUEUE_V216H: manual and generate-all use one backend queue. */
+/* AVA_BOARD_MANUAL_VIDEO_GUARD_STALE_RUNTIME_V216G: stale runtime overlays no longer block manual video generation. */
+/* AVA_BOARD_BULK_IMPORT_DURABLE_COMMIT_V216F: bulk image replacement awaits and verifies Board snapshot persistence. */
+/* AVA_BOARD_TOP_SCENE_PHOTO_SPINNER_V216E: top cards show truthful photo-upload status and spinner. */
+/* AVA_BOARD_BULK_PHOTO_UPLOAD_TRUTH_UI_V216D: truthful bulk photo upload badges/readiness/generation guard. */
+/* AVA_BOARD_STATUS_MERGE_NO_BYPASS_V216C2: status snapshots cannot bypass V216A media authority. */
+/* AVA_BOARD_MEDIA_REDUCER_CONTRACT_V216A: atomic image replace/delete + media revision authority. */
+/* AVA_BOARD_MEDIA_SIMPLE_AUTHORITY_V215D: simple media authority; new image wins over stale saves and old video is cleared. */
+/* AVA_IMAGE_DELETE_TOMBSTONE_LOCK_V214Z: deleted image scene refs are blocked from status/restore/save until a new image upload succeeds. */
+/* AVA_BOARD_STREAM_VIDEO_PREVIEW_V214Y: selected video preview uses streaming asset URL instead of full blob download. */
+/* AVA_JSON_PROMPT_IMPORT_VISIBLE_SAVE_V214X: JSON prompt import supports prompt packs, remounts fields, clears stale drafts, and saves immediately. */
+/* AVA_DISABLE_STALE_LOCAL_IMAGE_AUTHORITY_V214W: localStorage durable image authority disabled; status cannot reapply local stale images. */
+/* AVA_MANUAL_IMAGE_UPLOAD_SYNC_SAVE_V214V: manual uploaded image is saved synchronously with guard_mode=replace. */
+/* AVA_STOP_OLD_IMAGE_RESURRECTION_V214U: durable cache respects image tombstones; manual uploaded image saves with guard_mode replace. */
+/* AVA_MANUAL_IMAGE_REPLACE_DIRECT_SAVE_V214T: direct image replace save + strong delete tombstones. */
+/* AVA_BOARD_MANUAL_IMAGE_UPLOAD_ATOMIC_LOCK_V214S: manual image upload keeps preview, pauses status/autosave, commits asset atomically. */
+/* AVA_BOARD_EMERGENCY_PROMPT_FOCUS_CONSOLE_PERF_V214R: console spam off, uncontrolled prompt, polling pause, selected scene force. */
 /* AVA_BOARD_PERF_FOCUS_PROMPT_STATUS_V214P: prompt typing uses small cache; F5 restores selected scene; stale no-job busy is ignored. */
 /* AVA_BOARD_REVIEW_FOCUS_SINGLE_AUTHORITY_V214M2: card and right panel share live review/focus authority; status refresh cannot steal selected scene. */
 /* AVA_BOARD_COMPLETED_BATCH_POSMOTRI_STATUS_V214G */
@@ -95,6 +119,7 @@ import { useProjects } from '../context/ProjectContext.jsx'
 import { apiRequest, buildApiUrl, fetchProtectedBlobUrl, getApiOrigin, normalizeAssetFileUrl, normalizeStaticMediaUrl, registerStaticMediaAsset, uploadMediaAsset } from '../services/apiClient.js'
 import WorkflowStageControls from '../components/WorkflowStageControls.jsx'
 import { applyCookingPromptMemoryToBoard } from '../lib/cookingPromptMemory.js'
+import { boardDeleteSceneMediaV216A, boardReplaceSceneImageV216A, boardSceneMediaRevisionV216A, boardServerVideoCanApplyV216A } from '../lib/boardMediaStateV216A.js'
 import { isWorkflowStageCleared, clearWorkflowStageClearedMarker, clearWorkflowEntry, readWorkflowEntry, makeWorkflowEntry, rememberWorkflowEntry } from '../utils/workflowNavigation.js'
 import '../styles/ava-board.css'
 
@@ -670,9 +695,161 @@ function safeMediaObject(value, context = {}) {
   return {}
 }
 
+const AVA_IMAGE_DELETE_TOMBSTONE_KEY_V214Z = 'ava:board:image-delete-tombstones:v214z'
+
+function boardReadImageDeleteTombstonesV214Z() {
+  if (typeof sessionStorage === 'undefined') return {}
+  try {
+    const raw = sessionStorage.getItem(AVA_IMAGE_DELETE_TOMBSTONE_KEY_V214Z)
+    const parsed = raw ? JSON.parse(raw) : {}
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch (_) {
+    return {}
+  }
+}
+
+function boardWriteImageDeleteTombstonesV214Z(map = {}) {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.setItem(AVA_IMAGE_DELETE_TOMBSTONE_KEY_V214Z, JSON.stringify(map || {}))
+  } catch (_) {}
+}
+
+function boardMarkImageDeleteTombstoneV214Z(sceneId = '', resetToken = '', extra = {}) {
+  const id = asText(sceneId)
+  if (!id) return
+  const now = Date.now()
+  const map = boardReadImageDeleteTombstonesV214Z()
+  map[id] = {
+    sceneId: id,
+    resetToken: asText(resetToken) || `image_delete_${now}`,
+    deletedAtMs: now,
+    expiresAtMs: now + 6 * 60 * 60 * 1000,
+    ...extra,
+  }
+  boardWriteImageDeleteTombstonesV214Z(map)
+  console.warn('[BOARD IMAGE DELETE TOMBSTONE MARK V214Z]', { sceneId: id, resetToken: map[id].resetToken })
+}
+
+function boardClearImageDeleteTombstoneV214Z(sceneId = '', reason = 'clear') {
+  const id = asText(sceneId)
+  if (!id) return
+  const map = boardReadImageDeleteTombstonesV214Z()
+  if (!map[id]) return
+  delete map[id]
+  boardWriteImageDeleteTombstonesV214Z(map)
+  console.warn('[BOARD IMAGE DELETE TOMBSTONE CLEAR V214Z]', { sceneId: id, reason })
+}
+
+function boardImageDeleteTombstoneForSceneV214Z(sceneOrId = {}) {
+  const scene = isPlainObject(sceneOrId) ? sceneOrId : {}
+  const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || sceneOrId || '')
+  if (!sceneId) return null
+
+  const map = boardReadImageDeleteTombstonesV214Z()
+  const stored = map[sceneId] || null
+  const now = Date.now()
+  if (stored?.expiresAtMs && Number(stored.expiresAtMs) < now) {
+    delete map[sceneId]
+    boardWriteImageDeleteTombstonesV214Z(map)
+    return null
+  }
+
+  const sceneMarker = (
+    scene?.image_delete_tombstone_v214z || scene?.imageDeleteTombstoneV214Z ||
+    scene?.image_delete_tombstone_v214t || scene?.imageDeleteTombstoneV214T ||
+    scene?.media_reset_generation_v129u || scene?.mediaResetGenerationV129U ||
+    scene?.image_deleted_v129o || scene?.imageDeletedV129O ||
+    scene?.imageDeletedAtV213G || scene?.image_deleted_at_v213g
+  )
+
+  const tombstone = stored || (sceneMarker ? { sceneId, resetToken: asText(sceneMarker), deletedAtMs: Date.parse(scene?.imageDeletedAtV213G || scene?.image_deleted_at_v213g || '') || now } : null)
+  if (!tombstone) return null
+
+  const hasImageRef = Boolean(
+    scene?.image_asset_id || scene?.imageAssetId || scene?.image_api_path || scene?.imageApiPath ||
+    scene?.first_image_asset_id || scene?.firstImageAssetId || scene?.first_image_api_path || scene?.firstImageApiPath ||
+    scene?.start_image_asset_id || scene?.startImageAssetId || scene?.start_image_api_path || scene?.startImageApiPath ||
+    scene?.last_image_asset_id || scene?.lastImageAssetId || scene?.last_image_api_path || scene?.lastImageApiPath ||
+    scene?.end_image_asset_id || scene?.endImageAssetId || scene?.end_image_api_path || scene?.endImageApiPath
+  )
+
+  // AVA_BOARD_MEDIA_SIMPLE_AUTHORITY_V215D:
+  // A committed uploaded image is authoritative. Old tombstone/reset markers may remain
+  // on the scene for backend merge guards, but they must not hide a valid new image.
+  if (hasImageRef) return null
+
+  return tombstone
+}
+
+function boardStripDeletedSceneMediaRefsV214Z(scene = {}, reason = 'unknown') {
+  const tombstone = boardImageDeleteTombstoneForSceneV214Z(scene)
+  if (!tombstone) return scene
+
+  return {
+    ...(scene || {}),
+
+    image_url: '', imageUrl: '', image_api_path: '', imageApiPath: '', image_asset_id: '', imageAssetId: '',
+    image_name: '', imageName: '', image_data_url: '', imageDataUrl: '', mediaUrl: '', media_url: '',
+    first_frame_url: '', firstFrameUrl: '', first_frame_api_path: '', firstFrameApiPath: '',
+    first_frame_asset_id: '', firstFrameAssetId: '', first_frame_name: '', firstFrameName: '',
+    start_image_url: '', startImageUrl: '', start_image_api_path: '', startImageApiPath: '',
+    start_image_asset_id: '', startImageAssetId: '', start_image_data_url: '', startImageDataUrl: '',
+    first_image_url: '', firstImageUrl: '', first_image_api_path: '', firstImageApiPath: '',
+    first_image_asset_id: '', firstImageAssetId: '', first_image_name: '', firstImageName: '',
+    last_frame_url: '', lastFrameUrl: '', last_frame_api_path: '', lastFrameApiPath: '',
+    last_frame_asset_id: '', lastFrameAssetId: '', last_frame_name: '', lastFrameName: '',
+    end_image_url: '', endImageUrl: '', end_image_api_path: '', endImageApiPath: '',
+    end_image_asset_id: '', endImageAssetId: '', end_image_data_url: '', endImageDataUrl: '',
+    last_image_url: '', lastImageUrl: '', last_image_api_path: '', lastImageApiPath: '',
+    last_image_asset_id: '', lastImageAssetId: '', last_image_name: '', lastImageName: '',
+
+    video_url: '', videoUrl: '', video_api_path: '', videoApiPath: '', video_asset_id: '', videoAssetId: '',
+    result_url: '', resultUrl: '', result_video_url: '', resultVideoUrl: '',
+    result_video_api_path: '', resultVideoApiPath: '', result_video_asset_id: '', resultVideoAssetId: '',
+    video_source_image_asset_id: '', videoSourceImageAssetId: '',
+    video_source_image_api_path: '', videoSourceImageApiPath: '',
+
+    image_delete_tombstone_v214z: tombstone.resetToken || true,
+    imageDeleteTombstoneV214Z: tombstone.resetToken || true,
+    imageDeletedV129O: true,
+    image_deleted_v129o: true,
+    image_status: '',
+    imageStatus: '',
+    video_status: '',
+    videoStatus: '',
+    updatedAt: scene?.updatedAt || new Date().toISOString(),
+    media_refs_stripped_by_tombstone_v214z: reason,
+    mediaRefsStrippedByTombstoneV214Z: reason,
+  }
+}
+
+function boardApplyImageDeleteTombstonesToBoardV214Z(boardData = {}, reason = 'unknown') {
+  if (!boardData || !Array.isArray(boardData.scenes)) return boardData || {}
+  let changed = false
+  const scenes = boardData.scenes.map((scene) => {
+    const next = boardStripDeletedSceneMediaRefsV214Z(scene, reason)
+    if (next !== scene) changed = true
+    return next
+  })
+  if (!changed) return boardData
+  console.warn('[BOARD IMAGE DELETE TOMBSTONE APPLY V214Z]', { reason, scenes: scenes.length })
+  return {
+    ...(boardData || {}),
+    scenes,
+    mediaMutationReplaceSave: true,
+    forceReplaceSave: true,
+    image_delete_tombstone_applied_v214z: true,
+    imageDeleteTombstoneAppliedV214Z: true,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+
 function sceneMediaFieldValue(scene = {}, slot = 'image', kind = 'apiPath') {
   if (!isPlainObject(scene)) return ''
   const safeScene = safeMediaObject(scene, { sceneId: scene?.id || scene?.scene_id || '', slot, field: 'scene' })
+  if (boardImageDeleteTombstoneForSceneV214Z(safeScene)) return ''
   if (slot === 'video') {
     if (kind === 'apiPath') {
       return boardAssetApiPathFromRef(
@@ -879,6 +1056,16 @@ function boardDurableKey({ projectId = '', workspaceMode = true } = {}) {
 function readBoardDurableBackup(key = '') {
   if (!key || typeof localStorage === 'undefined') return null;
 
+  // AVA_DISABLE_STALE_LOCAL_IMAGE_AUTHORITY_V214W:
+  // The Board durable localStorage cache became oversized/stale and resurrected old image refs.
+  // Server project snapshot is the authority. Clear this cache and do not read it.
+  try {
+    localStorage.removeItem(key)
+    localStorage.removeItem(`${key}:backup`)
+    console.log('[BOARD DURABLE DISABLED READ CLEARED V214W]', { key })
+  } catch (_) {}
+  return null;
+
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
@@ -895,16 +1082,42 @@ function readBoardDurableBackup(key = '') {
 function writeBoardDurableBackup(key = '', boardData = {}) {
   if (!key || typeof localStorage === 'undefined') return;
 
+  // AVA_DISABLE_STALE_LOCAL_IMAGE_AUTHORITY_V214W:
+  // Do not write full Board snapshots to localStorage anymore. It overflows quota and can
+  // resurrect old image refs on F5. Server snapshot is the image/source-of-truth authority.
+  try {
+    localStorage.removeItem(key)
+    localStorage.removeItem(`${key}:backup`)
+    console.log('[BOARD DURABLE DISABLED WRITE SKIPPED V214W]', {
+      key,
+      scenes: Array.isArray(boardData?.scenes) ? boardData.scenes.length : 0,
+    })
+  } catch (_) {}
+  return;
+
   try {
     // AVA_BOARD_DURABLE_VIDEO_REF_GUARD_V132W:
     // Never let an autosave/reload paint with fewer video refs overwrite a richer durable cache.
     // The project snapshot still remains source of truth, but this prevents the next Board entry
     // from booting from a locally stripped copy before server rehydrate finishes.
     const canonicalBoardData = applyCookingPromptMemoryToBoard(canonicalizeBoardMediaRefs(boardData))
+    const durableHasImageResetV214U = (Array.isArray(canonicalBoardData?.scenes) ? canonicalBoardData.scenes : []).some((scene) => Boolean(
+      scene?.media_reset_generation_v129s || scene?.mediaResetGenerationV129S ||
+      scene?.media_reset_generation_v129t || scene?.mediaResetGenerationV129T ||
+      scene?.media_reset_generation_v129u || scene?.mediaResetGenerationV129U ||
+      scene?.image_delete_reason_v129s || scene?.imageDeleteReasonV129S ||
+      scene?.image_delete_reason_v129t || scene?.imageDeleteReasonV129T ||
+      scene?.image_delete_reason_v129u || scene?.imageDeleteReasonV129U ||
+      scene?.imageDeletedAtV213G || scene?.image_deleted_at_v213g ||
+      scene?.image_delete_tombstone_v214t || scene?.imageDeleteTombstoneV214T ||
+      scene?.image_delete_tombstone_v214u || scene?.imageDeleteTombstoneV214U ||
+      scene?.manual_image_replace_tombstone_v214t || scene?.manualImageReplaceTombstoneV214T ||
+      scene?.manual_image_replace_tombstone_v214u || scene?.manualImageReplaceTombstoneV214U
+    ))
     const existingDurableV132W = readBoardDurableBackup(key)
     let durableSourceV132W = canonicalBoardData
     try {
-      if (existingDurableV132W && Array.isArray(existingDurableV132W.scenes)) {
+      if (!durableHasImageResetV214U && existingDurableV132W && Array.isArray(existingDurableV132W.scenes)) {
         const existingScoreV132W = boardVideoStateScoreV131N(existingDurableV132W)
         const incomingScoreV132W = boardVideoStateScoreV131N(canonicalBoardData)
         if (existingScoreV132W > incomingScoreV132W) {
@@ -1168,6 +1381,20 @@ function boardApplySceneImageStateV213G(scene = {}, imageState = {}) {
 }
 
 function boardPreserveLocalImageMediaFromStatusV213G(baseBoard = {}, serverBoard = {}, source = 'status') {
+  // AVA_DISABLE_STALE_LOCAL_IMAGE_AUTHORITY_V214W:
+  // Status/batch refresh is not allowed to be image authority.
+  // Previous logic copied local image refs into serverBoard and logged changedSceneIds: Array(54),
+  // which resurrected deleted old images after F5.
+  const sourceTextV214W = String(source || '').toLowerCase()
+  if (
+    sourceTextV214W.includes('status') ||
+    sourceTextV214W.includes('batch') ||
+    sourceTextV214W.includes('server_batch') ||
+    sourceTextV214W.includes('status_return')
+  ) {
+    console.log('[BOARD STATUS IMAGE PRESERVE DISABLED V214W]', { source })
+    return serverBoard || baseBoard || {}
+  }
   if (!serverBoard || !Array.isArray(serverBoard.scenes)) return serverBoard || baseBoard || {}
   const baseScenes = asArray(baseBoard?.scenes)
   const serverScenes = asArray(serverBoard?.scenes)
@@ -1226,7 +1453,46 @@ const AVA_BOARD_REVIEW_STATE_KEYS_V213L = new Set([
   'telegram_review_id', 'telegramReviewId',
 ])
 
+// AVA_BOARD_CLEAR_REVIEW_WITHOUT_VIDEO_V216N:
+function boardSceneHasCurrentVideoForReviewV216N(scene = {}) {
+  try {
+    if (typeof boardSceneHasCurrentVideoResultV129P === 'function') {
+      return Boolean(boardSceneHasCurrentVideoResultV129P(scene))
+    }
+  } catch (_) {}
+
+  const mediaVideoV216N = (scene?.media?.video && typeof scene.media.video === 'object')
+    ? scene.media.video
+    : {}
+  return Boolean(
+    scene?.video_asset_id || scene?.videoAssetId ||
+    scene?.video_api_path || scene?.videoApiPath ||
+    scene?.video_url || scene?.videoUrl ||
+    scene?.result_video_asset_id || scene?.resultVideoAssetId ||
+    scene?.result_video_api_path || scene?.resultVideoApiPath ||
+    scene?.result_video_url || scene?.resultVideoUrl ||
+    scene?.result_url || scene?.resultUrl ||
+    mediaVideoV216N?.assetId || mediaVideoV216N?.asset_id ||
+    mediaVideoV216N?.apiPath || mediaVideoV216N?.api_path ||
+    mediaVideoV216N?.url
+  )
+}
+
+function boardReviewStaleWithoutVideoV216N(scene = {}) {
+  if (boardSceneHasCurrentVideoForReviewV216N(scene)) return false
+  const rawV216N = String(
+    scene?.video_review_status || scene?.videoReviewStatus ||
+    scene?.review_status || scene?.reviewStatus || ''
+  ).trim().toLowerCase()
+  return [
+    'bad', 'poor', 'reject', 'rejected', 'плохое', 'плохая',
+    'needs_review', 'review', 'check', 'посмотри', 'на проверку'
+  ].includes(rawV216N)
+}
+
 function boardReviewStatusNormV213L(scene = {}) {
+  if (boardReviewStaleWithoutVideoV216N(scene)) return ''
+  if (boardHumanReviewClearAppliesV216P(scene)) return ''
   const raw = String(
     scene?.video_review_status || scene?.videoReviewStatus ||
     scene?.review_status || scene?.reviewStatus || ''
@@ -1277,13 +1543,148 @@ function boardReviewEventInfoV213L(scene = {}) {
   }
 }
 
+// AVA_BOARD_MANUAL_REVIEW_SAME_VIDEO_AUTHORITY_V216P:
+function boardReviewVideoIdentityV216P(scene = {}) {
+  const mediaVideoV216P = (scene?.media?.video && typeof scene.media.video === 'object')
+    ? scene.media.video
+    : {}
+  return asText(
+    scene?.video_asset_id || scene?.videoAssetId ||
+    scene?.result_video_asset_id || scene?.resultVideoAssetId ||
+    mediaVideoV216P?.assetId || mediaVideoV216P?.asset_id ||
+    scene?.video_api_path || scene?.videoApiPath ||
+    scene?.result_video_api_path || scene?.resultVideoApiPath ||
+    mediaVideoV216P?.apiPath || mediaVideoV216P?.api_path ||
+    scene?.video_url || scene?.videoUrl ||
+    scene?.result_video_url || scene?.resultVideoUrl ||
+    scene?.result_url || scene?.resultUrl ||
+    mediaVideoV216P?.url || ''
+  )
+}
+
+function boardReviewSameVideoV216P(localScene = {}, serverScene = {}) {
+  const localIdentityV216P = boardReviewVideoIdentityV216P(localScene)
+  const serverIdentityV216P = boardReviewVideoIdentityV216P(serverScene)
+  // A status-only server snapshot often has no duplicate media ref. Treat that as
+  // the same result. A different non-empty identity means a genuinely new video.
+  return !localIdentityV216P || !serverIdentityV216P || localIdentityV216P === serverIdentityV216P
+}
+
+function boardHumanReviewClearAppliesV216P(scene = {}) {
+  if (!scene || typeof scene !== 'object') return false
+  const clearReasonV216P = String(
+    scene?.video_review_clear_reason || scene?.videoReviewClearReason || ''
+  ).trim().toLowerCase()
+  const clearedAtV216P = asText(
+    scene?.video_review_cleared_at || scene?.videoReviewClearedAt ||
+    scene?.video_review_accepted_at || scene?.videoReviewAcceptedAt || ''
+  )
+  const clearTokenV216P = asText(
+    scene?.video_review_clear_token_v216p || scene?.videoReviewClearTokenV216P ||
+    scene?.video_review_clear_token_v136d || scene?.videoReviewClearTokenV136D ||
+    scene?.video_review_clear_token_v136a || scene?.videoReviewClearTokenV136A ||
+    scene?.video_review_clear_token_v132y || scene?.videoReviewClearTokenV132Y ||
+    scene?.video_review_accept_token_v132z || scene?.videoReviewAcceptTokenV132Z || ''
+  )
+  const humanReasonV216P = Boolean(
+    clearReasonV216P.startsWith('manual_') ||
+    clearReasonV216P.startsWith('telegram_review_') ||
+    clearReasonV216P.includes('review_clear') ||
+    clearReasonV216P.includes('review_ok')
+  )
+  if (!humanReasonV216P && !clearTokenV216P) return false
+  if (!clearedAtV216P && !clearReasonV216P && !clearTokenV216P) return false
+
+  const decisionVideoIdentityV216P = asText(
+    scene?.video_review_video_identity_v216p ||
+    scene?.videoReviewVideoIdentityV216P || ''
+  )
+  const currentVideoIdentityV216P = boardReviewVideoIdentityV216P(scene)
+  return !decisionVideoIdentityV216P ||
+    !currentVideoIdentityV216P ||
+    decisionVideoIdentityV216P === currentVideoIdentityV216P
+}
+
+function boardApplyHumanReviewClearV216P(scene = {}, source = '') {
+  if (!boardHumanReviewClearAppliesV216P(scene)) return scene
+  const clearReasonV216P = asText(
+    scene?.video_review_clear_reason || scene?.videoReviewClearReason ||
+    'manual_review_clear_v216p'
+  )
+  const clearedAtV216P = asText(
+    scene?.video_review_cleared_at || scene?.videoReviewClearedAt ||
+    scene?.video_review_accepted_at || scene?.videoReviewAcceptedAt ||
+    new Date().toISOString()
+  )
+  const alreadyClearV216P = !String(
+    scene?.video_review_status || scene?.videoReviewStatus ||
+    scene?.review_status || scene?.reviewStatus || ''
+  ).trim() && !Boolean(
+    scene?.pending_review || scene?.pendingReview ||
+    scene?.needs_review || scene?.needsReview ||
+    scene?.review_required || scene?.reviewRequired
+  )
+  if (alreadyClearV216P) return scene
+
+  console.log('[BOARD HUMAN REVIEW CLEAR REAPPLIED V216P]', {
+    sceneId: asText(scene?.id || scene?.scene_id || scene?.sceneId || ''),
+    source,
+    reason: clearReasonV216P,
+  })
+  return {
+    ...scene,
+    video_review_status: '',
+    videoReviewStatus: '',
+    review_status: '',
+    reviewStatus: '',
+    video_review_reason: '',
+    videoReviewReason: '',
+    review_reason: '',
+    reviewReason: '',
+    video_review_updated_at: '',
+    videoReviewUpdatedAt: '',
+    video_review_clear_reason: clearReasonV216P,
+    videoReviewClearReason: clearReasonV216P,
+    video_review_cleared_at: clearedAtV216P,
+    videoReviewClearedAt: clearedAtV216P,
+    video_review_regenerate_from_bad: false,
+    videoReviewRegenerateFromBad: false,
+    video_review_regenerate_reason: '',
+    videoReviewRegenerateReason: '',
+    pending_review: false,
+    pendingReview: false,
+    needs_review: false,
+    needsReview: false,
+    review_required: false,
+    reviewRequired: false,
+    bad_video_review: false,
+    badVideoReview: false,
+    video_review_bad: false,
+    videoReviewBad: false,
+    bad_video: false,
+    badVideo: false,
+    video_bad: false,
+    videoBad: false,
+    is_bad_video: false,
+    isBadVideo: false,
+  }
+}
+
 function boardLocalReviewEventWinsV213L(localScene = {}, serverScene = {}) {
   const localEvent = boardReviewEventInfoV213L(localScene)
   if (!localEvent.has) return false
   const serverEvent = boardReviewEventInfoV213L(serverScene)
   if (!serverEvent.has) return true
+
+  const sameVideoV216P = boardReviewSameVideoV216P(localScene, serverScene)
+  // Human decision is semantic authority for the same generated asset.
+  // Do this BEFORE timestamp comparison because completed-batch replay creates
+  // a newer system timestamp on every refresh.
+  if (sameVideoV216P && localEvent.manual && !serverEvent.manual) return true
+  if (sameVideoV216P && !localEvent.manual && serverEvent.manual) return false
+
   if (localEvent.atMs && serverEvent.atMs) return localEvent.atMs >= serverEvent.atMs
-  if (localEvent.manual && !serverEvent.manual) return true
+  if (sameVideoV216P && localEvent.manual && !serverEvent.manual) return true
   return false
 }
 
@@ -1362,6 +1763,9 @@ function boardManualReviewLockForSceneV213M(sceneOrId = {}) {
 function boardManualReviewLockWinsServerV213M(localScene = {}, serverScene = {}) {
   const lock = boardManualReviewLockForSceneV213M(localScene)
   if (!lock.active) return false
+  // A new asset gets a new independent review. Never let the old 20-second
+  // click lock hide "посмотри" for a genuinely new video.
+  if (!boardReviewSameVideoV216P(localScene, serverScene)) return false
   const serverEvent = boardReviewEventInfoV213L(serverScene)
   if (!serverEvent.has) return true
   if (lock.atMs && serverEvent.atMs) return lock.atMs >= serverEvent.atMs || Date.now() < lock.until
@@ -1612,9 +2016,30 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
     )
     const serverReviewStatusV132T = String(serverScene.video_review_status || serverScene.videoReviewStatus || serverScene.review_status || serverScene.reviewStatus || '').toLowerCase()
     const hasServerReviewStatusV132T = ['bad', 'poor', 'reject', 'rejected', 'плохое', 'плохая', 'needs_review', 'review', 'check', 'посмотри', 'на проверку'].includes(serverReviewStatusV132T)
+    const serverReviewReasonV216K3 = String(
+      serverScene.video_review_reason || serverScene.videoReviewReason ||
+      serverScene.review_reason || serverScene.reviewReason || ''
+    ).trim().toLowerCase()
+    const serverReviewClearReasonV216K3 = String(
+      serverScene.video_review_clear_reason || serverScene.videoReviewClearReason || ''
+    ).trim().toLowerCase()
+    const serverReviewDecisionAtV216K3 = String(
+      serverScene.video_review_updated_at || serverScene.videoReviewUpdatedAt ||
+      serverScene.video_review_cleared_at || serverScene.videoReviewClearedAt ||
+      serverScene.video_review_accepted_at || serverScene.videoReviewAcceptedAt || ''
+    ).trim()
+    const serverHasExplicitHumanReviewV216K3 = Boolean(
+      hasServerReviewStatusV132T ||
+      serverReviewReasonV216K3.startsWith('telegram_review_') ||
+      serverReviewClearReasonV216K3.startsWith('telegram_review_') ||
+      serverReviewReasonV216K3.startsWith('manual_') ||
+      serverReviewClearReasonV216K3.startsWith('manual_') ||
+      serverReviewDecisionAtV216K3
+    )
     const localReviewWinsV213L = boardLocalReviewEventWinsV213L(scene, serverScene)
     const manualReviewLockWinsV213M = boardManualReviewLockWinsServerV213M(scene, serverScene)
-    const serverVideoStaleForLocalImageV214D = boardServerVideoStaleForLocalImageV214D(scene, serverScene)
+    const serverVideoAllowedV216A = boardServerVideoCanApplyV216A(scene, serverScene)
+    const serverVideoStaleForLocalImageV214D = boardServerVideoStaleForLocalImageV214D(scene, serverScene) || !serverVideoAllowedV216A
     if (serverVideoStaleForLocalImageV214D) {
       console.warn('[BOARD SERVER VIDEO STALE FOR NEW IMAGE V214D]', {
         sceneId: id,
@@ -1649,7 +2074,11 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
         serverClearReasonV200I.includes('v200h') ||
         serverClearReasonV200I.includes('board_video_job_orphaned')
       )
-    const shouldCopy = serverLooksClearedV200I || serverScore > localScore || (hasServerVideoRefV132T && !serverVideoStaleForLocalImageV214D) || (hasServerReviewStatusV132T && !localReviewWinsV213L && !manualReviewLockWinsV213M)
+    const shouldCopy = serverLooksClearedV200I || (serverVideoAllowedV216A && (
+      serverScore > localScore ||
+      (hasServerVideoRefV132T && !serverVideoStaleForLocalImageV214D) ||
+      (serverHasExplicitHumanReviewV216K3 && !localReviewWinsV213L && !manualReviewLockWinsV213M)
+    ))
     if (!shouldCopy) return scene
 
     const next = { ...scene }
@@ -1659,7 +2088,7 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
         next[key] = serverScene[key]
       }
     }
-    if ((localReviewWinsV213L || manualReviewLockWinsV213M) && hasServerReviewStatusV132T) {
+    if ((localReviewWinsV213L || manualReviewLockWinsV213M) && serverHasExplicitHumanReviewV216K3) {
       next.reviewAuthorityLocalWinsV213L = true
       next.review_authority_local_wins_v213l = true
       next.reviewTransientUiLockV213M = Boolean(manualReviewLockWinsV213M)
@@ -1744,7 +2173,12 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
         serverScene.first_image_asset_id || serverScene.firstImageAssetId ||
         ''
       )
-      if (imageAssetIdV214L && !next.video_source_image_asset_id && !next.videoSourceImageAssetId) {
+      if (
+        boardSceneMediaRevisionV216A(next) <= 0 &&
+        imageAssetIdV214L &&
+        !next.video_source_image_asset_id &&
+        !next.videoSourceImageAssetId
+      ) {
         next.video_source_image_asset_id = imageAssetIdV214L
         next.videoSourceImageAssetId = imageAssetIdV214L
       }
@@ -1814,7 +2248,7 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
       next.firstImageDeletedV129O = false
       next.last_image_deleted_v129o = false
       next.lastImageDeletedV129O = false
-      console.log('[BOARD SERVER VIDEO FRESH CONTRACT V213Z]', { sceneId: id, videoApiPath: next.video_api_path || next.videoApiPath || next.result_video_api_path || next.resultVideoApiPath || '', videoUrl: next.video_url || next.videoUrl || next.result_video_url || next.resultVideoUrl || '' })
+      if (false) console.log('[BOARD SERVER VIDEO FRESH CONTRACT V213Z]', { sceneId: id, videoApiPath: next.video_api_path || next.videoApiPath || next.result_video_api_path || next.resultVideoApiPath || '', videoUrl: next.video_url || next.videoUrl || next.result_video_url || next.resultVideoUrl || '' })
     }
 
     changed = true
@@ -1845,6 +2279,40 @@ function boardMergeServerVideoStateV131N(baseBoard = {}, serverBoard = {}) {
 
   if (!changed && boardVideoStateScoreV131N(serverBoard) <= boardVideoStateScoreV131N(baseBoard)) return baseBoard || {}
   return boardPreserveLivePromptFieldsV214K2(nextBoard, baseBoard, 'server_video_merge_v214k2')
+}
+
+// AVA_BOARD_STATUS_MERGE_NO_BYPASS_V216C2:
+// Every Board returned by /board/video-batch/status must pass through the same
+// V216A scene media authority. No status/orphan path may replace the live Board directly.
+function boardMergeStatusSnapshotV216C2(currentBoard = {}, statusBoard = {}, source = 'status') {
+  const liveBoard = currentBoard || {}
+  if (!statusBoard || !Array.isArray(statusBoard?.scenes)) return liveBoard
+  let merged = boardMergeServerVideoStateV131N(liveBoard, statusBoard)
+  if (Array.isArray(merged?.scenes)) {
+    let reviewClearChangedV216P = false
+    const reviewClearScenesV216P = merged.scenes.map((scene) => {
+      const nextSceneV216P = boardApplyHumanReviewClearV216P(scene, source)
+      if (nextSceneV216P !== scene) reviewClearChangedV216P = true
+      return nextSceneV216P
+    })
+    if (reviewClearChangedV216P) {
+      merged = { ...merged, scenes: reviewClearScenesV216P }
+    }
+  }
+  merged = boardPreserveLivePromptFieldsV214K2(
+    merged || liveBoard,
+    liveBoard,
+    `${source}_preserve_prompts_v216c2`
+  )
+  const selectedSceneId = asText(liveBoard?.selectedSceneId || liveBoard?.selected_scene_id)
+  if (selectedSceneId && asSceneArray(merged?.scenes).some((scene) => asText(scene?.id || scene?.scene_id || scene?.sceneId) === selectedSceneId)) {
+    merged = {
+      ...(merged || {}),
+      selectedSceneId,
+      selected_scene_id: selectedSceneId,
+    }
+  }
+  return merged || liveBoard
 }
 
 function boardPreserveSelectedSceneV213E(nextBoard = {}, currentBoard = {}, source = '') {
@@ -4373,6 +4841,16 @@ function boardSceneHasAnyLocalImageDataV213J(scene = {}) {
 }
 
 function boardImageUploadActiveStrictV213J(scene = {}, rawImageStatus = '', hasReadyImage = false) {
+  // AVA_BOARD_QUEUE_UI_CLEANUP_V216M:
+  // Delete/tombstone is not an upload. Empty photo must stay visually empty.
+  const deletedOrClearedV216M = Boolean(
+    scene?.image_deleted_v129o || scene?.imageDeletedV129O ||
+    scene?.first_image_deleted_v129o || scene?.firstImageDeletedV129O ||
+    scene?.image_delete_tombstone_v214z || scene?.imageDeleteTombstoneV214Z ||
+    scene?.image_reset_token || scene?.imageResetToken ||
+    (typeof boardImageDeleteTombstoneForSceneV214Z === 'function' && boardImageDeleteTombstoneForSceneV214Z(scene))
+  )
+  if (deletedOrClearedV216M) return false
   if (hasReadyImage) return false
   const raw = String(rawImageStatus || '').toLowerCase()
   const explicitUploadFlag = Boolean(
@@ -4391,7 +4869,74 @@ function boardImageUploadActiveStrictV213J(scene = {}, rawImageStatus = '', hasR
   )
 }
 
+// AVA_BOARD_BULK_PHOTO_UPLOAD_TRUTH_UI_V216D:
+// A browser data-url/name is only a preview. "промт+фото" and generation readiness
+// require a durable asset id or protected asset api path committed to the Board.
+function boardSceneHasDurableImageV216D(scene = {}) {
+  const refs = [
+    sceneMediaFieldValue(scene, 'image', 'apiPath'),
+    sceneMediaFieldValue(scene, 'first', 'apiPath'),
+    sceneMediaFieldValue(scene, 'last', 'apiPath'),
+    sceneMediaFieldValue(scene, 'image', 'url'),
+    sceneMediaFieldValue(scene, 'first', 'url'),
+    sceneMediaFieldValue(scene, 'last', 'url'),
+    scene?.image_api_path, scene?.imageApiPath,
+    scene?.first_frame_api_path, scene?.firstFrameApiPath,
+    scene?.first_image_api_path, scene?.firstImageApiPath,
+    scene?.start_image_api_path, scene?.startImageApiPath,
+    scene?.last_frame_api_path, scene?.lastFrameApiPath,
+    scene?.last_image_api_path, scene?.lastImageApiPath,
+    scene?.end_image_api_path, scene?.endImageApiPath,
+  ].map((value) => asText(value)).filter(Boolean)
+
+  const assetIds = [
+    scene?.image_asset_id, scene?.imageAssetId,
+    scene?.first_frame_asset_id, scene?.firstFrameAssetId,
+    scene?.first_image_asset_id, scene?.firstImageAssetId,
+    scene?.start_image_asset_id, scene?.startImageAssetId,
+    scene?.last_frame_asset_id, scene?.lastFrameAssetId,
+    scene?.last_image_asset_id, scene?.lastImageAssetId,
+    scene?.end_image_asset_id, scene?.endImageAssetId,
+  ].map((value) => asText(value)).filter(Boolean)
+
+  return Boolean(
+    assetIds.length ||
+    refs.some((value) => isProtectedBoardAssetApiPath(value) || /\/api\/assets\/asset_[^/]+\/file|\/assets\/asset_[^/]+\/file/i.test(value))
+  )
+}
+
+function boardSceneImageUploadStateV216D(scene = {}) {
+  const raw = String(
+    scene?.image_status || scene?.imageStatus ||
+    scene?.first_frame_status || scene?.firstFrameStatus ||
+    scene?.photo_status || scene?.photoStatus || ''
+  ).toLowerCase()
+  const explicit = Boolean(
+    scene?.image_uploading_v129q || scene?.imageUploadingV129Q ||
+    scene?.image_uploading || scene?.imageUploading ||
+    scene?.photo_uploading || scene?.photoUploading
+  )
+  const failed = raw.includes('error') || raw.includes('failed')
+  const pending = explicit || raw.includes('upload') || raw.includes('local_pending') || raw.includes('local_preview') || raw.includes('pending')
+  const committedReady = (
+    raw.includes('asset_ready') ||
+    raw.includes('server_frame_ready') ||
+    raw === 'ready'
+  )
+
+  // V216E: replacement stays "uploading" even if an old durable image ref
+  // temporarily survives in another alias during normalization.
+  if (failed) return 'error'
+  if (explicit) return 'uploading'
+  if (pending && !committedReady) return 'uploading'
+  return ''
+}
+
 function sceneStatus(scene) {
+  const imageUploadStateV216D = boardSceneImageUploadStateV216D(scene)
+  if (imageUploadStateV216D === 'uploading') return { label: 'фото грузится', className: 'isRunning isImageUploading' }
+  if (imageUploadStateV216D === 'error') return { label: 'ошибка фото', className: 'isError' }
+
   const reviewStatusPriorityV132D2 = boardSceneVideoReviewStatus(scene)
   const rawVideoStatusPriorityV132D2 = boardSceneVideoUiStatusV130F(scene)
   if (isVideoBusyStatus(rawVideoStatusPriorityV132D2)) {
@@ -4439,60 +4984,7 @@ function sceneStatus(scene) {
   ).toLowerCase()
 
   const hasReadyImage = Boolean(
-    sceneMediaFieldValue(scene, 'image', 'apiPath') ||
-    sceneMediaFieldValue(scene, 'first', 'apiPath') ||
-    sceneMediaFieldValue(scene, 'last', 'apiPath') ||
-    sceneMediaFieldValue(scene, 'image', 'url') ||
-    sceneMediaFieldValue(scene, 'first', 'url') ||
-    sceneMediaFieldValue(scene, 'last', 'url') ||
-    scene?.image_api_path ||
-    scene?.imageApiPath ||
-    scene?.image_asset_id ||
-    scene?.imageAssetId ||
-    scene?.image_url ||
-    scene?.imageUrl ||
-    scene?.first_frame_api_path ||
-    scene?.firstFrameApiPath ||
-    scene?.first_frame_asset_id ||
-    scene?.firstFrameAssetId ||
-    scene?.first_frame_url ||
-    scene?.firstFrameUrl ||
-    scene?.first_image_api_path ||
-    scene?.firstImageApiPath ||
-    scene?.first_image_asset_id ||
-    scene?.firstImageAssetId ||
-    scene?.first_image_url ||
-    scene?.firstImageUrl ||
-    scene?.start_image_api_path ||
-    scene?.startImageApiPath ||
-    scene?.start_image_asset_id ||
-    scene?.startImageAssetId ||
-    scene?.start_image_url ||
-    scene?.startImageUrl ||
-    scene?.last_frame_api_path ||
-    scene?.lastFrameApiPath ||
-    scene?.last_frame_asset_id ||
-    scene?.lastFrameAssetId ||
-    scene?.last_frame_url ||
-    scene?.lastFrameUrl ||
-    scene?.last_image_api_path ||
-    scene?.lastImageApiPath ||
-    scene?.last_image_asset_id ||
-    scene?.lastImageAssetId ||
-    scene?.last_image_url ||
-    scene?.lastImageUrl ||
-    scene?.end_image_api_path ||
-    scene?.endImageApiPath ||
-    scene?.end_image_asset_id ||
-    scene?.endImageAssetId ||
-    scene?.end_image_url ||
-    scene?.endImageUrl ||
-    scene?.image_data_url ||
-    scene?.imageDataUrl ||
-    scene?.start_image_data_url ||
-    scene?.startImageDataUrl ||
-    scene?.end_image_data_url ||
-    scene?.endImageDataUrl ||
+    boardSceneHasDurableImageV216D(scene) ||
     rawImageStatusV203I.includes('asset_ready') ||
     rawImageStatusV203I.includes('server_frame_ready') ||
     rawImageStatusV203I === 'ready'
@@ -4577,6 +5069,7 @@ function videoButtonState(scene) {
 //   bad           -> red mark, should be regenerated by "Сгенерировать все"
 //   needs_review  -> orange mark after regenerating a bad video; user should watch it again
 function boardSceneVideoReviewStatus(scene = {}) {
+  if (boardReviewStaleWithoutVideoV216N(scene)) return ''
   const manualLockV213M = boardManualReviewLockForSceneV213M(scene)
   if (manualLockV213M.active) return manualLockV213M.status || ''
   // AVA_BOARD_REVIEW_READY_PLUS_LOOK_V132F:
@@ -4772,6 +5265,17 @@ function boardCompletedVideoNeedsReviewPatchV214G(reason = 'server_batch_video_g
   }
 }
 
+function boardReviewStatusAllowedForCurrentMediaV216C2(scene = {}) {
+  if (!scene) return false
+  if (typeof boardSceneHasCurrentVideoResultV129P === 'function') {
+    return Boolean(boardSceneHasCurrentVideoResultV129P(scene))
+  }
+  if (typeof boardVideoMatchesCurrentImageV129P === 'function') {
+    return Boolean(boardVideoMatchesCurrentImageV129P(scene))
+  }
+  return Boolean(scene?.video_asset_id || scene?.videoAssetId || scene?.video_api_path || scene?.videoApiPath)
+}
+
 function boardApplyCompletedBatchPosmotriStatusV214G(boardData = {}, batch = {}) {
   const completedIds = new Set(asArray(batch?.completedSceneIds || batch?.completed_scene_ids).map((id) => asText(id)).filter(Boolean))
   if (!completedIds.size || !Array.isArray(boardData?.scenes)) return boardData
@@ -4779,10 +5283,17 @@ function boardApplyCompletedBatchPosmotriStatusV214G(boardData = {}, batch = {})
   const scenes = boardData.scenes.map((scene) => {
     const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || '')
     if (!sceneId || !completedIds.has(sceneId)) return scene
-    const hasVideo = Boolean(
-      (typeof boardSceneHasCurrentVideoResultV129P === 'function' && boardSceneHasCurrentVideoResultV129P(scene)) ||
-      (typeof boardSceneRawVideoRefsV129P === 'function' && boardSceneRawVideoRefsV129P(scene))
+
+    const humanClearedSceneV216P = boardApplyHumanReviewClearV216P(
+      scene,
+      'completed_batch_replay_v216p'
     )
+    if (humanClearedSceneV216P !== scene) {
+      changed = true
+      scene = humanClearedSceneV216P
+    }
+
+    const hasVideo = boardReviewStatusAllowedForCurrentMediaV216C2(scene)
     if (!hasVideo) return scene
     const reviewStatus = typeof boardSceneVideoReviewStatus === 'function' ? boardSceneVideoReviewStatus(scene) : String(scene?.video_review_status || scene?.videoReviewStatus || scene?.review_status || scene?.reviewStatus || '').toLowerCase()
     if (reviewStatus === 'needs_review') return scene
@@ -4798,6 +5309,37 @@ function boardApplyCompletedBatchPosmotriStatusV214G(boardData = {}, batch = {})
       video_queue_position: 0,
       videoQueuePosition: 0,
     }
+
+    // AVA_BOARD_TELEGRAM_REVIEW_AUTHORITY_V216K3:
+    // Completed batch is allowed to create "посмотри" only before a human decision.
+    // Telegram/manual OK or bad must never be overwritten on polling/F5.
+    const reviewStatusBeforeReplayV216K3 = boardReviewStatusNormV213L(scene)
+    const reviewReasonBeforeReplayV216K3 = String(
+      scene?.video_review_reason || scene?.videoReviewReason ||
+      scene?.review_reason || scene?.reviewReason || ''
+    ).trim().toLowerCase()
+    const reviewClearReasonBeforeReplayV216K3 = String(
+      scene?.video_review_clear_reason || scene?.videoReviewClearReason || ''
+    ).trim().toLowerCase()
+    const hasHumanReviewBeforeReplayV216K3 = Boolean(
+      reviewStatusBeforeReplayV216K3 === 'bad' ||
+      reviewReasonBeforeReplayV216K3.startsWith('telegram_review_') ||
+      reviewClearReasonBeforeReplayV216K3.startsWith('telegram_review_') ||
+      reviewReasonBeforeReplayV216K3.startsWith('manual_') ||
+      reviewClearReasonBeforeReplayV216K3.startsWith('manual_')
+    )
+
+    if (hasHumanReviewBeforeReplayV216K3) {
+      try {
+        console.log('[BOARD COMPLETED BATCH HUMAN REVIEW PRESERVED V216K3]', {
+          sceneId,
+          status: reviewStatusBeforeReplayV216K3,
+          reason: reviewReasonBeforeReplayV216K3 || reviewClearReasonBeforeReplayV216K3,
+        })
+      } catch (_) {}
+      return scene
+    }
+
     changed = true
     try { console.log('[BOARD COMPLETED BATCH POSMOTRI STATUS V214G]', { sceneId, reason: 'server_batch_completed_scene_v214g' }) } catch (_) {}
     return next
@@ -4818,7 +5360,9 @@ function boardVideoWasBadBeforeRegenerate(scene = {}) {
   return Boolean(scene?.video_review_regenerate_from_bad || scene?.videoReviewRegenerateFromBad)
 }
 
-function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = false, busyLabel = '', busyHint = '', statusLabel = '', statusClassName = '' }) {
+function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = false, busyLabel = '', busyHint = '', statusLabel = '', statusClassName = '',
+  disabled = false,
+}) {
   const imageRefV200W = useRef(null)
   const [imageLoading, setImageLoading] = useState(Boolean(value))
   const [imageFailed, setImageFailed] = useState(false)
@@ -4958,11 +5502,28 @@ function ImageSlot({ title, subtitle, value, name, onSelect, onClear, busy = fal
       ) : null}
 
       <div className="avaBoardSlotActions">
-        <label className="avaBoardSmallButton" title="Ручная замена фото в этой сцене — имя файла может быть любым">
+        <label
+          className={`avaBoardSmallButton${disabled ? ' is-disabled' : ''}`}
+          title={disabled ? 'Фото заблокировано, пока сцена находится в очереди или генерируется' : 'Ручная замена фото в этой сцене — имя файла может быть любым'}
+          aria-disabled={disabled}
+          style={disabled ? { opacity: 0.55, cursor: 'not-allowed', pointerEvents: 'none' } : undefined}
+        >
           <UploadCloud size={14} /> Загрузить
-          <input type="file" accept="image/png,image/jpeg,image/webp,image/*" onChange={onSelect} />
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/*"
+            onChange={disabled ? undefined : onSelect}
+            disabled={disabled}
+          />
         </label>
-        <button type="button" onClick={onClear}>Удалить</button>
+        <button
+          type="button"
+          onClick={disabled ? undefined : onClear}
+          disabled={disabled}
+          title={disabled ? 'Нельзя удалить фото, пока сцена находится в очереди или генерируется' : 'Удалить фото'}
+        >
+          Удалить
+        </button>
       </div>
     </div>
   )
@@ -6463,6 +7024,14 @@ function sceneVideoActionState(scene) {
   // causing runtime ReferenceError after page load.
   const rawVideoStatus = String(scene?.video_status || scene?.videoStatus || '').toLowerCase()
   const videoStatus = String(boardSceneVideoUiStatusV130F(scene) || rawVideoStatus || '').toLowerCase()
+  // AVA_BOARD_UNIFIED_QUEUE_BUTTON_LOCK_V216I:
+  // The preview already follows the shared runtime overlay. The action button must
+  // follow the same authority instead of waiting for the persisted scene snapshot.
+  const sceneIdV216I = asText(scene?.id || scene?.scene_id || scene?.sceneId || '')
+  const localRuntimeMapV216I = (badRegenRuntimeStatusRef && badRegenRuntimeStatusRef.current) || {}
+  const globalRuntimeMapV216I = (typeof window !== 'undefined' && window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__) || {}
+  const runtimeEntryV216I = localRuntimeMapV216I?.[sceneIdV216I] || globalRuntimeMapV216I?.[sceneIdV216I] || {}
+  const runtimeVideoStatusV216I = String(runtimeEntryV216I?.status || '').toLowerCase()
   const hasVideo = boardSceneHasCurrentVideoResultV129P(scene)
   const hasServerJob = Boolean(
     scene?.video_job_id || scene?.videoJobId ||
@@ -6476,10 +7045,22 @@ function sceneVideoActionState(scene) {
   // must not keep the button disabled after backend reload or after an interrupted batch.
   const isSubmittingRawV150A = submittingStatuses.includes(rawVideoStatus) || submittingStatuses.includes(videoStatus)
   const isRunningRawV150A = activeStatuses.includes(rawVideoStatus) || activeStatuses.includes(videoStatus) || rawVideoStatus === 'queued'
-  const isSubmitting = !hasInputProblems && isSubmittingRawV150A && (hasServerJob || boardVideoActiveStampFreshV150A(scene))
-  const isRunning = !hasInputProblems && isRunningRawV150A && hasServerJob
+  const runtimeSubmittingV216I = submittingStatuses.includes(runtimeVideoStatusV216I)
+  const runtimeRunningV216I = activeStatuses.includes(runtimeVideoStatusV216I) || runtimeVideoStatusV216I === 'running' || runtimeVideoStatusV216I === 'processing'
+  const runtimeQueuedV216I = runtimeVideoStatusV216I === 'queued' || runtimeVideoStatusV216I === 'waiting'
+  const isSubmitting = !hasInputProblems && (
+    (isSubmittingRawV150A && (hasServerJob || boardVideoActiveStampFreshV150A(scene))) ||
+    runtimeSubmittingV216I
+  )
+  const isRunning = !hasInputProblems && (
+    (isRunningRawV150A && hasServerJob) ||
+    runtimeRunningV216I
+  )
   const isActiveServerJob = isSubmitting || isRunning
-  const isLocalQueued = !hasInputProblems && rawVideoStatus === 'queued' && !hasServerJob && boardVideoActiveStampFreshV150A(scene)
+  const isLocalQueued = !hasInputProblems && (
+    (rawVideoStatus === 'queued' && !hasServerJob && boardVideoActiveStampFreshV150A(scene)) ||
+    runtimeQueuedV216I
+  )
   const isBlocked = rawVideoStatus === 'blocked_missing_comfy_base_url' || videoStatus === 'blocked_missing_comfy_base_url'
   const isError = rawVideoStatus === 'error' || rawVideoStatus === 'failed' || videoStatus === 'error' || videoStatus === 'failed'
   const actionBusyLabelV132S = isSubmitting ? 'Отправляется' : 'Видео делается'
@@ -6944,10 +7525,70 @@ function sceneVideoActionState(scene) {
     const windowFlagV209Q = typeof window !== 'undefined' && Boolean(window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__)
     const stateFlagV209Q = Boolean(autoVideoQueueState?.serverBatchActive)
     const runtimeMapV209Q = (badRegenRuntimeStatusRef && badRegenRuntimeStatusRef.current) || {}
-    const runtimeFlagV209Q = Object.values(runtimeMapV209Q).some((entry) => {
+    const sourceScenesByIdV216G = new Map(
+      asArray(source?.scenes).map((scene) => [asText(scene?.id || scene?.scene_id), scene])
+    )
+    const nowV216G = Date.now()
+    const runtimeFreshMsV216G = 120000
+    const staleRuntimeIdsV216G = []
+    const runtimeFlagV209Q = Object.entries(runtimeMapV209Q).some(([sceneIdRawV216G, entry]) => {
+      const sceneIdV216G = asText(sceneIdRawV216G || entry?.sceneId || entry?.scene_id || '')
       const runtimeStatus = String(entry?.status || '').toLowerCase()
-      return activeStatusesV209Q.has(runtimeStatus)
+      if (!activeStatusesV209Q.has(runtimeStatus)) return false
+
+      const updatedAtV216G = Date.parse(
+        entry?.updatedAt || entry?.updated_at ||
+        entry?.startedAt || entry?.started_at || ''
+      ) || 0
+      const runtimeFreshV216G = Boolean(updatedAtV216G && (nowV216G - updatedAtV216G) <= runtimeFreshMsV216G)
+
+      const sceneV216G = sourceScenesByIdV216G.get(sceneIdV216G) || null
+      const sceneStatusV216G = String(sceneV216G?.video_status || sceneV216G?.videoStatus || '').toLowerCase()
+      const sceneHasLivePointerV216G = Boolean(
+        activeStatusesV209Q.has(sceneStatusV216G) && (
+          sceneV216G?.video_job_id || sceneV216G?.videoJobId ||
+          sceneV216G?.video_status_endpoint || sceneV216G?.videoStatusEndpoint ||
+          sceneV216G?.video_prompt_id || sceneV216G?.videoPromptId
+        )
+      )
+
+      if (runtimeFreshV216G || sceneHasLivePointerV216G) return true
+      if (sceneIdV216G) staleRuntimeIdsV216G.push(sceneIdV216G)
+      return false
     })
+
+    if (staleRuntimeIdsV216G.length) {
+      const uniqueStaleIdsV216G = Array.from(new Set(staleRuntimeIdsV216G))
+      const nextRuntimeMapV216G = { ...(badRegenRuntimeStatusRef.current || {}) }
+      uniqueStaleIdsV216G.forEach((sceneId) => { delete nextRuntimeMapV216G[sceneId] })
+      badRegenRuntimeStatusRef.current = nextRuntimeMapV216G
+      setBadRegenRuntimeStatus(nextRuntimeMapV216G)
+
+      try {
+        if (typeof window !== 'undefined') {
+          const globalMapV216G = { ...(window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}) }
+          uniqueStaleIdsV216G.forEach((sceneId) => { delete globalMapV216G[sceneId] })
+          window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ = globalMapV216G
+          window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = Object.values(globalMapV216G).some((entry) => {
+            const runtimeStatus = String(entry?.status || '').toLowerCase()
+            const updatedAt = Date.parse(entry?.updatedAt || entry?.updated_at || '') || 0
+            return activeStatusesV209Q.has(runtimeStatus) && Boolean(updatedAt && (Date.now() - updatedAt) <= runtimeFreshMsV216G)
+          })
+          setServerBatchRuntimeTickV209R((value) => value + 1)
+        }
+      } catch (error) {
+        console.warn('[BOARD STALE SERVER BATCH GUARD CLEAR V216G] global clear failed', error)
+      }
+
+      setAutoVideoQueueState((current) => current?.serverBatchActive
+        ? { ...(current || {}), active: false, serverBatchActive: false, queued: 0 }
+        : current
+      )
+      console.warn('[BOARD STALE SERVER BATCH GUARD CLEARED V216G]', {
+        sceneIds: uniqueStaleIdsV216G,
+        batchStatus: status,
+      })
+    }
 
     if (terminalStatusesV209Q.has(status)) {
       // AVA_BOARD_SERVER_BATCH_TERMINAL_UNLOCK_V213J:
@@ -7042,79 +7683,121 @@ function sceneVideoActionState(scene) {
   }
 
   function requestSceneVideoQueue() {
-    // AVA_BOARD_SERVER_BATCH_BLOCK_LEGACY_FRONTEND_V131M: manual scene start is blocked while backend server batch is active.
-    if (boardServerBatchIsActiveV131M()) {
-      setStatus('Серверная очередь активна: локальный запуск сцены заблокирован.')
-      console.log('[BOARD SERVER BATCH FRONTEND GUARD V131M] block requestSceneVideoQueue')
+    const scene = selectedScene
+    if (!scene) return
+
+    const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || '')
+    if (!sceneId) {
+      setStatus('Не найден sceneId для запуска видео.')
       return
     }
 
-    if (!selectedScene) return
-    if (isBoardSourceCutSceneV208L(selectedScene)) {
-      setStatus(`Сцена ${selectedScene.id || selectedScene.scene_id} — видео нарезка: её нужно заменить в Video Node, Board генерацию не запускает.`)
+    if (isBoardSourceCutSceneV208L(scene)) {
+      setStatus(`Сцена ${sceneId} — video/source_cut: её нужно заменить в Video Node.`)
       return
     }
 
-    const selectedStatus = String(selectedScene.video_status || '').toLowerCase()
-    const selectedHasServerJob = Boolean(selectedScene.video_job_id || selectedScene.video_status_endpoint)
-    const selectedIsLocalQueued = (selectedStatus === 'queued' && !selectedHasServerJob) || localVideoQueueRef.current.includes(selectedScene.id)
-    const selectedIsBusy = isBoardVideoActiveWorkerStatus(selectedScene) || (selectedStatus === 'queued' && selectedHasServerJob) // V200A stale no-job status does not block manual queue
-
-    const selectedForceBadRegenV156A = boardBadReviewForceRegenerateAllowedV156A(selectedScene)
-    if ((selectedIsBusy || selectedIsLocalQueued) && !selectedForceBadRegenV156A) {
-      setStatus(selectedIsLocalQueued ? `Сцена ${selectedScene.id} уже в очереди` : `Сцена ${selectedScene.id} уже генерируется`)
-      return
-    }
-
-    localVideoQueueRef.current = localVideoQueueRef.current.filter((sceneId) => sceneId !== selectedScene.id)
-    if (selectedForceBadRegenV156A) clearBadRegenRuntimeStatusesV136I([selectedScene.id])
-
-    const inputProblems = sceneVideoInputProblems(selectedScene)
-    if (inputProblems.length) {
-      showSceneVideoInputError(selectedScene, inputProblems)
-      return
-    }
-
-    const currentBoard = boardRef.current
-    const activeScene = activeBoardVideoScene(currentBoard)
-    const sceneId = selectedScene.id
-    const inFlightSceneId = boardVideoQueueStartInFlight()
-    const shouldQueueBehindActive = Boolean(
-      (activeScene && activeScene.id !== sceneId) ||
-      (inFlightSceneId && inFlightSceneId !== sceneId) ||
-      activeVideoPollsRef.current?.size
+    // AVA_BOARD_DELETE_GHOST_AND_OLD_BATCH_RUNTIME_FIX_V216L:
+    // Use the latest canonical Board refs. A cached/runtime preview may still be
+    // visible for a moment but cannot be submitted as a server generation input.
+    const canonicalBoardV216L = boardRef.current || board || {}
+    const canonicalSceneV216L = asSceneArray(canonicalBoardV216L.scenes).find((item) => (
+      asText(item?.id || item?.scene_id || item?.sceneId || '') === sceneId
+    )) || {}
+    const canonicalRouteV216L = String(
+      canonicalSceneV216L?.route || canonicalSceneV216L?.model || scene?.route || scene?.model || ''
+    ).trim().toLowerCase()
+    const canonicalMainImageRefV216L = asText(
+      sceneMediaFieldValue(canonicalSceneV216L, 'image', 'apiPath') ||
+      sceneMediaFieldValue(canonicalSceneV216L, 'first', 'apiPath') ||
+      canonicalSceneV216L?.image_asset_id || canonicalSceneV216L?.imageAssetId ||
+      canonicalSceneV216L?.first_image_asset_id || canonicalSceneV216L?.firstImageAssetId ||
+      canonicalSceneV216L?.start_image_asset_id || canonicalSceneV216L?.startImageAssetId ||
+      ''
     )
+    const canonicalLastImageRefV216L = asText(
+      sceneMediaFieldValue(canonicalSceneV216L, 'last', 'apiPath') ||
+      canonicalSceneV216L?.last_image_asset_id || canonicalSceneV216L?.lastImageAssetId ||
+      canonicalSceneV216L?.end_image_asset_id || canonicalSceneV216L?.endImageAssetId ||
+      ''
+    )
+    const canonicalImageRequiredV216L = ['i2v', 'ia2v', 'first_last'].includes(canonicalRouteV216L)
 
-    if (shouldQueueBehindActive) {
-      if (!localVideoQueueRef.current.includes(sceneId)) {
-        localVideoQueueRef.current.push(sceneId)
-        syncQueuedSceneBadges()
-      }
-      const queuedPosition = localVideoQueueRef.current.indexOf(sceneId) + 1
-      updateSceneAndSave(sceneId, boardVideoQueuedRegenerateResetPatch(queuedPosition, 'video_queued_for_regenerate'))
-      setStatus(`Сцена ${sceneId} поставлена в очередь`)
-      pushBoardToast({ type: 'info', title: 'Сцена в очереди', message: `Сцена ${sceneId} ждёт генерацию`, sceneId })
+    if (canonicalImageRequiredV216L && !canonicalMainImageRefV216L) {
+      setStatus(`Сцена ${sceneId}: фото удалено или ещё не сохранено. Сначала загрузите фото.`)
+      console.warn('[BOARD MANUAL VIDEO BLOCKED NO CANONICAL IMAGE V216L]', {
+        sceneId,
+        route: canonicalRouteV216L,
+      })
+      return
+    }
+    if (canonicalRouteV216L === 'first_last' && !canonicalLastImageRefV216L) {
+      setStatus(`Сцена ${sceneId}: для first_last отсутствует последний кадр.`)
+      console.warn('[BOARD MANUAL VIDEO BLOCKED NO LAST IMAGE V216L]', { sceneId })
       return
     }
 
-    if (!boardBeginVideoQueueStart(sceneId)) {
-      if (!localVideoQueueRef.current.includes(sceneId)) {
-        localVideoQueueRef.current.push(sceneId)
-        syncQueuedSceneBadges()
-      }
-      const queuedPosition = localVideoQueueRef.current.indexOf(sceneId) + 1
-      updateSceneAndSave(sceneId, boardVideoQueuedRegenerateResetPatch(queuedPosition, 'video_queued_for_regenerate'))
-      setStatus(`Сцена ${sceneId} поставлена в очередь`)
+    // AVA_BOARD_LIVE_QUEUE_AUTHORITY_V216J:
+    // Persisted waitingSceneIds can be stale after Stop/backend restart.
+    // Only a fresh live runtime entry may block a duplicate manual click.
+    const localRuntimeMapV216J = (badRegenRuntimeStatusRef && badRegenRuntimeStatusRef.current) || {}
+    const globalRuntimeMapV216J = (typeof window !== 'undefined' && window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__) || {}
+    const runtimeEntryV216J = localRuntimeMapV216J?.[sceneId] || globalRuntimeMapV216J?.[sceneId] || {}
+    const runtimeStatusV216J = String(runtimeEntryV216J?.status || '').toLowerCase()
+    const runtimeUpdatedMsV216J = Date.parse(runtimeEntryV216J?.updatedAt || runtimeEntryV216J?.updated_at || '') || 0
+    const runtimeFreshV216J = Boolean(runtimeUpdatedMsV216J && (Date.now() - runtimeUpdatedMsV216J) <= 120000)
+    const runtimeActiveV216J = new Set([
+      'starting', 'preparing', 'submitting', 'queued', 'waiting', 'running', 'processing'
+    ]).has(runtimeStatusV216J)
+
+    if (runtimeActiveV216J && runtimeFreshV216J) {
+      setStatus(`Сцена ${sceneId} уже находится в общей очереди.`)
       return
     }
 
-    Promise.resolve(markVideoPlanned(selectedScene)).finally(() => {
-      window.setTimeout(() => {
-        boardReleaseVideoQueueStart(sceneId)
-        if (!boardHasActiveVideoOrStartLock(boardRef.current)) {
-          window.setTimeout(processNextQueuedBoardVideo, 350)
+    const inputProblemsV216H = boardSceneAutoVideoProblems(scene)
+    if (inputProblemsV216H.length) {
+      showSceneVideoInputError(scene, inputProblemsV216H)
+      return
+    }
+
+    const nowIsoV216J = new Date().toISOString()
+    const nextRuntimeMapV216J = {
+      ...((badRegenRuntimeStatusRef && badRegenRuntimeStatusRef.current) || {}),
+      [sceneId]: {
+        ...(runtimeEntryV216J || {}),
+        sceneId,
+        scene_id: sceneId,
+        status: 'submitting',
+        source: 'manual_unified_enqueue_v216j',
+        updatedAt: nowIsoV216J,
+        updated_at: nowIsoV216J,
+      },
+    }
+    badRegenRuntimeStatusRef.current = nextRuntimeMapV216J
+    setBadRegenRuntimeStatus(nextRuntimeMapV216J)
+    try {
+      if (typeof window !== 'undefined') {
+        window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ = {
+          ...(window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}),
+          [sceneId]: nextRuntimeMapV216J[sceneId],
         }
-      }, 1600)
+        window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = true
+        setServerBatchRuntimeTickV209R((value) => value + 1)
+      }
+    } catch (error) {
+      console.warn('[BOARD MANUAL RUNTIME PIN V216J] failed', error)
+    }
+
+    setStatus(`Добавляем ${sceneId} в общую очередь…`)
+    console.log('[BOARD UNIFIED MANUAL ENQUEUE V216H]', { sceneId })
+    console.log('[BOARD MANUAL RUNTIME PIN V216J]', { sceneId, status: 'submitting' })
+
+    void requestAllScenesVideoQueue(null, {
+      explicitSceneIds: [sceneId],
+      forceRegenerateSceneIds: [sceneId],
+      source: 'board_manual_unified_queue_v216h',
+      manual: true,
     })
   }
 
@@ -7159,6 +7842,9 @@ function sceneVideoActionState(scene) {
   function boardSceneAutoVideoProblems(scene) {
     if (isBoardSourceCutSceneV208L(scene)) return []
     let problems = [...sceneVideoInputProblems(scene)]
+    const imageUploadStateV216D = boardSceneImageUploadStateV216D(scene)
+    if (imageUploadStateV216D === 'uploading') problems.push('фото ещё загружается')
+    if (imageUploadStateV216D === 'error') problems.push('ошибка загрузки фото')
     if (boardCanServerAutoSliceAudioForSceneV147A(scene)) {
       problems = problems.filter((problem) => !/audio\s*slice|audio[_\s-]*slice|лип-?sync/i.test(String(problem || '')))
     }
@@ -7180,7 +7866,50 @@ function sceneVideoActionState(scene) {
 
   function makeAllScenesVideoQueuePlan() {
     const currentBoard = boardRef.current || board
-    const scenes = asSceneArray(currentBoard?.scenes)
+
+    // AVA_BOARD_MANUAL_REGENERATE_NOT_BAD_V216O:
+    // The mass plan must never include a scene that is already submitting,
+    // queued, waiting, running or processing in the one shared server queue.
+    const sourceScenesV216O = asSceneArray(currentBoard?.scenes)
+    const localRuntimeV216O = (badRegenRuntimeStatusRef && badRegenRuntimeStatusRef.current) || {}
+    const globalRuntimeV216O = (typeof window !== 'undefined' && window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__) || {}
+    const massBusyStatusesV216O = new Set([
+      'starting', 'preparing', 'submitting', 'queued', 'waiting', 'running', 'processing'
+    ])
+    const massBusyIdsV216O = new Set()
+
+    ;[localRuntimeV216O, globalRuntimeV216O].forEach((runtimeMapV216O) => {
+      Object.entries(runtimeMapV216O || {}).forEach(([runtimeSceneIdV216O, runtimeEntryV216O]) => {
+        const runtimeStatusV216O = String(runtimeEntryV216O?.status || '').toLowerCase()
+        if (massBusyStatusesV216O.has(runtimeStatusV216O)) {
+          massBusyIdsV216O.add(asText(runtimeSceneIdV216O))
+        }
+      })
+    })
+
+    const scenes = sourceScenesV216O.filter((sceneV216O) => {
+      const sceneIdV216O = asText(sceneV216O?.id || sceneV216O?.scene_id || sceneV216O?.sceneId || '')
+      const sceneStatusV216O = String(
+        typeof boardSceneVideoUiStatusV130F === 'function'
+          ? boardSceneVideoUiStatusV130F(sceneV216O)
+          : (sceneV216O?.video_status || sceneV216O?.videoStatus || '')
+      ).toLowerCase()
+      const sceneHasJobV216O = Boolean(
+        sceneV216O?.video_job_id || sceneV216O?.videoJobId ||
+        sceneV216O?.video_status_endpoint || sceneV216O?.videoStatusEndpoint ||
+        sceneV216O?.job_id || sceneV216O?.jobId
+      )
+      const excludedV216O = massBusyIdsV216O.has(sceneIdV216O) ||
+        (sceneHasJobV216O && massBusyStatusesV216O.has(sceneStatusV216O))
+      if (excludedV216O) {
+        console.log('[BOARD MASS PLAN SKIPS ACTIVE MANUAL SCENE V216O]', {
+          sceneId: sceneIdV216O,
+          status: sceneStatusV216O,
+        })
+      }
+      return !excludedV216O
+    })
+
     const queuedIds = new Set(localVideoQueueRef.current || [])
     const ready = []
     const regenerate = []
@@ -7252,6 +7981,17 @@ function sceneVideoActionState(scene) {
   function openAllScenesVideoQueueConfirm(event = null) {
     event?.preventDefault?.()
     event?.stopPropagation?.()
+
+    if (bulkStillsImporting) {
+      setStatus('Подожди: фотографии ещё загружаются и сохраняются в проект.')
+      pushBoardToast({
+        type: 'warning',
+        title: 'Фото ещё загружаются',
+        message: 'Сгенерировать все станет доступно после завершения импорта кадров.',
+        dedupeKey: 'board:bulk_photo_upload_active:v216d',
+      })
+      return
+    }
 
     // AVA_BOARD_WORKSPACE_SERVER_QUEUE_GUARD_V193B:
     // "Сгенерировать все" is server-owned and only works in a Project Board.
@@ -7354,7 +8094,7 @@ function sceneVideoActionState(scene) {
     window.setTimeout(() => requestAllScenesVideoQueue(), 0)
   }
 
-  async function requestAllScenesVideoQueue(event = null) {
+  async function requestAllScenesVideoQueue(event = null, optionsV216H = {}) {
     // AVA_BOARD_SERVER_BATCH_ENSURE_IMAGE_ASSETS_V131C:
     // Server-owned batch cannot use browser-only previews. Before calling the backend batch
     // endpoint, make sure every visible start image has a durable /assets/.../file reference.
@@ -7363,6 +8103,21 @@ function sceneVideoActionState(scene) {
 
     const currentBoard = boardRef.current || board
     let scenes = asSceneArray(currentBoard?.scenes)
+    const explicitSceneIdsV216H = new Set(
+      asArray(optionsV216H?.explicitSceneIds || optionsV216H?.sceneIds || optionsV216H?.scene_ids)
+        .map((id) => asText(id))
+        .filter(Boolean)
+    )
+    const explicitForceIdsV216H = new Set(
+      asArray(optionsV216H?.forceRegenerateSceneIds || optionsV216H?.force_regenerate_scene_ids)
+        .map((id) => asText(id))
+        .filter(Boolean)
+    )
+    const manualRequestV216O = Boolean(optionsV216H?.manual)
+    const manualForceIdSetV216O = new Set(
+      manualRequestV216O ? Array.from(explicitForceIdsV216H) : []
+    )
+    const queueSourceV216H = asText(optionsV216H?.source || 'board_page_server_batch_v131e_autoslice_v147a')
 
     // AVA_BOARD_SERVER_BATCH_IDENTITY_FALLBACK_V131D:
     // Some local BoardPage versions do not have boardSceneIdentityV127K.
@@ -7396,8 +8151,17 @@ function sceneVideoActionState(scene) {
     // Only after projectId is confirmed, mark the server queue as active.
     if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = true
     localVideoQueueRef.current = []
-    const confirmedForceIdSetV213K = new Set((autoVideoQueueConfirmedForceIdsRefV213K.current || []).map((id) => asText(id)).filter(Boolean))
-    const confirmedPlannedIdSetV213K = new Set((autoVideoQueueLastPlannedIdsRefV213K.current || []).map((id) => asText(id)).filter(Boolean))
+    const confirmedForceIdSetV213K = new Set([
+      ...(manualRequestV216O ? [] : (autoVideoQueueConfirmedForceIdsRefV213K.current || [])),
+      ...Array.from(explicitForceIdsV216H),
+    ].map((id) => asText(id)).filter(Boolean))
+    const confirmedPlannedIdSetV213K = new Set([
+      ...(manualRequestV216O ? [] : (autoVideoQueueLastPlannedIdsRefV213K.current || [])),
+      ...Array.from(explicitSceneIdsV216H),
+    ].map((id) => asText(id)).filter(Boolean))
+    const confirmedBadForceIdSetV216O = new Set(
+      Array.from(confirmedForceIdSetV213K).filter((id) => !manualForceIdSetV216O.has(id))
+    )
 
     // AVA_BOARD_SERVER_BATCH_EARLY_SUBMITTING_RUNTIME_V209V:
     // Paint runtime-only status immediately at the beginning of server-batch start,
@@ -7405,7 +8169,28 @@ function sceneVideoActionState(scene) {
     // of bad/ready scenes too: the old video/review may stay visible, but the card must
     // say "отправляется" right away instead of falling back to "фото/промт/плохое".
     try {
-      const immediatePlanV209V = makeAllScenesVideoQueuePlan()
+      const immediatePlanV209V = explicitSceneIdsV216H.size
+        ? (() => {
+            const explicitValidV216H = scenes
+              .filter((scene) => explicitSceneIdsV216H.has(serverBatchSceneIdV131D(scene)))
+              .filter((scene) => !isBoardSourceCutSceneV208L(scene))
+              .filter((scene) => boardSceneAutoVideoProblems(scene).length === 0)
+              .map((scene) => ({
+                sceneId: serverBatchSceneIdV131D(scene),
+                route: scene?.route || '',
+                regenerate: true,
+                force: true,
+                manualRegenerateV216O: manualRequestV216O,
+                forceBadRegenerate: !manualRequestV216O,
+              }))
+            return {
+              valid: explicitValidV216H,
+              validCount: explicitValidV216H.length,
+              readyCount: 0,
+              invalidCount: Math.max(0, explicitSceneIdsV216H.size - explicitValidV216H.length),
+            }
+          })()
+        : makeAllScenesVideoQueuePlan()
       const immediateItemsV209V = Array.isArray(immediatePlanV209V?.valid) ? immediatePlanV209V.valid : []
       const immediateIdsV209V = immediateItemsV209V
         .map((item) => asText(item?.sceneId || item?.scene_id || item?.id || ''))
@@ -7423,10 +8208,12 @@ function sceneVideoActionState(scene) {
             sceneId,
             status: 'submitting',
             queuePosition: index + 1,
-            fromBad: Boolean(
-              item?.regenerate || item?.force || item?.forceBadRegenerate || item?.forceBadRegenerateV157A ||
-              liveReviewV209W === 'bad' || liveReviewV209W === 'needs_review' || liveHasVideoV209W
-            ),
+            fromBad: manualRequestV216O
+              ? Boolean(liveReviewV209W === 'bad' || liveReviewV209W === 'needs_review')
+              : Boolean(
+                  item?.regenerate || item?.force || item?.forceBadRegenerate || item?.forceBadRegenerateV157A ||
+                  liveReviewV209W === 'bad' || liveReviewV209W === 'needs_review' || liveHasVideoV209W
+                ),
             startedAt: nowV209V,
             source: 'server_batch_request_early_submitting_v209v',
           }
@@ -7675,6 +8462,7 @@ function sceneVideoActionState(scene) {
     scenes.forEach((scene) => {
       const sceneId = serverBatchSceneIdV131D(scene)
       if (!sceneId) return
+      if (explicitSceneIdsV216H.size && !explicitSceneIdsV216H.has(sceneId)) return
 
       const markedBadForReviewV132A = boardSceneHasBadVideoReview(scene)
       const forceBadRegenerateV157A = boardBadReviewForceRegenerateAllowedV157A(scene)
@@ -7788,11 +8576,24 @@ function sceneVideoActionState(scene) {
     const addedIdSetV156A = new Set(addedIds)
     const batchPayloadScenesV156A = scenes.map((scene) => {
       const sceneId = serverBatchSceneIdV131D(scene)
-      const forceBadRegen = addedIdSetV156A.has(sceneId) && (boardBadReviewForceRegenerateAllowedV156A(scene) || boardBadReviewForceRegenerateAllowedV157A(scene) || confirmedForceIdSetV213K.has(sceneId))
-      if (!forceBadRegen) return scene
+      const manualForceRegenerateV216O = addedIdSetV156A.has(sceneId) && manualForceIdSetV216O.has(sceneId)
+      const realBadForceRegenerateV216O = addedIdSetV156A.has(sceneId) && (
+        boardBadReviewForceRegenerateAllowedV156A(scene) ||
+        boardBadReviewForceRegenerateAllowedV157A(scene) ||
+        confirmedBadForceIdSetV216O.has(sceneId)
+      )
+      const forceRegenerateV216O = manualForceRegenerateV216O || realBadForceRegenerateV216O
+      if (!forceRegenerateV216O) return scene
+
+      if (manualForceRegenerateV216O) {
+        console.log('[BOARD MANUAL FORCE WITHOUT BAD REVIEW V216O]', { sceneId })
+      }
+
       return {
         ...scene,
-        ...(confirmedForceIdSetV213K.has(sceneId) ? boardVideoReviewPatch('bad', 'confirmed_bad_regenerate_v213k') : {}),
+        ...(confirmedBadForceIdSetV216O.has(sceneId)
+          ? boardVideoReviewPatch('bad', 'confirmed_bad_regenerate_v213k')
+          : {}),
         video_status: '',
         videoStatus: '',
         video_error: '',
@@ -7807,12 +8608,20 @@ function sceneVideoActionState(scene) {
         jobId: '',
         video_queue_position: 0,
         videoQueuePosition: 0,
-        video_queue_source: 'bad_review_regeneration_force_start_v156a',
-        videoQueueSource: 'bad_review_regeneration_force_start_v156a',
-        video_review_regenerate_from_bad: true,
-        videoReviewRegenerateFromBad: true,
-        video_review_regenerate_reason: 'force_start_bad_review_v156a',
-        videoReviewRegenerateReason: 'force_start_bad_review_v156a',
+        video_queue_source: manualForceRegenerateV216O
+          ? 'manual_regeneration_force_start_v216o'
+          : 'bad_review_regeneration_force_start_v156a',
+        videoQueueSource: manualForceRegenerateV216O
+          ? 'manual_regeneration_force_start_v216o'
+          : 'bad_review_regeneration_force_start_v156a',
+        video_review_regenerate_from_bad: Boolean(realBadForceRegenerateV216O),
+        videoReviewRegenerateFromBad: Boolean(realBadForceRegenerateV216O),
+        video_review_regenerate_reason: realBadForceRegenerateV216O
+          ? 'force_start_bad_review_v156a'
+          : '',
+        videoReviewRegenerateReason: realBadForceRegenerateV216O
+          ? 'force_start_bad_review_v156a'
+          : '',
       }
     })
 
@@ -7836,11 +8645,14 @@ function sceneVideoActionState(scene) {
       body: JSON.stringify({
         mode: 'overwrite',
         overwrite: true,
-        source: 'board_page_server_batch_v131e_autoslice_v147a',
+        source: queueSourceV216H,
         sceneIds: addedIds,
         scene_ids: addedIds,
         forceRegenerateSceneIds: Array.from(confirmedForceIdSetV213K).filter((id) => addedIds.includes(id)),
         force_regenerate_scene_ids: Array.from(confirmedForceIdSetV213K).filter((id) => addedIds.includes(id)),
+        manual: manualRequestV216O,
+        manualRegenerateSceneIdsV216O: Array.from(manualForceIdSetV216O).filter((id) => addedIds.includes(id)),
+        manual_regenerate_scene_ids_v216o: Array.from(manualForceIdSetV216O).filter((id) => addedIds.includes(id)),
         clientPlannedSceneIdsV213K: Array.from(confirmedPlannedIdSetV213K),
         client_planned_scene_ids_v213k: Array.from(confirmedPlannedIdSetV213K),
         audio: currentBoard?.audio || board?.audio || null,
@@ -7950,7 +8762,17 @@ function sceneVideoActionState(scene) {
       // Start the live batch poller immediately from local accepted state. Some start
       // responses do not round-trip the freshly saved board_video_batch back to the
       // browser quickly enough, while runtime statuses are intentionally not persisted.
-      const acceptedBatchMarkerV200M = {
+      const returnedBoardV216H = result?.board || result?.snapshot?.data || null
+      const returnedBatchV216H = (
+        returnedBoardV216H?.board_video_batch ||
+        returnedBoardV216H?.boardVideoBatch ||
+        returnedBoardV216H?.video_batch ||
+        returnedBoardV216H?.videoBatch ||
+        null
+      )
+      const acceptedBatchMarkerV200M = (result?.appended === true && returnedBatchV216H)
+        ? { ...returnedBatchV216H, source: returnedBatchV216H?.source || 'unified_queue_append_v216h' }
+        : {
         status: 'running',
         batch_id: batchIdV136I,
         batchId: batchIdV136I,
@@ -8164,12 +8986,65 @@ function sceneVideoActionState(scene) {
         }
       })
 
+      let staleReviewsClearedV216N = 0
+      const scenesNextReviewCleanV216N = scenesNext.map((scene) => {
+        if (!boardReviewStaleWithoutVideoV216N(scene)) return scene
+        staleReviewsClearedV216N += 1
+        changed = true
+        const clearedAtV216N = new Date().toISOString()
+        return {
+          ...scene,
+          ...boardVideoReviewPatch('', 'stop_queue_review_without_video_v216n'),
+          video_review_status: '',
+          videoReviewStatus: '',
+          review_status: '',
+          reviewStatus: '',
+          video_review_reason: '',
+          videoReviewReason: '',
+          review_reason: '',
+          reviewReason: '',
+          video_review_updated_at: '',
+          videoReviewUpdatedAt: '',
+          video_review_clear_reason: 'stop_queue_review_without_video_v216n',
+          videoReviewClearReason: 'stop_queue_review_without_video_v216n',
+          video_review_cleared_at: clearedAtV216N,
+          videoReviewClearedAt: clearedAtV216N,
+          video_review_regenerate_from_bad: false,
+          videoReviewRegenerateFromBad: false,
+          video_review_regenerate_reason: '',
+          videoReviewRegenerateReason: '',
+          bad_video_review: false,
+          badVideoReview: false,
+          video_review_bad: false,
+          videoReviewBad: false,
+          bad_video: false,
+          badVideo: false,
+          video_bad: false,
+          videoBad: false,
+          is_bad_video: false,
+          isBadVideo: false,
+          needs_review: false,
+          needsReview: false,
+          pending_review: false,
+          pendingReview: false,
+          review_required: false,
+          reviewRequired: false,
+          video_review_clear_token_v216n: `review_clear_v216n_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          videoReviewClearTokenV216N: `review_clear_v216n_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        }
+      })
+      if (staleReviewsClearedV216N) {
+        console.log('[BOARD REVIEW WITHOUT VIDEO CLEARED ON STOP V216N]', {
+          count: staleReviewsClearedV216N,
+        })
+      }
+
       const queueChanged = Boolean((current.video_queue || {}).waitingSceneIds?.length || (current.video_queue || {}).waiting_scene_ids?.length)
       if (!changed && !queueChanged) return current
 
       nextBoardForSave = {
         ...current,
-        scenes: scenesNext,
+        scenes: scenesNextReviewCleanV216N,
         video_queue: {
           ...(current.video_queue || {}),
           waitingSceneIds: [],
@@ -8691,6 +9566,11 @@ function sceneVideoActionState(scene) {
   const seenCompletedJobIdsRef = useRef(readBoardSeenCompletedJobIds())
   const sceneStripRef = useRef(null)
   const sceneCardRefs = useRef(new Map())
+  const boardManualImageUploadLocksRefV214S = useRef({})
+  const boardManualImageUploadLockUntilRefV214S = useRef(0)
+  const boardRecentImageCommitUntilRefV215D = useRef(0)
+  const promptFlushTimersRefV214R = useRef({})
+  const promptEditingUntilRefV214R = useRef(0)
 
   const badRegenRuntimeActiveStatusesV136I = new Set(['starting', 'preparing', 'submitting', 'queued', 'running', 'processing'])
 
@@ -8822,6 +9702,11 @@ function sceneVideoActionState(scene) {
   }
 
   function boardBatchRefreshShouldRunV200M() {
+    if (Date.now() < Number(promptEditingUntilRefV214R.current || 0)) return false
+    try {
+      const el = typeof document !== 'undefined' ? document.activeElement : null
+      if (el && String(el.tagName || '').toUpperCase() === 'TEXTAREA' && el.closest?.('.avaBoardPromptFieldV212W')) return false
+    } catch (_) {}
     if (boardLeavingToAssemblyRefV214C.current) return false
     if (boardAssemblyRouteLockActiveV213N()) return false
     if (workspaceMode || !projectId) return false
@@ -8940,8 +9825,14 @@ function sceneVideoActionState(scene) {
         ...waitingIds,
         ...Array.from(completedIds),
         ...Array.from(failedIds),
-        ...Object.keys(currentMap),
       ].map((id) => asText(id)).filter(Boolean))
+      console.log('[BOARD TERMINAL BATCH CLEARS OWN SCENES ONLY V216L]', {
+        batchStatus,
+        activeSceneId,
+        waitingIds,
+        sceneIds: Array.from(idsToClear),
+        preservedRuntimeSceneIds: Object.keys(currentMap).filter((sceneId) => !idsToClear.has(sceneId)),
+      })
       idsToClear.forEach(clearEntry)
       if (typeof window !== 'undefined') window.__AVA_BOARD_SERVER_VIDEO_BATCH_ACTIVE__ = false
     }
@@ -8990,7 +9881,7 @@ function sceneVideoActionState(scene) {
         runtimeStatusV209W === 'submitting' &&
         runtimeSourceV209W.includes('server_batch') &&
         runtimeAgeMsV209W >= 0 &&
-        runtimeAgeMsV209W < 120000
+        runtimeAgeMsV209W < 12000
       )
       if (stickySubmittingUntilServerAcceptsV209W) {
         nextMap[sceneId] = {
@@ -9124,6 +10015,45 @@ function sceneVideoActionState(scene) {
           runtimeSource.includes('early_submitting') ||
           runtimeSource.includes('runtime_v136i')
         )
+        const incomingBatchTerminalV216L = [
+          'finished', 'finished_with_errors', 'failed', 'cancelled', 'canceled', 'stopped', 'done', 'completed'
+        ].includes(batchStatus)
+        const incomingBatchActiveV216M = [
+          'queued', 'running', 'starting', 'preparing', 'submitting', 'processing', 'cancel_requested'
+        ].includes(batchStatus)
+        const runtimeJobIdV216M = asText(
+          runtime?.jobId || runtime?.job_id ||
+          runtime?.videoJobId || runtime?.video_job_id || ''
+        )
+        const runtimeUpdatedMsV216M = Date.parse(
+          runtime?.updatedAt || runtime?.updated_at ||
+          runtime?.startedAt || runtime?.started_at || ''
+        ) || 0
+        const runtimeFreshPendingNoJobV216M = Boolean(
+          !runtimeJobIdV216M &&
+          ['submitting', 'preparing', 'starting', 'queued'].includes(runtimeStatus) &&
+          runtimeUpdatedMsV216M &&
+          (Date.now() - runtimeUpdatedMsV216M) <= 120000
+        )
+
+        // One project has one backend queue. A busy runtime that is not in the
+        // incoming live batch and already has/runs a job is stale. Keep only a
+        // fresh no-job submitting placeholder while backend is preparing.
+        if ((incomingBatchTerminalV216L || incomingBatchActiveV216M) && !sameBatch) {
+          const clearUnrelatedBusyV216M = Boolean(
+            isVideoBusyStatus(runtimeStatus) && !runtimeFreshPendingNoJobV216M
+          )
+          if (clearUnrelatedBusyV216M) {
+            console.log('[BOARD UNRELATED STALE RUNTIME CLEARED V216M]', {
+              sceneId,
+              runtimeStatus,
+              runtimeJobId: runtimeJobIdV216M,
+              incomingBatchId: batchId,
+              incomingBatchStatus: batchStatus,
+            })
+          }
+          return clearUnrelatedBusyV216M
+        }
         return (sameBatch || batchRuntimeSource) && isVideoBusyStatus(runtimeStatus)
       })
       .map(([sceneId]) => asText(sceneId))
@@ -9868,24 +10798,35 @@ function sceneVideoActionState(scene) {
           String((batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || {}).status || '').includes('interrupted_after_backend_reload')
         )
         if (orphanCleanedV200E) {
-          const protectedServerBoardV213E = boardPreserveSelectedSceneV213E(
+          const currentBoardV216C2 = boardRef.current || board || {}
+          const protectedServerBoardV216C2 = boardMergeStatusSnapshotV216C2(
+            currentBoardV216C2,
             serverBoardData,
-            boardRef.current || board,
-            'orphan_cleaned_status_refresh_v213e'
+            'orphan_cleaned_status_refresh_v216c2'
           )
-          boardRef.current = protectedServerBoardV213E
-          setBoard(protectedServerBoardV213E)
-          writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), protectedServerBoardV213E)
-          console.log('[BOARD SERVER BATCH ORPHAN MERGE V200E]', { projectId })
+          boardRef.current = protectedServerBoardV216C2
+          setBoard(protectedServerBoardV216C2)
+          writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), protectedServerBoardV216C2)
+          console.log('[BOARD SERVER BATCH ORPHAN MERGE PROTECTED V216C2]', {
+            projectId,
+            beforeVideoScore: boardVideoStateScoreV131N(currentBoardV216C2),
+            afterVideoScore: boardVideoStateScoreV131N(protectedServerBoardV216C2),
+          })
           return
         }
-        syncServerBatchRuntimeOverlayV209R(batchStatusDataV136J || {}, serverBoardData || {}, 'server_batch_refresh_status_v209r')
-        rehydrateBadRegenRuntimeFromServerBatchV136J(
-          batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || serverBoardData?.board_video_batch || serverBoardData?.boardVideoBatch || {},
+        const currentBoardForStatusV216C2 = boardRef.current || board || {}
+        const protectedStatusBoardV216C2 = boardMergeStatusSnapshotV216C2(
+          currentBoardForStatusV216C2,
           serverBoardData,
-          { source: 'server_batch_refresh_status_v136j' }
+          'server_batch_runtime_refresh_v216c2'
         )
-        reconcileBadRegenRuntimeWithBoardV136I(serverBoardData)
+        syncServerBatchRuntimeOverlayV209R(batchStatusDataV136J || {}, protectedStatusBoardV216C2 || {}, 'server_batch_refresh_status_v216c2')
+        rehydrateBadRegenRuntimeFromServerBatchV136J(
+          batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || protectedStatusBoardV216C2?.board_video_batch || protectedStatusBoardV216C2?.boardVideoBatch || {},
+          protectedStatusBoardV216C2,
+          { source: 'server_batch_refresh_status_v216c2' }
+        )
+        reconcileBadRegenRuntimeWithBoardV136I(protectedStatusBoardV216C2)
         const serverScore = boardVideoStateScoreV131N(serverBoardData)
         const localScore = boardVideoStateScoreV131N(boardRef.current || board)
         const batchForMergeV200L = batchStatusDataV136J?.batch || batchStatusDataV136J?.board_video_batch || serverBoardData?.board_video_batch || serverBoardData?.boardVideoBatch || {}
@@ -9924,7 +10865,11 @@ function sceneVideoActionState(scene) {
         // old runtime queued/running overlays or an old bad review event.
         if (batchHasLiveStateV200L || serverScore > localScore) {
           setBoard((current) => {
-            let merged = boardMergeServerVideoStateV131N(current || boardRef.current || board, serverBoardData)
+            let merged = boardMergeStatusSnapshotV216C2(
+              current || boardRef.current || board,
+              serverBoardData,
+              'server_batch_live_merge_v216c2'
+            )
             if (typeof boardApplyCompletedBatchPosmotriStatusV214G === 'function') {
               merged = boardApplyCompletedBatchPosmotriStatusV214G(merged, batchForMergeV200L)
             }
@@ -10000,6 +10945,10 @@ function sceneVideoActionState(scene) {
 
   useEffect(() => {
     if (loading) return undefined
+    if (boardManualImageUploadAnyActiveV214S()) {
+      console.log('[BOARD MEDIA RESTORE SKIPPED DURING IMAGE UPLOAD V215D]')
+      return undefined
+    }
     const slots = [
       { slot: 'video', kind: 'video', stage: 'board_videos' },
       { slot: 'image', kind: 'image', stage: 'board_images' },
@@ -10108,12 +11057,36 @@ function sceneVideoActionState(scene) {
     return () => { cancelled = true }
   }, [loading, board.scenes, projectId, workspaceMode])
 
+  function boardAssetStreamUrlV214Y(apiPath = '') {
+    const raw = String(apiPath || '').trim()
+    if (!raw) return ''
+    try {
+      const token = typeof localStorage !== 'undefined' ? localStorage.getItem('ava_token') : ''
+      if (!token) return ''
+      const url = buildApiUrl(raw)
+      if (!/\/api\/assets\/[^/]+\/file/i.test(url)) return ''
+      const glue = url.includes('?') ? '&' : '?'
+      return `${url}${glue}access_token=${encodeURIComponent(token)}&stream=1`
+    } catch (_) {
+      return ''
+    }
+  }
+
   const selectedPreviewAssetApiPath = scenePreviewAssetApiPath(selectedScene)
+  const selectedPreviewStreamUrlV214Y = selectedPreviewAssetApiPath ? boardAssetStreamUrlV214Y(selectedPreviewAssetApiPath) : ''
 
   useEffect(() => {
     let cancelled = false
     setSelectedVideoLoadError('')
     if (!selectedPreviewAssetApiPath) {
+      setSelectedVideoBlobUrl('')
+      return undefined
+    }
+
+    const streamUrlV214Y = boardAssetStreamUrlV214Y(selectedPreviewAssetApiPath)
+    if (streamUrlV214Y) {
+      // AVA_BOARD_STREAM_VIDEO_PREVIEW_V214Y:
+      // Use browser streaming/range loading instead of downloading full MP4 as blob.
       setSelectedVideoBlobUrl('')
       return undefined
     }
@@ -10207,13 +11180,27 @@ function sceneVideoActionState(scene) {
         }
       }
       if (!cancelled && Object.keys(next).length) {
-        setRuntimeSceneMediaUrls((current) => ({
-          ...current,
-          [sceneId]: {
-            ...(current[sceneId] || {}),
-            ...next,
-          },
-        }))
+        setRuntimeSceneMediaUrls((current) => {
+          const currentSceneRuntimeV216L = current?.[sceneId] || {}
+          const safeNextV216L = {}
+          if (next.image && !currentSceneRuntimeV216L.imageClearedV129O) safeNextV216L.image = next.image
+          if (next.first && !currentSceneRuntimeV216L.firstClearedV129O) safeNextV216L.first = next.first
+          if (next.last && !currentSceneRuntimeV216L.lastClearedV129O) safeNextV216L.last = next.last
+          if (!Object.keys(safeNextV216L).length) {
+            console.log('[BOARD STALE IMAGE RESTORE BLOCKED AFTER DELETE V216L]', {
+              sceneId,
+              attemptedSlots: Object.keys(next),
+            })
+            return current
+          }
+          return {
+            ...(current || {}),
+            [sceneId]: {
+              ...currentSceneRuntimeV216L,
+              ...safeNextV216L,
+            },
+          }
+        })
         console.log('[BOARD MEDIA RESTORE DONE]', { sceneId, slots: Object.keys(next), success: true, cache: 'v129o' })
       }
     }
@@ -10240,6 +11227,10 @@ function sceneVideoActionState(scene) {
 
   useEffect(() => {
     if (loading) return undefined
+    if (typeof boardManualImageUploadAnyActiveV214S === 'function' && boardManualImageUploadAnyActiveV214S()) {
+      console.log('[BOARD AUTOSAVE PAUSED FOR MANUAL IMAGE UPLOAD V214S]', { projectId: projectId || '', workspaceMode })
+      return undefined
+    }
     if (boardAssemblyRouteLockActiveV213N()) {
       console.log('[BOARD AUTOSAVE SKIPPED FOR ASSEMBLY HANDOFF V213N]', { projectId: projectId || '', workspaceMode })
       return undefined
@@ -10560,12 +11551,179 @@ function sceneVideoActionState(scene) {
   }
 
 
+
+function boardMediaEpochV215D(scene = {}) {
+  const candidates = [
+    scene?.image_mutation_epoch, scene?.imageMutationEpoch,
+    scene?.source_image_changed_epoch, scene?.sourceImageChangedEpoch,
+    scene?.mediaEditVersionV213G, scene?.media_edit_version_v213g,
+    Date.parse(scene?.source_image_changed_at || scene?.sourceImageChangedAt || ''),
+    Date.parse(scene?.image_mutation_at || scene?.imageMutationAt || ''),
+    Date.parse(scene?.manualImageReplaceCommittedAtV214V || scene?.manual_image_replace_committed_at_v214v || ''),
+    Date.parse(scene?.updatedAt || scene?.updated_at || ''),
+  ].map((value) => Number(value || 0)).filter((value) => Number.isFinite(value) && value > 0)
+  return candidates.length ? Math.max(...candidates) : 0
+}
+
+function boardSceneHasCommittedImageV215D(scene = {}) {
+  return Boolean(
+    scene?.image_asset_id || scene?.imageAssetId || scene?.image_api_path || scene?.imageApiPath ||
+    scene?.first_image_asset_id || scene?.firstImageAssetId || scene?.first_image_api_path || scene?.firstImageApiPath ||
+    scene?.start_image_asset_id || scene?.startImageAssetId || scene?.start_image_api_path || scene?.startImageApiPath ||
+    scene?.last_image_asset_id || scene?.lastImageAssetId || scene?.last_image_api_path || scene?.lastImageApiPath ||
+    scene?.end_image_asset_id || scene?.endImageAssetId || scene?.end_image_api_path || scene?.endImageApiPath
+  )
+}
+
+function boardCopyImageAuthorityFieldsV215D(target = {}, source = {}) {
+  const keys = [
+    'image_url', 'imageUrl', 'image_api_path', 'imageApiPath', 'image_asset_id', 'imageAssetId',
+    'image_name', 'imageName', 'image_data_url', 'imageDataUrl', 'mediaUrl', 'media_url',
+    'first_frame_url', 'firstFrameUrl', 'first_frame_api_path', 'firstFrameApiPath',
+    'first_frame_asset_id', 'firstFrameAssetId', 'first_frame_name', 'firstFrameName',
+    'start_image_url', 'startImageUrl', 'start_image_api_path', 'startImageApiPath',
+    'start_image_asset_id', 'startImageAssetId', 'start_image_name', 'startImageName',
+    'first_image_url', 'firstImageUrl', 'first_image_api_path', 'firstImageApiPath',
+    'first_image_asset_id', 'firstImageAssetId', 'first_image_name', 'firstImageName',
+    'last_frame_url', 'lastFrameUrl', 'last_frame_api_path', 'lastFrameApiPath',
+    'last_frame_asset_id', 'lastFrameAssetId', 'last_frame_name', 'lastFrameName',
+    'end_image_url', 'endImageUrl', 'end_image_api_path', 'endImageApiPath',
+    'end_image_asset_id', 'endImageAssetId', 'end_image_name', 'endImageName',
+    'last_image_url', 'lastImageUrl', 'last_image_api_path', 'lastImageApiPath',
+    'last_image_asset_id', 'lastImageAssetId', 'last_image_name', 'lastImageName',
+    'image_status', 'imageStatus', 'image_mutation_epoch', 'imageMutationEpoch',
+    'image_mutation_at', 'imageMutationAt', 'source_image_changed_at', 'sourceImageChangedAt',
+    'source_image_changed_epoch', 'sourceImageChangedEpoch', 'mediaEditVersionV213G', 'media_edit_version_v213g',
+  ]
+  const next = { ...(target || {}) }
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source || {}, key)) next[key] = source[key]
+  }
+  next.image_uploading = false
+  next.imageUploading = false
+  next.image_uploading_v129q = false
+  next.imageUploadingV129Q = false
+  return next
+}
+
+function boardClearVideoAuthorityFieldsV215D(scene = {}, reason = 'image_changed_clear_video_v215d') {
+  return {
+    ...(scene || {}),
+    video_status: '',
+    videoStatus: '',
+    video_error: '',
+    videoError: '',
+    video_job_id: '',
+    videoJobId: '',
+    video_status_endpoint: '',
+    videoStatusEndpoint: '',
+    video_queue_position: 0,
+    videoQueuePosition: 0,
+    video_url: '',
+    videoUrl: '',
+    video_api_path: '',
+    videoApiPath: '',
+    video_asset_id: '',
+    videoAssetId: '',
+    video_name: '',
+    videoName: '',
+    result_url: '',
+    resultUrl: '',
+    result_video_url: '',
+    resultVideoUrl: '',
+    result_video_api_path: '',
+    resultVideoApiPath: '',
+    result_video_asset_id: '',
+    resultVideoAssetId: '',
+    result_video_name: '',
+    resultVideoName: '',
+    video_result: null,
+    videoResult: null,
+    ready_video_url: '',
+    readyVideoUrl: '',
+    generated_video_url: '',
+    generatedVideoUrl: '',
+    generated_video_api_path: '',
+    generatedVideoApiPath: '',
+    generated_video_asset_id: '',
+    generatedVideoAssetId: '',
+    mmaudio_video_url: '',
+    mmaudioVideoUrl: '',
+    mmaudio_video_api_path: '',
+    mmaudioVideoApiPath: '',
+    mmaudio_video_asset_id: '',
+    mmaudioVideoAssetId: '',
+    mmaudio_result: null,
+    mmaudioResult: null,
+    video_source_image_asset_id: '',
+    videoSourceImageAssetId: '',
+    video_source_image_api_path: '',
+    videoSourceImageApiPath: '',
+    old_video_cleared_by_image_authority_v215d: reason,
+    oldVideoClearedByImageAuthorityV215D: reason,
+  }
+}
+
+function boardProtectLiveCommittedImagesV215D(incomingBoard = {}, liveBoard = {}, reason = 'unknown') {
+  const incomingScenes = asSceneArray(incomingBoard?.scenes)
+  const liveScenes = asSceneArray(liveBoard?.scenes)
+  if (!incomingScenes.length || !liveScenes.length) return incomingBoard || {}
+
+  const liveById = new Map(liveScenes.map((scene, index) => [
+    asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`),
+    scene,
+  ]).filter(([id]) => id))
+
+  let protectedScenes = 0
+  const scenes = incomingScenes.map((scene, index) => {
+    const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`)
+    const liveScene = liveById.get(sceneId)
+    if (!liveScene) return scene
+
+    const liveHasImage = boardSceneHasCommittedImageV215D(liveScene)
+    if (!liveHasImage) return scene
+
+    const liveEpoch = boardMediaEpochV215D(liveScene)
+    const incomingEpoch = boardMediaEpochV215D(scene)
+    const incomingHasImage = boardSceneHasCommittedImageV215D(scene)
+
+    // If live state already has a newer committed image, an older delayed save must not erase it.
+    if (liveEpoch > incomingEpoch + 5 || (!incomingHasImage && liveHasImage && liveEpoch >= incomingEpoch)) {
+      protectedScenes += 1
+      let next = boardCopyImageAuthorityFieldsV215D(scene, liveScene)
+      next = boardClearVideoAuthorityFieldsV215D(next, `protect_live_new_image_${reason}`)
+      next.mediaMutationReplaceSave = true
+      next.forceReplaceSave = true
+      next.image_authority_protected_v215d = true
+      next.imageAuthorityProtectedV215D = true
+      return canonicalizeBoardSceneMediaRefs(next)
+    }
+
+    return scene
+  })
+
+  if (!protectedScenes) return incomingBoard || {}
+  console.warn('[BOARD SAVE PROTECTED LIVE IMAGE V215D]', { reason, protectedScenes })
+  return {
+    ...(incomingBoard || {}),
+    scenes,
+    mediaMutationReplaceSave: true,
+    forceReplaceSave: true,
+    image_authority_protected_v215d: true,
+    imageAuthorityProtectedV215D: true,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+
   async function saveBoard(nextBoard = board, quiet = false) {
     const sourceBoardForSaveV214K2 = boardPreserveLivePromptFieldsV214K2(nextBoard || {}, boardRef.current || board || {}, 'saveBoard_payload_v214k2')
     const sourceBoardForSaveV213D = boardProtectLivePromptFieldsForSaveV213D(sourceBoardForSaveV214K2, boardRef.current)
     const sourceBoardForSaveV214A = boardPreserveGenerationConfigOnMediaMutationV214A(sourceBoardForSaveV213D, boardRef.current, { reason: 'save_board_media_mutation_guard_v214a' })
     const sourceBoardForSaveV129O = boardProtectRecentImageMutationsForSaveV129O(sourceBoardForSaveV214A, boardRef.current)
-    const canonicalBoardBaseV57B = sanitizeBoardActiveVideoJobsForSaveV55(canonicalizeBoardMediaRefs(sourceBoardForSaveV129O))
+    const sourceBoardForSaveV214Z = boardApplyImageDeleteTombstonesToBoardV214Z(sourceBoardForSaveV129O, 'saveBoard_v214z')
+    const sourceBoardForSaveV215D = boardProtectLiveCommittedImagesV215D(sourceBoardForSaveV214Z, boardRef.current || board || {}, 'saveBoard_v215d')
+    const canonicalBoardBaseV57B = sanitizeBoardActiveVideoJobsForSaveV55(canonicalizeBoardMediaRefs(sourceBoardForSaveV215D))
     const canonicalBoard = boardWithVideoQueueSnapshotV57B(canonicalBoardBaseV57B, { reason: 'saveBoard_v57B' })
     const useReplaceForActiveVideoJobsV56 = boardHasActiveVideoJobsForReplaceSaveV56(canonicalBoard)
     // AVA_BOARD_MEDIA_DELETE_BACKEND_GUARD_V129T: any explicit image/media reset must bypass backend safe_merge preservation.
@@ -10692,8 +11850,17 @@ function sceneVideoActionState(scene) {
         })
       }
       if (!quiet) setStatus('Storyboard сохранён')
+      return {
+        ok: true,
+        saveResult,
+        payload,
+        guardMode: boardGuardModeV145A,
+        serverBoard: saveResult?.snapshot?.data || saveResult?.data || null,
+      }
     } catch (err) {
+      console.error('[BOARD SAVE FAILED V216F]', err)
       setStatus(`Ошибка сохранения Доски: ${err.message}`)
+      return { ok: false, error: err, message: err?.message || 'board_save_failed' }
     } finally {
       if (!quiet) setSaving(false)
     }
@@ -10779,6 +11946,62 @@ function sceneVideoActionState(scene) {
       mmaudio_reset_reason: 'active_video_patch_v54',
       mmaudioResetReason: 'active_video_patch_v54',
     }
+  }
+
+  function boardPromptEditorStorageKeyV214R() {
+    return `__AVA_BOARD_PROMPT_EDITOR_DRAFTS_V214R__:${projectId || 'default'}`
+  }
+
+  function readBoardPromptEditorDraftsV214R() {
+    try {
+      if (typeof window === 'undefined') return {}
+      return JSON.parse(window.localStorage.getItem(boardPromptEditorStorageKeyV214R()) || '{}') || {}
+    } catch (_) {
+      return {}
+    }
+  }
+
+  function writeBoardPromptEditorDraftsV214R(next = {}) {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(boardPromptEditorStorageKeyV214R(), JSON.stringify(next || {}))
+      }
+    } catch (_) {}
+  }
+
+  function boardPromptEditorDraftValueV214R(sceneId, field, fallback = '') {
+    const safeSceneId = asText(sceneId)
+    const safeField = asText(field)
+    const drafts = readBoardPromptEditorDraftsV214R()
+    const sceneDraft = drafts?.[safeSceneId] || {}
+    return sceneDraft?.[safeField] ?? fallback ?? ''
+  }
+
+  function updateScenePromptDebouncedV214R(sceneId, patch = {}) {
+    const safeSceneId = asText(sceneId)
+    if (!safeSceneId) return
+    const stampedPatch = boardRecordPromptDraftV214K2(safeSceneId, patch, 'prompt_uncontrolled_v214r')
+    promptEditingUntilRefV214R.current = Date.now() + 5000
+
+    const drafts = readBoardPromptEditorDraftsV214R()
+    const nextDrafts = {
+      ...(drafts || {}),
+      [safeSceneId]: {
+        ...(drafts?.[safeSceneId] || {}),
+        ...(stampedPatch || {}),
+      },
+    }
+    writeBoardPromptEditorDraftsV214R(nextDrafts)
+
+    const timers = promptFlushTimersRefV214R.current || {}
+    if (timers[safeSceneId]) {
+      window.clearTimeout(timers[safeSceneId])
+    }
+    timers[safeSceneId] = window.setTimeout(() => {
+      promptFlushTimersRefV214R.current[safeSceneId] = null
+      updateScene(safeSceneId, stampedPatch)
+    }, 900)
+    promptFlushTimersRefV214R.current = timers
   }
 
   function updateScene(sceneId, patch) {
@@ -12327,6 +13550,21 @@ function updateSelectedSceneDuration(nextValue) {
       videoStaleAfterImageChangeV129P: true,
       force_regenerate_after_image_replace_v214i: true,
       forceRegenerateAfterImageReplaceV214I: true,
+      // AVA_MANUAL_IMAGE_REPLACE_DIRECT_SAVE_V214T:
+      // Strong image delete/replace tombstones. Backend V214T recognizes these,
+      // so old deleted image refs cannot be restored by safe_merge/status saves.
+      image_delete_tombstone_v214t: `replace_${Date.now()}`,
+      imageDeleteTombstoneV214T: `replace_${Date.now()}`,
+      manual_image_replace_tombstone_v214t: true,
+      manualImageReplaceTombstoneV214T: true,
+      media_reset_generation_v129u: `replace_${Date.now()}`,
+      mediaResetGenerationV129U: `replace_${Date.now()}`,
+      image_delete_reason_v129u: 'manual_replace_finished_asset_v214t',
+      imageDeleteReasonV129U: 'manual_replace_finished_asset_v214t',
+      mediaEditVersionV213G: Date.now(),
+      media_edit_version_v213g: Date.now(),
+      imageMutationEpoch: Date.now(),
+      image_mutation_epoch: Date.now(),
 
       // Extra generated-video aliases that previous patches did not clear everywhere.
       video: null,
@@ -12613,64 +13851,14 @@ function updateSelectedSceneDuration(nextValue) {
 
 
 
-  function buildBoardStillImportPatch({ fileName = '', assetId = '', assetApiPath = '' } = {}) {
-    return {
-      ...boardImageReplacePatchV129M({
-        slot: 'image',
-        fileName,
-        assetId,
-        assetApiPath,
-        reason: 'bulk_still_import_image_replaced_v129m',
-      }),
-      mediaEditVersionV213G: Date.now(),
-      media_edit_version_v213g: Date.now(),
-      mediaAuthoritySourceV213G: 'bulk_still_import_replace_v213g',
-      media_authority_source_v213g: 'bulk_still_import_replace_v213g',
-      // AVA_BOARD_CLEAR_BAD_ON_IMAGE_CHANGE_V213I:
-      // A new/deleted source photo invalidates stale generation/review state.  Do not show
-      // 'плохое' when no generated video exists, and do not keep fake queued/running flags.
-      video_status: '',
-      videoStatus: '',
-      generation_status: '',
-      generationStatus: '',
-      batch_status: '',
-      batchStatus: '',
-      video_error: '',
-      videoError: '',
-      video_job_id: '',
-      videoJobId: '',
-      job_id: '',
-      jobId: '',
-      video_status_endpoint: '',
-      videoStatusEndpoint: '',
-      video_queue_position: 0,
-      videoQueuePosition: 0,
-      video_queue_source: '',
-      videoQueueSource: '',
-      review_status: '',
-      reviewStatus: '',
-      video_review_status: '',
-      videoReviewStatus: '',
-      bad_video: false,
-      badVideo: false,
-      video_bad: false,
-      videoBad: false,
-      is_bad_video: false,
-      isBadVideo: false,
-      pending_review: false,
-      pendingReview: false,
-      review_required: false,
-      reviewRequired: false,
-      input_not_ready_v213i: false,
-      inputNotReadyV213I: false,
-      video_source_image_debug: {
-        reason: 'bulk_still_import_replace_v129m',
-        fileName,
-        assetId,
-        assetApiPath,
-        at: new Date().toISOString(),
-      },
-    }
+  function buildBoardStillImportSceneV216A(scene = {}, { fileName = '', assetId = '', assetApiPath = '' } = {}) {
+    return boardReplaceSceneImageV216A(scene, {
+      slot: 'image',
+      fileName,
+      assetId,
+      assetApiPath,
+      reason: 'bulk_still_import_image_replaced_v216a',
+    })
   }
 
   async function importBoardStillFiles(filesInput = [], sourceLabel = 'files') {
@@ -12726,16 +13914,82 @@ function updateSelectedSceneDuration(nextValue) {
       return
     }
 
+    // V216D: mark the whole selected packet before uploading file #1.
+    // This prevents later scenes in the packet from continuing to show "видео готово"
+    // while earlier files are being uploaded sequentially.
+    const jobsBySceneIdV216D = new Map(jobs.map((job) => [job.sceneId, job]))
+    setRuntimeSceneMediaUrls((current) => {
+      const next = { ...(current || {}) }
+      jobs.forEach((job) => {
+        next[job.sceneId] = {
+          ...(next[job.sceneId] || {}),
+          image: '',
+          first: '',
+          imageClearedV129O: true,
+          firstClearedV129O: true,
+        }
+      })
+      return next
+    })
     setBulkStillsImporting(true)
-    setStatus(`Импорт кадров: ${jobs.length}/${scenes.length} · сразу показываем preview, потом сохраняем assets`)
-
     const results = []
+    let activeJobV216D = null
 
     try {
+      const currentBoardForPendingV216F = boardRef.current || board || {}
+      let pendingChangedV216F = false
+      const pendingScenesV216F = asSceneArray(currentBoardForPendingV216F?.scenes).map((scene) => {
+        const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId)
+        const job = jobsBySceneIdV216D.get(sceneId)
+        if (!job) return scene
+        pendingChangedV216F = true
+        return canonicalizeBoardSceneMediaRefs({
+          ...scene,
+          ...boardImageImmediatePreviewPatchV129Q({
+            slot: 'image',
+            fileName: job.file?.name || '',
+            reason: 'bulk_still_packet_pending_v216f',
+          }),
+        })
+      })
+      if (!pendingChangedV216F) throw new Error('bulk_still_pending_scene_match_failed_v216f')
+
+      const pendingBoardV216F = {
+      ...currentBoardForPendingV216F,
+      scenes: pendingScenesV216F,
+      updatedAt: new Date().toISOString(),
+      mediaMutationReplaceSave: true,
+      forceReplaceSave: true,
+      saveMode: 'bulk_still_packet_pending_media_mutation_v216f',
+      bulk_photo_commit_v216f: {
+        phase: 'pending_clear',
+        sceneIds: jobs.map((job) => job.sceneId),
+        at: new Date().toISOString(),
+      },
+    }
+      boardRef.current = pendingBoardV216F
+      skipNextBoardAutosaveRefV145A.current = true
+      setBoard(pendingBoardV216F)
+      writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), pendingBoardV216F)
+
+      setStatus(`Импорт кадров: 0/${jobs.length} · очищаем старые фото и видео…`)
+
+      const pendingSaveResultV216F = await saveBoard(pendingBoardV216F, true)
+      if (!pendingSaveResultV216F?.ok) {
+        throw new Error(`bulk_still_pending_snapshot_save_failed_v216f:${pendingSaveResultV216F?.message || 'unknown'}`)
+      }
+      console.log('[BOARD BULK PENDING CLEAR SAVED V216F]', {
+        sourceLabel,
+        sceneIds: jobs.map((job) => job.sceneId),
+        guardMode: pendingSaveResultV216F?.guardMode || '',
+      })
+      setStatus(`Импорт кадров: 0/${jobs.length} · фото грузятся…`)
+
       for (let jobIndex = 0; jobIndex < jobs.length; jobIndex += 1) {
         const job = jobs[jobIndex]
+        activeJobV216D = job
         const { file, sceneId } = job
-        setStatus(`Импорт кадров: ${jobIndex + 1}/${jobs.length} · очищаем старое видео · ${file.name}`)
+        setStatus(`Импорт кадров: ${jobIndex + 1}/${jobs.length} · фото грузится · ${file.name}`)
         const dataUrl = await readFileAsDataUrl(file)
 
         // v129q: update live Board immediately. Do not wait for asset upload; old photo/video refs
@@ -12761,80 +14015,167 @@ function updateSelectedSceneDuration(nextValue) {
         // As soon as one packet/ZIP image asset is uploaded, commit it to that scene immediately.
         // Do not wait for the whole packet, otherwise the first scene can briefly fall back
         // from local preview to prompt/draft until the last file finishes.
-        const readyPatchV144B = buildBoardStillImportPatch({ fileName: file.name, assetId, assetApiPath })
-        let nextBoardForReadySaveV144B = null
-        setBoard((current) => {
-          let changed = false
-          const nextScenes = asSceneArray(current.scenes).map((scene) => {
-            const itemSceneId = asText(scene.id || scene.scene_id)
-            if (itemSceneId !== sceneId) return scene
-            changed = true
-            return canonicalizeBoardSceneMediaRefs({
-              ...scene,
-              ...readyPatchV144B,
-            })
-          })
-          if (!changed) return current
-          nextBoardForReadySaveV144B = {
-            ...current,
-            scenes: nextScenes,
-            updatedAt: new Date().toISOString(),
-            mediaMutationReplaceSave: true,
-            saveMode: 'packet_image_asset_ready_v144b',
-          }
-          writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), nextBoardForReadySaveV144B)
-          return nextBoardForReadySaveV144B
+        boardClearImageDeleteTombstoneV214Z(sceneId, 'bulk_image_upload_asset_ready_v216a')
+        const currentBoardForReadyV216F = boardRef.current || board || {}
+        let readyChangedV216F = false
+        const readyScenesV216F = asSceneArray(currentBoardForReadyV216F?.scenes).map((scene) => {
+          const itemSceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId)
+          if (itemSceneId !== sceneId) return scene
+          readyChangedV216F = true
+          return canonicalizeBoardSceneMediaRefs(
+            buildBoardStillImportSceneV216A(scene, { fileName: file.name, assetId, assetApiPath })
+          )
         })
-        window.setTimeout(() => {
-          if (nextBoardForReadySaveV144B) saveBoard(nextBoardForReadySaveV144B, true)
-        }, 0)
+        if (!readyChangedV216F) throw new Error(`bulk_still_scene_not_found_v216f:${sceneId}`)
+
+        const nextBoardForReadySaveV216F = {
+          ...currentBoardForReadyV216F,
+          scenes: readyScenesV216F,
+          updatedAt: new Date().toISOString(),
+          mediaMutationReplaceSave: true,
+          forceReplaceSave: true,
+          saveMode: 'packet_image_asset_ready_media_mutation_v216f',
+          bulk_photo_commit_v216f: {
+            phase: 'asset_ready',
+            sceneId,
+            assetId,
+            assetApiPath,
+            at: new Date().toISOString(),
+          },
+        }
+        boardRef.current = nextBoardForReadySaveV216F
+        skipNextBoardAutosaveRefV145A.current = true
+        setBoard(nextBoardForReadySaveV216F)
+        writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), nextBoardForReadySaveV216F)
+
+        const readySaveResultV216F = await saveBoard(nextBoardForReadySaveV216F, true)
+        if (!readySaveResultV216F?.ok) {
+          throw new Error(`bulk_still_asset_snapshot_save_failed_v216f:${sceneId}:${readySaveResultV216F?.message || 'unknown'}`)
+        }
+        const savedBoardV216F = readySaveResultV216F?.serverBoard || readySaveResultV216F?.saveResult?.snapshot?.data || null
+        const savedSceneV216F = asSceneArray(savedBoardV216F?.scenes).find((item) => asText(item?.id || item?.scene_id || item?.sceneId) === sceneId)
+        const savedImageAssetIdV216F = asText(savedSceneV216F?.image_asset_id || savedSceneV216F?.imageAssetId || savedSceneV216F?.first_frame_asset_id || savedSceneV216F?.firstFrameAssetId)
+        const savedImageApiPathV216F = asText(savedSceneV216F?.image_api_path || savedSceneV216F?.imageApiPath || savedSceneV216F?.first_frame_api_path || savedSceneV216F?.firstFrameApiPath)
+        const exactImageSavedV216F = Boolean(
+          savedSceneV216F && (
+            (assetId && savedImageAssetIdV216F === assetId) ||
+            (assetApiPath && savedImageApiPathV216F === assetApiPath)
+          )
+        )
+        const staleVideoStillSavedV216F = Boolean(savedSceneV216F && boardSceneHasCurrentVideoResultV129P(savedSceneV216F))
+        if (!exactImageSavedV216F || staleVideoStillSavedV216F) {
+          throw new Error(`bulk_still_server_verify_failed_v216f:${sceneId}:image=${exactImageSavedV216F}:video=${staleVideoStillSavedV216F}`)
+        }
+        console.log('[BOARD STILL IMPORT ASSET COMMIT VERIFIED V216F]', {
+          sourceLabel,
+          sceneId,
+          assetId,
+          assetApiPath,
+          guardMode: readySaveResultV216F?.guardMode || '',
+        })
 
         results.push({ sceneId, fileName: file.name, assetId, assetApiPath })
+        activeJobV216D = null
+        setStatus(`Импорт кадров: ${results.length}/${jobs.length} готово · остальные фото ещё грузятся…`)
         console.log('[BOARD STILL IMPORT REPLACE]', { sourceLabel, sceneId, fileName: file.name, assetId, assetApiPath })
       }
 
       const resultBySceneId = new Map(results.map((item) => [item.sceneId, item]))
-      let nextBoardForSave = null
-      setBoard((current) => {
-        const nextScenes = asSceneArray(current.scenes).map((scene) => {
-          const sceneId = asText(scene.id || scene.scene_id)
-          const result = resultBySceneId.get(sceneId)
-          if (!result) return scene
-          return canonicalizeBoardSceneMediaRefs({
-            ...scene,
-            ...buildBoardStillImportPatch({ fileName: result.fileName, assetId: result.assetId, assetApiPath: result.assetApiPath }),
-          })
-        })
-        nextBoardForSave = {
-          ...current,
-          scenes: nextScenes,
-          updatedAt: new Date().toISOString(),
-          mediaMutationReplaceSave: true,
-          saveMode: 'replace_media_mutation_v129n',
-          stills_import_last_result: {
-            source: sourceLabel,
-            imported: results.length,
-            replaced: results.length,
-            packetMode: 'numbered_scene_order_v129n',
-            at: new Date().toISOString(),
-          },
-        }
-        return nextBoardForSave
+      const currentBoardForFinalV216F = boardRef.current || board || {}
+      const finalScenesV216F = asSceneArray(currentBoardForFinalV216F?.scenes).map((scene) => {
+        const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId)
+        const result = resultBySceneId.get(sceneId)
+        if (!result) return scene
+        return canonicalizeBoardSceneMediaRefs(
+          buildBoardStillImportSceneV216A(scene, { fileName: result.fileName, assetId: result.assetId, assetApiPath: result.assetApiPath })
+        )
+      })
+      const nextBoardForSaveV216F = {
+        ...currentBoardForFinalV216F,
+        scenes: finalScenesV216F,
+        updatedAt: new Date().toISOString(),
+        mediaMutationReplaceSave: true,
+        forceReplaceSave: true,
+        saveMode: 'replace_media_mutation_bulk_final_v216f',
+        stills_import_last_result: {
+          source: sourceLabel,
+          imported: results.length,
+          replaced: results.length,
+          packetMode: 'numbered_scene_order_v216f',
+          snapshotVerified: true,
+          at: new Date().toISOString(),
+        },
+      }
+      boardRef.current = nextBoardForSaveV216F
+      skipNextBoardAutosaveRefV145A.current = true
+      setBoard(nextBoardForSaveV216F)
+      writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), nextBoardForSaveV216F)
+
+      const finalSaveResultV216F = await saveBoard(nextBoardForSaveV216F, true)
+      if (!finalSaveResultV216F?.ok) {
+        throw new Error(`bulk_still_final_snapshot_save_failed_v216f:${finalSaveResultV216F?.message || 'unknown'}`)
+      }
+      const finalSavedBoardV216F = finalSaveResultV216F?.serverBoard || finalSaveResultV216F?.saveResult?.snapshot?.data || null
+      const finalSavedByIdV216F = new Map(asSceneArray(finalSavedBoardV216F?.scenes).map((item) => [asText(item?.id || item?.scene_id || item?.sceneId), item]))
+      const finalVerifyFailuresV216F = results.filter((result) => {
+        const savedScene = finalSavedByIdV216F.get(result.sceneId)
+        const savedImageAssetId = asText(savedScene?.image_asset_id || savedScene?.imageAssetId || savedScene?.first_frame_asset_id || savedScene?.firstFrameAssetId)
+        const savedImageApiPath = asText(savedScene?.image_api_path || savedScene?.imageApiPath || savedScene?.first_frame_api_path || savedScene?.firstFrameApiPath)
+        const exactImageSaved = Boolean(savedScene && (
+          (result.assetId && savedImageAssetId === result.assetId) ||
+          (result.assetApiPath && savedImageApiPath === result.assetApiPath)
+        ))
+        const staleVideoSaved = Boolean(savedScene && boardSceneHasCurrentVideoResultV129P(savedScene))
+        return !exactImageSaved || staleVideoSaved
+      })
+      if (finalVerifyFailuresV216F.length) {
+        throw new Error(`bulk_still_final_verify_failed_v216f:${finalVerifyFailuresV216F.map((item) => item.sceneId).join(',')}`)
+      }
+      console.log('[BOARD STILL IMPORT FINAL SNAPSHOT VERIFIED V216F]', {
+        sourceLabel,
+        imported: results.length,
+        sceneIds: results.map((item) => item.sceneId),
+        guardMode: finalSaveResultV216F?.guardMode || '',
       })
 
-      window.setTimeout(() => {
-        if (nextBoardForSave) saveBoard(nextBoardForSave, true)
-      }, 0)
-
-      setStatus(`Импорт кадров: заменено ${results.length}/${scenes.length}. Старые видео refs очищены, F5 держит asset refs.`)
+      setStatus(`Импорт кадров: заменено и сохранено ${results.length}/${scenes.length}. Старые видео удалены.`)
       pushBoardToast({
         type: 'success',
         title: 'Импорт кадров',
         message: `Заменено фото в сценах: ${results.length}/${scenes.length}`,
       })
-      console.log('[BOARD STILL IMPORT REPLACE SUMMARY]', { sourceLabel, filesFound: files.length, imported: results.length, snapshotSaved: true, replaceSave: true })
+      console.log('[BOARD STILL IMPORT REPLACE SUMMARY]', {
+        sourceLabel,
+        filesFound: files.length,
+        imported: results.length,
+        snapshotSaved: true,
+        snapshotVerified: true,
+        replaceSave: true,
+        sceneIds: results.map((item) => item.sceneId),
+      })
     } catch (error) {
       console.error('[BOARD STILL IMPORT FAILED]', error)
+      const completedSceneIdsV216D = new Set(results.map((item) => asText(item?.sceneId)))
+      const failedSceneIdV216D = asText(activeJobV216D?.sceneId || '')
+      setBoard((current) => {
+        const nextScenes = asSceneArray(current?.scenes).map((scene) => {
+          const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId)
+          if (!jobsBySceneIdV216D.has(sceneId) || completedSceneIdsV216D.has(sceneId)) return scene
+          return canonicalizeBoardSceneMediaRefs({
+            ...scene,
+            image_status: 'upload_error',
+            imageStatus: 'upload_error',
+            image_uploading_v129q: false,
+            imageUploadingV129Q: false,
+            image_upload_error_v216d: error?.message || 'unknown error',
+            imageUploadErrorV216D: error?.message || 'unknown error',
+            image_upload_failed_scene_v216d: failedSceneIdV216D,
+          })
+        })
+        const nextBoard = { ...(current || {}), scenes: nextScenes, updatedAt: new Date().toISOString() }
+        boardRef.current = nextBoard
+        return nextBoard
+      })
       setStatus(`Ошибка импорта кадров: ${error?.message || 'unknown error'}`)
       pushBoardToast({ type: 'error', title: 'Импорт кадров не выполнен', message: error?.message || 'unknown error' })
     } finally {
@@ -13061,6 +14402,80 @@ function updateSelectedSceneDuration(nextValue) {
     return patch
   }
 
+  function boardManualImageUploadAnyActiveV214S() {
+    const until = Number(boardManualImageUploadLockUntilRefV214S.current || 0)
+    if (until && Date.now() < until) return true
+    const recentCommitUntilV215D = Number(boardRecentImageCommitUntilRefV215D.current || 0)
+    if (recentCommitUntilV215D && Date.now() < recentCommitUntilV215D) return true
+    const locks = boardManualImageUploadLocksRefV214S.current || {}
+    return Object.values(locks).some((item) => item && Number(item.until || 0) > Date.now())
+  }
+
+  function boardManualImageUploadLockStartV214S(sceneId = '', slot = 'image', fileName = '') {
+    const safeSceneId = asText(sceneId)
+    const token = `manual_image_upload_v214s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const until = Date.now() + 120000
+    if (safeSceneId) {
+      boardManualImageUploadLocksRefV214S.current = {
+        ...(boardManualImageUploadLocksRefV214S.current || {}),
+        [safeSceneId]: { token, sceneId: safeSceneId, slot, fileName, until },
+      }
+    }
+    boardManualImageUploadLockUntilRefV214S.current = Math.max(Number(boardManualImageUploadLockUntilRefV214S.current || 0), until)
+    try {
+      if (typeof window !== 'undefined') {
+        window.__AVA_BOARD_MANUAL_IMAGE_UPLOAD_LOCKS_V214S__ = {
+          ...(window.__AVA_BOARD_MANUAL_IMAGE_UPLOAD_LOCKS_V214S__ || {}),
+          [safeSceneId]: { token, sceneId: safeSceneId, slot, fileName, until },
+        }
+      }
+    } catch (_) {}
+    console.log('[BOARD MANUAL IMAGE UPLOAD LOCK START V214S]', { sceneId: safeSceneId, slot, fileName, token })
+    return token
+  }
+
+  function boardManualImageUploadLockEndV214S(sceneId = '', token = '', reason = 'done') {
+    const safeSceneId = asText(sceneId)
+    const locks = { ...(boardManualImageUploadLocksRefV214S.current || {}) }
+    const current = locks[safeSceneId]
+    if (current && (!token || current.token === token)) {
+      delete locks[safeSceneId]
+      boardManualImageUploadLocksRefV214S.current = locks
+    }
+    if (!Object.keys(locks).length) {
+      boardManualImageUploadLockUntilRefV214S.current = 0
+    }
+    try {
+      if (typeof window !== 'undefined' && window.__AVA_BOARD_MANUAL_IMAGE_UPLOAD_LOCKS_V214S__) {
+        const globalLocks = { ...(window.__AVA_BOARD_MANUAL_IMAGE_UPLOAD_LOCKS_V214S__ || {}) }
+        if (!token || globalLocks?.[safeSceneId]?.token === token) delete globalLocks[safeSceneId]
+        window.__AVA_BOARD_MANUAL_IMAGE_UPLOAD_LOCKS_V214S__ = globalLocks
+      }
+    } catch (_) {}
+    console.log('[BOARD MANUAL IMAGE UPLOAD LOCK END V214S]', { sceneId: safeSceneId, token, reason })
+  }
+
+  function boardKeepRuntimeImagePreviewV214S(sceneId = '', slot = 'image', dataUrl = '') {
+    const safeSceneId = asText(sceneId)
+    if (!safeSceneId || !dataUrl) return
+    setRuntimeSceneMediaUrls((current) => {
+      const next = { ...(current || {}) }
+      const prev = next[safeSceneId] || {}
+      const nextForScene = { ...prev }
+      if (slot === 'last') {
+        nextForScene.last = dataUrl
+        nextForScene.lastClearedV129O = false
+      } else {
+        nextForScene.image = dataUrl
+        nextForScene.first = dataUrl
+        nextForScene.imageClearedV129O = false
+        nextForScene.firstClearedV129O = false
+      }
+      next[safeSceneId] = nextForScene
+      return next
+    })
+  }
+
   async function setSceneFile(scene, fieldUrl, fieldName, statusField, event) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -13069,6 +14484,7 @@ function updateSelectedSceneDuration(nextValue) {
     if (!sceneId) return
 
     const mediaSlot = mediaSlotByUrlField(fieldUrl)
+    const uploadLockTokenV214S = boardManualImageUploadLockStartV214S(sceneId, mediaSlot, file.name)
 
     try {
       setStatus(`Фото сцены: очищаем старое видео и готовим preview · ${file.name}`)
@@ -13082,13 +14498,14 @@ function updateSelectedSceneDuration(nextValue) {
         reason: `manual_image_local_preview_${fieldUrl}_v129q`,
       }))
       try {
-        setRuntimeSceneMediaUrls((current) => {
-          const next = { ...(current || {}) }
-          delete next[sceneId]
-          return next
-        })
+        // AVA_BOARD_MANUAL_IMAGE_UPLOAD_ATOMIC_LOCK_V214S:
+        // Do not delete runtimeSceneMediaUrls here. The previous hard-delete removed
+        // the just-created local preview, so long uploads looked empty and could end
+        // with no displayed image if a status/autosave race happened.
+        boardKeepRuntimeImagePreviewV214S(sceneId, mediaSlot, dataUrl)
         setSelectedVideoBlobUrl('')
         setSelectedVideoLoadError('')
+        try { videoBlobUrlCacheRef.current?.clear?.() } catch (_) {}
         if (typeof window !== 'undefined' && window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__) {
           const nextRuntimeV214I = { ...(window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}) }
           delete nextRuntimeV214I[sceneId]
@@ -13109,51 +14526,16 @@ function updateSelectedSceneDuration(nextValue) {
       const assetId = uploaded.asset_id || uploaded.assetId || ''
       const assetApiPath = uploaded.asset_api_path || uploaded.assetApiPath || (assetId ? `/assets/${assetId}/file` : '')
       if (!assetId || !assetApiPath) throw new Error('image_asset_upload_missing_asset_id')
+      boardClearImageDeleteTombstoneV214Z(sceneId, 'manual_image_upload_asset_ready_v214z')
 
-      const patch = {
-        ...boardImageReplacePatchV129M({
-          slot: mediaSlot,
-          fileName: file.name,
-          assetId,
-          assetApiPath,
-          reason: `manual_image_replaced_${fieldUrl}_v129n`,
-        }),
-        [fieldUrl]: assetApiPath,
-        [fieldName]: file.name,
-        [statusField]: 'asset_ready',
-        mediaMutationReplaceSave: true,
-        forceReplaceSave: true,
-        image_hard_replace_v214i: true,
-        imageHardReplaceV214I: true,
-        video_stale_after_image_change_v129p: true,
-        videoStaleAfterImageChangeV129P: true,
-        source_image_changed_at: new Date().toISOString(),
-        sourceImageChangedAt: new Date().toISOString(),
-        force_regenerate_after_image_replace_v214i: true,
-        forceRegenerateAfterImageReplaceV214I: true,
-        video_source_image_debug: {
-          reason: `manual_image_replace_${fieldUrl}_v129n`,
-          fileName: file.name,
-          assetId,
-          assetApiPath,
-          at: new Date().toISOString(),
-        },
-      }
 
-      const dataField = sceneDataFieldByUrlField(fieldUrl)
-      if (dataField) patch[dataField] = ''
-
-      Object.assign(patch, buildImageUploadForceCommitPatchV132N4({
-        fieldUrl,
-        fieldName,
-        statusField,
-        mediaSlot,
+      const replacementInputV216A = {
+        slot: mediaSlot,
         fileName: file.name,
         assetId,
         assetApiPath,
-        dataUrl,
-        reason: `manual_image_replaced_${fieldUrl}_v132n4`,
-      }))
+        reason: `manual_image_replaced_${fieldUrl}_v216a`,
+      }
 
       // AVA_BOARD_IMAGE_REPLACE_NEEDS_REGEN_V214D:
       // This scene has a new source still. It must leave any old queue/runtime state
@@ -13172,34 +14554,94 @@ function updateSelectedSceneDuration(nextValue) {
         console.warn('[BOARD IMAGE REPLACE QUEUE STATE CLEAR V214D] failed', error)
       }
 
-      let nextBoardForSave = null
-      setBoard((current) => {
-        let changed = false
-        const nextScenes = asSceneArray(current.scenes).map((item) => {
-          const itemId = asText(item.id || item.scene_id)
-          if (itemId !== sceneId) return item
-          changed = true
-          return canonicalizeBoardSceneMediaRefs({ ...item, ...patch })
+      // AVA_MANUAL_IMAGE_UPLOAD_SYNC_SAVE_V214V:
+      // React setBoard(callback) is async. Previous V214S assigned nextBoardForSave
+      // inside the callback and immediately checked it, so upload finished but the
+      // final asset was often never saved to backend. Build the next Board synchronously.
+      const sourceBoardForManualImageSaveV214V = boardRef.current || board || {}
+      let changedV214V = false
+      const nextScenesV214V = asSceneArray(sourceBoardForManualImageSaveV214V.scenes).map((item) => {
+        const itemId = asText(item.id || item.scene_id || item.sceneId)
+        if (itemId !== sceneId) return item
+        changedV214V = true
+        return canonicalizeBoardSceneMediaRefs({
+          ...boardReplaceSceneImageV216A(item, replacementInputV216A),
+          selected_for_manual_image_replace_v214v: true,
+          manualImageReplaceCommittedAtV214V: new Date().toISOString(),
         })
-        if (!changed) return current
-        nextBoardForSave = {
-          ...current,
-          scenes: nextScenes,
-          updatedAt: new Date().toISOString(),
-          mediaMutationReplaceSave: true,
-          saveMode: 'replace_media_mutation_v129n',
-        }
-        return nextBoardForSave
       })
 
-      window.setTimeout(() => {
-        if (nextBoardForSave) saveBoard(nextBoardForSave, true)
-      }, 0)
+      const nextBoardForSave = changedV214V ? {
+        ...sourceBoardForManualImageSaveV214V,
+        scenes: nextScenesV214V,
+        selectedSceneId: sceneId,
+        selected_scene_id: sceneId,
+        updatedAt: new Date().toISOString(),
+        mediaMutationReplaceSave: true,
+        forceReplaceSave: true,
+        saveMode: 'manual_image_upload_sync_replace_v214v',
+        manual_image_upload_sync_save_v214v: {
+          sceneId,
+          slot: mediaSlot,
+          fileName: file.name,
+          assetId,
+          assetApiPath,
+          at: new Date().toISOString(),
+        },
+      } : null
+
+      if (nextBoardForSave) {
+        const payloadV214V = {
+          ...sanitizeBoardDurableBackup(canonicalizeBoardMediaRefs(nextBoardForSave)),
+          boardVersion: BOARD_VERSION,
+          source: workspaceMode
+            ? (nextBoardForSave.source || 'board')
+            : (nextBoardForSave.source === 'standalone_board' ? 'project_board' : (nextBoardForSave.source || 'project_board')),
+          updatedAt: new Date().toISOString(),
+        }
+        boardRef.current = payloadV214V
+        skipNextBoardAutosaveRefV145A.current = true
+        setBoard(payloadV214V)
+        writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), payloadV214V)
+
+        if (workspaceMode) {
+          await saveWorkspaceStage(STAGE, payloadV214V)
+        } else {
+          await saveStage(projectId, STAGE, payloadV214V, 'replace')
+        }
+
+        boardRecentImageCommitUntilRefV215D.current = Date.now() + 20000
+        console.log('[BOARD IMAGE COMMIT GUARD ACTIVE V215D]', { sceneId, until: boardRecentImageCommitUntilRefV215D.current })
+        console.log('[BOARD MANUAL IMAGE UPLOAD SYNC SAVE V214V]', {
+          sceneId,
+          slot: mediaSlot,
+          fileName: file.name,
+          assetId,
+          assetApiPath,
+          guardMode: 'replace',
+          imageRefsCount: asSceneArray(payloadV214V.scenes).filter((item) => (
+            item.image_asset_id || item.imageAssetId || item.image_api_path || item.imageApiPath ||
+            item.first_image_asset_id || item.firstImageAssetId || item.first_image_api_path || item.firstImageApiPath ||
+            item.last_image_asset_id || item.lastImageAssetId || item.last_image_api_path || item.lastImageApiPath
+          )).length,
+        })
+      } else {
+        console.warn('[BOARD MANUAL IMAGE UPLOAD SYNC SAVE SKIPPED V214V]', {
+          sceneId,
+          slot: mediaSlot,
+          fileName: file.name,
+          assetId,
+          assetApiPath,
+          reason: 'scene_not_found',
+        })
+      }
 
       console.log('[BOARD IMAGE ASSET COMMITTED V132N4]', { sceneId, slot: mediaSlot, fileName: file.name, assetId, assetApiPath, sourceField: fieldUrl, success: true })
       console.log('[BOARD IMAGE MANUAL REPLACE]', { sceneId, slot: mediaSlot, assetId, apiPath: assetApiPath, sourceField: fieldUrl, success: true, replaceSave: true })
       setStatus(`Фото сцены заменено: ${file.name}; старые video refs очищены, F5 сохранит asset ref`)
+      boardManualImageUploadLockEndV214S(sceneId, uploadLockTokenV214S, 'success')
     } catch (error) {
+      boardManualImageUploadLockEndV214S(sceneId, uploadLockTokenV214S, 'error')
       console.error('[Board] setSceneFile failed', error)
       setStatus(`Не удалось загрузить изображение: ${error?.message || 'unknown error'}`)
       pushBoardToast({ type: 'error', title: 'Фото не загружено', message: error?.message || 'unknown error' })
@@ -13209,10 +14651,7 @@ function updateSelectedSceneDuration(nextValue) {
 
 
 
-  function clearSceneFile(scene, fields) {
-    // AVA_BOARD_DELETE_DIRECT_REPLACE_V129U:
-    // This path must be destructive. It must not call saveBoard/safe_merge,
-    // because safe_merge/preserve can resurrect the old image/video refs.
+  async function clearSceneFile(scene, fields) {
     const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || '')
     if (!sceneId) {
       setStatus('Не удалось удалить фото: sceneId пустой')
@@ -13220,309 +14659,138 @@ function updateSelectedSceneDuration(nextValue) {
     }
 
     const safeFields = Array.isArray(fields) ? fields.map((field) => String(field || '')) : []
-    const deleteLastSlot = safeFields.some((field) => field === 'last_frame_url' || field === 'end_image_url')
-    const resetToken = `image_delete_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    const now = new Date().toISOString()
+    const sourceBoardV216A = boardRef.current || board || {}
+    const nowV216A = new Date().toISOString()
 
-    const clearImageAndVideoPatch = {
-      // Markers for frontend/backend race guards.
-      media_reset_generation_v129s: resetToken,
-      mediaResetGenerationV129S: resetToken,
-      media_reset_generation_v129t: resetToken,
-      mediaResetGenerationV129T: resetToken,
-      media_reset_generation_v129u: resetToken,
-      mediaResetGenerationV129U: resetToken,
-      image_delete_reason_v129s: 'manual_delete_button',
-      imageDeleteReasonV129S: 'manual_delete_button',
-      image_delete_reason_v129t: 'manual_delete_button',
-      imageDeleteReasonV129T: 'manual_delete_button',
-      image_delete_reason_v129u: 'manual_delete_direct_replace',
-      imageDeleteReasonV129U: 'manual_delete_direct_replace',
-      mediaEditVersionV213G: Date.now(),
-      media_edit_version_v213g: Date.now(),
-      imageDeletedAtV213G: now,
-      image_deleted_at_v213g: now,
-      mediaAuthoritySourceV213G: 'manual_delete_direct_replace_v213g',
-      media_authority_source_v213g: 'manual_delete_direct_replace_v213g',
-      image_status: '',
-      imageStatus: '',
-      photo_status: '',
-      photoStatus: '',
-      image_uploading: false,
-      imageUploading: false,
-      image_uploading_v129q: false,
-      imageUploadingV129Q: false,
-      photo_uploading: false,
-      photoUploading: false,
-      // AVA_BOARD_CLEAR_BAD_ON_IMAGE_CHANGE_V213I:
-      // A new/deleted source photo invalidates stale generation/review state.  Do not show
-      // 'плохое' when no generated video exists, and do not keep fake queued/running flags.
-      video_status: '',
-      videoStatus: '',
-      generation_status: '',
-      generationStatus: '',
-      batch_status: '',
-      batchStatus: '',
-      video_error: '',
-      videoError: '',
-      video_job_id: '',
-      videoJobId: '',
-      job_id: '',
-      jobId: '',
-      video_status_endpoint: '',
-      videoStatusEndpoint: '',
-      video_queue_position: 0,
-      videoQueuePosition: 0,
-      video_queue_source: '',
-      videoQueueSource: '',
-      review_status: '',
-      reviewStatus: '',
-      video_review_status: '',
-      videoReviewStatus: '',
-      bad_video: false,
-      badVideo: false,
-      video_bad: false,
-      videoBad: false,
-      is_bad_video: false,
-      isBadVideo: false,
-      pending_review: false,
-      pendingReview: false,
-      review_required: false,
-      reviewRequired: false,
-      input_not_ready_v213i: false,
-      inputNotReadyV213I: false,
-      source_image_changed_at: now,
-      sourceImageChangedAt: now,
-      video_stale_after_image_change_v129p: true,
-      videoStaleAfterImageChangeV129P: true,
+    // AVA_BOARD_DELETE_GHOST_AND_OLD_BATCH_RUNTIME_FIX_V216L:
+    // Delete is canonical immediately. Remove every browser-only preview/cache
+    // before the React scene/save update so a stale blob cannot flash back.
+    const deleteSceneSourceV216L = asSceneArray(sourceBoardV216A.scenes).find((item) => (
+      asText(item?.id || item?.scene_id || item?.sceneId || '') === sceneId
+    )) || scene || {}
+    const deleteApiPathsV216L = [
+      sceneMediaFieldValue(deleteSceneSourceV216L, 'image', 'apiPath'),
+      sceneMediaFieldValue(deleteSceneSourceV216L, 'first', 'apiPath'),
+      sceneMediaFieldValue(deleteSceneSourceV216L, 'last', 'apiPath'),
+    ].map((value) => asText(value)).filter(Boolean)
 
-      // Main/start image refs. In ia2v, image and first frame are aliases and must be cleared together.
-      image_url: '',
-      imageUrl: '',
-      image_api_path: '',
-      imageApiPath: '',
-      image_asset_id: '',
-      imageAssetId: '',
-      image_name: '',
-      imageName: '',
-      image_status: '',
-      imageStatus: '',
-      image_uploading_v129q: false,
-      imageUploadingV129Q: false,
-      image_uploading: false,
-      imageUploading: false,
-      photo_uploading: false,
-      photoUploading: false,
-      mediaMutationReplaceSave: false,
-      forceReplaceSave: false,
-      image_deleted_v129o: true,
-      imageDeletedV129O: true,
-      first_image_deleted_v129o: true,
-      firstImageDeletedV129O: true,
-      last_image_deleted_v129o: true,
-      lastImageDeletedV129O: true,
-      image_data_url: '',
-      imageDataUrl: '',
-      mediaUrl: '',
-      media_url: '',
+    deleteApiPathsV216L.forEach((apiPathV216L) => {
+      try {
+        const cacheKeyV216L = boardAssetApiPathFromRef(apiPathV216L) || apiPathV216L
+        const cachedUrlV216L = imageBlobUrlCacheRefV129O.current.get(cacheKeyV216L)
+        if (cachedUrlV216L && String(cachedUrlV216L).startsWith('blob:')) {
+          try { URL.revokeObjectURL(cachedUrlV216L) } catch (_) {}
+        }
+        imageBlobUrlCacheRefV129O.current.delete(cacheKeyV216L)
+      } catch (error) {
+        console.warn('[BOARD IMAGE DELETE CACHE CLEAR V216L] failed', {
+          sceneId,
+          apiPath: apiPathV216L,
+          error: error?.message || error,
+        })
+      }
+    })
 
-      first_frame_url: '',
-      firstFrameUrl: '',
-      first_frame_api_path: '',
-      firstFrameApiPath: '',
-      first_frame_asset_id: '',
-      firstFrameAssetId: '',
-      first_frame_name: '',
-      firstFrameName: '',
-      start_image_url: '',
-      startImageUrl: '',
-      start_image_api_path: '',
-      startImageApiPath: '',
-      start_image_asset_id: '',
-      startImageAssetId: '',
-      start_image_data_url: '',
-      startImageDataUrl: '',
-      first_image_url: '',
-      firstImageUrl: '',
-      first_image_api_path: '',
-      firstImageApiPath: '',
-      first_image_asset_id: '',
-      firstImageAssetId: '',
-      first_image_name: '',
-      firstImageName: '',
+    setRuntimeSceneMediaUrls((current) => {
+      const previousV216L = current?.[sceneId] || {}
+      ;['image', 'first', 'last'].forEach((slotV216L) => {
+        const valueV216L = previousV216L?.[slotV216L]
+        if (valueV216L && String(valueV216L).startsWith('blob:')) {
+          try { URL.revokeObjectURL(valueV216L) } catch (_) {}
+        }
+      })
+      return {
+        ...(current || {}),
+        [sceneId]: {
+          ...previousV216L,
+          image: '',
+          first: '',
+          last: '',
+          imageClearedV129O: true,
+          firstClearedV129O: true,
+          lastClearedV129O: true,
+          imageDeletedAtV216L: nowV216A,
+        },
+      }
+    })
+    console.log('[BOARD IMAGE DELETE RUNTIME CLEARED V216L]', {
+      sceneId,
+      apiPaths: deleteApiPathsV216L,
+    })
 
-      // Last frame refs too. If this was a first-last scene, Delete should be final for the visible slot;
-      // clearing all image slots is safer in manual Board because stale aliases have been leaking across slots.
-      last_frame_url: '',
-      lastFrameUrl: '',
-      last_frame_api_path: '',
-      lastFrameApiPath: '',
-      last_frame_asset_id: '',
-      lastFrameAssetId: '',
-      last_frame_name: '',
-      lastFrameName: '',
-      end_image_url: '',
-      endImageUrl: '',
-      end_image_api_path: '',
-      endImageApiPath: '',
-      end_image_asset_id: '',
-      endImageAssetId: '',
-      end_image_data_url: '',
-      endImageDataUrl: '',
-      last_image_url: '',
-      lastImageUrl: '',
-      last_image_api_path: '',
-      lastImageApiPath: '',
-      last_image_asset_id: '',
-      lastImageAssetId: '',
-      last_image_name: '',
-      lastImageName: '',
-
-      // Generated video refs and active job refs. These must die before upload/save finishes.
-      video_status: '',
-      videoStatus: '',
-      video_error: '',
-      videoError: '',
-      video_job_id: '',
-      videoJobId: '',
-      video_status_endpoint: '',
-      videoStatusEndpoint: '',
-      video_queue_position: 0,
-      videoQueuePosition: 0,
-      video_url: '',
-      videoUrl: '',
-      video_api_path: '',
-      videoApiPath: '',
-      video_asset_id: '',
-      videoAssetId: '',
-      video_name: '',
-      videoName: '',
-      original_video_url: '',
-      originalVideoUrl: '',
-      video_result: null,
-      videoResult: null,
-      video_ready_at: '',
-      videoReadyAt: '',
-      result_url: '',
-      resultUrl: '',
-      result_video_url: '',
-      resultVideoUrl: '',
-      result_video_api_path: '',
-      resultVideoApiPath: '',
-      result_video_asset_id: '',
-      resultVideoAssetId: '',
-      result_video_name: '',
-      resultVideoName: '',
-      video_source_image_asset_id: '',
-      videoSourceImageAssetId: '',
-      video_source_image_api_path: '',
-      videoSourceImageApiPath: '',
-
-      // MMAudio belongs to old base video.
-      mmaudio_status: '',
-      mmaudioStatus: '',
-      mmaudio_error: '',
-      mmaudioError: '',
-      mmaudio_job_id: '',
-      mmaudioJobId: '',
-      mmaudio_status_endpoint: '',
-      mmaudioStatusEndpoint: '',
-      mmaudio_video_url: '',
-      mmaudioVideoUrl: '',
-      mmaudio_video_api_path: '',
-      mmaudioVideoApiPath: '',
-      mmaudio_video_asset_id: '',
-      mmaudioVideoAssetId: '',
-      mmaudio_video_name: '',
-      mmaudioVideoName: '',
-      mmaudio_result: null,
-      mmaudioResult: null,
-      mmaudio_result_video_url: '',
-      mmaudioResultVideoUrl: '',
-      mmaudio_result_video_api_path: '',
-      mmaudioResultVideoApiPath: '',
-      mmaudio_result_video_asset_id: '',
-      mmaudioResultVideoAssetId: '',
-      mmaudio_ready_at: '',
-      mmaudioReadyAt: '',
-      mmaudio_source_video_url: '',
-      mmaudioSourceVideoUrl: '',
-      mmaudio_source_video_api_path: '',
-      mmaudioSourceVideoApiPath: '',
-      mmaudio_reset_reason: 'image_deleted_direct_replace_v129u',
-      mmaudioResetReason: 'image_deleted_direct_replace_v129u',
+    let foundV216A = false
+    const nextScenesV216A = asSceneArray(sourceBoardV216A.scenes).map((item) => {
+      const itemId = asText(item?.id || item?.scene_id || item?.sceneId || '')
+      if (itemId !== sceneId) return item
+      foundV216A = true
+      return canonicalizeBoardSceneMediaRefs(boardDeleteSceneMediaV216A(item, {
+        reason: 'manual_delete_image_v216a',
+      }))
+    })
+    if (!foundV216A) {
+      setStatus(`Не удалось удалить фото: сцена ${sceneId} не найдена`)
+      return
     }
 
-    let nextBoardForReplace = null
+    const nextBoardV216A = {
+      ...sourceBoardV216A,
+      scenes: nextScenesV216A,
+      selectedSceneId: sceneId,
+      selected_scene_id: sceneId,
+      updatedAt: nowV216A,
+      mediaMutationReplaceSave: true,
+      forceReplaceSave: true,
+      saveMode: 'delete_scene_media_revision_v216a',
+      last_media_delete_v216a: { sceneId, fields: safeFields, at: nowV216A },
+    }
+    const payloadV216A = {
+      ...sanitizeBoardDurableBackup(canonicalizeBoardMediaRefs(nextBoardV216A)),
+      boardVersion: BOARD_VERSION,
+      source: workspaceMode
+        ? (nextBoardV216A.source || 'board')
+        : (nextBoardV216A.source === 'standalone_board' ? 'project_board' : (nextBoardV216A.source || 'project_board')),
+      updatedAt: nowV216A,
+    }
+
+    boardClearImageDeleteTombstoneV214Z(sceneId, 'delete_reducer_v216a')
     setRuntimeSceneMediaUrls((current) => {
       const next = { ...(current || {}) }
       delete next[sceneId]
       return next
     })
+    try { videoBlobUrlCacheRef.current?.clear?.() } catch (_) {}
     setSelectedVideoBlobUrl('')
     setSelectedVideoLoadError('')
-    setStatus('Удаляем фото и старое видео…')
+    try {
+      localVideoQueueRef.current = (localVideoQueueRef.current || []).filter((id) => asText(id) !== sceneId)
+      if (typeof clearBadRegenRuntimeStatusesV136I === 'function') clearBadRegenRuntimeStatusesV136I([sceneId])
+      if (typeof window !== 'undefined' && window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__) {
+        const runtime = { ...(window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ || {}) }
+        delete runtime[sceneId]
+        window.__AVA_BOARD_SERVER_BATCH_RUNTIME_V209R__ = runtime
+      }
+    } catch (error) {
+      console.warn('[BOARD MEDIA DELETE RUNTIME CLEAR V216A] failed', error)
+    }
 
-    setBoard((current) => {
-      const nextScenes = asSceneArray(current.scenes).map((item) => {
-        const itemId = asText(item?.id || item?.scene_id || item?.sceneId || '')
-        if (itemId !== sceneId) return item
-        return {
-          ...item,
-          ...clearImageAndVideoPatch,
-          updatedAt: now,
-        }
+    boardRef.current = payloadV216A
+    skipNextBoardAutosaveRefV145A.current = true
+    setBoard(payloadV216A)
+    setStatus('Удаляем фото и всё старое содержимое сцены…')
+
+    try {
+      if (workspaceMode) await saveWorkspaceStage(STAGE, payloadV216A)
+      else await saveStage(projectId, STAGE, payloadV216A, 'replace')
+      console.log('[BOARD MEDIA DELETE COMMITTED V216A]', {
+        sceneId,
+        revision: boardSceneMediaRevisionV216A(nextScenesV216A.find((item) => asText(item?.id || item?.scene_id || item?.sceneId) === sceneId) || {}),
       })
-      nextBoardForReplace = {
-        ...current,
-        scenes: nextScenes,
-        selectedSceneId: current.selectedSceneId || sceneId,
-        updatedAt: now,
-        last_media_delete_v129u: { sceneId, fields: safeFields, resetToken, at: now },
-      }
-      try {
-        writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), nextBoardForReplace)
-      } catch (error) {
-        console.warn('[BOARD IMAGE DELETE DIRECT REPLACE V129U] local durable save failed', error)
-      }
-      return nextBoardForReplace
-    })
-
-    window.setTimeout(async () => {
-      if (!nextBoardForReplace) return
-      const payload = {
-        ...sanitizeBoardDurableBackup(canonicalizeBoardMediaRefs(nextBoardForReplace)),
-        boardVersion: BOARD_VERSION,
-        source: workspaceMode ? (nextBoardForReplace.source || 'board') : (nextBoardForReplace.source === 'standalone_board' ? 'project_board' : (nextBoardForReplace.source || 'project_board')),
-        updatedAt: new Date().toISOString(),
-      }
-      try {
-        console.log('[BOARD IMAGE DELETE DIRECT REPLACE V129U]', {
-          sceneId,
-          fields: safeFields,
-          resetToken,
-          imageRefsLeft: asSceneArray(payload.scenes).filter((item) => (
-            item.image_asset_id || item.imageAssetId || item.image_api_path || item.imageApiPath ||
-            item.first_image_asset_id || item.firstImageAssetId || item.first_image_api_path || item.firstImageApiPath ||
-            item.last_image_asset_id || item.lastImageAssetId || item.last_image_api_path || item.lastImageApiPath
-          )).length,
-          videoRefsLeft: asSceneArray(payload.scenes).filter((item) => (
-            item.video_asset_id || item.videoAssetId || item.video_api_path || item.videoApiPath || item.video_url || item.videoUrl
-          )).length,
-        })
-        if (workspaceMode) {
-          await saveWorkspaceStage(STAGE, payload)
-        } else {
-          await saveStage(projectId, STAGE, payload, 'replace')
-        }
-        setStatus('Фото удалено. Старое видео очищено.')
-      } catch (error) {
-        console.error('[BOARD IMAGE DELETE DIRECT REPLACE V129U] save failed', error)
-        setStatus(`Ошибка удаления фото: ${error?.message || 'save_failed'}`)
-      }
-    }, 0)
+      setStatus('Фото и старое видео удалены. Промт сохранён.')
+    } catch (error) {
+      console.error('[BOARD MEDIA DELETE COMMIT V216A] failed', error)
+      setStatus(`Ошибка удаления фото: ${error?.message || 'save_failed'}`)
+    }
   }
-
 
 
 function boardAudioSourcePayloadForBackend() {
@@ -14664,22 +15932,298 @@ async function markVideoPlanned(sceneOverride = null) {
   }
 
 
-async function importTimingJson(event) {
+function boardPromptImportSceneIdV214X(item = {}, index = 0) {
+    return asText(
+      item?.scene_id || item?.sceneId || item?.id ||
+      item?.segment_id || item?.segmentId || item?.seg_id || item?.segId ||
+      item?.scene || item?.scene_name || item?.sceneName ||
+      `seg_${String(index + 1).padStart(2, '0')}`
+    )
+  }
+
+  function boardPromptImportTextV214X(...values) {
+    return boardCleanImportedPromptTextV199A(firstTextValue(...values))
+  }
+
+  function boardPromptImportHasAnyTextV214X(item = {}) {
+    return Boolean(boardPromptImportTextV214X(
+      item?.video_prompt,
+      item?.videoPrompt,
+      item?.positive_prompt,
+      item?.positivePrompt,
+      item?.prompt,
+      item?.prompt_text,
+      item?.promptText,
+      item?.final_prompt,
+      item?.finalPrompt,
+      item?.final_video_prompt,
+      item?.finalVideoPrompt,
+      item?.image_aware_video_prompt,
+      item?.imageAwareVideoPrompt,
+      item?.ltx_prompt,
+      item?.ltxPrompt,
+      item?.i2v_prompt,
+      item?.i2vPrompt,
+      item?.ia2v_prompt,
+      item?.ia2vPrompt,
+      item?.motion_prompt,
+      item?.motionPrompt,
+      item?.video_motion_prompt,
+      item?.videoMotionPrompt,
+      item?.description,
+      item?.text,
+      item?.negative_prompt,
+      item?.negativePrompt,
+      item?.sound_prompt,
+      item?.soundPrompt,
+      item?.mmaudio_prompt,
+      item?.mmaudioPrompt
+    ))
+  }
+
+  function boardPromptImportCandidateScenesV214X(importedJson = {}) {
+    const result = []
+    const seen = new Set()
+
+    function addArray(value, label = 'unknown') {
+      if (!Array.isArray(value)) return
+      value.forEach((item, index) => {
+        if (!item || typeof item !== 'object') return
+        if (!boardPromptImportHasAnyTextV214X(item)) return
+        const sceneId = boardPromptImportSceneIdV214X(item, index)
+        const key = `${label}:${sceneId}:${index}`
+        if (seen.has(key)) return
+        seen.add(key)
+        result.push({ ...item, scene_id: sceneId, __prompt_import_label_v214x: label })
+      })
+    }
+
+    if (Array.isArray(importedJson)) addArray(importedJson, 'root_array')
+    if (importedJson && typeof importedJson === 'object') {
+      const roots = [
+        importedJson,
+        importedJson?.board,
+        importedJson?.project_board,
+        importedJson?.projectBoard,
+        importedJson?.storyboard,
+        importedJson?.manualTiming,
+        importedJson?.manual_timing,
+        importedJson?.timing,
+        importedJson?.data,
+        importedJson?.payload,
+      ].filter(Boolean)
+
+      roots.forEach((root, rootIndex) => {
+        addArray(root?.scenes, `root_${rootIndex}_scenes`)
+        addArray(root?.prompts, `root_${rootIndex}_prompts`)
+        addArray(root?.items, `root_${rootIndex}_items`)
+        addArray(root?.data, `root_${rootIndex}_data`)
+        addArray(root?.video_prompts, `root_${rootIndex}_video_prompts`)
+        addArray(root?.videoPrompts, `root_${rootIndex}_videoPrompts`)
+        addArray(root?.video_prompts_image_aware_v1, `root_${rootIndex}_video_prompts_image_aware_v1`)
+        addArray(root?.videoPromptsImageAwareV1, `root_${rootIndex}_videoPromptsImageAwareV1`)
+        addArray(root?.photo_prompts, `root_${rootIndex}_photo_prompts`)
+        addArray(root?.photoPrompts, `root_${rootIndex}_photoPrompts`)
+        addArray(root?.photo_prompts_all_v1, `root_${rootIndex}_photo_prompts_all_v1`)
+        addArray(root?.scene_prompts, `root_${rootIndex}_scene_prompts`)
+        addArray(root?.scenePrompts, `root_${rootIndex}_scenePrompts`)
+        addArray(root?.generations, `root_${rootIndex}_generations`)
+      })
+
+      Object.entries(importedJson).forEach(([key, value]) => {
+        if (Array.isArray(value)) addArray(value, `top_${key}`)
+      })
+
+      if (boardPromptImportHasAnyTextV214X(importedJson)) {
+        const sceneId = boardPromptImportSceneIdV214X(importedJson, 0)
+        result.push({ ...importedJson, scene_id: sceneId, __prompt_import_label_v214x: 'root_single_object' })
+      }
+    }
+
+    return result
+  }
+
+  function boardPromptImportPatchV214X(importedScene = {}, epoch = Date.now()) {
+    const videoPrompt = boardPromptImportTextV214X(
+      importedScene?.video_prompt,
+      importedScene?.videoPrompt,
+      importedScene?.positive_prompt,
+      importedScene?.positivePrompt,
+      importedScene?.prompt,
+      importedScene?.prompt_text,
+      importedScene?.promptText,
+      importedScene?.final_prompt,
+      importedScene?.finalPrompt,
+      importedScene?.final_video_prompt,
+      importedScene?.finalVideoPrompt,
+      importedScene?.image_aware_video_prompt,
+      importedScene?.imageAwareVideoPrompt,
+      importedScene?.ltx_prompt,
+      importedScene?.ltxPrompt,
+      importedScene?.i2v_prompt,
+      importedScene?.i2vPrompt,
+      importedScene?.ia2v_prompt,
+      importedScene?.ia2vPrompt,
+      importedScene?.motion_prompt,
+      importedScene?.motionPrompt,
+      importedScene?.video_motion_prompt,
+      importedScene?.videoMotionPrompt,
+      importedScene?.description,
+      importedScene?.text
+    )
+
+    const negativePrompt = boardPromptImportTextV214X(
+      importedScene?.negative_prompt,
+      importedScene?.negativePrompt,
+      importedScene?.video_motion_negative,
+      importedScene?.videoMotionNegative,
+      importedScene?.final_negative_prompt,
+      importedScene?.finalNegativePrompt,
+      importedScene?.negative,
+      importedScene?.negative_text,
+      importedScene?.negativeText
+    )
+
+    const soundPrompt = boardPromptImportTextV214X(
+      importedScene?.sound_prompt,
+      importedScene?.soundPrompt,
+      importedScene?.mmaudio_prompt,
+      importedScene?.mmaudioPrompt,
+      importedScene?.audio_prompt,
+      importedScene?.audioPrompt,
+      importedScene?.sfx_prompt,
+      importedScene?.sfxPrompt
+    )
+
+    const patch = {
+      ...boardImportedSceneTextPatchV199A({
+        ...importedScene,
+        video_prompt: videoPrompt,
+        positive_prompt: videoPrompt,
+        prompt: videoPrompt,
+        negative_prompt: negativePrompt,
+        sound_prompt: soundPrompt,
+      }),
+      videoPrompt,
+      positivePrompt: videoPrompt,
+      final_video_prompt: videoPrompt,
+      finalVideoPrompt: videoPrompt,
+      prompt_text: videoPrompt,
+      promptText: videoPrompt,
+      negativePrompt,
+      soundPrompt,
+      prompt_import_epoch_v214x: epoch,
+      promptImportEpochV214X: epoch,
+      prompt_import_source_v214x: importedScene?.__prompt_import_label_v214x || 'json_prompt_import_v214x',
+      promptImportSourceV214X: importedScene?.__prompt_import_label_v214x || 'json_prompt_import_v214x',
+    }
+
+    const importedRoute = asText(importedScene?.route || importedScene?.model_route || importedScene?.modelRoute || importedScene?.kind)
+    if (importedRoute) {
+      patch.route = importedRoute
+      patch.model_route = importedRoute
+      patch.modelRoute = importedRoute
+    }
+
+    return patch
+  }
+
+  function boardApplyPromptJsonImportV214X(nextBoard = {}, importedJson = {}) {
+    const candidates = boardPromptImportCandidateScenesV214X(importedJson)
+    const scenes = asSceneArray(nextBoard?.scenes)
+    if (!candidates.length || !scenes.length) {
+      return { board: nextBoard, applied: 0, detected: candidates.length, firstSceneId: '' }
+    }
+
+    const byId = new Map()
+    candidates.forEach((item, index) => {
+      const id = boardPromptImportSceneIdV214X(item, index)
+      if (id && !byId.has(id)) byId.set(id, item)
+    })
+
+    const epoch = Date.now()
+    let applied = 0
+    let firstSceneId = ''
+    const nextScenes = scenes.map((scene, index) => {
+      const sceneId = asText(scene?.scene_id || scene?.id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`)
+      const imported = byId.get(sceneId) || byId.get(`seg_${String(index + 1).padStart(2, '0')}`)
+      if (!imported) return scene
+      applied += 1
+      if (!firstSceneId) firstSceneId = sceneId
+      return {
+        ...scene,
+        ...boardPromptImportPatchV214X(imported, epoch),
+        id: scene?.id || sceneId,
+        scene_id: scene?.scene_id || sceneId,
+      }
+    })
+
+    return {
+      board: {
+        ...nextBoard,
+        scenes: nextScenes,
+        selectedSceneId: firstSceneId || nextBoard?.selectedSceneId || nextBoard?.selected_scene_id || nextScenes[0]?.id || '',
+        selected_scene_id: firstSceneId || nextBoard?.selected_scene_id || nextBoard?.selectedSceneId || nextScenes[0]?.id || '',
+        prompt_json_import_applied_v214x: true,
+        promptJsonImportAppliedV214X: true,
+        prompt_json_import_epoch_v214x: epoch,
+        promptJsonImportEpochV214X: epoch,
+        prompt_json_import_detected_v214x: candidates.length,
+        promptJsonImportDetectedV214X: candidates.length,
+        prompt_json_import_applied_count_v214x: applied,
+        promptJsonImportAppliedCountV214X: applied,
+        updatedAt: new Date().toISOString(),
+      },
+      applied,
+      detected: candidates.length,
+      firstSceneId,
+    }
+  }
+
+  async function importTimingJson(event) {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
     try {
       const json = JSON.parse(await file.text())
       const jsonWithProjectFormatV177B = boardInjectProjectFormatIntoTimingV177C(json, boardProjectFormatV177A(json, { format: activeProjectFormatV177B }))
-      let nextBoard = buildBoardFromTiming(jsonWithProjectFormatV177B, board)
+      let nextBoard = buildBoardFromTiming(jsonWithProjectFormatV177B, boardRef.current || board)
       nextBoard = applyCookingPromptMemoryToBoard(nextBoard, { sourceBoard: json, force: Boolean(json?.cooking_prompt_memory_v1) })
       nextBoard = boardApplyImportedPromptTextFieldsV199A(nextBoard, json)
+      const promptImportV214X = boardApplyPromptJsonImportV214X(nextBoard, json)
+      nextBoard = promptImportV214X.board
+
+      boardRef.current = nextBoard
+      skipNextBoardAutosaveRefV145A.current = true
+      try { writeBoardPromptEditorDraftsV214R({}) } catch (_) {}
+      try { boardSavePromptDraftsFromBoardV214P(nextBoard) } catch (_) {}
       setBoard(nextBoard)
-      setStatus(`Импортировано сцен: ${nextBoard.scenes.length}`)
+
+      await saveBoard(nextBoard, true)
+
+      console.log('[BOARD JSON PROMPT IMPORT V214X]', {
+        fileName: file.name,
+        scenes: asSceneArray(nextBoard.scenes).length,
+        detectedPrompts: promptImportV214X.detected,
+        appliedPrompts: promptImportV214X.applied,
+        firstSceneId: promptImportV214X.firstSceneId || '',
+      })
+
+      setStatus(`Импортировано сцен: ${nextBoard.scenes.length}; промтов применено: ${promptImportV214X.applied}/${promptImportV214X.detected}`)
+      pushBoardToast({
+        type: promptImportV214X.applied ? 'success' : 'warning',
+        title: 'Импорт JSON',
+        message: promptImportV214X.applied
+          ? `Промты применены: ${promptImportV214X.applied}/${promptImportV214X.detected}. Сохранено в Board.`
+          : `Сцены импортированы, но prompt-поля в JSON не найдены. Проверь формат файла.`,
+      })
     } catch (err) {
+      console.error('[BOARD JSON PROMPT IMPORT ERROR V214X]', err)
       setStatus(`Ошибка импорта JSON: ${err.message}`)
+      pushBoardToast({ type: 'error', title: 'Ошибка импорта JSON', message: err?.message || 'unknown_error' })
     }
   }
+
 
   function stopBoardActionEvent(event) {
     event?.preventDefault?.()
@@ -14705,7 +16249,16 @@ async function importTimingJson(event) {
       ? (safeStatus === 'bad' ? 'manual_bad_toggle_v136g' : 'manual_needs_review_v136g')
       : 'manual_review_clear_v136g'
 
+    const currentBoardV136G = boardRef.current || board || {}
+    const currentScenesV136G = asSceneArray(currentBoardV136G.scenes)
+    const currentReviewSceneV216P = currentScenesV136G.find((scene) => (
+      asText(scene?.id || scene?.scene_id || scene?.sceneId || '') === safeSceneId
+    )) || {}
+    const reviewVideoIdentityV216P = boardReviewVideoIdentityV216P(currentReviewSceneV216P)
+
     const patch = {
+      video_review_video_identity_v216p: reviewVideoIdentityV216P,
+      videoReviewVideoIdentityV216P: reviewVideoIdentityV216P,
       ...boardVideoReviewPatch(safeStatus, finalReasonV136G),
       ...(safeStatus
         ? {
@@ -14764,8 +16317,6 @@ async function importTimingJson(event) {
 
     boardSetManualReviewLockV213M(safeSceneId, safeStatus, eventAtV136G, finalReasonV136G)
 
-    const currentBoardV136G = boardRef.current || board || {}
-    const currentScenesV136G = asSceneArray(currentBoardV136G.scenes)
     let changedV136G = false
     const nextScenesV136G = currentScenesV136G.map((scene) => {
       if (asText(scene?.id || scene?.scene_id) !== safeSceneId) return scene
@@ -14872,8 +16423,8 @@ async function importTimingJson(event) {
 
   const firstLastMode = isFirstLastRoute(selectedScene?.route)
   const selectedEffectiveFormat = selectedScene?.format || selectedScene?.aspect_ratio || board.format || '16:9'
-  const selectedPreviewVideoLoading = Boolean(selectedPreviewAssetApiPath && !selectedVideoBlobUrl && !selectedVideoLoadError)
-  const selectedPreviewVideoUrl = selectedPreviewAssetApiPath ? selectedVideoBlobUrl : scenePreviewVideoUrl(selectedScene)
+  const selectedPreviewVideoLoading = Boolean(selectedPreviewAssetApiPath && !selectedPreviewStreamUrlV214Y && !selectedVideoBlobUrl && !selectedVideoLoadError)
+  const selectedPreviewVideoUrl = selectedPreviewAssetApiPath ? (selectedPreviewStreamUrlV214Y || selectedVideoBlobUrl) : scenePreviewVideoUrl(selectedScene)
   const selectedSceneIdForMediaV129O = selectedScene?.id || selectedScene?.scene_id || ''
   const selectedRuntimeMedia = runtimeSceneMediaUrls[selectedSceneIdForMediaV129O] || {}
   const boardSlotPreviewUrlV129O = (scene, slot, runtimeMedia = {}) => {
@@ -14940,7 +16491,9 @@ async function importTimingJson(event) {
   const readiness = {
     total: boardScenes.length,
     prompts: boardScenes.filter((scene) => asText(scene.video_prompt)).length,
-    images: boardScenes.filter((scene) => sceneMediaFieldValue(scene, 'image', 'apiPath') || sceneMediaFieldValue(scene, 'first', 'apiPath') || sceneMediaFieldValue(scene, 'last', 'apiPath') || sceneMediaFieldValue(scene, 'image', 'url') || sceneMediaFieldValue(scene, 'first', 'url') || sceneMediaFieldValue(scene, 'last', 'url') || scene.image_name || scene.first_frame_name || scene.last_frame_name).length,
+    images: boardScenes.filter((scene) => boardSceneHasDurableImageV216D(scene)).length,
+    imageUploads: boardScenes.filter((scene) => boardSceneImageUploadStateV216D(scene) === 'uploading').length,
+    imageErrors: boardScenes.filter((scene) => boardSceneImageUploadStateV216D(scene) === 'error').length,
     videos: boardScenes.filter((scene) => boardSceneHasCurrentVideoResultV129P(scene)).length,
   }
   const badVideoReviewScenes = boardScenes.filter((scene) => boardSceneHasBadVideoReview(scene))
@@ -15173,15 +16726,17 @@ async function importTimingJson(event) {
         <div className="avaBoardStillQueueTools" data-ava-patch="AVA_BOARD_FRONTEND_AUTO_MANUAL_RUNNER_TOPBAR_V110B">
           <button
             type="button"
-            className={`avaBoardHeaderButton avaBoardActionGenerateAllScenes ${autoVideoQueueState.active ? 'isActive' : ''} ${(workspaceMode || !projectId) ? 'isDisabled' : ''}`}
-            disabled={workspaceMode || !projectId}
+            className={`avaBoardHeaderButton avaBoardActionGenerateAllScenes ${autoVideoQueueState.active ? 'isActive' : ''} ${(workspaceMode || !projectId || bulkStillsImporting) ? 'isDisabled' : ''}`}
+            disabled={workspaceMode || !projectId || bulkStillsImporting}
             onClick={(event) => {
               stopBoardActionEvent(event)
               openAllScenesVideoQueueConfirm(event)
             }}
-            title={(workspaceMode || !projectId)
-              ? 'Серверная очередь доступна только внутри проекта. Открой проект и запускай генерацию там.'
-              : 'Спецрежим: поставить в очередь все сцены без готового видео. Использует backend-серверную очередь.'}
+            title={bulkStillsImporting
+              ? 'Фотографии ещё загружаются. Дождись окончания импорта кадров.'
+              : (workspaceMode || !projectId)
+                ? 'Серверная очередь доступна только внутри проекта. Открой проект и запускай генерацию там.'
+                : 'Спецрежим: поставить в очередь все сцены без готового видео. Использует backend-серверную очередь.'}
           >
             <Sparkles size={15} /> Сгенерировать все
           </button>
@@ -15473,11 +17028,19 @@ async function importTimingJson(event) {
                 else sceneCardRefs.current.delete(sceneIdV200E)
               }}
               style={storyboardSceneCardInlineStyleV71(scene, index, board)}
-              onClick={() => selectScene(sceneIdV200E)}
+              onClick={() => {
+                try { window.localStorage.setItem(`__AVA_BOARD_SELECTED_SCENE_FORCE_V214R__:${projectId || 'default'}`, sceneIdV200E) } catch (_) {}
+                selectScene(sceneIdV200E)
+              }}
             >
               <div className="avaBoardSceneCardTop">
                 <strong>{scene.title || scene.id}</strong>
-                <span className={`avaBoardStatusBadge ${statusInfo.className}`}>{statusInfo.label}</span>
+                <span className={`avaBoardStatusBadge ${statusInfo.className}`}>
+                  {String(statusInfo.className || '').includes('isImageUploading')
+                    ? <i className="avaBoardTopPhotoSpinnerV216E" aria-hidden="true" />
+                    : null}
+                  {statusInfo.label}
+                </span>
               </div>
               <span>{formatRange(scene)}</span>
               <small>{(typeof routeLabel === 'function' ? routeLabel(scene.route) : scene.route) || 'i2v'} · {durationOf(scene).toFixed(2)} c</small>
@@ -15515,6 +17078,8 @@ async function importTimingJson(event) {
         <span>Сцен: <strong>{readiness.total}</strong></span>
         <span>Видео prompt: <strong>{readiness.prompts}</strong></span>
         <span>Фото: <strong>{readiness.images}</strong></span>
+        {readiness.imageUploads ? <span>Фото грузится: <strong>{readiness.imageUploads}</strong></span> : null}
+        {readiness.imageErrors ? <span className="isWarn">Ошибок фото: <strong>{readiness.imageErrors}</strong></span> : null}
         <span>Видео: <strong>{readiness.videos}</strong></span>
         {status && <span className="avaBoardStatusText">{status}</span>}
       </div>
@@ -15685,10 +17250,17 @@ async function importTimingJson(event) {
                 <label className="avaBoardWideField avaBoardPromptFieldV212W">
                   <span>Positive video prompt</span>
                   <textarea
-                    value={(boardPromptDraftsV214K2()?.[selectedScene.id]?.video_prompt ?? selectedScene.video_prompt) || ''}
+                    key={`video_prompt_${selectedScene.id}_${selectedScene.prompt_import_epoch_v214x || selectedScene.promptImportEpochV214X || board.prompt_json_import_epoch_v214x || board.promptJsonImportEpochV214X || ''}`}
+                    defaultValue={boardPromptEditorDraftValueV214R(
+                      selectedScene.id,
+                      'video_prompt',
+                      (boardPromptDraftsV214K2()?.[selectedScene.id]?.video_prompt ?? selectedScene.video_prompt) || ''
+                    )}
+                    onFocus={() => { promptEditingUntilRefV214R.current = Date.now() + 5000 }}
+                    onBlur={() => { promptEditingUntilRefV214R.current = Date.now() + 1000 }}
                     onChange={(event) => {
                       const value = event.target.value
-                      updateScene(selectedScene.id, {
+                      updateScenePromptDebouncedV214R(selectedScene.id, {
                         video_prompt: value,
                         videoPrompt: value,
                         positive_prompt: value,
@@ -15703,8 +17275,18 @@ async function importTimingJson(event) {
                 <label className="avaBoardWideField avaBoardPromptFieldV212W isNegativeV212W">
                   <span>Negative prompt</span>
                   <textarea
-                    value={(boardPromptDraftsV214K2()?.[selectedScene.id]?.negative_prompt ?? selectedScene.negative_prompt) || ''}
-                    onChange={(event) => updateScene(selectedScene.id, { negative_prompt: event.target.value })}
+                    key={`negative_prompt_${selectedScene.id}_${selectedScene.prompt_import_epoch_v214x || selectedScene.promptImportEpochV214X || board.prompt_json_import_epoch_v214x || board.promptJsonImportEpochV214X || ''}`}
+                    defaultValue={boardPromptEditorDraftValueV214R(
+                      selectedScene.id,
+                      'negative_prompt',
+                      (boardPromptDraftsV214K2()?.[selectedScene.id]?.negative_prompt ?? selectedScene.negative_prompt) || ''
+                    )}
+                    onFocus={() => { promptEditingUntilRefV214R.current = Date.now() + 5000 }}
+                    onBlur={() => { promptEditingUntilRefV214R.current = Date.now() + 1000 }}
+                    onChange={(event) => updateScenePromptDebouncedV214R(selectedScene.id, {
+                      negative_prompt: event.target.value,
+                      negativePrompt: event.target.value,
+                    })}
                     placeholder="Запреты: text, watermark, logo, плохие лица, лишние конечности..."
                   />
                 </label>
@@ -15745,6 +17327,7 @@ async function importTimingJson(event) {
                   statusClassName={selectedFirstImageSlotStateV132O.statusClassName}
                   onSelect={(event) => setSceneFile(selectedScene, 'first_frame_url', 'first_frame_name', 'image_status', event)}
                   onClear={() => clearSceneFile(selectedScene, ['first_frame_url', 'first_frame_name'])}
+                  disabled={Boolean(sceneVideoActionState(selectedScene).disabled || bulkStillsImporting)}
                 />
                 <ImageSlot
                   key={`${selectedSceneIdForMediaV129O}:last`}
@@ -15759,6 +17342,7 @@ async function importTimingJson(event) {
                   statusClassName={selectedLastImageSlotStateV132O.statusClassName}
                   onSelect={(event) => setSceneFile(selectedScene, 'last_frame_url', 'last_frame_name', 'image_status', event)}
                   onClear={() => clearSceneFile(selectedScene, ['last_frame_url', 'last_frame_name'])}
+                  disabled={Boolean(sceneVideoActionState(selectedScene).disabled || bulkStillsImporting)}
                 />
               </div>
             ) : (
@@ -15775,7 +17359,8 @@ async function importTimingJson(event) {
                 statusClassName={selectedImageSlotStateV132O.statusClassName}
                 onSelect={(event) => setSceneFile(selectedScene, 'image_url', 'image_name', 'image_status', event)}
                 onClear={() => clearSceneFile(selectedScene, ['image_url', 'image_name'])}
-              />
+                  disabled={Boolean(sceneVideoActionState(selectedScene).disabled || bulkStillsImporting)}
+                />
             )}
 
             <div className="avaBoardVideoPreview">
@@ -15794,7 +17379,7 @@ async function importTimingJson(event) {
                     key={`${selectedSceneIdForMediaV129O}:${selectedPreviewAssetApiPath || selectedPreviewVideoUrl}`}
                     src={selectedPreviewVideoUrl}
                     controls
-                    preload="metadata"
+                    preload="auto"
                     playsInline
                     onTimeUpdate={(event) => syncAssemblyVideoTrimTimeFromPlayerV201D(event.currentTarget)}
                     onPlay={() => setAssemblyVideoTrimPlayingV201D(true)}

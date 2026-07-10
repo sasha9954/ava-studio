@@ -1,3 +1,6 @@
+# AVA_PROJECT_TELEGRAM_REVIEW_AUTHORITY_V216K3: newer Telegram bad is a human review event.
+# AVA_BOARD_MEDIA_REDUCER_CONTRACT_V216A: revision-based Board media save authority.
+# AVA_BACKEND_BOARD_MEDIA_SIMPLE_AUTHORITY_V215D: protect newer committed Board images from stale delayed saves.
 # AVA_BOARD_QUEUE_SOURCECUT_VISIBILITY_LIPSYNC_PRIORITY_V209P: lip-sync contract wins over stale source_cut flags.
 from typing import Any
 # AVA_PROJECT_SERVER_REVIEW_EVENT_MEMORY_V136E: server remembers newest per-scene review event and blocks stale autosave revival.
@@ -17,7 +20,7 @@ from typing import Any
 # AVA_PROJECT_PRESERVE_REVIEW_STATE_V132B: preserve bad/needs_review review state across stale board saves.\n# AVA_PROJECT_BAD_REVIEW_SKIP_VIDEO_PRESERVE_V132A: bad-review scenes are allowed to drop old video refs for regeneration.
 # AVA_PROJECT_BOARD_PRESERVE_SKIP_CHANGED_IMAGE_V131R: do not preserve old server-batch video refs after scene image replacement.
 # AVA_PROJECT_BOARD_PRESERVE_SERVER_BATCH_VIDEO_REFS_V131Q2: backend protects server-batch video refs from stale board saves.
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from app.api.deps import ensure_project_access, get_current_user
 from app.core.snapshot_media import media_refs_summary, preserve_media_refs, sanitize_snapshot_runtime_media
 from app.core.security import make_id, now_iso
@@ -866,17 +869,59 @@ def _ava_v212s2_board_snapshot_with_manual_authority(db, project_id, snapshot, p
     return next_snapshot, True, {'reason': reason, 'manualSig': manual_sig[:3], 'boardSig': board_sig[:3], 'sceneCount': len(_ava_v212s2_scenes(next_data))}
 
 @router.get('/{project_id}/snapshots/{stage}')
-def get_snapshot(stage: str, project: dict = Depends(ensure_project_access)):
+def get_snapshot(
+    project_id: str,
+    stage: str,
+    authorization: str | None = Header(default=None),
+):
+    # AVA_PROJECT_SNAPSHOT_SINGLE_DB_READ_V216R2:
+    # Preserve the existing auth/access semantics while avoiding three whole-DB reads.
+    if not authorization or not authorization.lower().startswith('bearer '):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Missing bearer token')
+    token = authorization.split(' ', 1)[1].strip()
+    context = store.get_project_snapshot_context(token, project_id, stage)
+
+    session = context.get('session')
+    if not session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
+    user = context.get('user')
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User not found')
+    project = context.get('project')
+    if not project or project.get('user_id') != user['id']:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project not found')
     if project.get('status') == 'deleted':
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project deleted')
     if stage not in STAGES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unknown stage')
-    db = store.get_db()
-    snapshot = db['snapshots'].get(project['id'], {}).get(stage)
+
+    timing = context.get('_timing_v216r2') or {}
+    print('[PROJECT SNAPSHOT SINGLE DB READ V216R2]', {
+        'project_id': project_id,
+        'stage': stage,
+        'lockWaitMs': timing.get('lock_wait_ms'),
+        'dbReadMs': timing.get('db_read_ms'),
+        'extractMs': timing.get('extract_ms'),
+        'totalMs': timing.get('total_ms'),
+    }, flush=True)
+
+    snapshot = context.get('snapshot')
     if stage == 'board':
-        snapshot, applied_v212s2, info_v212s2 = _ava_v212s2_board_snapshot_with_manual_authority(db, project['id'], snapshot or {'stage': stage, 'data': {}, 'updated_at': None}, persist=False)
+        board_read_context = {
+            'snapshots': {
+                project_id: {
+                    'manual_timing': context.get('manual_timing_snapshot'),
+                },
+            },
+        }
+        snapshot, applied_v212s2, info_v212s2 = _ava_v212s2_board_snapshot_with_manual_authority(
+            board_read_context,
+            project_id,
+            snapshot or {'stage': stage, 'data': {}, 'updated_at': None},
+            persist=False,
+        )
         if applied_v212s2:
-            print('[BOARD TIMING AUTHORITY GET APPLIED V212S2]', {'project_id': project['id'], **info_v212s2}, flush=True)
+            print('[BOARD TIMING AUTHORITY GET APPLIED V212S2]', {'project_id': project_id, **info_v212s2}, flush=True)
     return {'snapshot': snapshot or {'stage': stage, 'data': {}, 'updated_at': None}}
 
 
@@ -3408,6 +3453,8 @@ def _ava_project_apply_server_review_memory_v136e(source_data, current_data, fin
             event_dt_v213l = event.get("dt") or _ava_project_review_memory_parse_dt_v136e(event.get("at"))
             event_is_manual_bad_v213l = (
                 event_reason_v200m.startswith("manual_")
+                or event_reason_v200m.startswith("telegram_review_")
+                or "telegram_bad_review" in event_reason_v200m
                 or "manual_bad" in event_reason_v200m
                 or "toggle" in event_reason_v200m
             )
@@ -4289,6 +4336,278 @@ def _ava_project_board_image_upload_batch_isolation_v209k(current_snapshot, inco
         return next_data, changed
     return incoming_data, 0
 
+# AVA_BACKEND_BOARD_MEDIA_SIMPLE_AUTHORITY_V215D:
+# Backend safety net: if current Board has a newer committed image for a scene,
+# an older delayed browser/status save must not erase that image or resurrect an old video.
+_AVA_V215D_IMAGE_KEYS = (
+    'image_url', 'imageUrl', 'image_api_path', 'imageApiPath', 'image_asset_id', 'imageAssetId',
+    'image_name', 'imageName', 'image_data_url', 'imageDataUrl', 'mediaUrl', 'media_url',
+    'first_frame_url', 'firstFrameUrl', 'first_frame_api_path', 'firstFrameApiPath',
+    'first_frame_asset_id', 'firstFrameAssetId', 'first_frame_name', 'firstFrameName',
+    'start_image_url', 'startImageUrl', 'start_image_api_path', 'startImageApiPath',
+    'start_image_asset_id', 'startImageAssetId', 'start_image_name', 'startImageName',
+    'first_image_url', 'firstImageUrl', 'first_image_api_path', 'firstImageApiPath',
+    'first_image_asset_id', 'firstImageAssetId', 'first_image_name', 'firstImageName',
+    'last_frame_url', 'lastFrameUrl', 'last_frame_api_path', 'lastFrameApiPath',
+    'last_frame_asset_id', 'lastFrameAssetId', 'last_frame_name', 'lastFrameName',
+    'end_image_url', 'endImageUrl', 'end_image_api_path', 'endImageApiPath',
+    'end_image_asset_id', 'endImageAssetId', 'end_image_name', 'endImageName',
+    'last_image_url', 'lastImageUrl', 'last_image_api_path', 'lastImageApiPath',
+    'last_image_asset_id', 'lastImageAssetId', 'last_image_name', 'lastImageName',
+    'image_status', 'imageStatus', 'image_mutation_epoch', 'imageMutationEpoch',
+    'image_mutation_at', 'imageMutationAt', 'source_image_changed_at', 'sourceImageChangedAt',
+    'source_image_changed_epoch', 'sourceImageChangedEpoch', 'mediaEditVersionV213G', 'media_edit_version_v213g',
+)
+
+_AVA_V215D_VIDEO_CLEAR_KEYS = (
+    'video_status', 'videoStatus', 'video_error', 'videoError', 'video_job_id', 'videoJobId',
+    'video_status_endpoint', 'videoStatusEndpoint', 'video_queue_position', 'videoQueuePosition',
+    'video_url', 'videoUrl', 'video_api_path', 'videoApiPath', 'video_asset_id', 'videoAssetId',
+    'video_name', 'videoName', 'result_url', 'resultUrl', 'result_video_url', 'resultVideoUrl',
+    'result_video_api_path', 'resultVideoApiPath', 'result_video_asset_id', 'resultVideoAssetId',
+    'result_video_name', 'resultVideoName', 'ready_video_url', 'readyVideoUrl',
+    'generated_video_url', 'generatedVideoUrl', 'generated_video_api_path', 'generatedVideoApiPath',
+    'generated_video_asset_id', 'generatedVideoAssetId', 'mmaudio_video_url', 'mmaudioVideoUrl',
+    'mmaudio_video_api_path', 'mmaudioVideoApiPath', 'mmaudio_video_asset_id', 'mmaudioVideoAssetId',
+    'video_source_image_asset_id', 'videoSourceImageAssetId', 'video_source_image_api_path', 'videoSourceImageApiPath',
+)
+
+def _ava_v215d_text(value: Any) -> str:
+    return str(value or '').strip()
+
+def _ava_v215d_scene_id(scene: dict[str, Any] | None, index: int = 0) -> str:
+    if not isinstance(scene, dict):
+        return f"seg_{index + 1:02d}"
+    return _ava_v215d_text(scene.get('scene_id') or scene.get('sceneId') or scene.get('id') or f"seg_{index + 1:02d}")
+
+def _ava_v215d_float(value: Any) -> float:
+    try:
+        result = float(value or 0)
+        return result if result == result else 0.0
+    except Exception:
+        return 0.0
+
+def _ava_v215d_parse_time(value: Any) -> float:
+    text = _ava_v215d_text(value)
+    if not text:
+        return 0.0
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(text.replace('Z', '+00:00')).timestamp() * 1000.0
+    except Exception:
+        return 0.0
+
+def _ava_v215d_media_epoch(scene: dict[str, Any] | None) -> float:
+    if not isinstance(scene, dict):
+        return 0.0
+    values = [
+        _ava_v215d_float(scene.get('image_mutation_epoch')),
+        _ava_v215d_float(scene.get('imageMutationEpoch')),
+        _ava_v215d_float(scene.get('source_image_changed_epoch')),
+        _ava_v215d_float(scene.get('sourceImageChangedEpoch')),
+        _ava_v215d_float(scene.get('mediaEditVersionV213G')),
+        _ava_v215d_float(scene.get('media_edit_version_v213g')),
+        _ava_v215d_parse_time(scene.get('source_image_changed_at')),
+        _ava_v215d_parse_time(scene.get('sourceImageChangedAt')),
+        _ava_v215d_parse_time(scene.get('image_mutation_at')),
+        _ava_v215d_parse_time(scene.get('imageMutationAt')),
+        _ava_v215d_parse_time(scene.get('manualImageReplaceCommittedAtV214V')),
+        _ava_v215d_parse_time(scene.get('manual_image_replace_committed_at_v214v')),
+        _ava_v215d_parse_time(scene.get('updatedAt') or scene.get('updated_at')),
+    ]
+    return max([v for v in values if v and v > 0] or [0.0])
+
+def _ava_v215d_has_image(scene: dict[str, Any] | None) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    for key in _AVA_V215D_IMAGE_KEYS:
+        value = scene.get(key)
+        if isinstance(value, str) and value.strip():
+            return True
+        if key.endswith(('asset_id', 'assetId')) and value:
+            return True
+    return False
+
+def _ava_v215d_copy_current_image_and_clear_video(current_scene: dict[str, Any], incoming_scene: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(incoming_scene or {})
+    for key in _AVA_V215D_IMAGE_KEYS:
+        if key in current_scene:
+            merged[key] = current_scene.get(key)
+    for key in _AVA_V215D_VIDEO_CLEAR_KEYS:
+        if key in merged:
+            merged[key] = '' if key not in ('video_queue_position', 'videoQueuePosition') else 0
+    merged['video_result'] = None
+    merged['videoResult'] = None
+    merged['mmaudio_result'] = None
+    merged['mmaudioResult'] = None
+    merged['image_uploading'] = False
+    merged['imageUploading'] = False
+    merged['image_uploading_v129q'] = False
+    merged['imageUploadingV129Q'] = False
+    merged['image_authority_protected_v215d'] = True
+    merged['imageAuthorityProtectedV215D'] = True
+    merged['old_video_cleared_by_image_authority_v215d'] = 'backend_v215d'
+    merged['oldVideoClearedByImageAuthorityV215D'] = 'backend_v215d'
+    return merged
+
+def _ava_v215d_protect_fresh_board_images(current_data: dict[str, Any] | None, incoming_data: dict[str, Any] | None, guard_mode: str = '') -> tuple[dict[str, Any] | None, int]:
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, 0
+    current_scenes = current_data.get('scenes') if isinstance(current_data.get('scenes'), list) else []
+    incoming_scenes = incoming_data.get('scenes') if isinstance(incoming_data.get('scenes'), list) else []
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, 0
+
+    current_by_id = {
+        _ava_v215d_scene_id(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+
+    changed = 0
+    next_scenes = []
+    for index, scene in enumerate(incoming_scenes):
+        if not isinstance(scene, dict):
+            next_scenes.append(scene)
+            continue
+        scene_id = _ava_v215d_scene_id(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict):
+            next_scenes.append(scene)
+            continue
+
+        current_has_image = _ava_v215d_has_image(current_scene)
+        if not current_has_image:
+            next_scenes.append(scene)
+            continue
+
+        current_epoch = _ava_v215d_media_epoch(current_scene)
+        incoming_epoch = _ava_v215d_media_epoch(scene)
+        incoming_has_image = _ava_v215d_has_image(scene)
+
+        if current_epoch > incoming_epoch + 5 or (current_has_image and not incoming_has_image and current_epoch >= incoming_epoch):
+            next_scenes.append(_ava_v215d_copy_current_image_and_clear_video(current_scene, scene))
+            changed += 1
+        else:
+            next_scenes.append(scene)
+
+    if not changed:
+        return incoming_data, 0
+
+    next_data = dict(incoming_data)
+    next_data['scenes'] = next_scenes
+    next_data['mediaMutationReplaceSave'] = True
+    next_data['forceReplaceSave'] = True
+    next_data['image_authority_protected_v215d'] = True
+    next_data['imageAuthorityProtectedV215D'] = True
+    print('[PROJECT BOARD FRESH IMAGE PROTECTED V215D]', {
+        'guard_mode': guard_mode,
+        'protectedScenes': changed,
+        **media_refs_summary(next_data),
+    }, flush=True)
+    return next_data, changed
+
+
+
+# AVA_BOARD_MEDIA_REDUCER_CONTRACT_V216A
+_AVA_V216A_SCENE_MEDIA_KEYS = (
+    'image_url','imageUrl','image_api_path','imageApiPath','image_asset_id','imageAssetId','image_name','imageName','image_data_url','imageDataUrl','mediaUrl','media_url',
+    'first_frame_url','firstFrameUrl','first_frame_api_path','firstFrameApiPath','first_frame_asset_id','firstFrameAssetId','first_frame_name','firstFrameName',
+    'start_image_url','startImageUrl','start_image_api_path','startImageApiPath','start_image_asset_id','startImageAssetId','start_image_name','startImageName','start_image_data_url','startImageDataUrl',
+    'first_image_url','firstImageUrl','first_image_api_path','firstImageApiPath','first_image_asset_id','firstImageAssetId','first_image_name','firstImageName',
+    'last_frame_url','lastFrameUrl','last_frame_api_path','lastFrameApiPath','last_frame_asset_id','lastFrameAssetId','last_frame_name','lastFrameName',
+    'end_image_url','endImageUrl','end_image_api_path','endImageApiPath','end_image_asset_id','endImageAssetId','end_image_name','endImageName','end_image_data_url','endImageDataUrl',
+    'last_image_url','lastImageUrl','last_image_api_path','lastImageApiPath','last_image_asset_id','lastImageAssetId','last_image_name','lastImageName',
+    'image_status','imageStatus','photo_status','photoStatus','image_uploading','imageUploading','photo_uploading','photoUploading',
+    'video_status','videoStatus','generation_status','generationStatus','batch_status','batchStatus','video_error','videoError','video_job_id','videoJobId','job_id','jobId',
+    'video_status_endpoint','videoStatusEndpoint','video_queue_position','videoQueuePosition','video_queue_source','videoQueueSource',
+    'video_url','videoUrl','video_api_path','videoApiPath','video_asset_id','videoAssetId','video_name','videoName','video_result','videoResult',
+    'result_url','resultUrl','result_video_url','resultVideoUrl','result_video_api_path','resultVideoApiPath','result_video_asset_id','resultVideoAssetId','result_video_name','resultVideoName',
+    'ready_video_url','readyVideoUrl','ready_video_api_path','readyVideoApiPath','ready_video_asset_id','readyVideoAssetId',
+    'generated_video_url','generatedVideoUrl','generated_video_api_path','generatedVideoApiPath','generated_video_asset_id','generatedVideoAssetId',
+    'output_video_url','outputVideoUrl','output_video_api_path','outputVideoApiPath','output_video_asset_id','outputVideoAssetId',
+    'video_source_image_asset_id','videoSourceImageAssetId','video_source_image_api_path','videoSourceImageApiPath','video_source_image_mutation_epoch','videoSourceImageMutationEpoch',
+    'video_source_revision_v216a','videoSourceRevisionV216A','generation_media_revision_v216a','generationMediaRevisionV216A','generation_source_image_asset_id_v216a','generationSourceImageAssetIdV216A',
+    'review_status','reviewStatus','video_review_status','videoReviewStatus','pending_review','pendingReview','review_required','reviewRequired','needs_review','needsReview',
+    'bad_video','badVideo','video_bad','videoBad','is_bad_video','isBadVideo','telegram_review_id','telegramReviewId','telegram_review_asset_id','telegramReviewAssetId','telegram_review_status','telegramReviewStatus',
+    'mmaudio_status','mmaudioStatus','mmaudio_error','mmaudioError','mmaudio_job_id','mmaudioJobId','mmaudio_status_endpoint','mmaudioStatusEndpoint',
+    'mmaudio_video_url','mmaudioVideoUrl','mmaudio_video_api_path','mmaudioVideoApiPath','mmaudio_video_asset_id','mmaudioVideoAssetId','mmaudio_video_name','mmaudioVideoName','mmaudio_result','mmaudioResult',
+    'media_revision_v216a','mediaRevisionV216A','image_revision_v216a','imageRevisionV216A','media_revision_at_v216a','mediaRevisionAtV216A','media_reset_intent_v216a','mediaResetIntentV216A','media_authority_v216a','mediaAuthorityV216A',
+    'image_mutation_epoch','imageMutationEpoch','source_image_changed_epoch','sourceImageChangedEpoch','source_image_changed_at','sourceImageChangedAt',
+)
+
+def _ava_v216a_scene_id(scene: dict[str, Any] | None, index: int = 0) -> str:
+    if not isinstance(scene, dict):
+        return f'seg_{index + 1:02d}'
+    return str(scene.get('scene_id') or scene.get('sceneId') or scene.get('id') or f'seg_{index + 1:02d}').strip()
+
+def _ava_v216a_number(value: Any) -> float:
+    try:
+        result = float(value or 0)
+        return result if result == result else 0.0
+    except Exception:
+        return 0.0
+
+def _ava_v216a_media_revision(scene: dict[str, Any] | None) -> float:
+    if not isinstance(scene, dict):
+        return 0.0
+    return max(
+        _ava_v216a_number(scene.get('media_revision_v216a')),
+        _ava_v216a_number(scene.get('mediaRevisionV216A')),
+        _ava_v216a_number(scene.get('image_revision_v216a')),
+        _ava_v216a_number(scene.get('imageRevisionV216A')),
+        _ava_v216a_number(scene.get('image_mutation_epoch')),
+        _ava_v216a_number(scene.get('imageMutationEpoch')),
+        _ava_v216a_number(scene.get('source_image_changed_epoch')),
+        _ava_v216a_number(scene.get('sourceImageChangedEpoch')),
+        0.0,
+    )
+
+def _ava_v216a_preserve_newer_scene_media(current_data: dict[str, Any] | None, incoming_data: dict[str, Any] | None, source: str = '') -> tuple[dict[str, Any] | None, int]:
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, 0
+    current_scenes = current_data.get('scenes') if isinstance(current_data.get('scenes'), list) else []
+    incoming_scenes = incoming_data.get('scenes') if isinstance(incoming_data.get('scenes'), list) else []
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, 0
+    current_by_id = {_ava_v216a_scene_id(scene, index): scene for index, scene in enumerate(current_scenes) if isinstance(scene, dict)}
+    changed = 0
+    next_scenes = []
+    for index, incoming_scene in enumerate(incoming_scenes):
+        if not isinstance(incoming_scene, dict):
+            next_scenes.append(incoming_scene)
+            continue
+        sid = _ava_v216a_scene_id(incoming_scene, index)
+        current_scene = current_by_id.get(sid)
+        if not isinstance(current_scene, dict):
+            next_scenes.append(incoming_scene)
+            continue
+        current_rev = _ava_v216a_media_revision(current_scene)
+        incoming_rev = _ava_v216a_media_revision(incoming_scene)
+        if current_rev > 0 and incoming_rev < current_rev:
+            merged = dict(incoming_scene)
+            for key in _AVA_V216A_SCENE_MEDIA_KEYS:
+                if key in current_scene:
+                    merged[key] = copy.deepcopy(current_scene.get(key))
+                else:
+                    merged.pop(key, None)
+            merged['stale_media_save_rejected_v216a'] = True
+            merged['staleMediaSaveRejectedV216A'] = True
+            merged['stale_media_save_source_v216a'] = source
+            merged['staleMediaSaveSourceV216A'] = source
+            next_scenes.append(merged)
+            changed += 1
+        else:
+            next_scenes.append(incoming_scene)
+    if not changed:
+        return incoming_data, 0
+    result = dict(incoming_data)
+    result['scenes'] = next_scenes
+    result['stale_media_saves_rejected_v216a'] = changed
+    result['staleMediaSavesRejectedV216A'] = changed
+    print('[BOARD STALE MEDIA SAVE REJECTED V216A]', {'source': source, 'scenes': changed}, flush=True)
+    return result, changed
+
 @router.post('/{project_id}/snapshots/{stage}')
 def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depends(ensure_project_access)):
     if project.get('status') == 'deleted':
@@ -4314,6 +4633,23 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
         if is_destructive_clear:
             cleanup = cleanup_project_stage_media(db, project_id, stage, user_id=project.get('user_id'))
         incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
+        if stage == 'board' and current:
+            incoming_data, rejected_stale_media_v216a = _ava_v216a_preserve_newer_scene_media(
+                current.get('data') if isinstance(current, dict) else {},
+                incoming_data or {},
+                source=f'project_snapshot:{payload.guard_mode or "safe_merge"}',
+            )
+            # Legacy V215D is only a fallback for old revision-less safe_merge clients.
+            # It must never override an explicit replace/delete with a newer V216A revision.
+            if not is_replace_snapshot:
+                incoming_data, protected_fresh_images_v215d = _ava_v215d_protect_fresh_board_images(
+                    current.get('data') if isinstance(current, dict) else {},
+                    incoming_data or {},
+                    payload.guard_mode or '',
+                )
+                if protected_fresh_images_v215d:
+                    preserved_media_refs = int(locals().get('preserved_media_refs', 0) or 0) + protected_fresh_images_v215d
+
         if stage == 'manual_timing':
             incoming_data, normalized_v212s3, info_v212s3 = _ava_v212s3_normalize_manual_timing_data(incoming_data or {})
             if normalized_v212s3:

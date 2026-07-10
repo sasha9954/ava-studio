@@ -3269,7 +3269,7 @@ function clearBlockSelection() {
         roleLabel: 'ВОК',
         mode: 'vocal',
         vadFilter: true,
-        language: 'ru',
+        language: '',
       })
 
       const rawSegments = result.speechSegments || result.speech_segments || []
@@ -3304,7 +3304,7 @@ function clearBlockSelection() {
 
       setDraft(nextDraft)
       await saveDraft(nextDraft, 'asr_vocal_stem_exact')
-      setStatus(`ASR vocal stem готово: ${nextSegments.length} фраз · word timestamps`)
+      setStatus(`ASR vocal stem готово: ${nextSegments.length} фраз · ${result.language ? `lang ${result.language} · ` : ''}word timestamps`)
     } catch (err) {
       setStatus(`ошибка ASR vocal stem: ${err.message}`)
     } finally {
@@ -3473,7 +3473,7 @@ const useVocalStem = mode === 'vocal'
         roleLabel: useVocalStem ? 'ВОК' : 'ДИК',
         mode: useVocalStem ? 'vocal' : mode,
         vadFilter: mode === 'speech' ? true : false,
-        language: mode === 'speech' ? '' : 'ru',
+        language: '',
       })
       const sourceName = useVocalStem ? 'asr_vocal_stem' : 'asr_main_audio'
       const nextSegments = (result.speechSegments || result.speech_segments || []).map((segment) => ({
@@ -3492,7 +3492,7 @@ const useVocalStem = mode === 'vocal'
       })
       setDraft(nextDraft)
       await saveDraft(nextDraft, sourceName)
-      setStatus(`ASR готово: ${nextSegments.length} фраз · ${useVocalStem ? 'vocal stem / speech+VAD' : result.mode || mode} · VAD ${result.vad_filter ? 'on' : 'off'}`)
+      setStatus(`ASR готово: ${nextSegments.length} фраз · ${useVocalStem ? 'vocal stem / speech+VAD' : result.mode || mode} · ${result.language ? `lang ${result.language} · ` : ''}VAD ${result.vad_filter ? 'on' : 'off'}`)
     } catch (err) {
       console.error('[MANUAL_TIMING_STAGE117_ASR_FAILED]', {
         message: err?.message || String(err || ''),
@@ -5698,7 +5698,7 @@ const useVocalStem = mode === 'vocal'
             >
               {translationRunning ? 'перевод…' : 'Перевести ASR'}
             </button>
-            <span>Vocal stem нужен только как источник слов. Проверка в Network должна быть: role_id=vocal, role_label=ВОК, mode=speech, vad_filter=true.</span>
+            <span>Vocal stem нужен только как источник слов. ASR использует auto language; в Network должно быть: role_id=vocal, role_label=ВОК, mode=vocal, vad_filter=true.</span>
           </div>
 
 </div>
