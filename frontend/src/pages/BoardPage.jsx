@@ -1,3 +1,5 @@
+/* AVA_BOARD_GENERATION_CONFIG_AUTHORITY_V218D: manual model/route/workflow/format edits beat concurrent photo-upload and timing snapshots. */
+/* AVA_BOARD_BULK_PHOTO_PROGRESS_STABLE_UI_V218C: bulk photo progress is runtime-owned and cannot flicker with Board snapshot corrections. */
 /* AVA_BOARD_VIDEO_REVISION_AUTHORITY_V218B: server-ready video refs beat stale Board saves; explicit clears use a newer clear revision. */
 /* AVA_BOARD_CONCURRENT_SCENE_MUTATION_AUTHORITY_V218A: serialize Board saves and apply prompt-patch JSON only to prompt fields. */
 /* AVA_BOARD_PREVIEW_REMARK_DELETE_SCROLL_V217E: explicit preview delete and capped scrollable Board remarks list. */
@@ -6796,6 +6798,88 @@ function boardPreserveGenerationConfigOnMediaMutationV214A(nextBoard = {}, liveB
 }
 
 
+// AVA_BOARD_GENERATION_CONFIG_AUTHORITY_V218D
+// Manual generation settings are a separate authority from image/video media.
+// A photo upload is allowed to replace media fields only; it must never restore
+// route/model/workflow/format values captured earlier from Manual Timing.
+const BOARD_MANUAL_GENERATION_CONFIG_FIELD_KEYS_V218D = [
+  'route', 'planned_route', 'plannedRoute', 'video_route', 'videoRoute', 'generation_route', 'generationRoute',
+  'model_route', 'modelRoute',
+  'model', 'modelKey', 'model_key', 'modelId', 'model_id', 'selectedModel', 'selected_model',
+  'videoModel', 'video_model', 'imageModel', 'image_model', 'generationModel', 'generation_model',
+  'workflowKey', 'workflow_key', 'resolvedWorkflowKey', 'resolved_workflow_key',
+  'workflow', 'workflowName', 'workflow_name', 'modelWorkflow', 'model_workflow',
+  'format', 'aspect_ratio', 'aspectRatio', 'output_format', 'outputFormat', 'payload_aspect', 'payloadAspect',
+  'width', 'height', 'target_width', 'targetWidth', 'target_height', 'targetHeight',
+  'fps', 'frameRate', 'frame_rate', 'fit_mode', 'fitMode',
+  'motion_strength', 'motionStrength', 'seed', 'cfg', 'steps',
+  'source_or_generated', 'sourceOrGenerated', 'video_node_role', 'videoNodeRole',
+  'skip_board_generation', 'skipBoardGeneration',
+]
+
+const BOARD_GENERATION_CONFIG_META_KEYS_V218D = [
+  'generation_config_revision_v218d', 'generationConfigRevisionV218D',
+  'generation_config_edited_at_v218d', 'generationConfigEditedAtV218D',
+  'generation_config_local_authority_v218d', 'generationConfigLocalAuthorityV218D',
+]
+
+function boardPatchTouchesGenerationConfigV218D(patch = {}) {
+  if (!patch || typeof patch !== 'object') return false
+  return BOARD_MANUAL_GENERATION_CONFIG_FIELD_KEYS_V218D.some((key) => Object.prototype.hasOwnProperty.call(patch, key))
+}
+
+function boardGenerationConfigRevisionV218D(scene = {}) {
+  const values = [
+    scene?.generation_config_revision_v218d,
+    scene?.generationConfigRevisionV218D,
+  ].map((value) => Number(value || 0)).filter((value) => Number.isFinite(value) && value > 0)
+  return Math.max(0, ...values)
+}
+
+function boardApplyGenerationConfigAuthorityMapV218D(boardData = {}, authorityByScene = {}, reason = 'unknown') {
+  const authority = authorityByScene && typeof authorityByScene === 'object' ? authorityByScene : {}
+  const scenes = asSceneArray(boardData?.scenes)
+  if (!scenes.length || !Object.keys(authority).length) return boardData || {}
+
+  let changedFields = 0
+  const changedScenes = []
+  const nextScenes = scenes.map((scene, index) => {
+    const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`)
+    const entry = authority?.[sceneId]
+    if (!entry || typeof entry !== 'object') return scene
+    const entryRevision = Number(entry?.revision || 0)
+    const sceneRevision = boardGenerationConfigRevisionV218D(scene)
+    if (!entryRevision || entryRevision < sceneRevision) return scene
+    const fields = entry?.fields && typeof entry.fields === 'object' ? entry.fields : {}
+    let nextScene = scene
+    let sceneChanged = false
+    for (const key of [...BOARD_MANUAL_GENERATION_CONFIG_FIELD_KEYS_V218D, ...BOARD_GENERATION_CONFIG_META_KEYS_V218D]) {
+      if (!Object.prototype.hasOwnProperty.call(fields, key)) continue
+      const value = fields[key]
+      if (JSON.stringify(nextScene?.[key] ?? null) === JSON.stringify(value ?? null)) continue
+      if (nextScene === scene) nextScene = { ...scene }
+      nextScene[key] = value
+      sceneChanged = true
+      changedFields += 1
+    }
+    if (sceneChanged) changedScenes.push(sceneId)
+    return nextScene
+  })
+
+  if (!changedFields) return boardData || {}
+  console.warn('[BOARD GENERATION CONFIG AUTHORITY V218D]', {
+    reason,
+    changedFields,
+    changedScenes: changedScenes.slice(0, 30),
+  })
+  return {
+    ...(boardData || {}),
+    scenes: nextScenes,
+    boardGenerationConfigAuthorityV218D: true,
+    board_generation_config_authority_v218d: true,
+  }
+}
+
 function boardPatchTouchesPromptV213D(patch = {}) {
   if (!patch || typeof patch !== 'object') return false
   return BOARD_PROMPT_FIELD_KEYS_V213D.some((key) => Object.prototype.hasOwnProperty.call(patch, key))
@@ -9594,6 +9678,28 @@ function sceneVideoActionState(scene) {
   const [assemblyConfirmError, setAssemblyConfirmError] = useState('')
   const [saving, setSaving] = useState(false)
   const [bulkStillsImporting, setBulkStillsImporting] = useState(false)
+  const [bulkStillProgressV218C, setBulkStillProgressV218C] = useState(() => ({
+    active: false,
+    phase: 'idle',
+    total: 0,
+    completed: 0,
+    currentSceneId: '',
+    currentFileName: '',
+    sourceLabel: '',
+    error: '',
+    updatedAt: 0,
+  }))
+  const bulkStillProgressRefV218C = useRef({
+    active: false,
+    phase: 'idle',
+    total: 0,
+    completed: 0,
+    currentSceneId: '',
+    currentFileName: '',
+    sourceLabel: '',
+    error: '',
+    updatedAt: 0,
+  })
   const [playback, setPlayback] = useState(null)
   const [collapsedPanels, setCollapsedPanels] = useState(() => ({ translation: !openedFromTiming }))
   const [audioSrc, setAudioSrc] = useState('')
@@ -9621,11 +9727,36 @@ function sceneVideoActionState(scene) {
   // V218A: every Board snapshot save shares one chain. Media uploads, prompt imports,
   // autosave and UI actions cannot finish out of order and replay stale scene objects.
   const boardSnapshotSaveChainRefV218A = useRef(Promise.resolve())
+  // V218D: exact manual route/model/workflow/format values are recorded synchronously,
+  // before React state or a concurrent photo-upload save can lag behind.
+  const boardGenerationConfigAuthorityRefV218D = useRef({})
   const audioRef = useRef(null)
   const manualLipSyncAudioInputRefV129A = useRef(null)
   const importRef = useRef(null)
   const stillFilesImportRef = useRef(null)
   const stillZipImportRef = useRef(null)
+
+  function updateBulkStillProgressV218C(patch = {}) {
+    setBulkStillProgressV218C((current) => {
+      const safePatch = typeof patch === 'function' ? (patch(current) || {}) : (patch || {})
+      const next = {
+        ...(current || {}),
+        ...safePatch,
+        updatedAt: Date.now(),
+      }
+      bulkStillProgressRefV218C.current = next
+      console.info('[BOARD BULK PHOTO PROGRESS V218C]', {
+        active: Boolean(next.active),
+        phase: next.phase || '',
+        completed: Number(next.completed || 0),
+        total: Number(next.total || 0),
+        currentSceneId: next.currentSceneId || '',
+        currentFileName: next.currentFileName || '',
+      })
+      return next
+    })
+  }
+
   const boardRef = useRef(board)
   // V213E_BOARD_SELECTED_SCENE_NO_AUTOJUMP:
   // Scene selection is user-owned. Background batch/status refreshes may update
@@ -11979,8 +12110,13 @@ function boardPreserveLiveVideoAuthorityV218B(incomingBoard = {}, liveBoard = {}
               updatedAt: serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
             })
           : avaBoardClearReviewResetFlagsV212X(payload)
-        const acceptedBoardV212X = boardWithPreviewAuthorityV217C(
+        const acceptedBoardConfigV218D = boardApplyGenerationConfigAuthorityMapV218D(
           acceptedBoardRawV212X,
+          boardGenerationConfigAuthorityRefV218D.current,
+          'review_reset_server_response_v218d',
+        )
+        const acceptedBoardV212X = boardWithPreviewAuthorityV217C(
+          acceptedBoardConfigV218D,
           boardRef.current || payload,
         )
         boardRef.current = acceptedBoardV212X
@@ -12003,9 +12139,14 @@ function boardPreserveLiveVideoAuthorityV218B(incomingBoard = {}, liveBoard = {}
           boardRef.current || {},
           'server_correction_media_upload_config_guard_v214a'
         )
+        const correctedBoardGenerationConfigV218D = boardApplyGenerationConfigAuthorityMapV218D(
+          correctedBoardLocalStateV214A,
+          boardGenerationConfigAuthorityRefV218D.current,
+          'server_correction_generation_config_guard_v218d',
+        )
         const acceptedBoardRawV212S4C = normalizeLoadedBoardVideoStatuses({
-          ...correctedBoardLocalStateV214A,
-          updatedAt: correctedBoardLocalStateV214A?.updatedAt || serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
+          ...correctedBoardGenerationConfigV218D,
+          updatedAt: correctedBoardGenerationConfigV218D?.updatedAt || serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
         })
         const acceptedBoardV212S4C = boardWithPreviewAuthorityV217C(
           acceptedBoardRawV212S4C,
@@ -12084,13 +12225,18 @@ function boardPreserveLiveVideoAuthorityV218B(incomingBoard = {}, liveBoard = {}
           liveBoardV218A,
           'serialized_save_live_video_guard_v218b',
         )
+        const generationConfigProtectedV218D = boardApplyGenerationConfigAuthorityMapV218D(
+          videoProtectedV218B,
+          boardGenerationConfigAuthorityRefV218D.current,
+          'serialized_save_generation_config_guard_v218d',
+        )
         console.log('[BOARD SAVE SERIALIZED START V218A]', {
           queuedMs: Math.max(0, Date.now() - queuedAtV218A),
-          sceneCount: asSceneArray(videoProtectedV218B?.scenes).length,
-          saveMode: asText(videoProtectedV218B?.saveMode || videoProtectedV218B?.save_mode),
+          sceneCount: asSceneArray(generationConfigProtectedV218D?.scenes).length,
+          saveMode: asText(generationConfigProtectedV218D?.saveMode || generationConfigProtectedV218D?.save_mode),
           quiet: Boolean(quiet),
         })
-        const resultV218A = await saveBoardNowV218A(videoProtectedV218B, quiet)
+        const resultV218A = await saveBoardNowV218A(generationConfigProtectedV218D, quiet)
         console.log('[BOARD SAVE SERIALIZED END V218A]', {
           ok: Boolean(resultV218A?.ok),
           guardMode: resultV218A?.guardMode || '',
@@ -12213,6 +12359,40 @@ function boardPreserveLiveVideoAuthorityV218B(incomingBoard = {}, liveBoard = {}
     return sceneDraft?.[safeField] ?? fallback ?? ''
   }
 
+  function boardStampGenerationConfigPatchV218D(sceneId = '', patch = {}, reason = 'update') {
+    const safeSceneId = asText(sceneId)
+    const safePatch = patch && typeof patch === 'object' ? patch : {}
+    if (!safeSceneId || !boardPatchTouchesGenerationConfigV218D(safePatch)) return safePatch
+
+    const previousEntry = boardGenerationConfigAuthorityRefV218D.current?.[safeSceneId] || {}
+    const revision = Math.max(Date.now(), Number(previousEntry?.revision || 0) + 1)
+    const editedAt = new Date(revision).toISOString()
+    const stampedPatch = {
+      ...safePatch,
+      generation_config_revision_v218d: revision,
+      generationConfigRevisionV218D: revision,
+      generation_config_edited_at_v218d: editedAt,
+      generationConfigEditedAtV218D: editedAt,
+      generation_config_local_authority_v218d: true,
+      generationConfigLocalAuthorityV218D: true,
+    }
+    const fields = {}
+    for (const key of [...BOARD_MANUAL_GENERATION_CONFIG_FIELD_KEYS_V218D, ...BOARD_GENERATION_CONFIG_META_KEYS_V218D]) {
+      if (Object.prototype.hasOwnProperty.call(stampedPatch, key)) fields[key] = stampedPatch[key]
+    }
+    boardGenerationConfigAuthorityRefV218D.current = {
+      ...(boardGenerationConfigAuthorityRefV218D.current || {}),
+      [safeSceneId]: { revision, fields },
+    }
+    console.info('[BOARD GENERATION CONFIG EDIT BOUND V218D]', {
+      sceneId: safeSceneId,
+      reason,
+      revision,
+      fields: Object.keys(fields).filter((key) => BOARD_MANUAL_GENERATION_CONFIG_FIELD_KEYS_V218D.includes(key)),
+    })
+    return stampedPatch
+  }
+
   function updateScenePromptDebouncedV214R(sceneId, patch = {}) {
     const safeSceneId = asText(sceneId)
     if (!safeSceneId) return
@@ -12241,6 +12421,8 @@ function boardPreserveLiveVideoAuthorityV218B(incomingBoard = {}, liveBoard = {}
   }
 
   function updateScene(sceneId, patch) {
+    patch = boardStampGenerationConfigPatchV218D(sceneId, patch, 'updateScene')
+    const generationConfigPatchTouchedV218D = boardPatchTouchesGenerationConfigV218D(patch)
     patch = boardRecordPromptDraftV214K2(sceneId, patch, 'updateScene')
     const promptPatchTouchedV214J = boardPatchTouchesPromptV213D(patch)
     const promptEditEpochV214J = promptPatchTouchedV214J ? Date.now() : 0
@@ -12274,8 +12456,10 @@ function boardPreserveLiveVideoAuthorityV218B(incomingBoard = {}, liveBoard = {}
         scenes,
         updatedAt: new Date().toISOString(),
       }
-      if (boardPatchTouchesPromptV213D(patch)) {
+      if (promptPatchTouchedV214J || generationConfigPatchTouchedV218D) {
         boardRef.current = nextBoard
+      }
+      if (promptPatchTouchedV214J) {
         // AVA_BOARD_PERF_FOCUS_PROMPT_STATUS_V214P:
         // Do not stringify/write the whole 54-scene Board on every prompt keystroke.
         // The small prompt draft cache is already persisted by boardRecordPromptDraftV214K2.
@@ -12294,6 +12478,8 @@ function boardPreserveLiveVideoAuthorityV218B(incomingBoard = {}, liveBoard = {}
   }
 
   function updateSceneAndSave(sceneId, patch) {
+    patch = boardStampGenerationConfigPatchV218D(sceneId, patch, 'updateSceneAndSave')
+    const generationConfigPatchTouchedV218D = boardPatchTouchesGenerationConfigV218D(patch)
     patch = boardRecordPromptDraftV214K2(sceneId, patch, 'updateSceneAndSave')
     let nextBoardForSave = null
     setBoard((current) => {
@@ -12313,6 +12499,7 @@ function boardPreserveLiveVideoAuthorityV218B(incomingBoard = {}, liveBoard = {}
         scenes,
         updatedAt: new Date().toISOString(),
       }
+      if (generationConfigPatchTouchedV218D) boardRef.current = nextBoardForSave
       return nextBoardForSave
     })
     window.setTimeout(() => {
@@ -14748,6 +14935,16 @@ function updateSelectedSceneDuration(nextValue) {
       return next
     })
     setBulkStillsImporting(true)
+    updateBulkStillProgressV218C({
+      active: true,
+      phase: 'preparing',
+      total: jobs.length,
+      completed: 0,
+      currentSceneId: '',
+      currentFileName: '',
+      sourceLabel,
+      error: '',
+    })
     const results = []
     let activeJobV216D = null
 
@@ -14788,6 +14985,12 @@ function updateSelectedSceneDuration(nextValue) {
       setBoard(pendingBoardV216F)
       writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), pendingBoardV216F)
 
+      updateBulkStillProgressV218C({
+        active: true,
+        phase: 'clearing',
+        total: jobs.length,
+        completed: 0,
+      })
       setStatus(`Импорт кадров: 0/${jobs.length} · очищаем старые фото и видео…`)
 
       const pendingSaveResultV216F = await saveBoard(pendingBoardV216F, true)
@@ -14805,6 +15008,16 @@ function updateSelectedSceneDuration(nextValue) {
         const job = jobs[jobIndex]
         activeJobV216D = job
         const { file, sceneId } = job
+        updateBulkStillProgressV218C({
+          active: true,
+          phase: 'uploading',
+          total: jobs.length,
+          completed: results.length,
+          currentSceneId: sceneId,
+          currentFileName: file.name,
+          sourceLabel,
+          error: '',
+        })
         setStatus(`Импорт кадров: ${jobIndex + 1}/${jobs.length} · фото грузится · ${file.name}`)
         const dataUrl = await readFileAsDataUrl(file)
 
@@ -14892,6 +15105,14 @@ function updateSelectedSceneDuration(nextValue) {
 
         results.push({ sceneId, fileName: file.name, assetId, assetApiPath })
         activeJobV216D = null
+        updateBulkStillProgressV218C({
+          active: true,
+          phase: results.length >= jobs.length ? 'finalizing' : 'uploading',
+          total: jobs.length,
+          completed: results.length,
+          currentSceneId: '',
+          currentFileName: '',
+        })
         setStatus(`Импорт кадров: ${results.length}/${jobs.length} готово · остальные фото ещё грузятся…`)
         console.log('[BOARD STILL IMPORT REPLACE]', { sourceLabel, sceneId, fileName: file.name, assetId, assetApiPath })
       }
@@ -14927,6 +15148,14 @@ function updateSelectedSceneDuration(nextValue) {
       setBoard(nextBoardForSaveV216F)
       writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), nextBoardForSaveV216F)
 
+      updateBulkStillProgressV218C({
+        active: true,
+        phase: 'finalizing',
+        total: jobs.length,
+        completed: results.length,
+        currentSceneId: '',
+        currentFileName: '',
+      })
       const finalSaveResultV216F = await saveBoard(nextBoardForSaveV216F, true)
       if (!finalSaveResultV216F?.ok) {
         throw new Error(`bulk_still_final_snapshot_save_failed_v216f:${finalSaveResultV216F?.message || 'unknown'}`)
@@ -14954,6 +15183,15 @@ function updateSelectedSceneDuration(nextValue) {
         guardMode: finalSaveResultV216F?.guardMode || '',
       })
 
+      updateBulkStillProgressV218C({
+        active: false,
+        phase: 'done',
+        total: jobs.length,
+        completed: results.length,
+        currentSceneId: '',
+        currentFileName: '',
+        error: '',
+      })
       setStatus(`Импорт кадров: заменено и сохранено ${results.length}/${scenes.length}. Старые видео удалены.`)
       pushBoardToast({
         type: 'success',
@@ -14992,6 +15230,15 @@ function updateSelectedSceneDuration(nextValue) {
         boardRef.current = nextBoard
         return nextBoard
       })
+      updateBulkStillProgressV218C({
+        active: false,
+        phase: 'error',
+        total: jobs.length,
+        completed: results.length,
+        currentSceneId: failedSceneIdV216D,
+        currentFileName: activeJobV216D?.file?.name || '',
+        error: error?.message || 'unknown error',
+      })
       setStatus(`Ошибка импорта кадров: ${error?.message || 'unknown error'}`)
       pushBoardToast({ type: 'error', title: 'Импорт кадров не выполнен', message: error?.message || 'unknown error' })
     } finally {
@@ -15012,6 +15259,16 @@ function updateSelectedSceneDuration(nextValue) {
     event.target.value = ''
     if (!file) return
     setBulkStillsImporting(true)
+    updateBulkStillProgressV218C({
+      active: true,
+      phase: 'reading_zip',
+      total: 0,
+      completed: 0,
+      currentSceneId: '',
+      currentFileName: file.name,
+      sourceLabel: `zip:${file.name}`,
+      error: '',
+    })
     setStatus(`Читаем ZIP кадров: ${file.name}`)
     try {
       const zip = await JSZip.loadAsync(file)
@@ -15027,6 +15284,15 @@ function updateSelectedSceneDuration(nextValue) {
       await importBoardStillFiles(files, `zip:${file.name}`)
     } catch (error) {
       console.error('[BOARD STILL ZIP IMPORT FAILED]', error)
+      updateBulkStillProgressV218C({
+        active: false,
+        phase: 'error',
+        total: 0,
+        completed: 0,
+        currentSceneId: '',
+        currentFileName: file.name,
+        error: error?.message || 'unknown error',
+      })
       setStatus(`Ошибка ZIP импорта: ${error?.message || 'unknown error'}`)
       pushBoardToast({ type: 'error', title: 'ZIP импорт кадров', message: error?.message || 'unknown error' })
       setBulkStillsImporting(false)
@@ -17377,6 +17643,24 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
     imageErrors: boardScenes.filter((scene) => boardSceneImageUploadStateV216D(scene) === 'error').length,
     videos: boardScenes.filter((scene) => boardSceneHasCurrentVideoResultV129P(scene)).length,
   }
+  const bulkStillProgressLabelV218C = (() => {
+    const progress = bulkStillProgressV218C || {}
+    const completed = Math.max(0, Number(progress.completed || 0))
+    const total = Math.max(0, Number(progress.total || 0))
+    const fileName = asText(progress.currentFileName)
+    const sceneId = asText(progress.currentSceneId)
+    if (progress.phase === 'reading_zip') return `ZIP кадров: читаем ${fileName || 'архив'}…`
+    if (progress.phase === 'preparing') return `Импорт фото: подготовка 0/${total}`
+    if (progress.phase === 'clearing') return `Импорт фото: очищаем старые кадры · 0/${total}`
+    if (progress.phase === 'uploading') {
+      const current = total ? Math.min(total, completed + 1) : completed
+      return `Импорт фото: ${completed}/${total} сохранено · сейчас ${current}/${total}${sceneId ? ` · ${sceneId}` : ''}${fileName ? ` · ${fileName}` : ''}`
+    }
+    if (progress.phase === 'finalizing') return `Импорт фото: ${completed}/${total} · финальная проверка и сохранение…`
+    if (progress.phase === 'done') return `Импорт фото готов: ${completed}/${total}`
+    if (progress.phase === 'error') return `Ошибка импорта фото после ${completed}/${total}: ${asText(progress.error) || 'unknown error'}`
+    return ''
+  })()
   const badVideoReviewScenes = boardScenes.filter((scene) => boardSceneHasBadVideoReview(scene))
   const needsVideoReviewScenes = boardScenes.filter((scene) => boardSceneNeedsVideoReview(scene))
 
@@ -18162,10 +18446,22 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
         <span>Сцен: <strong>{readiness.total}</strong></span>
         <span>Видео prompt: <strong>{readiness.prompts}</strong></span>
         <span>Фото: <strong>{readiness.images}</strong></span>
-        {readiness.imageUploads ? <span>Фото грузится: <strong>{readiness.imageUploads}</strong></span> : null}
+        {(bulkStillProgressV218C.active || readiness.imageUploads) ? (
+          <span>
+            Фото грузится: <strong>{
+              bulkStillProgressV218C.active
+                ? Math.max(1, Number(bulkStillProgressV218C.total || 0) - Number(bulkStillProgressV218C.completed || 0))
+                : readiness.imageUploads
+            }</strong>
+          </span>
+        ) : null}
         {readiness.imageErrors ? <span className="isWarn">Ошибок фото: <strong>{readiness.imageErrors}</strong></span> : null}
         <span>Видео: <strong>{readiness.videos}</strong></span>
-        {status && <span className="avaBoardStatusText">{status}</span>}
+        {bulkStillProgressLabelV218C ? (
+          <span className={`avaBoardStatusText ${bulkStillProgressV218C.phase === 'error' ? 'isWarn' : ''}`}>
+            {bulkStillProgressLabelV218C}
+          </span>
+        ) : (status ? <span className="avaBoardStatusText">{status}</span> : null)}
       </div>
 
       {selectedScene ? (

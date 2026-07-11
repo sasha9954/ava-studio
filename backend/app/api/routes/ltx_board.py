@@ -4282,6 +4282,93 @@ def _board_preserve_newer_prompts_v218a(current_data: dict[str, Any], incoming_d
     }
 
 
+
+# AVA_BOARD_SERVER_BATCH_GENERATION_CONFIG_AUTHORITY_V218D
+_BOARD_GENERATION_CONFIG_KEYS_V218D = (
+    'route', 'planned_route', 'plannedRoute', 'video_route', 'videoRoute', 'generation_route', 'generationRoute',
+    'model_route', 'modelRoute',
+    'model', 'modelKey', 'model_key', 'modelId', 'model_id', 'selectedModel', 'selected_model',
+    'videoModel', 'video_model', 'imageModel', 'image_model', 'generationModel', 'generation_model',
+    'workflowKey', 'workflow_key', 'resolvedWorkflowKey', 'resolved_workflow_key',
+    'workflow', 'workflowName', 'workflow_name', 'modelWorkflow', 'model_workflow',
+    'format', 'aspect_ratio', 'aspectRatio', 'output_format', 'outputFormat', 'payload_aspect', 'payloadAspect',
+    'width', 'height', 'target_width', 'targetWidth', 'target_height', 'targetHeight',
+    'fps', 'frameRate', 'frame_rate', 'fit_mode', 'fitMode',
+    'motion_strength', 'motionStrength', 'seed', 'cfg', 'steps',
+    'source_or_generated', 'sourceOrGenerated', 'video_node_role', 'videoNodeRole',
+    'skip_board_generation', 'skipBoardGeneration',
+)
+_BOARD_GENERATION_CONFIG_META_KEYS_V218D = (
+    'generation_config_revision_v218d', 'generationConfigRevisionV218D',
+    'generation_config_edited_at_v218d', 'generationConfigEditedAtV218D',
+    'generation_config_local_authority_v218d', 'generationConfigLocalAuthorityV218D',
+)
+
+
+def _board_generation_config_revision_v218d(scene: dict[str, Any] | None) -> int:
+    if not isinstance(scene, dict):
+        return 0
+    values: list[int] = []
+    for key in ('generation_config_revision_v218d', 'generationConfigRevisionV218D'):
+        try:
+            value = int(float(scene.get(key) or 0))
+        except Exception:
+            value = 0
+        if value > 0:
+            values.append(value)
+    return max(values or [0])
+
+
+def _board_preserve_newer_generation_config_v218d(current_data: dict[str, Any], incoming_data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    current_scenes = current_data.get('scenes') if isinstance(current_data.get('scenes'), list) else []
+    incoming_scenes = incoming_data.get('scenes') if isinstance(incoming_data.get('scenes'), list) else []
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+
+    current_by_id = {
+        _board_scene_id_v218a(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+    next_data = copy.deepcopy(incoming_data)
+    next_scenes = next_data.get('scenes') if isinstance(next_data.get('scenes'), list) else []
+    changed_fields = 0
+    changed_scenes: list[str] = []
+
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _board_scene_id_v218a(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict):
+            continue
+        if _board_generation_config_revision_v218d(current_scene) <= _board_generation_config_revision_v218d(scene):
+            continue
+        scene_changed = False
+        for key in (*_BOARD_GENERATION_CONFIG_KEYS_V218D, *_BOARD_GENERATION_CONFIG_META_KEYS_V218D):
+            if key not in current_scene:
+                continue
+            value = copy.deepcopy(current_scene.get(key))
+            if scene.get(key) == value:
+                continue
+            scene[key] = value
+            changed_fields += 1
+            scene_changed = True
+        if scene_changed:
+            changed_scenes.append(scene_id)
+
+    if not changed_fields:
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    next_data['scenes'] = next_scenes
+    next_data['board_generation_config_authority_v218d'] = True
+    next_data['boardGenerationConfigAuthorityV218D'] = True
+    return next_data, {
+        'changedFields': changed_fields,
+        'changedScenes': changed_scenes[:80],
+    }
+
 def _board_batch_save_snapshot(project_id: str, board_data: dict[str, Any], client_version: str = "board-server-video-batch-v131a") -> None:
     def op(db: dict[str, Any]) -> dict[str, Any]:
         db.setdefault("snapshots", {}).setdefault(project_id, {})
@@ -4313,6 +4400,16 @@ def _board_batch_save_snapshot(project_id: str, board_data: dict[str, Any], clie
                 "project_id": project_id,
                 "client_version": client_version,
                 **prompt_authority_v218a,
+            }, flush=True)
+        incoming_raw_v213g, generation_config_authority_v218d = _board_preserve_newer_generation_config_v218d(
+            current_data or {},
+            incoming_raw_v213g,
+        )
+        if generation_config_authority_v218d.get('changedFields'):
+            print('[BOARD SERVER BATCH GENERATION CONFIG AUTHORITY V218D]', {
+                'project_id': project_id,
+                'client_version': client_version,
+                **generation_config_authority_v218d,
             }, flush=True)
         incoming_raw_v213g, preserved_image_authority_v213g = _ava_v213g_preserve_current_image_media(
             current_data or {},

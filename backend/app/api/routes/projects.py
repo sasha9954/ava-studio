@@ -4381,6 +4381,103 @@ def _ava_project_apply_prompt_revision_authority_v218a(current_data, incoming_da
     }
 
 
+
+# AVA_PROJECT_BOARD_GENERATION_CONFIG_AUTHORITY_V218D
+# Manual model/route/workflow/format edits are revisioned independently from media.
+# Concurrent photo uploads and Manual Timing authority may update timing/media, but
+# they cannot replace a newer explicit Board generation configuration.
+_AVA_BOARD_GENERATION_CONFIG_KEYS_V218D = (
+    'route', 'planned_route', 'plannedRoute', 'video_route', 'videoRoute', 'generation_route', 'generationRoute',
+    'model_route', 'modelRoute',
+    'model', 'modelKey', 'model_key', 'modelId', 'model_id', 'selectedModel', 'selected_model',
+    'videoModel', 'video_model', 'imageModel', 'image_model', 'generationModel', 'generation_model',
+    'workflowKey', 'workflow_key', 'resolvedWorkflowKey', 'resolved_workflow_key',
+    'workflow', 'workflowName', 'workflow_name', 'modelWorkflow', 'model_workflow',
+    'format', 'aspect_ratio', 'aspectRatio', 'output_format', 'outputFormat', 'payload_aspect', 'payloadAspect',
+    'width', 'height', 'target_width', 'targetWidth', 'target_height', 'targetHeight',
+    'fps', 'frameRate', 'frame_rate', 'fit_mode', 'fitMode',
+    'motion_strength', 'motionStrength', 'seed', 'cfg', 'steps',
+    'source_or_generated', 'sourceOrGenerated', 'video_node_role', 'videoNodeRole',
+    'skip_board_generation', 'skipBoardGeneration',
+)
+
+_AVA_BOARD_GENERATION_CONFIG_META_KEYS_V218D = (
+    'generation_config_revision_v218d', 'generationConfigRevisionV218D',
+    'generation_config_edited_at_v218d', 'generationConfigEditedAtV218D',
+    'generation_config_local_authority_v218d', 'generationConfigLocalAuthorityV218D',
+)
+
+
+def _ava_v218d_generation_config_revision(scene) -> int:
+    if not isinstance(scene, dict):
+        return 0
+    values = []
+    for key in ('generation_config_revision_v218d', 'generationConfigRevisionV218D'):
+        try:
+            value = int(float(scene.get(key) or 0))
+        except Exception:
+            value = 0
+        if value > 0:
+            values.append(value)
+    return max(values or [0])
+
+
+def _ava_project_apply_generation_config_authority_v218d(source_data, incoming_data, *, prefer_source_on_equal=False):
+    if not isinstance(source_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    source_scenes = _ava_v213d_scenes(source_data)
+    incoming_scenes = _ava_v213d_scenes(incoming_data)
+    if not source_scenes or not incoming_scenes:
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+
+    source_by_id = {
+        _ava_v213d_scene_id(scene, index): scene
+        for index, scene in enumerate(source_scenes)
+        if isinstance(scene, dict)
+    }
+    next_data = copy.deepcopy(incoming_data)
+    next_scenes = _ava_v213d_scenes(next_data)
+    changed_fields = 0
+    changed_scenes = []
+
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _ava_v213d_scene_id(scene, index)
+        source_scene = source_by_id.get(scene_id)
+        if not isinstance(source_scene, dict):
+            continue
+        source_revision = _ava_v218d_generation_config_revision(source_scene)
+        incoming_revision = _ava_v218d_generation_config_revision(scene)
+        source_wins = source_revision > incoming_revision or (
+            prefer_source_on_equal and source_revision > 0 and source_revision == incoming_revision
+        )
+        if not source_wins:
+            continue
+
+        scene_changed = False
+        for key in (*_AVA_BOARD_GENERATION_CONFIG_KEYS_V218D, *_AVA_BOARD_GENERATION_CONFIG_META_KEYS_V218D):
+            if key not in source_scene:
+                continue
+            source_value = copy.deepcopy(source_scene.get(key))
+            if scene.get(key) == source_value:
+                continue
+            scene[key] = source_value
+            changed_fields += 1
+            scene_changed = True
+        if scene_changed:
+            changed_scenes.append(scene_id)
+
+    if not changed_fields:
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    next_data['scenes'] = next_scenes
+    next_data['board_generation_config_authority_v218d'] = True
+    next_data['boardGenerationConfigAuthorityV218D'] = True
+    return next_data, {
+        'changedFields': changed_fields,
+        'changedScenes': changed_scenes[:80],
+    }
+
 def _ava_project_board_image_upload_batch_isolation_v209k(current_snapshot, incoming_data, payload_client_version=""):
     if not isinstance(current_snapshot, dict) or not isinstance(incoming_data, dict):
         return incoming_data, 0
@@ -4915,6 +5012,10 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
     def op(db):
         db['snapshots'].setdefault(project_id, {})
         current = db['snapshots'][project_id].get(stage)
+        current_board_data_v218d = (
+            current.get('data') if stage == 'board' and isinstance(current, dict) and isinstance(current.get('data'), dict) else {}
+        )
+        incoming_generation_config_source_v218d = None
         cleanup = None
         # AVA_TIMING_TO_BOARD_DURATION_AUTHORITY_V212S:
         # guard_mode='replace' must be a real full replacement. Earlier it still
@@ -4983,6 +5084,21 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     **prompt_revision_authority_v218a,
                 }, flush=True)
 
+        if stage == 'board':
+            incoming_data, generation_config_authority_v218d = _ava_project_apply_generation_config_authority_v218d(
+                current_board_data_v218d,
+                incoming_data or {},
+            )
+            if generation_config_authority_v218d.get('changedFields'):
+                print('[PROJECT BOARD GENERATION CONFIG AUTHORITY V218D]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'guardMode': payload.guard_mode,
+                    'phase': 'pre_timing',
+                    **generation_config_authority_v218d,
+                }, flush=True)
+            incoming_generation_config_source_v218d = copy.deepcopy(incoming_data or {})
+
         if stage == 'manual_timing':
             incoming_data, normalized_v212s3, info_v212s3 = _ava_v212s3_normalize_manual_timing_data(incoming_data or {})
             if normalized_v212s3:
@@ -5039,6 +5155,21 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                         'incomingSig': board_sig_v212s2[:3],
                         'sceneCount': len(_ava_v212s2_scenes(incoming_data)),
                     }, flush=True)
+        if stage == 'board' and isinstance(incoming_generation_config_source_v218d, dict):
+            incoming_data, generation_config_post_timing_v218d = _ava_project_apply_generation_config_authority_v218d(
+                incoming_generation_config_source_v218d,
+                incoming_data or {},
+                prefer_source_on_equal=True,
+            )
+            if generation_config_post_timing_v218d.get('changedFields'):
+                print('[PROJECT BOARD GENERATION CONFIG AUTHORITY V218D]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'guardMode': payload.guard_mode,
+                    'phase': 'post_timing_restore',
+                    **generation_config_post_timing_v218d,
+                }, flush=True)
+
         if stage == 'video_node' and is_destructive_clear:
             incoming_data = _ava_video_node_clear_tombstone_v209b(payload.client_version or '')
         if stage == 'video_node' and payload.guard_mode == 'safe_merge' and current:
