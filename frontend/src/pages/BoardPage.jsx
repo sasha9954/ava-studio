@@ -1,3 +1,10 @@
+/* AVA_BOARD_VIDEO_REVISION_AUTHORITY_V218B: server-ready video refs beat stale Board saves; explicit clears use a newer clear revision. */
+/* AVA_BOARD_CONCURRENT_SCENE_MUTATION_AUTHORITY_V218A: serialize Board saves and apply prompt-patch JSON only to prompt fields. */
+/* AVA_BOARD_PREVIEW_REMARK_DELETE_SCROLL_V217E: explicit preview delete and capped scrollable Board remarks list. */
+/* AVA_BOARD_PREVIEW_REMARK_IMMUTABLE_SCENE_BINDING_V217D: every remark stores an immutable scene snapshot; legacy bindings recover from timeSec. */
+/* AVA_BOARD_PREVIEW_REMARK_REVISION_AUTHORITY_V217C: serialize preview mutations and keep newer remarks across autosave/F5. */
+/* AVA_BOARD_MIXED_MEDIA_PREVIEW_V217B: Board preview accepts video, still image, or AVA placeholder for every timing scene. */
+/* AVA_BOARD_IN_PAGE_PREVIEW_REMARKS_V217A: same-page Board/Preview, quick video map and scene-linked remarks. */
 /* AVA_BOARD_MANUAL_REVIEW_SAME_VIDEO_AUTHORITY_V216P: human review decision wins system replay only for the same video. */
 /* AVA_BOARD_MANUAL_REGENERATE_NOT_BAD_V216O: manual force regeneration is independent from bad review. */
 /* AVA_BOARD_CLEAR_REVIEW_WITHOUT_VIDEO_V216N: review cannot exist without a current video. */
@@ -340,6 +347,88 @@ function normalizeBoardMediaUrl(value = '') {
   if (/^(https?:|blob:|data:)/i.test(raw)) return raw
   if (raw.startsWith('/')) return buildApiUrl(raw)
   return raw
+}
+
+
+// AVA_BOARD_IN_PAGE_PREVIEW_REMARKS_V217A:
+// The Board preview owns only a temporary browser object URL. The durable asset ref
+// remains inside the canonical Board snapshot.
+function pauseBoardPreviewMediaV217A(exceptNode = null) {
+  try {
+    Array.from(document.querySelectorAll('video, audio')).forEach((node) => {
+      if (!node || node === exceptNode) return
+      try { node.pause() } catch (_) {}
+    })
+  } catch (_) {}
+}
+
+function BoardQuickPreviewVideoV217A({ source = '', playKey = '', onTimeUpdate = null }) {
+  const [blobUrl, setBlobUrl] = useState('')
+  const [error, setError] = useState('')
+  const videoRef = useRef(null)
+  const autoplayRef = useRef('')
+  const cleanSource = asText(source)
+  const protectedAsset = /\/(api\/)?assets\/[^/]+\/file/i.test(cleanSource)
+
+  useEffect(() => {
+    let alive = true
+    let objectUrl = ''
+    setBlobUrl('')
+    setError('')
+    if (!cleanSource || !protectedAsset) return undefined
+
+    fetchProtectedBlobUrl(cleanSource)
+      .then((url) => {
+        if (!alive) return
+        objectUrl = url
+        setBlobUrl(url)
+      })
+      .catch((err) => {
+        if (alive) setError(String(err?.message || err))
+      })
+
+    return () => {
+      alive = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [cleanSource, protectedAsset])
+
+  const src = protectedAsset ? blobUrl : (cleanSource ? buildApiUrl(cleanSource) : '')
+
+  useEffect(() => {
+    const key = `${asText(playKey)}|${src}`
+    if (!playKey || !src || !videoRef.current || autoplayRef.current === key) return undefined
+    autoplayRef.current = key
+    const timer = window.setTimeout(() => {
+      const node = videoRef.current
+      if (!node) return
+      try {
+        pauseBoardPreviewMediaV217A(node)
+        node.currentTime = 0
+        const promise = node.play()
+        if (promise && typeof promise.catch === 'function') promise.catch(() => {})
+      } catch (_) {}
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [playKey, src])
+
+  if (!cleanSource) return <div className="avaBoardPreviewEmptyV217A"><Film size={34} /><span>Полное preview ещё не собрано</span></div>
+  if (protectedAsset && !blobUrl && !error) return <div className="avaBoardPreviewEmptyV217A"><span className="avaBoardPreviewSpinnerV217A" /><span>Загружаю preview…</span></div>
+  if (error) return <div className="avaBoardPreviewEmptyV217A isError"><AlertTriangle size={28} /><span>Preview недоступно: {error}</span></div>
+
+  return (
+    <video
+      ref={videoRef}
+      src={src || undefined}
+      controls
+      playsInline
+      preload="metadata"
+      onPlay={() => pauseBoardPreviewMediaV217A(videoRef.current)}
+      onTimeUpdate={onTimeUpdate || undefined}
+      onSeeked={onTimeUpdate || undefined}
+      onPause={onTimeUpdate || undefined}
+    />
+  )
 }
 
 function boardProtectedAssetApiPath(value = '') {
@@ -9517,6 +9606,21 @@ function sceneVideoActionState(scene) {
   const [audioStudioConfirmOpenV204D2, setAudioStudioConfirmOpenV204D2] = useState(false)
   const [audioStudioConfirmBusyV204D2, setAudioStudioConfirmBusyV204D2] = useState(false)
   const [audioStudioConfirmErrorV204D2, setAudioStudioConfirmErrorV204D2] = useState('')
+  // V217A: compact same-page preview mode. Remarks are durable Board snapshot data;
+  // transient player time/loading state stays in React only.
+  const [boardViewModeV217A, setBoardViewModeV217A] = useState('board')
+  const [boardPreviewBusyV217A, setBoardPreviewBusyV217A] = useState(false)
+  const [boardPreviewErrorV217A, setBoardPreviewErrorV217A] = useState('')
+  const [boardPreviewPlayKeyV217A, setBoardPreviewPlayKeyV217A] = useState('')
+  const [boardPreviewCurrentTimeV217A, setBoardPreviewCurrentTimeV217A] = useState(0)
+  const [boardPreviewRemarkDraftV217A, setBoardPreviewRemarkDraftV217A] = useState('')
+  const [boardPreviewRemarksOpenV217A, setBoardPreviewRemarksOpenV217A] = useState(false)
+  // V217C: preview saves are serialized. A rapid pair of “Готово” clicks and an
+  // older Board autosave must never race and restore an already removed remark.
+  const boardPreviewSaveChainRefV217C = useRef(Promise.resolve())
+  // V218A: every Board snapshot save shares one chain. Media uploads, prompt imports,
+  // autosave and UI actions cannot finish out of order and replay stale scene objects.
+  const boardSnapshotSaveChainRefV218A = useRef(Promise.resolve())
   const audioRef = useRef(null)
   const manualLipSyncAudioInputRefV129A = useRef(null)
   const importRef = useRef(null)
@@ -11716,7 +11820,95 @@ function boardProtectLiveCommittedImagesV215D(incomingBoard = {}, liveBoard = {}
 }
 
 
-  async function saveBoard(nextBoard = board, quiet = false) {
+const BOARD_VIDEO_AUTHORITY_FIELDS_V218B = [
+  'video_status','videoStatus','generation_status','generationStatus','batch_status','batchStatus',
+  'video_error','videoError','video_job_id','videoJobId','job_id','jobId',
+  'video_status_endpoint','videoStatusEndpoint','video_queue_position','videoQueuePosition','video_queue_source','videoQueueSource',
+  'video_url','videoUrl','video_api_path','videoApiPath','video_asset_id','videoAssetId','video_name','videoName','video_result','videoResult',
+  'result_url','resultUrl','result_video_url','resultVideoUrl','result_video_api_path','resultVideoApiPath','result_video_asset_id','resultVideoAssetId','result_video_name','resultVideoName',
+  'ready_video_url','readyVideoUrl','ready_video_api_path','readyVideoApiPath','ready_video_asset_id','readyVideoAssetId',
+  'generated_video_url','generatedVideoUrl','generated_video_api_path','generatedVideoApiPath','generated_video_asset_id','generatedVideoAssetId',
+  'output_video_url','outputVideoUrl','output_video_api_path','outputVideoApiPath','output_video_asset_id','outputVideoAssetId',
+  'original_video_url','originalVideoUrl','video_ready_at','videoReadyAt','video_updated_at','videoUpdatedAt',
+  'server_batch_job_id','serverBatchJobId','server_batch_status_endpoint','serverBatchStatusEndpoint',
+  'video_source_image_asset_id','videoSourceImageAssetId','video_source_image_api_path','videoSourceImageApiPath','video_source_image_url','videoSourceImageUrl',
+  'video_source_image_mutation_epoch','videoSourceImageMutationEpoch','video_source_revision_v216a','videoSourceRevisionV216A',
+  'generation_media_revision_v216a','generationMediaRevisionV216A','generation_source_image_asset_id_v216a','generationSourceImageAssetIdV216A',
+  'video_revision_v218b','videoRevisionV218B','video_ready_epoch_v218b','videoReadyEpochV218B',
+]
+
+function boardEpochV218B(value) {
+  const numeric = Number(value || 0)
+  if (Number.isFinite(numeric) && numeric > 0) return numeric
+  const parsed = Date.parse(String(value || ''))
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+function boardSceneVideoRevisionV218B(scene = {}) {
+  const values = [
+    scene?.video_revision_v218b, scene?.videoRevisionV218B,
+    scene?.video_ready_epoch_v218b, scene?.videoReadyEpochV218B,
+    scene?.video_ready_at, scene?.videoReadyAt,
+    scene?.video_updated_at, scene?.videoUpdatedAt,
+  ].map(boardEpochV218B)
+  const revision = Math.max(0, ...values)
+  if (revision > 0) return revision
+  return boardSceneHasCurrentVideoResultV129P(scene) ? 1 : 0
+}
+
+function boardSceneVideoClearRevisionV218B(scene = {}) {
+  return Math.max(0,
+    boardEpochV218B(scene?.video_clear_revision_v218b),
+    boardEpochV218B(scene?.videoClearRevisionV218B),
+    boardEpochV218B(scene?.source_image_changed_epoch),
+    boardEpochV218B(scene?.sourceImageChangedEpoch),
+    boardEpochV218B(scene?.image_mutation_epoch),
+    boardEpochV218B(scene?.imageMutationEpoch),
+  )
+}
+
+function boardPreserveLiveVideoAuthorityV218B(incomingBoard = {}, liveBoard = {}, reason = 'unknown') {
+  const incomingScenes = asSceneArray(incomingBoard?.scenes)
+  const liveScenes = asSceneArray(liveBoard?.scenes)
+  if (!incomingScenes.length || !liveScenes.length) return incomingBoard || {}
+  const liveById = new Map(liveScenes.map((scene, index) => [
+    asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`),
+    scene,
+  ]).filter(([id]) => id))
+  let protectedScenes = 0
+  const scenes = incomingScenes.map((scene, index) => {
+    const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`)
+    const liveScene = liveById.get(sceneId)
+    if (!liveScene || !boardSceneHasCurrentVideoResultV129P(liveScene)) return scene
+    const liveRevision = boardSceneVideoRevisionV218B(liveScene)
+    const incomingRevision = boardSceneVideoRevisionV218B(scene)
+    const incomingClearRevision = boardSceneVideoClearRevisionV218B(scene)
+    if (incomingClearRevision > liveRevision || incomingRevision >= liveRevision) return scene
+    const merged = { ...(scene || {}) }
+    for (const key of BOARD_VIDEO_AUTHORITY_FIELDS_V218B) {
+      if (Object.prototype.hasOwnProperty.call(liveScene, key)) merged[key] = liveScene[key]
+      else delete merged[key]
+    }
+    merged.stale_video_save_rejected_v218b = true
+    merged.staleVideoSaveRejectedV218B = true
+    merged.stale_video_save_reason_v218b = reason
+    merged.staleVideoSaveReasonV218B = reason
+    protectedScenes += 1
+    return canonicalizeBoardSceneMediaRefs(merged)
+  })
+  if (!protectedScenes) return incomingBoard || {}
+  console.warn('[BOARD SAVE VIDEO AUTHORITY V218B]', { reason, protectedScenes })
+  return {
+    ...(incomingBoard || {}),
+    scenes,
+    stale_video_saves_rejected_v218b: protectedScenes,
+    staleVideoSavesRejectedV218B: protectedScenes,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+
+  async function saveBoardNowV218A(nextBoard = board, quiet = false) {
     const sourceBoardForSaveV214K2 = boardPreserveLivePromptFieldsV214K2(nextBoard || {}, boardRef.current || board || {}, 'saveBoard_payload_v214k2')
     const sourceBoardForSaveV213D = boardProtectLivePromptFieldsForSaveV213D(sourceBoardForSaveV214K2, boardRef.current)
     const sourceBoardForSaveV214A = boardPreserveGenerationConfigOnMediaMutationV214A(sourceBoardForSaveV213D, boardRef.current, { reason: 'save_board_media_mutation_guard_v214a' })
@@ -11781,12 +11973,16 @@ function boardProtectLiveCommittedImagesV215D(incomingBoard = {}, liveBoard = {}
       let serverBoardAcceptedV212X = false
       const payloadHadReviewResetV212X = avaBoardPayloadHasReviewResetV212X(payload)
       if (payloadHadReviewResetV212X) {
-        const acceptedBoardV212X = (serverCorrectedBoardV212S4C && Array.isArray(serverCorrectedBoardV212S4C.scenes))
+        const acceptedBoardRawV212X = (serverCorrectedBoardV212S4C && Array.isArray(serverCorrectedBoardV212S4C.scenes))
           ? normalizeLoadedBoardVideoStatuses({
               ...serverCorrectedBoardV212S4C,
               updatedAt: serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
             })
           : avaBoardClearReviewResetFlagsV212X(payload)
+        const acceptedBoardV212X = boardWithPreviewAuthorityV217C(
+          acceptedBoardRawV212X,
+          boardRef.current || payload,
+        )
         boardRef.current = acceptedBoardV212X
         skipNextBoardAutosaveRefV145A.current = true
         setBoard(acceptedBoardV212X)
@@ -11807,10 +12003,14 @@ function boardProtectLiveCommittedImagesV215D(incomingBoard = {}, liveBoard = {}
           boardRef.current || {},
           'server_correction_media_upload_config_guard_v214a'
         )
-        const acceptedBoardV212S4C = normalizeLoadedBoardVideoStatuses({
+        const acceptedBoardRawV212S4C = normalizeLoadedBoardVideoStatuses({
           ...correctedBoardLocalStateV214A,
           updatedAt: correctedBoardLocalStateV214A?.updatedAt || serverCorrectedBoardV212S4C?.updatedAt || new Date().toISOString(),
         })
+        const acceptedBoardV212S4C = boardWithPreviewAuthorityV217C(
+          acceptedBoardRawV212S4C,
+          boardRef.current || payload,
+        )
         boardRef.current = acceptedBoardV212S4C
         setBoard(acceptedBoardV212S4C)
         writeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }), acceptedBoardV212S4C)
@@ -11864,6 +12064,42 @@ function boardProtectLiveCommittedImagesV215D(incomingBoard = {}, liveBoard = {}
     } finally {
       if (!quiet) setSaving(false)
     }
+  }
+
+  async function saveBoard(nextBoard = board, quiet = false) {
+    const requestedBoardV218A = nextBoard || boardRef.current || board || {}
+    const queuedAtV218A = Date.now()
+    const previousV218A = boardSnapshotSaveChainRefV218A.current || Promise.resolve()
+    const taskV218A = Promise.resolve(previousV218A)
+      .catch(() => undefined)
+      .then(async () => {
+        const liveBoardV218A = boardRef.current || board || requestedBoardV218A
+        const promptProtectedV218A = boardMergePromptStateV213D(
+          requestedBoardV218A,
+          liveBoardV218A,
+          { reason: 'serialized_save_live_prompt_guard_v218a' },
+        )
+        const videoProtectedV218B = boardPreserveLiveVideoAuthorityV218B(
+          promptProtectedV218A,
+          liveBoardV218A,
+          'serialized_save_live_video_guard_v218b',
+        )
+        console.log('[BOARD SAVE SERIALIZED START V218A]', {
+          queuedMs: Math.max(0, Date.now() - queuedAtV218A),
+          sceneCount: asSceneArray(videoProtectedV218B?.scenes).length,
+          saveMode: asText(videoProtectedV218B?.saveMode || videoProtectedV218B?.save_mode),
+          quiet: Boolean(quiet),
+        })
+        const resultV218A = await saveBoardNowV218A(videoProtectedV218B, quiet)
+        console.log('[BOARD SAVE SERIALIZED END V218A]', {
+          ok: Boolean(resultV218A?.ok),
+          guardMode: resultV218A?.guardMode || '',
+          sceneCount: asSceneArray(resultV218A?.payload?.scenes).length,
+        })
+        return resultV218A
+      })
+    boardSnapshotSaveChainRefV218A.current = taskV218A.then(() => undefined, () => undefined)
+    return taskV218A
   }
 
 
@@ -12417,6 +12653,580 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
     // Explicit Timing refresh is destructive, so ask first in the same style.
     setShowTimingToBoardConfirm(true)
     setStatus('Подтверди замену Доски свежим Таймингом.')
+  }
+
+
+  function boardPreviewStateV217A(sourceBoard = boardRef.current || board || {}) {
+    const value = sourceBoard?.boardPreviewV217A || sourceBoard?.board_preview_v217a || {}
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  }
+
+  function boardPreviewRemarkTimelineTargetV217D(timeSec = 0, sourceBoard = boardRef.current || board || {}) {
+    const scenes = asSceneArray(sourceBoard?.scenes)
+    if (!scenes.length) return null
+    const targetTime = Math.max(0, toNumber(timeSec, 0))
+    let cursor = 0
+    for (let index = 0; index < scenes.length; index += 1) {
+      const scene = scenes[index]
+      const timing = boardPreviewSceneTimingV217A(scene)
+      const start = cursor
+      const end = start + Math.max(0.08, timing.duration)
+      const isLast = index === scenes.length - 1
+      if (targetTime < end || isLast) {
+        const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${index + 1}`)
+        return {
+          sceneId,
+          sceneNumber: index + 1,
+          start,
+          end,
+          timeSec: targetTime,
+        }
+      }
+      cursor = end
+    }
+    return null
+  }
+
+  function boardPreviewNormalizeRemarkV217D(item = {}, index = 0, sourceBoard = boardRef.current || board || {}) {
+    if (!item || typeof item !== 'object') return null
+    const text = asText(item.text)
+    if (!text) return null
+    const id = asText(item.id) || `preview_remark_legacy_${index}_${asText(item.createdAt || item.created_at || 'unknown')}`
+    const hasStoredTime = (
+      item.timeSec !== undefined || item.time_sec !== undefined ||
+      item.previewTimeSec !== undefined || item.preview_time_sec !== undefined
+    )
+    const timeSec = Math.max(0, toNumber(
+      item.timeSec ?? item.time_sec ?? item.previewTimeSec ?? item.preview_time_sec,
+      0,
+    ))
+    const frozenSceneId = asText(
+      item.frozenSceneIdV217D || item.frozen_scene_id_v217d ||
+      item.boundSceneIdV217D || item.bound_scene_id_v217d,
+    )
+    const frozenSceneNumber = Math.max(0, toNumber(
+      item.frozenSceneNumberV217D ?? item.frozen_scene_number_v217d ??
+      item.boundSceneNumberV217D ?? item.bound_scene_number_v217d,
+      0,
+    ))
+    // Legacy V217A remarks may have had their scene aliases overwritten by the
+    // currently selected scene. Their immutable preview time still identifies
+    // the original scene, so recover from timeSec exactly once.
+    const timedTarget = (!frozenSceneId && hasStoredTime)
+      ? boardPreviewRemarkTimelineTargetV217D(timeSec, sourceBoard)
+      : null
+    const storedSceneId = asText(item.sceneId || item.scene_id)
+    const sceneId = frozenSceneId || asText(timedTarget?.sceneId) || storedSceneId
+    const scenes = asSceneArray(sourceBoard?.scenes)
+    const resolvedIndex = scenes.findIndex((scene) => (
+      asText(scene?.id || scene?.scene_id || scene?.sceneId) === sceneId
+    ))
+    const sceneNumber = Math.max(
+      1,
+      frozenSceneNumber ||
+      toNumber(timedTarget?.sceneNumber, 0) ||
+      (resolvedIndex >= 0 ? resolvedIndex + 1 : 0) ||
+      toNumber(item.sceneNumber ?? item.scene_number, 0) ||
+      1,
+    )
+    return {
+      ...item,
+      id,
+      text,
+      sceneId,
+      scene_id: sceneId,
+      sceneNumber,
+      scene_number: sceneNumber,
+      timeSec,
+      time_sec: timeSec,
+      frozenSceneIdV217D: sceneId,
+      frozen_scene_id_v217d: sceneId,
+      frozenSceneNumberV217D: sceneNumber,
+      frozen_scene_number_v217d: sceneNumber,
+      bindingVersionV217D: 'v217d',
+      binding_version_v217d: 'v217d',
+      bindingTokenV217D: `${id}|${sceneId}|${sceneNumber}|${timeSec.toFixed(3)}`,
+    }
+  }
+
+  function boardPreviewRemarksV217A(sourceBoard = boardRef.current || board || {}) {
+    const preview = boardPreviewStateV217A(sourceBoard)
+    return asArray(preview.remarks || preview.previewRemarks || preview.preview_remarks)
+      .map((item, index) => boardPreviewNormalizeRemarkV217D(item, index, sourceBoard))
+      .filter(Boolean)
+      .map((item) => ({ ...item }))
+  }
+
+  function boardPreviewCurrentVideoRefV217A(scene = {}) {
+    if (!boardSceneHasCurrentVideoResultV129P(scene)) return ''
+    return firstTextValue(
+      scene.mmaudio_video_api_path,
+      scene.mmaudioVideoApiPath,
+      scene.mmaudio_video_url,
+      scene.mmaudioVideoUrl,
+      scene.video_api_path,
+      scene.videoApiPath,
+      scene.video_url,
+      scene.videoUrl,
+      scene.result_video_api_path,
+      scene.resultVideoApiPath,
+      scene.result_video_url,
+      scene.resultVideoUrl,
+      scene.video_result?.video_api_path,
+      scene.videoResult?.videoApiPath,
+      scene.video_result?.video_url,
+      scene.videoResult?.videoUrl,
+    )
+  }
+
+  // V217B: Board preview is also a pre-generation animatic. Current video wins;
+  // otherwise the canonical durable still is held for the full scene timing.
+  function boardPreviewCurrentImageRefV217B(scene = {}) {
+    if (!boardSceneHasDurableImageV216D(scene)) return ''
+    return firstTextValue(
+      sceneMediaFieldValue(scene, 'image', 'apiPath'),
+      sceneMediaFieldValue(scene, 'first', 'apiPath'),
+      sceneMediaFieldValue(scene, 'image', 'url'),
+      sceneMediaFieldValue(scene, 'first', 'url'),
+      scene.image_api_path,
+      scene.imageApiPath,
+      scene.first_image_api_path,
+      scene.firstImageApiPath,
+      scene.start_image_api_path,
+      scene.startImageApiPath,
+      scene.image_url,
+      scene.imageUrl,
+      scene.first_image_url,
+      scene.firstImageUrl,
+      scene.first_frame_url,
+      scene.firstFrameUrl,
+      scene.start_image_url,
+      scene.startImageUrl,
+    )
+  }
+
+  function boardPreviewSceneMediaV217B(scene = {}) {
+    const videoRef = boardPreviewCurrentVideoRefV217A(scene)
+    if (videoRef) {
+      return {
+        kind: 'video',
+        ref: videoRef,
+        assetId: boardAssetIdFromRef(
+          scene?.mmaudio_video_asset_id,
+          scene?.mmaudioVideoAssetId,
+          scene?.video_asset_id,
+          scene?.videoAssetId,
+          scene?.result_video_asset_id,
+          scene?.resultVideoAssetId,
+          videoRef,
+        ),
+      }
+    }
+
+    const imageRef = boardPreviewCurrentImageRefV217B(scene)
+    if (imageRef) {
+      return {
+        kind: 'image',
+        ref: imageRef,
+        assetId: boardAssetIdFromRef(
+          scene?.image_asset_id,
+          scene?.imageAssetId,
+          scene?.first_image_asset_id,
+          scene?.firstImageAssetId,
+          scene?.first_frame_asset_id,
+          scene?.firstFrameAssetId,
+          scene?.start_image_asset_id,
+          scene?.startImageAssetId,
+          imageRef,
+        ),
+      }
+    }
+
+    return { kind: 'placeholder', ref: '', assetId: '' }
+  }
+
+  function boardPreviewSceneTimingV217A(scene = {}) {
+    const start = toNumber(scene?.start_sec ?? scene?.startSec ?? scene?.start, 0)
+    const rawEnd = toNumber(scene?.end_sec ?? scene?.endSec ?? scene?.end, start)
+    const explicitDuration = toNumber(scene?.duration_sec ?? scene?.durationSec ?? scene?.duration, 0)
+    const duration = explicitDuration > 0 ? explicitDuration : Math.max(0, rawEnd - start)
+    return { start, end: rawEnd > start ? rawEnd : start + duration, duration: Math.max(0.08, duration) }
+  }
+
+  function boardPreviewCacheKeyV217A(scenes = []) {
+    return asSceneArray(scenes).map((scene, index) => {
+      const timing = boardPreviewSceneTimingV217A(scene)
+      const mediaV217B = boardPreviewSceneMediaV217B(scene)
+      return [
+        asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${index + 1}`),
+        mediaV217B.kind,
+        mediaV217B.ref,
+        timing.start.toFixed(3),
+        timing.end.toFixed(3),
+        timing.duration.toFixed(3),
+        boardSceneMediaRevisionV216A(scene),
+      ].join('@')
+    }).join('|')
+  }
+
+  function boardPreviewRevisionV217C(sourceBoardOrPreview = {}) {
+    const preview = (
+      sourceBoardOrPreview?.boardPreviewV217A ||
+      sourceBoardOrPreview?.board_preview_v217a ||
+      sourceBoardOrPreview ||
+      {}
+    )
+    return Math.max(0, toNumber(
+      preview?.revisionV217C ?? preview?.revision_v217c ?? preview?.mutationRevisionV217C ?? preview?.mutation_revision_v217c,
+      0,
+    ))
+  }
+
+  function boardWithPreviewAuthorityV217C(baseBoard = {}, authorityBoard = {}) {
+    const basePreview = boardPreviewStateV217A(baseBoard)
+    const authorityPreview = boardPreviewStateV217A(authorityBoard)
+    if (!authorityPreview || !Object.keys(authorityPreview).length) return baseBoard || {}
+    const baseRevision = boardPreviewRevisionV217C(basePreview)
+    const authorityRevision = boardPreviewRevisionV217C(authorityPreview)
+    if (authorityRevision < baseRevision) return baseBoard || {}
+    return {
+      ...(baseBoard || {}),
+      boardPreviewV217A: { ...authorityPreview },
+    }
+  }
+
+  async function persistBoardPreviewV217A(updater, reason = 'board_preview_v217a') {
+    const runMutationV217C = async () => {
+      const currentBoard = boardRef.current || board || {}
+      const currentPreview = boardPreviewStateV217A(currentBoard)
+      const nextPreviewRaw = typeof updater === 'function'
+        ? updater(currentPreview)
+        : { ...currentPreview, ...(updater || {}) }
+      const nextRevisionV217C = Math.max(
+        boardPreviewRevisionV217C(currentPreview) + 1,
+        Date.now(),
+      )
+      const nextPreview = {
+        ...nextPreviewRaw,
+        version: 'v217c',
+        revisionV217C: nextRevisionV217C,
+        revision_v217c: nextRevisionV217C,
+        updatedAt: new Date().toISOString(),
+      }
+      const nextBoard = {
+        ...currentBoard,
+        boardPreviewV217A: nextPreview,
+        updatedAt: new Date().toISOString(),
+      }
+      boardRef.current = nextBoard
+      skipNextBoardAutosaveRefV145A.current = true
+      setBoard(nextBoard)
+      await saveBoard(nextBoard, true)
+
+      // saveBoard may receive an older in-flight server response. Reapply the
+      // just-saved revision over that response while preserving newer scene/media state.
+      const liveAfterSaveV217C = boardRef.current || nextBoard
+      const stabilizedBoardV217C = boardWithPreviewAuthorityV217C(liveAfterSaveV217C, nextBoard)
+      boardRef.current = stabilizedBoardV217C
+      skipNextBoardAutosaveRefV145A.current = true
+      setBoard(stabilizedBoardV217C)
+      console.log('[BOARD PREVIEW SNAPSHOT SAVED V217C]', {
+        projectId: projectId || '',
+        reason,
+        revision: nextRevisionV217C,
+        remarks: asArray(nextPreview.remarks).length,
+        previewAssetId: asText(nextPreview?.fullPreviewVideo?.assetId || nextPreview?.fullPreviewVideo?.asset_id),
+      })
+      return stabilizedBoardV217C
+    }
+
+    const queuedMutationV217C = boardPreviewSaveChainRefV217C.current.then(
+      runMutationV217C,
+      runMutationV217C,
+    )
+    boardPreviewSaveChainRefV217C.current = queuedMutationV217C.catch(() => undefined)
+    return queuedMutationV217C
+  }
+
+  async function buildBoardQuickPreviewV217A() {
+    if (boardPreviewBusyV217A) return
+    if (workspaceMode || !projectId) {
+      setBoardPreviewErrorV217A('Быстрое preview доступно внутри проекта, где есть master audio и серверные assets.')
+      return
+    }
+
+    const currentBoard = boardRef.current || board || {}
+    const scenes = asSceneArray(currentBoard.scenes)
+    if (!scenes.length) {
+      setBoardPreviewErrorV217A('В Доске нет сцен для preview.')
+      return
+    }
+
+    const preparedScenes = []
+    let videoSceneCountV217B = 0
+    let imageSceneCountV217B = 0
+    let placeholderSceneCountV217B = 0
+    for (let index = 0; index < scenes.length; index += 1) {
+      const scene = scenes[index]
+      const sceneId = asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${String(index + 1).padStart(2, '0')}`)
+      const timing = boardPreviewSceneTimingV217A(scene)
+      const mediaV217B = boardPreviewSceneMediaV217B(scene)
+      const apiPath = mediaV217B.assetId ? boardCanonicalAssetApiPath(mediaV217B.assetId) : mediaV217B.ref
+      const preparedScene = {
+        id: sceneId,
+        sceneId,
+        scene_id: sceneId,
+        start: timing.start,
+        startSec: timing.start,
+        start_sec: timing.start,
+        end: timing.end,
+        endSec: timing.end,
+        end_sec: timing.end,
+        duration: timing.duration,
+        durationSec: timing.duration,
+        duration_sec: timing.duration,
+        previewMediaKind: mediaV217B.kind,
+        preview_media_kind: mediaV217B.kind,
+        aspectRatio: asText(scene?.format || scene?.aspect_ratio || scene?.aspectRatio || '16:9'),
+        aspect_ratio: asText(scene?.format || scene?.aspect_ratio || scene?.aspectRatio || '16:9'),
+      }
+
+      if (mediaV217B.kind === 'video') {
+        videoSceneCountV217B += 1
+        preparedScene.sourceVideo = { apiPath, url: apiPath, assetId: mediaV217B.assetId }
+        preparedScene.source_video = { api_path: apiPath, url: apiPath, asset_id: mediaV217B.assetId }
+      } else if (mediaV217B.kind === 'image') {
+        imageSceneCountV217B += 1
+        preparedScene.sourceImage = { apiPath, url: apiPath, assetId: mediaV217B.assetId }
+        preparedScene.source_image = { api_path: apiPath, url: apiPath, asset_id: mediaV217B.assetId }
+        preparedScene.previewImage = { apiPath, url: apiPath, assetId: mediaV217B.assetId }
+        preparedScene.preview_image = { api_path: apiPath, url: apiPath, asset_id: mediaV217B.assetId }
+      } else {
+        placeholderSceneCountV217B += 1
+        preparedScene.previewPlaceholder = true
+        preparedScene.preview_placeholder = true
+      }
+      preparedScenes.push(preparedScene)
+    }
+
+    const sceneIds = preparedScenes.map((scene) => scene.id)
+    const startSec = Math.min(...preparedScenes.map((scene) => toNumber(scene.start, 0)))
+    const endSec = Math.max(...preparedScenes.map((scene) => toNumber(scene.end, toNumber(scene.start, 0) + toNumber(scene.durationSec, 0))))
+    const durationSec = Math.max(0, endSec - startSec)
+    const cacheKey = boardPreviewCacheKeyV217A(scenes)
+
+    const payload = {
+      project_id: projectId,
+      projectId,
+      blockId: 'board_preview_full_project_v217a',
+      block_id: 'board_preview_full_project_v217a',
+      block: {
+        id: 'board_preview_full_project_v217a',
+        title: 'Board preview',
+        sceneIds,
+        scene_ids: sceneIds,
+        startSec,
+        endSec,
+        durationSec,
+        requestDurationSec: Math.ceil(durationSec || 0),
+        color: '#22D3EE',
+      },
+      scenes: preparedScenes,
+      includeStableAudio: false,
+      include_stable_audio: false,
+      stableAudio: null,
+      stable_audio: null,
+      previewMap: true,
+      preview_map: true,
+      draftQuality: 'low',
+      draft_quality: 'low',
+      outputStage: 'board',
+      output_stage: 'board',
+      source: 'board_full_preview_map_v217a',
+      previewMediaCounts: {
+        video: videoSceneCountV217B,
+        image: imageSceneCountV217B,
+        placeholder: placeholderSceneCountV217B,
+      },
+    }
+
+    setBoardPreviewBusyV217A(true)
+    setBoardPreviewErrorV217A('')
+    setStatus(`Собираю Board preview: ${preparedScenes.length} сцен · видео ${videoSceneCountV217B} · фото ${imageSceneCountV217B} · заглушки ${placeholderSceneCountV217B}…`)
+    console.info('[BOARD QUICK PREVIEW REQUEST V217A]', {
+      projectId,
+      scenes: preparedScenes.length,
+      videoScenes: videoSceneCountV217B,
+      imageScenes: imageSceneCountV217B,
+      placeholderScenes: placeholderSceneCountV217B,
+      durationSec,
+      cacheKeyPreview: cacheKey.slice(0, 160),
+    })
+
+    try {
+      const data = await apiRequest('/audio-studio/stable-preview/block', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      const previewVideo = {
+        apiPath: firstTextValue(data.previewVideoApiPath, data.preview_video_api_path, data.assetApiPath, data.asset_api_path, data.apiPath, data.api_path),
+        url: firstTextValue(data.previewVideoUrl, data.preview_video_url, data.assetUrl, data.asset_url, data.url),
+        assetId: firstTextValue(data.previewVideoAssetId, data.preview_video_asset_id, data.assetId, data.asset_id),
+        durationSec: toNumber(data.durationSec ?? data.duration_sec, durationSec),
+        sceneCount: toNumber(data.sceneCount ?? data.scene_count, preparedScenes.length),
+        cacheKey,
+        source: 'board_full_preview_map_v217a',
+        createdAt: new Date().toISOString(),
+      }
+      if (!firstTextValue(previewVideo.apiPath, previewVideo.url)) throw new Error('Backend не вернул Board preview video.')
+
+      pauseBoardPreviewMediaV217A()
+      await persistBoardPreviewV217A((currentPreview) => ({
+        ...currentPreview,
+        fullPreviewVideo: previewVideo,
+        sceneCount: preparedScenes.length,
+        durationSec: previewVideo.durationSec,
+        cacheKey,
+        mediaCounts: {
+          video: videoSceneCountV217B,
+          image: imageSceneCountV217B,
+          placeholder: placeholderSceneCountV217B,
+        },
+      }), 'quick_preview_ready_v217a')
+      setBoardPreviewCurrentTimeV217A(0)
+      setBoardPreviewPlayKeyV217A(`${previewVideo.assetId || previewVideo.apiPath || previewVideo.url}:${Date.now()}`)
+      setStatus(`Board preview готово: ${preparedScenes.length} сцен · видео ${videoSceneCountV217B} · фото ${imageSceneCountV217B} · заглушки ${placeholderSceneCountV217B}`)
+      console.info('[BOARD QUICK PREVIEW READY V217A]', {
+        projectId,
+        sceneCount: previewVideo.sceneCount,
+        videoScenes: videoSceneCountV217B,
+        imageScenes: imageSceneCountV217B,
+        placeholderScenes: placeholderSceneCountV217B,
+        durationSec: previewVideo.durationSec,
+        ref: firstTextValue(previewVideo.apiPath, previewVideo.url),
+      })
+    } catch (error) {
+      const message = String(error?.message || error)
+      setBoardPreviewErrorV217A(message)
+      setStatus(`Ошибка Board preview: ${message}`)
+      console.warn('[BOARD QUICK PREVIEW FAILED V217A]', error)
+    } finally {
+      setBoardPreviewBusyV217A(false)
+    }
+  }
+
+  async function addBoardPreviewRemarkV217A() {
+    const text = asText(boardPreviewRemarkDraftV217A)
+    if (!text) return
+
+    // V217D: capture primitive scene identity at the exact click. Never retain a
+    // live scene object or derive old remarks again from the currently selected scene.
+    const currentBoardV217D = boardRef.current || board || {}
+    const capturedTimeV217D = Math.max(0, Number(boardPreviewCurrentTimeV217A || 0))
+    const timedTargetV217D = boardPreviewRemarkTimelineTargetV217D(capturedTimeV217D, currentBoardV217D)
+    const fallbackSceneV217D = selectedScene || asSceneArray(currentBoardV217D?.scenes)[0] || null
+    const fallbackSceneIdV217D = asText(fallbackSceneV217D?.id || fallbackSceneV217D?.scene_id || fallbackSceneV217D?.sceneId)
+    const fallbackSceneIndexV217D = Math.max(0, asSceneArray(currentBoardV217D?.scenes).findIndex((scene) => (
+      asText(scene?.id || scene?.scene_id || scene?.sceneId) === fallbackSceneIdV217D
+    )))
+    const sceneId = asText(timedTargetV217D?.sceneId) || fallbackSceneIdV217D
+    const sceneNumber = Math.max(1, toNumber(timedTargetV217D?.sceneNumber, 0) || fallbackSceneIndexV217D + 1)
+    const remarkIdV217D = `preview_remark_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const remark = {
+      id: remarkIdV217D,
+      sceneId,
+      scene_id: sceneId,
+      sceneNumber,
+      scene_number: sceneNumber,
+      timeSec: capturedTimeV217D,
+      time_sec: capturedTimeV217D,
+      frozenSceneIdV217D: sceneId,
+      frozen_scene_id_v217d: sceneId,
+      frozenSceneNumberV217D: sceneNumber,
+      frozen_scene_number_v217d: sceneNumber,
+      bindingVersionV217D: 'v217d',
+      binding_version_v217d: 'v217d',
+      bindingTokenV217D: `${remarkIdV217D}|${sceneId}|${sceneNumber}|${capturedTimeV217D.toFixed(3)}`,
+      text,
+      createdAt: new Date().toISOString(),
+    }
+    try {
+      await persistBoardPreviewV217A((currentPreview) => {
+        const previewBoardV217D = {
+          ...currentBoardV217D,
+          boardPreviewV217A: currentPreview,
+        }
+        const existingRemarksV217D = boardPreviewRemarksV217A(previewBoardV217D)
+          .map((item) => ({ ...item }))
+        return {
+          ...currentPreview,
+          remarks: [...existingRemarksV217D, { ...remark }],
+        }
+      }, 'remark_add_v217d')
+      setBoardPreviewRemarkDraftV217A('')
+      setStatus(`Замечание добавлено к сцене ${sceneNumber}.`)
+      console.info('[BOARD PREVIEW REMARK BOUND V217D]', {
+        id: remarkIdV217D,
+        sceneId,
+        sceneNumber,
+        timeSec: capturedTimeV217D,
+      })
+    } catch (error) {
+      setBoardPreviewErrorV217A(`Не удалось сохранить замечание: ${error?.message || error}`)
+    }
+  }
+
+  async function removeBoardPreviewRemarkWithReasonV217E(
+    remarkId = '',
+    reason = 'remark_done_v217d',
+    successMessage = 'Замечание отмечено исправленным.',
+  ) {
+    const safeId = asText(remarkId)
+    if (!safeId) return
+    try {
+      await persistBoardPreviewV217A((currentPreview) => {
+        const previewBoardV217D = {
+          ...(boardRef.current || board || {}),
+          boardPreviewV217A: currentPreview,
+        }
+        return {
+          ...currentPreview,
+          remarks: boardPreviewRemarksV217A(previewBoardV217D)
+            .filter((remark) => asText(remark.id) !== safeId)
+            .map((remark) => ({ ...remark })),
+        }
+      }, reason)
+      setStatus(successMessage)
+      console.info('[BOARD PREVIEW REMARK REMOVED V217E]', {
+        remarkId: safeId,
+        reason,
+      })
+    } catch (error) {
+      setBoardPreviewErrorV217A(`Не удалось обновить замечания: ${error?.message || error}`)
+    }
+  }
+
+  async function removeBoardPreviewRemarkV217A(remarkId = '') {
+    return removeBoardPreviewRemarkWithReasonV217E(
+      remarkId,
+      'remark_done_v217d',
+      'Замечание отмечено исправленным.',
+    )
+  }
+
+  async function deleteBoardPreviewRemarkV217E(remarkId = '') {
+    return removeBoardPreviewRemarkWithReasonV217E(
+      remarkId,
+      'remark_delete_v217e',
+      'Замечание удалено из preview.',
+    )
+  }
+
+  function openBoardPreviewRemarkV217A(remark = {}) {
+    const sceneId = asText(remark.sceneId || remark.scene_id)
+    setBoardViewModeV217A('board')
+    setBoardPreviewRemarksOpenV217A(true)
+    if (sceneId) selectScene(sceneId)
   }
 
   function returnToTimingFromBoardV66B() {
@@ -13093,7 +13903,10 @@ function updateSelectedSceneDuration(nextValue) {
   }
 
   function staleVideoPatch(reason = 'source_media_changed') {
+    const videoClearRevisionV218B = Date.now()
     return {
+      video_clear_revision_v218b: videoClearRevisionV218B,
+      videoClearRevisionV218B: videoClearRevisionV218B,
       video_url: '',
       video_api_path: '',
       video_name: '',
@@ -13417,7 +14230,10 @@ function updateSelectedSceneDuration(nextValue) {
   }
 
   function boardGeneratedVideoClearPatchV129N(reason = 'source_image_media_changed_v129n') {
+    const videoClearRevisionV218B = Date.now()
     return {
+      video_clear_revision_v218b: videoClearRevisionV218B,
+      videoClearRevisionV218B: videoClearRevisionV218B,
       video_status: '',
       videoStatus: '',
       video_error: '',
@@ -16116,6 +16932,14 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
       promptImportEpochV214X: epoch,
       prompt_import_source_v214x: importedScene?.__prompt_import_label_v214x || 'json_prompt_import_v214x',
       promptImportSourceV214X: importedScene?.__prompt_import_label_v214x || 'json_prompt_import_v214x',
+      prompt_revision_v218a: epoch,
+      promptRevisionV218A: epoch,
+      prompt_local_authority_v214k2: true,
+      promptLocalAuthorityV214K2: true,
+      prompt_edit_epoch_v214k2: epoch,
+      promptEditEpochV214K2: epoch,
+      prompt_edit_at_v214k2: new Date(epoch).toISOString(),
+      promptEditAtV214K2: new Date(epoch).toISOString(),
     }
 
     const importedRoute = asText(importedScene?.route || importedScene?.model_route || importedScene?.modelRoute || importedScene?.kind)
@@ -16180,18 +17004,63 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
     }
   }
 
+  function boardJsonIsPromptPatchV218A(importedJson = {}) {
+    const schemaV218A = asText(
+      importedJson?.schema ||
+      importedJson?.type ||
+      importedJson?.kind ||
+      importedJson?.format ||
+      ''
+    ).trim().toLowerCase()
+    if (
+      schemaV218A.includes('video_prompt_patch') ||
+      schemaV218A.includes('prompt_patch') ||
+      schemaV218A === 'ava_video_prompt_patch_v1'
+    ) return true
+    return Boolean(
+      importedJson?.prompt_patch_v1 === true ||
+      importedJson?.promptPatchV1 === true ||
+      importedJson?.prompts_only === true ||
+      importedJson?.promptsOnly === true
+    )
+  }
+
   async function importTimingJson(event) {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
     try {
       const json = JSON.parse(await file.text())
-      const jsonWithProjectFormatV177B = boardInjectProjectFormatIntoTimingV177C(json, boardProjectFormatV177A(json, { format: activeProjectFormatV177B }))
-      let nextBoard = buildBoardFromTiming(jsonWithProjectFormatV177B, boardRef.current || board)
-      nextBoard = applyCookingPromptMemoryToBoard(nextBoard, { sourceBoard: json, force: Boolean(json?.cooking_prompt_memory_v1) })
-      nextBoard = boardApplyImportedPromptTextFieldsV199A(nextBoard, json)
-      const promptImportV214X = boardApplyPromptJsonImportV214X(nextBoard, json)
-      nextBoard = promptImportV214X.board
+      const promptPatchOnlyV218A = boardJsonIsPromptPatchV218A(json)
+      let nextBoard
+      let promptImportV214X
+
+      if (promptPatchOnlyV218A) {
+        const liveBoardV218A = boardRef.current || board || {}
+        promptImportV214X = boardApplyPromptJsonImportV214X(liveBoardV218A, json)
+        nextBoard = {
+          ...promptImportV214X.board,
+          prompt_patch_only_v218a: true,
+          promptPatchOnlyV218A: true,
+          prompt_patch_file_v218a: file.name,
+          promptPatchFileV218A: file.name,
+          updatedAt: new Date().toISOString(),
+        }
+        console.log('[BOARD JSON PROMPT PATCH FIELD MERGE V218A]', {
+          fileName: file.name,
+          bulkStillsImporting: Boolean(bulkStillsImporting),
+          scenes: asSceneArray(nextBoard.scenes).length,
+          detectedPrompts: promptImportV214X.detected,
+          appliedPrompts: promptImportV214X.applied,
+        })
+      } else {
+        const jsonWithProjectFormatV177B = boardInjectProjectFormatIntoTimingV177C(json, boardProjectFormatV177A(json, { format: activeProjectFormatV177B }))
+        nextBoard = buildBoardFromTiming(jsonWithProjectFormatV177B, boardRef.current || board)
+        nextBoard = applyCookingPromptMemoryToBoard(nextBoard, { sourceBoard: json, force: Boolean(json?.cooking_prompt_memory_v1) })
+        nextBoard = boardApplyImportedPromptTextFieldsV199A(nextBoard, json)
+        promptImportV214X = boardApplyPromptJsonImportV214X(nextBoard, json)
+        nextBoard = promptImportV214X.board
+      }
 
       boardRef.current = nextBoard
       skipNextBoardAutosaveRefV145A.current = true
@@ -16199,23 +17068,35 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
       try { boardSavePromptDraftsFromBoardV214P(nextBoard) } catch (_) {}
       setBoard(nextBoard)
 
-      await saveBoard(nextBoard, true)
+      const saveResultV218A = await saveBoard(nextBoard, true)
+      if (!saveResultV218A?.ok) {
+        throw new Error(saveResultV218A?.message || 'json_prompt_import_save_failed_v218a')
+      }
 
       console.log('[BOARD JSON PROMPT IMPORT V214X]', {
         fileName: file.name,
+        modeV218A: promptPatchOnlyV218A ? 'prompt_patch_field_merge' : 'timing_or_board_import',
         scenes: asSceneArray(nextBoard.scenes).length,
         detectedPrompts: promptImportV214X.detected,
         appliedPrompts: promptImportV214X.applied,
         firstSceneId: promptImportV214X.firstSceneId || '',
       })
 
-      setStatus(`Импортировано сцен: ${nextBoard.scenes.length}; промтов применено: ${promptImportV214X.applied}/${promptImportV214X.detected}`)
+      setStatus(
+        promptPatchOnlyV218A
+          ? `Промты применены: ${promptImportV214X.applied}/${promptImportV214X.detected}. Фото и видео не изменялись.`
+          : `Импортировано сцен: ${nextBoard.scenes.length}; промтов применено: ${promptImportV214X.applied}/${promptImportV214X.detected}`
+      )
       pushBoardToast({
         type: promptImportV214X.applied ? 'success' : 'warning',
-        title: 'Импорт JSON',
+        title: promptPatchOnlyV218A ? 'Импорт промтов' : 'Импорт JSON',
         message: promptImportV214X.applied
-          ? `Промты применены: ${promptImportV214X.applied}/${promptImportV214X.detected}. Сохранено в Board.`
-          : `Сцены импортированы, но prompt-поля в JSON не найдены. Проверь формат файла.`,
+          ? (
+              promptPatchOnlyV218A
+                ? `Промты применены: ${promptImportV214X.applied}/${promptImportV214X.detected}. Текущие фото и видео сохранены.`
+                : `Промты применены: ${promptImportV214X.applied}/${promptImportV214X.detected}. Сохранено в Board.`
+            )
+          : `Prompt-поля в JSON не найдены. Проверь формат файла.`,
       })
     } catch (err) {
       console.error('[BOARD JSON PROMPT IMPORT ERROR V214X]', err)
@@ -16499,6 +17380,44 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
   const badVideoReviewScenes = boardScenes.filter((scene) => boardSceneHasBadVideoReview(scene))
   const needsVideoReviewScenes = boardScenes.filter((scene) => boardSceneNeedsVideoReview(scene))
 
+  // V217A: the player timeline follows the exact assembled order. Remarks bind to
+  // scene ids, while the overlay uses cumulative preview time.
+  const boardPreviewSnapshotV217A = boardPreviewStateV217A(board)
+  const boardPreviewRemarksListV217A = boardPreviewRemarksV217A(board)
+  const boardPreviewVideoV217A = boardPreviewSnapshotV217A.fullPreviewVideo || boardPreviewSnapshotV217A.full_preview_video || {}
+  const boardPreviewVideoRefV217A = firstTextValue(
+    boardPreviewVideoV217A.apiPath,
+    boardPreviewVideoV217A.api_path,
+    boardPreviewVideoV217A.assetApiPath,
+    boardPreviewVideoV217A.asset_api_path,
+    boardPreviewVideoV217A.url,
+  )
+  let boardPreviewCursorV217A = 0
+  const boardPreviewTimelineV217A = boardScenes.map((scene, index) => {
+    const timing = boardPreviewSceneTimingV217A(scene)
+    const item = {
+      scene,
+      sceneId: asText(scene?.id || scene?.scene_id || scene?.sceneId || `seg_${index + 1}`),
+      sceneNumber: index + 1,
+      start: boardPreviewCursorV217A,
+      end: boardPreviewCursorV217A + timing.duration,
+      duration: timing.duration,
+    }
+    boardPreviewCursorV217A = item.end
+    return item
+  })
+  const boardPreviewTimelineItemV217A = boardPreviewTimelineV217A.find((item, index) => (
+    boardPreviewCurrentTimeV217A >= item.start && (
+      boardPreviewCurrentTimeV217A < item.end || index === boardPreviewTimelineV217A.length - 1
+    )
+  )) || boardPreviewTimelineV217A[0] || null
+  const boardPreviewSceneAtTimeV217A = boardPreviewTimelineItemV217A?.scene || null
+  const boardPreviewCurrentCacheKeyV217A = boardPreviewCacheKeyV217A(boardScenes)
+  const boardPreviewSavedCacheKeyV217A = asText(boardPreviewVideoV217A.cacheKey || boardPreviewSnapshotV217A.cacheKey)
+  const boardPreviewIsStaleV217A = Boolean(
+    boardPreviewVideoRefV217A && boardPreviewSavedCacheKeyV217A && boardPreviewSavedCacheKeyV217A !== boardPreviewCurrentCacheKeyV217A
+  )
+
   if (loading) {
     return (
       <div className="avaPage avaStoryboardLoadingPage isAvaStudioWaveLoading">
@@ -16531,7 +17450,7 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
   }
 
   return (
-    <div className="avaPage avaBoardPage">
+    <div className={`avaPage avaBoardPage ${boardViewModeV217A === 'preview' ? 'isPreviewModeV217A' : 'isBoardModeV217A'}`}>
       <audio ref={audioRef} src={audioSrc || undefined} preload="metadata" />
 
       <WorkflowStageControls
@@ -16647,6 +17566,30 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
           <p className="avaEyebrow"><Sparkles size={15} /> Stage 5.1 storyboard foundation</p>
           <h2>Storyboard</h2>
           <p>Горизонтальная лента сцен, смысл, video prompts и медиа. Генерацию подключим следующим этапом.</p>
+          <div className="avaBoardViewSwitchV217A" role="tablist" aria-label="Режим Доски">
+            <button
+              type="button"
+              className={boardViewModeV217A === 'board' ? 'isActive' : ''}
+              onClick={() => setBoardViewModeV217A('board')}
+              role="tab"
+              aria-selected={boardViewModeV217A === 'board'}
+            >
+              <ImageIcon size={14} /> Доска
+            </button>
+            <button
+              type="button"
+              className={boardViewModeV217A === 'preview' ? 'isActive' : ''}
+              onClick={() => {
+                setBoardViewModeV217A('preview')
+                setBoardPreviewErrorV217A('')
+              }}
+              role="tab"
+              aria-selected={boardViewModeV217A === 'preview'}
+            >
+              <Film size={14} /> Превью
+              {boardPreviewRemarksListV217A.length ? <b>{boardPreviewRemarksListV217A.length}</b> : null}
+            </button>
+          </div>
         </div>
         <div className="avaBoardHeaderActions">
           {timingReturnButtonEnabled && (
@@ -16785,7 +17728,148 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
           </button>
         </div>
 
-      </section>      {/* AVA09G_HIDE_AVA08Z_BOARD_ADD_SCENE_TOP_BUTTON */}
+      </section>
+
+      {boardViewModeV217A === 'preview' ? (
+        <section className="avaBoardPreviewWorkspaceV217A">
+          <div className="avaBoardPreviewMainV217A">
+            <div className="avaBoardPreviewTitleV217A">
+              <div>
+                <p className="avaEyebrow"><Film size={14} /> Board preview</p>
+                <h3>Полное preview видео</h3>
+              </div>
+              <div className="avaBoardPreviewMetaV217A">
+                <span>{boardScenes.length} сцен</span>
+                {boardPreviewVideoV217A.durationSec ? <span>{Number(boardPreviewVideoV217A.durationSec).toFixed(2)} сек</span> : null}
+                {boardPreviewIsStaleV217A ? <strong>Доска изменилась — пересобери</strong> : null}
+              </div>
+            </div>
+
+            <div className="avaBoardPreviewPlayerV217A">
+              <BoardQuickPreviewVideoV217A
+                source={boardPreviewVideoRefV217A}
+                playKey={boardPreviewPlayKeyV217A}
+                onTimeUpdate={(event) => setBoardPreviewCurrentTimeV217A(Number(event.currentTarget?.currentTime || 0))}
+              />
+              {boardPreviewTimelineItemV217A ? (
+                <div className="avaBoardPreviewSceneOverlayV217A">
+                  <strong>Сцена {boardPreviewTimelineItemV217A.sceneNumber}</strong>
+                  <span>{boardPreviewTimelineItemV217A.sceneId}</span>
+                  <small>{boardPreviewTimelineItemV217A.start.toFixed(2)}–{boardPreviewTimelineItemV217A.end.toFixed(2)} сек</small>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="avaBoardPreviewActionsV217A">
+              <button
+                type="button"
+                className="isPrimary"
+                onClick={buildBoardQuickPreviewV217A}
+                disabled={boardPreviewBusyV217A || !boardScenes.length || workspaceMode || !projectId}
+              >
+                {boardPreviewBusyV217A ? <span className="avaBoardPreviewSpinnerV217A" /> : <Play size={16} />}
+                {boardPreviewBusyV217A ? 'Собираю…' : (boardPreviewVideoRefV217A ? 'Пересобрать из сцен' : 'Быстро собрать из сцен')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBoardViewModeV217A('board')
+                  if (boardPreviewTimelineItemV217A?.sceneId) selectScene(boardPreviewTimelineItemV217A.sceneId)
+                }}
+              >
+                <ImageIcon size={15} /> Открыть текущую сцену в Доске
+              </button>
+              <span>Для каждой сцены: текущее видео → фото на весь тайминг → тёмная AVA-заглушка. Master audio идёт одной дорожкой.</span>
+            </div>
+            {boardPreviewErrorV217A ? <div className="avaBoardPreviewErrorV217A"><AlertTriangle size={16} /> {boardPreviewErrorV217A}</div> : null}
+          </div>
+
+          <aside className="avaBoardPreviewRemarksPanelV217A">
+            <div className="avaBoardPreviewRemarksHeadV217A">
+              <div>
+                <p className="avaEyebrow"><Save size={14} /> замечания</p>
+                <h3>Список поправок</h3>
+              </div>
+              <b>{boardPreviewRemarksListV217A.length}</b>
+            </div>
+
+            <div className="avaBoardPreviewCurrentSceneV217A">
+              <span>Текущий кадр</span>
+              <strong>{boardPreviewTimelineItemV217A ? `Сцена ${boardPreviewTimelineItemV217A.sceneNumber} · ${boardPreviewTimelineItemV217A.sceneId}` : 'Сцена не определена'}</strong>
+            </div>
+
+            <textarea
+              value={boardPreviewRemarkDraftV217A}
+              onChange={(event) => setBoardPreviewRemarkDraftV217A(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                  event.preventDefault()
+                  addBoardPreviewRemarkV217A()
+                }
+              }}
+              placeholder="Например: нужен крупнее саксофон; ракурс повторяется; плохое движение рук…"
+            />
+            <button
+              type="button"
+              className="avaBoardPreviewAddRemarkV217A"
+              onClick={addBoardPreviewRemarkV217A}
+              disabled={!asText(boardPreviewRemarkDraftV217A)}
+            >
+              <Plus size={15} /> Добавить к текущей сцене
+            </button>
+
+            <div className="avaBoardPreviewRemarksListV217A">
+              {boardPreviewRemarksListV217A.length ? boardPreviewRemarksListV217A.map((remark, index) => (
+                <article key={remark.id || `preview-remark-${index}`}>
+                  <button type="button" className="avaBoardPreviewRemarkSceneV217A" onClick={() => openBoardPreviewRemarkV217A(remark)}>
+                    Сцена {toNumber(remark.sceneNumber, 0) || Math.max(1, boardScenes.findIndex((scene) => asText(scene?.id || scene?.scene_id) === asText(remark.sceneId || remark.scene_id)) + 1)}
+                    <small>{asText(remark.sceneId || remark.scene_id)}</small>
+                  </button>
+                  <p>{remark.text}</p>
+                  <div>
+                    <button type="button" onClick={() => openBoardPreviewRemarkV217A(remark)}>Исправить</button>
+                    <button type="button" className="isDone" onClick={() => removeBoardPreviewRemarkV217A(remark.id)}>Готово</button>
+                    <button
+                      type="button"
+                      className="isDelete"
+                      title="Удалить замечание без перехода в Доску"
+                      onClick={() => deleteBoardPreviewRemarkV217E(remark.id)}
+                    >
+                      Удалить
+                    </button>
+                  </div>
+                </article>
+              )) : (
+                <div className="avaBoardPreviewNoRemarksV217A">Смотри preview и записывай сюда только те сцены, которые нужно поправить.</div>
+              )}
+            </div>
+          </aside>
+        </section>
+      ) : (
+      <>
+        {boardPreviewRemarksListV217A.length ? (
+          <section className={`avaBoardPreviewRemarksStripV217A ${boardPreviewRemarksOpenV217A ? 'isOpen' : ''}`}>
+            <button type="button" className="avaBoardPreviewRemarksToggleV217A" onClick={() => setBoardPreviewRemarksOpenV217A((value) => !value)}>
+              <span><Film size={15} /> Замечания к preview <b>{boardPreviewRemarksListV217A.length}</b></span>
+              {boardPreviewRemarksOpenV217A ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            {boardPreviewRemarksOpenV217A ? (
+              <div className="avaBoardPreviewRemarksStripListV217A">
+                {boardPreviewRemarksListV217A.map((remark, index) => (
+                  <article key={remark.id || `board-preview-remark-${index}`}>
+                    <button type="button" onClick={() => openBoardPreviewRemarkV217A(remark)}>
+                      Сцена {toNumber(remark.sceneNumber, 0) || Math.max(1, boardScenes.findIndex((scene) => asText(scene?.id || scene?.scene_id) === asText(remark.sceneId || remark.scene_id)) + 1)}
+                    </button>
+                    <p>{remark.text}</p>
+                    <button type="button" className="isDone" onClick={() => removeBoardPreviewRemarkV217A(remark.id)}>Готово</button>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+      {/* AVA09G_HIDE_AVA08Z_BOARD_ADD_SCENE_TOP_BUTTON */}
       {manualSceneToolsEnabled ? (
       <section className="avaBoardManualSceneTopBar">
         <div className="avaBoardManualSceneInfo">
@@ -17798,6 +18882,8 @@ function boardPromptImportSceneIdV214X(item = {}, index = 0) {
           <p>Открой Manual Timing, сделай экспорт/сохранение сцен или импортируй JSON вручную.</p>
           <Link className="avaPrimaryButton" to={workspaceMode ? '/app/workspace/timing' : `/app/projects/${projectId}/timing`}>Открыть Тайминг</Link>
         </section>
+      )}
+      </>
       )}
     </div>
   )

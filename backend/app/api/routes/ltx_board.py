@@ -1,3 +1,5 @@
+# AVA_BOARD_VIDEO_REVISION_AUTHORITY_V218B: batch outputs carry video revisions and stale snapshots cannot erase them.
+# AVA_BOARD_PROMPT_REVISION_AND_TELEGRAM_START_V218A: batch snapshots preserve newer prompts and Telegram start is verified before runner start.
 # AVA_BOARD_DEAD_QUEUE_CLEANUP_V216J: dead persisted queue membership is cleared automatically.
 # AVA_BOARD_UNIFIED_VIDEO_QUEUE_BACKEND_V216H: one appendable backend queue for manual and Generate-All.
 # AVA_BOARD_MEDIA_REDUCER_CONTRACT_V216A: revision-based Board batch authority.
@@ -4028,6 +4030,258 @@ def _ava_v216a_generation_result_is_stale(start_scene: dict[str, Any] | None, li
         return True
     return False
 
+
+_BOARD_VIDEO_FIELDS_V218B = (
+    'video_status','videoStatus','generation_status','generationStatus','batch_status','batchStatus',
+    'video_error','videoError','video_job_id','videoJobId','job_id','jobId',
+    'video_status_endpoint','videoStatusEndpoint','video_queue_position','videoQueuePosition','video_queue_source','videoQueueSource',
+    'video_url','videoUrl','video_api_path','videoApiPath','video_asset_id','videoAssetId','video_name','videoName','video_result','videoResult',
+    'result_url','resultUrl','result_video_url','resultVideoUrl','result_video_api_path','resultVideoApiPath','result_video_asset_id','resultVideoAssetId','result_video_name','resultVideoName',
+    'ready_video_url','readyVideoUrl','ready_video_api_path','readyVideoApiPath','ready_video_asset_id','readyVideoAssetId',
+    'generated_video_url','generatedVideoUrl','generated_video_api_path','generatedVideoApiPath','generated_video_asset_id','generatedVideoAssetId',
+    'output_video_url','outputVideoUrl','output_video_api_path','outputVideoApiPath','output_video_asset_id','outputVideoAssetId',
+    'original_video_url','originalVideoUrl','video_ready_at','videoReadyAt','video_updated_at','videoUpdatedAt',
+    'server_batch_job_id','serverBatchJobId','server_batch_status_endpoint','serverBatchStatusEndpoint',
+    'video_source_image_asset_id','videoSourceImageAssetId','video_source_image_api_path','videoSourceImageApiPath','video_source_image_url','videoSourceImageUrl',
+    'video_source_image_mutation_epoch','videoSourceImageMutationEpoch','video_source_revision_v216a','videoSourceRevisionV216A',
+    'generation_media_revision_v216a','generationMediaRevisionV216A','generation_source_image_asset_id_v216a','generationSourceImageAssetIdV216A',
+    'video_revision_v218b','videoRevisionV218B','video_ready_epoch_v218b','videoReadyEpochV218B',
+)
+
+
+def _board_v218b_epoch(value: Any) -> float:
+    try:
+        numeric = float(value or 0)
+        if numeric > 0:
+            return numeric
+    except Exception:
+        pass
+    try:
+        text = str(value or '').strip()
+        if not text:
+            return 0.0
+        if text.endswith('Z'):
+            text = text[:-1] + '+00:00'
+        dt = datetime.fromisoformat(text)
+        return dt.timestamp() * 1000.0
+    except Exception:
+        return 0.0
+
+
+def _board_v218b_scene_has_video(scene: dict[str, Any] | None) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    return any(str(scene.get(key) or '').strip() for key in (
+        'video_asset_id','videoAssetId','video_api_path','videoApiPath','video_url','videoUrl',
+        'result_video_asset_id','resultVideoAssetId','result_video_api_path','resultVideoApiPath','result_video_url','resultVideoUrl',
+        'output_video_asset_id','outputVideoAssetId','output_video_api_path','outputVideoApiPath','output_video_url','outputVideoUrl',
+    ))
+
+
+def _board_v218b_video_revision(scene: dict[str, Any] | None) -> float:
+    if not isinstance(scene, dict):
+        return 0.0
+    revision = max(
+        _board_v218b_epoch(scene.get('video_revision_v218b')),
+        _board_v218b_epoch(scene.get('videoRevisionV218B')),
+        _board_v218b_epoch(scene.get('video_ready_epoch_v218b')),
+        _board_v218b_epoch(scene.get('videoReadyEpochV218B')),
+        _board_v218b_epoch(scene.get('video_ready_at')),
+        _board_v218b_epoch(scene.get('videoReadyAt')),
+        _board_v218b_epoch(scene.get('video_updated_at')),
+        _board_v218b_epoch(scene.get('videoUpdatedAt')),
+        0.0,
+    )
+    if revision > 0:
+        return revision
+    return 1.0 if _board_v218b_scene_has_video(scene) else 0.0
+
+
+def _board_v218b_video_clear_revision(scene: dict[str, Any] | None) -> float:
+    if not isinstance(scene, dict):
+        return 0.0
+    return max(
+        _board_v218b_epoch(scene.get('video_clear_revision_v218b')),
+        _board_v218b_epoch(scene.get('videoClearRevisionV218B')),
+        _board_v218b_epoch(scene.get('source_image_changed_epoch')),
+        _board_v218b_epoch(scene.get('sourceImageChangedEpoch')),
+        _board_v218b_epoch(scene.get('image_mutation_epoch')),
+        _board_v218b_epoch(scene.get('imageMutationEpoch')),
+        0.0,
+    )
+
+
+def _board_preserve_newer_videos_v218b(current_data, incoming_data, source=''):
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    current_scenes = current_data.get('scenes') if isinstance(current_data.get('scenes'), list) else []
+    incoming_scenes = incoming_data.get('scenes') if isinstance(incoming_data.get('scenes'), list) else []
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    current_by_id = {
+        _board_scene_id_v218a(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+    next_data = copy.deepcopy(incoming_data)
+    next_scenes = next_data.get('scenes') if isinstance(next_data.get('scenes'), list) else []
+    changed_fields = 0
+    changed_scenes = []
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _board_scene_id_v218a(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict) or not _board_v218b_scene_has_video(current_scene):
+            continue
+        current_revision = _board_v218b_video_revision(current_scene)
+        incoming_revision = _board_v218b_video_revision(scene)
+        incoming_clear_revision = _board_v218b_video_clear_revision(scene)
+        if incoming_clear_revision > current_revision:
+            continue
+        if _board_v218b_scene_has_video(scene) and incoming_revision >= current_revision:
+            continue
+        scene_changed = False
+        for key in _BOARD_VIDEO_FIELDS_V218B:
+            if key in current_scene:
+                value = copy.deepcopy(current_scene.get(key))
+                if scene.get(key) != value:
+                    scene[key] = value
+                    changed_fields += 1
+                    scene_changed = True
+            elif key in scene:
+                scene.pop(key, None)
+                changed_fields += 1
+                scene_changed = True
+        if scene_changed:
+            scene['stale_video_save_rejected_v218b'] = True
+            scene['staleVideoSaveRejectedV218B'] = True
+            scene['stale_video_save_source_v218b'] = source
+            scene['staleVideoSaveSourceV218B'] = source
+            changed_scenes.append(scene_id)
+    if not changed_fields:
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    next_data['scenes'] = next_scenes
+    next_data['board_video_revision_authority_v218b'] = True
+    next_data['boardVideoRevisionAuthorityV218B'] = True
+    return next_data, {'changedFields': changed_fields, 'changedScenes': changed_scenes[:100]}
+
+
+_BOARD_PROMPT_KEYS_V218A = (
+    "video_prompt", "videoPrompt", "positive_prompt", "positivePrompt", "prompt",
+    "negative_prompt", "negativePrompt", "video_motion_negative", "videoMotionNegative",
+    "final_negative_prompt", "finalNegativePrompt",
+    "sound_prompt", "soundPrompt", "mmaudio_prompt", "mmaudioPrompt",
+    "mmaudio_negative_prompt", "mmaudioNegativePrompt",
+    "negative_sound_prompt", "negativeSoundPrompt",
+    "note", "notes", "scene_note", "sceneNote", "user_scene_note", "userSceneNote",
+)
+_BOARD_PROMPT_META_KEYS_V218A = (
+    "prompt_revision_v218a", "promptRevisionV218A",
+    "prompt_import_epoch_v214x", "promptImportEpochV214X",
+    "prompt_import_source_v214x", "promptImportSourceV214X",
+    "prompt_local_authority_v214k2", "promptLocalAuthorityV214K2",
+    "prompt_edit_epoch_v214k2", "promptEditEpochV214K2",
+    "prompt_edit_at_v214k2", "promptEditAtV214K2",
+    "prompt_local_authority_v214k", "promptLocalAuthorityV214K",
+    "prompt_edit_epoch_v214k", "promptEditEpochV214K",
+    "prompt_local_authority_v214j", "promptLocalAuthorityV214J",
+    "prompt_edit_epoch_v214j", "promptEditEpochV214J",
+)
+
+
+def _board_prompt_revision_v218a(scene: dict[str, Any] | None) -> int:
+    if not isinstance(scene, dict):
+        return 0
+    revisions: list[int] = []
+    for key in (
+        "prompt_revision_v218a", "promptRevisionV218A",
+        "prompt_import_epoch_v214x", "promptImportEpochV214X",
+        "prompt_edit_epoch_v214k2", "promptEditEpochV214K2",
+        "prompt_edit_epoch_v214k", "promptEditEpochV214K",
+        "prompt_edit_epoch_v214j", "promptEditEpochV214J",
+    ):
+        try:
+            value = int(float(scene.get(key) or 0))
+        except Exception:
+            value = 0
+        if value > 0:
+            revisions.append(value)
+    return max(revisions or [0])
+
+
+def _board_scene_id_v218a(scene: dict[str, Any] | None, index: int = 0) -> str:
+    if not isinstance(scene, dict):
+        return f"seg_{index + 1:02d}"
+    return str(scene.get("scene_id") or scene.get("sceneId") or scene.get("id") or f"seg_{index + 1:02d}").strip()
+
+
+def _board_preserve_newer_prompts_v218a(current_data: dict[str, Any], incoming_data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, {"changedFields": 0, "changedScenes": []}
+    current_scenes = current_data.get("scenes") if isinstance(current_data.get("scenes"), list) else []
+    incoming_scenes = incoming_data.get("scenes") if isinstance(incoming_data.get("scenes"), list) else []
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, {"changedFields": 0, "changedScenes": []}
+
+    current_by_id = {
+        _board_scene_id_v218a(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+    next_data = copy.deepcopy(incoming_data)
+    next_scenes = next_data.get("scenes") if isinstance(next_data.get("scenes"), list) else []
+    changed_fields = 0
+    changed_scenes: list[str] = []
+
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _board_scene_id_v218a(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict):
+            continue
+        current_revision = _board_prompt_revision_v218a(current_scene)
+        incoming_revision = _board_prompt_revision_v218a(scene)
+        scene_changed = False
+
+        if current_revision > incoming_revision:
+            for key in (*_BOARD_PROMPT_KEYS_V218A, *_BOARD_PROMPT_META_KEYS_V218A):
+                if key not in current_scene:
+                    continue
+                current_value = copy.deepcopy(current_scene.get(key))
+                if scene.get(key) == current_value:
+                    continue
+                scene[key] = current_value
+                changed_fields += 1
+                scene_changed = True
+        elif current_revision == incoming_revision:
+            for key in _BOARD_PROMPT_KEYS_V218A:
+                current_value = current_scene.get(key)
+                if current_value is None or not str(current_value).strip():
+                    continue
+                incoming_value = scene.get(key)
+                if incoming_value is not None and str(incoming_value).strip():
+                    continue
+                scene[key] = copy.deepcopy(current_value)
+                changed_fields += 1
+                scene_changed = True
+
+        if scene_changed:
+            changed_scenes.append(scene_id)
+
+    if not changed_fields:
+        return incoming_data, {"changedFields": 0, "changedScenes": []}
+
+    next_data["scenes"] = next_scenes
+    next_data["board_prompt_revision_authority_v218a"] = True
+    next_data["boardPromptRevisionAuthorityV218A"] = True
+    return next_data, {
+        "changedFields": changed_fields,
+        "changedScenes": changed_scenes[:80],
+    }
+
+
 def _board_batch_save_snapshot(project_id: str, board_data: dict[str, Any], client_version: str = "board-server-video-batch-v131a") -> None:
     def op(db: dict[str, Any]) -> dict[str, Any]:
         db.setdefault("snapshots", {}).setdefault(project_id, {})
@@ -4039,6 +4293,27 @@ def _board_batch_save_snapshot(project_id: str, board_data: dict[str, Any], clie
             incoming_raw_v213g,
             source=f'board_batch_snapshot:{client_version}',
         )
+        incoming_raw_v213g, video_authority_v218b = _board_preserve_newer_videos_v218b(
+            current_data or {},
+            incoming_raw_v213g,
+            source=f'board_batch_snapshot:{client_version}',
+        )
+        if video_authority_v218b.get('changedFields'):
+            print('[BOARD SERVER BATCH VIDEO AUTHORITY V218B]', {
+                'project_id': project_id,
+                'client_version': client_version,
+                **video_authority_v218b,
+            }, flush=True)
+        incoming_raw_v213g, prompt_authority_v218a = _board_preserve_newer_prompts_v218a(
+            current_data or {},
+            incoming_raw_v213g,
+        )
+        if prompt_authority_v218a.get("changedFields"):
+            print("[BOARD SERVER BATCH PROMPT AUTHORITY V218A]", {
+                "project_id": project_id,
+                "client_version": client_version,
+                **prompt_authority_v218a,
+            }, flush=True)
         incoming_raw_v213g, preserved_image_authority_v213g = _ava_v213g_preserve_current_image_media(
             current_data or {},
             incoming_raw_v213g,
@@ -4211,6 +4486,9 @@ def _board_batch_bad_review_start_patch(scene: dict[str, Any] | None = None, was
             "result_video_asset_id", "resultVideoAssetId",
             "result_video_api_path", "resultVideoApiPath",
             "result_video_url", "resultVideoUrl",
+            "video_revision_v218b", "videoRevisionV218B",
+            "video_ready_epoch_v218b", "videoReadyEpochV218B",
+            "video_ready_at", "videoReadyAt",
         ):
             if key in scene:
                 patch[key] = copy.deepcopy(scene.get(key))
@@ -4230,7 +4508,13 @@ def _board_batch_result_patch(data: dict[str, Any], job: dict[str, Any]) -> dict
     asset_id = str(data.get("videoAssetId") or data.get("video_asset_id") or data.get("assetId") or data.get("asset_id") or "").strip()
     api_path = str(data.get("videoApiPath") or data.get("video_api_path") or data.get("resultVideoApiPath") or data.get("result_video_api_path") or "").strip()
     url = api_path or str(data.get("videoUrl") or data.get("video_url") or data.get("resultVideoUrl") or data.get("result_video_url") or "").strip()
+    video_revision_v218b = int(__import__('time').time() * 1000)
+    video_ready_at_v218b = _board_batch_now()
     return {
+        "video_revision_v218b": video_revision_v218b,
+        "videoRevisionV218B": video_revision_v218b,
+        "video_ready_epoch_v218b": video_revision_v218b,
+        "videoReadyEpochV218B": video_revision_v218b,
         "video_url": url,
         "videoUrl": url,
         "video_api_path": api_path or url,
@@ -4253,8 +4537,8 @@ def _board_batch_result_patch(data: dict[str, Any], job: dict[str, Any]) -> dict
         "videoError": "",
         "video_result": data or None,
         "videoResult": data or None,
-        "video_ready_at": _board_batch_now(),
-        "videoReadyAt": _board_batch_now(),
+        "video_ready_at": video_ready_at_v218b,
+        "videoReadyAt": video_ready_at_v218b,
         "output_video_url": url,
         "outputVideoUrl": url,
         "output_video_api_path": api_path or url,
@@ -6167,13 +6451,14 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
     board_data["updatedAt"] = now_value
     _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-start-v131a")
 
-    # AVA_BOARD_SERVER_BATCH_LOCAL_THREADING_IMPORT_V131G: keep the import local so this endpoint works even if module-level imports were not patched.
-    thread = threading.Thread(target=_board_video_batch_runner, args=(project_id, batch_id, dict(user)), daemon=True)
-    BOARD_VIDEO_BATCH_THREADS[batch_id] = thread
-    thread.start()
-
+    # V218A: send and verify the Telegram start notice before the generation runner.
+    # This prevents a fast first scene from racing ahead of session initialization.
+    telegram_start_result_v218a: dict[str, Any] = {}
+    telegram_start_status_v218a = "failed"
+    telegram_start_error_v218a = ""
+    telegram_start_retried_v218a = False
     try:
-        telegram_board_batch_started(
+        first_result_v218a = telegram_board_batch_started(
             project_id,
             waiting_ids,
             skipped_ready=0,
@@ -6183,8 +6468,60 @@ def start_board_video_batch(project_id: str, payload: BoardVideoBatchStartIn, us
             source=str(payload.source or ""),
             bad_review_scene_ids=bad_review_waiting_ids_v132b,
         )
+        telegram_start_result_v218a = first_result_v218a if isinstance(first_result_v218a, dict) else {"ok": False, "status": "invalid_result"}
+        first_ok_v218a = bool(telegram_start_result_v218a.get("ok"))
+        first_status_v218a = str(telegram_start_result_v218a.get("status") or "")
+        if first_ok_v218a:
+            telegram_start_status_v218a = "sent"
+        elif first_status_v218a == "telegram_disabled":
+            telegram_start_status_v218a = "disabled"
+        else:
+            telegram_start_retried_v218a = True
+            __import__("time").sleep(0.35)
+            retry_result_v218a = telegram_board_batch_started(
+                project_id,
+                waiting_ids,
+                skipped_ready=0,
+                invalid=len(invalid),
+                batch_id=batch_id,
+                user=user,
+                source=str(payload.source or ""),
+                bad_review_scene_ids=bad_review_waiting_ids_v132b,
+            )
+            telegram_start_result_v218a = retry_result_v218a if isinstance(retry_result_v218a, dict) else {"ok": False, "status": "invalid_retry_result"}
+            telegram_start_status_v218a = "retry_sent" if telegram_start_result_v218a.get("ok") else "failed"
     except Exception as exc:
-        print("[TELEGRAM BOARD BATCH START HOOK ERROR V137A]", {"project_id": project_id, "batch_id": batch_id, "error": str(exc)}, flush=True)
+        telegram_start_error_v218a = str(exc)
+        telegram_start_status_v218a = "failed"
+
+    batch["telegramStartStatusV218A"] = telegram_start_status_v218a
+    batch["telegram_start_status_v218a"] = telegram_start_status_v218a
+    batch["telegramStartRetriedV218A"] = telegram_start_retried_v218a
+    batch["telegram_start_retried_v218a"] = telegram_start_retried_v218a
+    batch["telegramStartErrorV218A"] = telegram_start_error_v218a
+    batch["telegram_start_error_v218a"] = telegram_start_error_v218a
+    batch["telegramStartUpdatedAtV218A"] = _board_batch_now()
+    batch["telegram_start_updated_at_v218a"] = batch["telegramStartUpdatedAtV218A"]
+    board_data["board_video_batch"] = batch
+    _board_batch_save_snapshot(
+        project_id,
+        board_data,
+        client_version="board-server-video-batch-telegram-start-v218a",
+    )
+    print("[TELEGRAM BOARD BATCH START V218A]", {
+        "project_id": project_id,
+        "batch_id": batch_id,
+        "queued": len(waiting_ids),
+        "status": telegram_start_status_v218a,
+        "retried": telegram_start_retried_v218a,
+        "telegramStatus": str(telegram_start_result_v218a.get("status") or ""),
+        "error": telegram_start_error_v218a,
+    }, flush=True)
+
+    # AVA_BOARD_SERVER_BATCH_LOCAL_THREADING_IMPORT_V131G: keep the import local so this endpoint works even if module-level imports were not patched.
+    thread = threading.Thread(target=_board_video_batch_runner, args=(project_id, batch_id, dict(user)), daemon=True)
+    BOARD_VIDEO_BATCH_THREADS[batch_id] = thread
+    thread.start()
 
     return {
         "ok": True,
@@ -13555,6 +13892,9 @@ class AudioStudioStablePreviewIn(BaseModel):
     previewMap: bool | None = False
     draft_quality: str | None = None
     draftQuality: str | None = None
+    # V217A: same renderer can return an asset owned by Board or Audio Studio.
+    output_stage: str | None = None
+    outputStage: str | None = None
 
 
 def _audio_studio_float_v204g12b(value: Any, fallback: float = 100.0) -> float:
@@ -13650,6 +13990,41 @@ def _audio_studio_scene_video_ref_v204g1(scene: dict[str, Any]) -> str:
         scene.get("url"),
         _audio_studio_nested_ref_v204g1(scene.get("boardRaw", {}).get("video") if isinstance(scene.get("boardRaw"), dict) else None),
     )
+
+
+def _audio_studio_scene_image_ref_v217b(scene: dict[str, Any]) -> str:
+    return _audio_studio_first_text_v204g1(
+        _audio_studio_nested_ref_v204g1(scene.get("sourceImage")),
+        _audio_studio_nested_ref_v204g1(scene.get("source_image")),
+        _audio_studio_nested_ref_v204g1(scene.get("previewImage")),
+        _audio_studio_nested_ref_v204g1(scene.get("preview_image")),
+        scene.get("imageApiPath"),
+        scene.get("image_api_path"),
+        scene.get("firstImageApiPath"),
+        scene.get("first_image_api_path"),
+        scene.get("startImageApiPath"),
+        scene.get("start_image_api_path"),
+        scene.get("imageUrl"),
+        scene.get("image_url"),
+        scene.get("firstImageUrl"),
+        scene.get("first_image_url"),
+        scene.get("startImageUrl"),
+        scene.get("start_image_url"),
+    )
+
+
+def _audio_studio_scene_preview_media_kind_v217b(scene: dict[str, Any]) -> str:
+    explicit = _audio_studio_first_text_v204g1(
+        scene.get("previewMediaKind"),
+        scene.get("preview_media_kind"),
+    ).lower()
+    if explicit in {"video", "image", "placeholder"}:
+        return explicit
+    if _audio_studio_scene_video_ref_v204g1(scene):
+        return "video"
+    if _audio_studio_scene_image_ref_v217b(scene):
+        return "image"
+    return "placeholder"
 
 
 def _audio_studio_scene_timing_audio_ref_v204g1(scene: dict[str, Any]) -> str:
@@ -14421,6 +14796,8 @@ def _audio_studio_quick_preview_file_identity_v216r1(path: Path | None) -> dict[
         return {"path": str(path), "size": 0, "mtime_ns": 0}
 
 
+# AVA_BOARD_QUICK_PREVIEW_MIXED_MEDIA_V217B: Board quick preview accepts video, still image, or AVA placeholder per timing scene.
+# AVA_BOARD_QUICK_PREVIEW_OUTPUT_STAGE_V217A: Board reuses the quick-preview renderer but owns its result asset.
 # AVA_AUDIO_STUDIO_QUICK_PREVIEW_SINGLE_MASTER_AUDIO_V216R5:
 def _audio_studio_make_quick_proxy_v216r1(
     *,
@@ -14483,6 +14860,84 @@ def _audio_studio_make_quick_proxy_v216r1(
             pass
 
 
+def _audio_studio_make_quick_still_proxy_v217b(
+    *,
+    image_path: Path | None,
+    out_path: Path,
+    duration_sec: float,
+    width: int,
+    height: int,
+    fps: int,
+) -> None:
+    """Hold one still (or a dark fallback) for the full scene duration."""
+    duration = max(0.08, float(duration_sec or 0.0))
+    tmp_path = out_path.with_name(f"{out_path.stem}.{uuid4().hex[:8]}.tmp.mp4")
+    try:
+        if image_path is not None and image_path.exists() and image_path.is_file():
+            inputs = ["-y", "-loop", "1", "-framerate", str(int(fps)), "-i", str(image_path)]
+            video_filter = (
+                f"[0:v:0]scale={int(width)}:{int(height)}:force_original_aspect_ratio=decrease,"
+                f"pad={int(width)}:{int(height)}:(ow-iw)/2:(oh-ih)/2:color=0x02050d,"
+                f"setsar=1,fps={int(fps)},trim=duration={duration:.6f},"
+                f"setpts=PTS-STARTPTS,format=yuv420p[v]"
+            )
+        else:
+            inputs = ["-y", "-f", "lavfi", "-i", f"color=c=0x02050d:s={int(width)}x{int(height)}:r={int(fps)}"]
+            video_filter = (
+                f"[0:v:0]trim=duration={duration:.6f},setpts=PTS-STARTPTS,"
+                f"setsar=1,format=yuv420p[v]"
+            )
+
+        _run_ffmpeg([
+            *inputs,
+            "-filter_complex", video_filter,
+            "-map", "[v]",
+            "-an",
+            "-t", f"{duration:.6f}",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-tune", "fastdecode",
+            "-crf", "32",
+            "-threads", "1",
+            "-r", str(int(fps)),
+            "-g", str(max(15, int(fps) * 2)),
+            "-keyint_min", str(max(15, int(fps) * 2)),
+            "-sc_threshold", "0",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            str(tmp_path),
+        ])
+        if not tmp_path.exists() or tmp_path.stat().st_size < 1024:
+            raise HTTPException(status_code=500, detail="quick_preview_still_proxy_missing_v217b")
+        os.replace(tmp_path, out_path)
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _audio_studio_quick_preview_asset_ids_v217b(
+    scenes: list[dict[str, Any]],
+    *,
+    include_images: bool,
+) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            continue
+        refs = [_audio_studio_scene_video_ref_v204g1(scene)]
+        if include_images:
+            refs.append(_audio_studio_scene_image_ref_v217b(scene))
+        for ref in refs:
+            asset_id = _asset_id_from_text(ref)
+            if asset_id and asset_id not in seen:
+                seen.add(asset_id)
+                result.append(asset_id)
+    return result
+
+
 # AVA_AUDIO_STUDIO_QUICK_PREVIEW_FAST_PREP_V216R4:
 def _audio_studio_quick_preview_video_asset_ids_v216r4(scenes: list[dict[str, Any]]) -> list[str]:
     result: list[str] = []
@@ -14512,7 +14967,7 @@ def _audio_studio_quick_preview_resolve_video_v216r4(value: str, asset_records: 
     return _resolve_local_file(value)
 
 
-def _audio_studio_quick_preview_duration_v216r4(scene: dict[str, Any], video_path: Path) -> float:
+def _audio_studio_quick_preview_duration_v216r4(scene: dict[str, Any], video_path: Path | None) -> float:
     try:
         direct = float(scene.get("durationSec", scene.get("duration_sec", 0)) or 0)
     except Exception:
@@ -14523,7 +14978,7 @@ def _audio_studio_quick_preview_duration_v216r4(scene: dict[str, Any], video_pat
     if scene_range and float(scene_range[1]) > float(scene_range[0]):
         return float(scene_range[1]) - float(scene_range[0])
     # ffprobe is now a true fallback only, instead of running eagerly for all 54 scenes.
-    return max(0.05, float(_ffprobe_duration(video_path) or 0.0))
+    return max(0.05, float(_ffprobe_duration(video_path) or 0.0)) if video_path else 0.05
 
 
 def _audio_studio_quick_preview_map_v216r1(
@@ -14534,10 +14989,33 @@ def _audio_studio_quick_preview_map_v216r1(
     user: dict,
 ) -> dict[str, Any]:
     started = __import__("time").monotonic()
+    requested_output_stage_v217a = str(
+        getattr(payload, "output_stage", None)
+        or getattr(payload, "outputStage", None)
+        or ""
+    ).strip().lower()
+    source_v217a = str(getattr(payload, "source", None) or "").strip().lower()
+    output_stage_v217a = "board" if (
+        requested_output_stage_v217a == "board"
+        or source_v217a == "board_full_preview_map_v217a"
+    ) else "audio_studio"
+    board_mixed_preview_v217b = bool(
+        output_stage_v217a == "board"
+        and source_v217a == "board_full_preview_map_v217a"
+    )
+    print("[QUICK PREVIEW OUTPUT STAGE V217A]", {
+        "projectId": project_id,
+        "source": source_v217a,
+        "outputStage": output_stage_v217a,
+        "mixedBoardMediaV217B": board_mixed_preview_v217b,
+    }, flush=True)
     cache_root = _audio_studio_quick_preview_cache_root_v216r1(project_id)
     master_audio_path_v216r3, master_audio_ref_v216r3, master_audio_asset_id_v216r3, _master_timing_v216r3 = _audio_studio_quick_preview_master_audio_v216r3(project_id)
 
-    video_asset_ids_v216r4 = _audio_studio_quick_preview_video_asset_ids_v216r4(scenes)
+    video_asset_ids_v216r4 = _audio_studio_quick_preview_asset_ids_v217b(
+        scenes,
+        include_images=board_mixed_preview_v217b,
+    )
     asset_context_v216r4 = store.get_project_asset_records(project_id, video_asset_ids_v216r4)
     video_asset_records_v216r4 = asset_context_v216r4.get("assets") or {}
     asset_timing_v216r4 = asset_context_v216r4.get("_timing_v216r4") or {}
@@ -14553,16 +15031,38 @@ def _audio_studio_quick_preview_map_v216r1(
         "totalMs": asset_timing_v216r4.get("total_ms"),
     }, flush=True)
 
-    first_video_path: Path | None = None
+    first_visual_path: Path | None = None
+    placeholder_logo_path_v217b = BACKEND_DIR.parent / "frontend" / "src" / "assets" / "ava_logo.jpg"
+    if not placeholder_logo_path_v217b.exists() or not placeholder_logo_path_v217b.is_file():
+        placeholder_logo_path_v217b = None
     prepared: list[dict[str, Any]] = []
+    media_counts_v217b = {"video": 0, "image": 0, "placeholder": 0}
     for index, scene in enumerate(scenes):
         scene_id = _audio_studio_scene_id_v204g1(scene, index)
         video_ref = _audio_studio_scene_video_ref_v204g1(scene)
-        if not video_ref:
+        image_ref = _audio_studio_scene_image_ref_v217b(scene) if board_mixed_preview_v217b else ""
+        media_kind_v217b = "video"
+        media_ref_v217b = video_ref
+        media_path_v217b: Path | None = None
+
+        if video_ref:
+            media_kind_v217b = "video"
+            media_ref_v217b = video_ref
+            media_path_v217b = _audio_studio_quick_preview_resolve_video_v216r4(video_ref, video_asset_records_v216r4)
+        elif board_mixed_preview_v217b and image_ref:
+            media_kind_v217b = "image"
+            media_ref_v217b = image_ref
+            media_path_v217b = _audio_studio_quick_preview_resolve_video_v216r4(image_ref, video_asset_records_v216r4)
+        elif board_mixed_preview_v217b:
+            media_kind_v217b = "placeholder"
+            media_ref_v217b = "ava_logo_placeholder_v217b"
+            media_path_v217b = None
+        else:
             raise HTTPException(status_code=400, detail=f"Scene {scene_id} has no video for quick preview")
-        video_path = _audio_studio_quick_preview_resolve_video_v216r4(video_ref, video_asset_records_v216r4)
-        if first_video_path is None:
-            first_video_path = video_path
+
+        media_counts_v217b[media_kind_v217b] = media_counts_v217b.get(media_kind_v217b, 0) + 1
+        if first_visual_path is None and media_kind_v217b in {"video", "image"} and media_path_v217b is not None:
+            first_visual_path = media_path_v217b
 
         timing_ref = _audio_studio_scene_timing_audio_ref_v204g1(scene)
         timing_path: Path | None = None
@@ -14603,7 +15103,7 @@ def _audio_studio_quick_preview_map_v216r1(
             timing_path = master_audio_path_v216r3
             timing_audio_source_v216r3 = "master_range_v216r3"
 
-        duration = _audio_studio_quick_preview_duration_v216r4(scene, video_path)
+        duration = _audio_studio_quick_preview_duration_v216r4(scene, media_path_v217b)
         video_volume = _audio_studio_float_v204g12b(
             scene.get("previewVideoAudioVolumePercentV204H7", scene.get("preview_video_audio_volume_percent_v204h7", 100.0)),
             100.0,
@@ -14617,7 +15117,11 @@ def _audio_studio_quick_preview_map_v216r1(
             "scene": scene,
             "scene_id": scene_id,
             "video_ref": video_ref,
-            "video_path": video_path,
+            "video_path": media_path_v217b if media_kind_v217b == "video" else None,
+            "media_kind": media_kind_v217b,
+            "media_ref": media_ref_v217b,
+            "media_path": media_path_v217b,
+            "placeholder_logo_path": placeholder_logo_path_v217b,
             "timing_path": timing_path,
             "timing_start": timing_audio_start_sec_v216r3,
             "timing_source": timing_audio_source_v216r3,
@@ -14635,29 +15139,42 @@ def _audio_studio_quick_preview_map_v216r1(
                 "sceneId": scene_id,
             }, flush=True)
 
-    if first_video_path is None or not prepared:
-        raise HTTPException(status_code=400, detail="No video paths resolved for quick preview")
+    if not prepared:
+        raise HTTPException(status_code=400, detail="No scenes prepared for quick preview")
 
-    original_width, original_height = _audio_studio_probe_size_v204g1(first_video_path)
-    if original_width >= original_height:
-        width, height = 640, 360
+    if first_visual_path is not None:
+        original_width, original_height = _audio_studio_probe_size_v204g1(first_visual_path)
+        if original_width >= original_height:
+            width, height = 640, 360
+        else:
+            width, height = 360, 640
     else:
-        width, height = 360, 640
+        first_aspect_v217b = _audio_studio_first_text_v204g1(
+            scenes[0].get("aspectRatio") if scenes else "",
+            scenes[0].get("aspect_ratio") if scenes else "",
+            scenes[0].get("format") if scenes else "",
+            "16:9",
+        ).lower()
+        width, height = ((360, 640) if ("9:16" in first_aspect_v217b or "portrait" in first_aspect_v217b) else (640, 360))
     fps = 15
 
     proxy_paths: list[Path] = []
     render_tasks: list[dict[str, Any]] = []
     scene_debug: list[dict[str, Any]] = []
     for item in prepared:
+        proxy_source_path_v217b = item.get("media_path")
+        if item.get("media_kind") == "placeholder":
+            proxy_source_path_v217b = item.get("placeholder_logo_path")
         signature = _audio_studio_quick_preview_signature_v216r1({
             "scene_id": item["scene_id"],
-            "video": _audio_studio_quick_preview_file_identity_v216r1(item["video_path"]),
+            "media_kind": item.get("media_kind") or "video",
+            "media": _audio_studio_quick_preview_file_identity_v216r1(proxy_source_path_v217b),
             "duration": round(float(item["duration"]), 6),
             "width": width,
             "height": height,
             "fps": fps,
             "audio_mode": "video_only_proxy_v216r5",
-            "version": "v216r5",
+            "version": "v217b_mixed_media",
         })
         proxy_name = f"{item['index'] + 1:03d}_{_safe_name(item['scene_id'], 'scene')}_{signature}.mp4"
         proxy_path = cache_root / proxy_name
@@ -14674,6 +15191,7 @@ def _audio_studio_quick_preview_map_v216r1(
             "cacheHit": cache_hit,
             "proxy": str(proxy_path),
             "audioMode": "video_only_proxy_v216r5",
+            "mediaKind": item.get("media_kind") or "video",
             "masterAudioAttachedPerScene": False,
         })
 
@@ -14690,21 +15208,36 @@ def _audio_studio_quick_preview_map_v216r1(
         "masterAudio": bool(master_audio_path_v216r3),
         "masterAudioRef": master_audio_ref_v216r3,
         "masterAudioAssetId": master_audio_asset_id_v216r3,
+        "mixedBoardMediaV217B": board_mixed_preview_v217b,
+        "videoScenes": media_counts_v217b.get("video", 0),
+        "imageScenes": media_counts_v217b.get("image", 0),
+        "placeholderScenes": media_counts_v217b.get("placeholder", 0),
     }, flush=True)
 
     def render_proxy(item: dict[str, Any]) -> str:
-        _audio_studio_make_quick_proxy_v216r1(
-            video_path=item["video_path"],
-            timing_audio_path=item["timing_path"],
-            timing_audio_start_sec=float(item.get("timing_start") or 0.0),
-            out_path=item["proxy_path"],
-            duration_sec=item["duration"],
-            width=width,
-            height=height,
-            fps=fps,
-            video_audio_volume_percent=item["video_volume"],
-            timing_audio_volume_percent=item["timing_volume"],
-        )
+        if item.get("media_kind") == "video":
+            _audio_studio_make_quick_proxy_v216r1(
+                video_path=item["media_path"],
+                timing_audio_path=item["timing_path"],
+                timing_audio_start_sec=float(item.get("timing_start") or 0.0),
+                out_path=item["proxy_path"],
+                duration_sec=item["duration"],
+                width=width,
+                height=height,
+                fps=fps,
+                video_audio_volume_percent=item["video_volume"],
+                timing_audio_volume_percent=item["timing_volume"],
+            )
+        else:
+            still_path_v217b = item.get("media_path") if item.get("media_kind") == "image" else item.get("placeholder_logo_path")
+            _audio_studio_make_quick_still_proxy_v217b(
+                image_path=still_path_v217b,
+                out_path=item["proxy_path"],
+                duration_sec=item["duration"],
+                width=width,
+                height=height,
+                fps=fps,
+            )
         return str(item["scene_id"])
 
     if render_tasks:
@@ -14745,7 +15278,8 @@ def _audio_studio_quick_preview_map_v216r1(
         "master_audio": _audio_studio_quick_preview_file_identity_v216r1(master_audio_path_v216r3),
         "duration": round(float(duration_target_v216r5), 6),
         "audio_mode": "single_continuous_master_v216r5",
-        "version": "v216r5",
+        "mixed_media": bool(board_mixed_preview_v217b),
+        "version": "v217b_mixed_media" if board_mixed_preview_v217b else "v216r5",
     })
     final_cache_path = cache_root / f"full_preview_{full_signature}.mp4"
     final_cache_hit = bool(final_cache_path.exists() and final_cache_path.stat().st_size >= 1024)
@@ -14822,14 +15356,22 @@ def _audio_studio_quick_preview_map_v216r1(
     public = _register_board_output_asset(
         final_cache_path,
         job={
-            "jobId": f"audio_studio_quick_preview_{uuid4().hex[:8]}",
+            "jobId": f"{output_stage_v217a}_quick_preview_{uuid4().hex[:8]}",
             "projectId": project_id,
             "userId": user.get("id"),
-            "sceneId": _audio_studio_first_text_v204g1(payload.block_id, payload.blockId, "preview_map_full_project_v211f"),
+            "sceneId": _audio_studio_first_text_v204g1(
+                payload.block_id,
+                payload.blockId,
+                "board_preview_full_project_v217a" if output_stage_v217a == "board" else "preview_map_full_project_v211f",
+            ),
         },
         kind="video",
-        stage="audio_studio",
-        original_name="audio_studio_quick_preview_v216r5.mp4",
+        stage=output_stage_v217a,
+        original_name=(
+            "board_quick_preview_v217a.mp4"
+            if output_stage_v217a == "board"
+            else "audio_studio_quick_preview_v216r5.mp4"
+        ),
     )
     if not public:
         raise HTTPException(status_code=500, detail="quick_preview_asset_register_failed_v216r1")
@@ -14859,7 +15401,20 @@ def _audio_studio_quick_preview_map_v216r1(
         "assetApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
         "audioMode": "single_continuous_master_v216r5",
         "fps": fps,
+        "mixedBoardMediaV217B": board_mixed_preview_v217b,
+        "videoScenes": media_counts_v217b.get("video", 0),
+        "imageScenes": media_counts_v217b.get("image", 0),
+        "placeholderScenes": media_counts_v217b.get("placeholder", 0),
     }, flush=True)
+    if board_mixed_preview_v217b:
+        print("[BOARD QUICK PREVIEW MIXED MEDIA READY V217B]", {
+            "projectId": project_id,
+            "sceneCount": len(prepared),
+            "videoScenes": media_counts_v217b.get("video", 0),
+            "imageScenes": media_counts_v217b.get("image", 0),
+            "placeholderScenes": media_counts_v217b.get("placeholder", 0),
+            "assetApiPath": public.get("asset_api_path") or public.get("assetApiPath"),
+        }, flush=True)
 
     return {
         "ok": True,
@@ -14879,7 +15434,13 @@ def _audio_studio_quick_preview_map_v216r1(
         "asset_url": public.get("asset_url") or public.get("assetUrl"),
         "assetId": public.get("asset_id") or public.get("assetId"),
         "asset_id": public.get("asset_id") or public.get("assetId"),
-        "source": "audio_studio_quick_preview_single_master_v216r5",
+        "source": (
+            "board_quick_preview_single_master_v217a"
+            if output_stage_v217a == "board"
+            else "audio_studio_quick_preview_single_master_v216r5"
+        ),
+        "outputStage": output_stage_v217a,
+        "output_stage": output_stage_v217a,
         "quickPreview": True,
         "quick_preview": True,
         "renderSeconds": round(float(elapsed), 3),
@@ -14890,7 +15451,13 @@ def _audio_studio_quick_preview_map_v216r1(
         "rebuilt_proxies": len(render_tasks),
         "finalCacheHit": final_cache_hit,
         "final_cache_hit": final_cache_hit,
-        "layers": ["scene_video_only_proxies", "single_continuous_master_audio", "quick_proxy_cache"],
+        "layers": (
+            ["mixed_video_image_placeholder_proxies", "single_continuous_master_audio", "quick_proxy_cache"]
+            if board_mixed_preview_v217b
+            else ["scene_video_only_proxies", "single_continuous_master_audio", "quick_proxy_cache"]
+        ),
+        "mediaCounts": media_counts_v217b,
+        "media_counts": media_counts_v217b,
         "scenes": scene_debug,
     }
 

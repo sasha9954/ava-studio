@@ -1,3 +1,6 @@
+# AVA_PROJECT_BOARD_PREVIEW_REMARK_REVISION_AUTHORITY_V217C: newer revisioned Board preview remarks beat stale delayed saves.
+# AVA_PROJECT_BOARD_VIDEO_REVISION_AUTHORITY_V218B: server-ready video refs survive stale browser/Telegram review saves.
+# AVA_PROJECT_BOARD_PROMPT_REVISION_AUTHORITY_V218A: newer per-scene prompts survive concurrent media/replace saves.
 # AVA_PROJECT_TELEGRAM_REVIEW_AUTHORITY_V216K3: newer Telegram bad is a human review event.
 # AVA_BOARD_MEDIA_REDUCER_CONTRACT_V216A: revision-based Board media save authority.
 # AVA_BACKEND_BOARD_MEDIA_SIMPLE_AUTHORITY_V215D: protect newer committed Board images from stale delayed saves.
@@ -4277,6 +4280,107 @@ def _ava_project_preserve_board_prompts_v213d(current_data, incoming_data):
     }, flush=True)
     return next_data, changed
 
+
+_AVA_BOARD_PROMPT_META_KEYS_V218A = (
+    "prompt_revision_v218a", "promptRevisionV218A",
+    "prompt_import_epoch_v214x", "promptImportEpochV214X",
+    "prompt_import_source_v214x", "promptImportSourceV214X",
+    "prompt_local_authority_v214k2", "promptLocalAuthorityV214K2",
+    "prompt_edit_epoch_v214k2", "promptEditEpochV214K2",
+    "prompt_edit_at_v214k2", "promptEditAtV214K2",
+    "prompt_local_authority_v214k", "promptLocalAuthorityV214K",
+    "prompt_edit_epoch_v214k", "promptEditEpochV214K",
+    "prompt_local_authority_v214j", "promptLocalAuthorityV214J",
+    "prompt_edit_epoch_v214j", "promptEditEpochV214J",
+)
+
+
+def _ava_v218a_prompt_revision(scene) -> int:
+    if not isinstance(scene, dict):
+        return 0
+    values = []
+    for key in (
+        "prompt_revision_v218a", "promptRevisionV218A",
+        "prompt_import_epoch_v214x", "promptImportEpochV214X",
+        "prompt_edit_epoch_v214k2", "promptEditEpochV214K2",
+        "prompt_edit_epoch_v214k", "promptEditEpochV214K",
+        "prompt_edit_epoch_v214j", "promptEditEpochV214J",
+    ):
+        try:
+            value = int(float(scene.get(key) or 0))
+        except Exception:
+            value = 0
+        if value > 0:
+            values.append(value)
+    return max(values or [0])
+
+
+def _ava_project_apply_prompt_revision_authority_v218a(current_data, incoming_data):
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, {"changedFields": 0, "changedScenes": []}
+    current_scenes = _ava_v213d_scenes(current_data)
+    incoming_scenes = _ava_v213d_scenes(incoming_data)
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, {"changedFields": 0, "changedScenes": []}
+
+    current_by_id = {
+        _ava_v213d_scene_id(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+    next_data = copy.deepcopy(incoming_data)
+    next_scenes = _ava_v213d_scenes(next_data)
+    changed_fields = 0
+    changed_scenes = []
+
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _ava_v213d_scene_id(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict):
+            continue
+        current_revision = _ava_v218a_prompt_revision(current_scene)
+        incoming_revision = _ava_v218a_prompt_revision(scene)
+        scene_changed = False
+
+        if current_revision > incoming_revision:
+            for key in (*_AVA_BOARD_PROMPT_KEYS_V213D, *_AVA_BOARD_PROMPT_META_KEYS_V218A):
+                if key not in current_scene:
+                    continue
+                current_value = copy.deepcopy(current_scene.get(key))
+                if scene.get(key) == current_value:
+                    continue
+                scene[key] = current_value
+                changed_fields += 1
+                scene_changed = True
+        elif current_revision == incoming_revision:
+            # Revision-less legacy saves still may not erase a populated prompt.
+            for key in _AVA_BOARD_PROMPT_KEYS_V213D:
+                current_value = current_scene.get(key)
+                if not _ava_v213d_text(current_value):
+                    continue
+                if _ava_v213d_text(scene.get(key)):
+                    continue
+                scene[key] = copy.deepcopy(current_value)
+                changed_fields += 1
+                scene_changed = True
+
+        if scene_changed:
+            changed_scenes.append(scene_id)
+
+    if not changed_fields:
+        return incoming_data, {"changedFields": 0, "changedScenes": []}
+
+    next_data["scenes"] = next_scenes
+    next_data["board_prompt_revision_authority_v218a"] = True
+    next_data["boardPromptRevisionAuthorityV218A"] = True
+    return next_data, {
+        "changedFields": changed_fields,
+        "changedScenes": changed_scenes[:80],
+    }
+
+
 def _ava_project_board_image_upload_batch_isolation_v209k(current_snapshot, incoming_data, payload_client_version=""):
     if not isinstance(current_snapshot, dict) or not isinstance(incoming_data, dict):
         return incoming_data, 0
@@ -4608,6 +4712,198 @@ def _ava_v216a_preserve_newer_scene_media(current_data: dict[str, Any] | None, i
     print('[BOARD STALE MEDIA SAVE REJECTED V216A]', {'source': source, 'scenes': changed}, flush=True)
     return result, changed
 
+
+_AVA_V218B_VIDEO_FIELDS = (
+    'video_status','videoStatus','generation_status','generationStatus','batch_status','batchStatus',
+    'video_error','videoError','video_job_id','videoJobId','job_id','jobId',
+    'video_status_endpoint','videoStatusEndpoint','video_queue_position','videoQueuePosition','video_queue_source','videoQueueSource',
+    'video_url','videoUrl','video_api_path','videoApiPath','video_asset_id','videoAssetId','video_name','videoName','video_result','videoResult',
+    'result_url','resultUrl','result_video_url','resultVideoUrl','result_video_api_path','resultVideoApiPath','result_video_asset_id','resultVideoAssetId','result_video_name','resultVideoName',
+    'ready_video_url','readyVideoUrl','ready_video_api_path','readyVideoApiPath','ready_video_asset_id','readyVideoAssetId',
+    'generated_video_url','generatedVideoUrl','generated_video_api_path','generatedVideoApiPath','generated_video_asset_id','generatedVideoAssetId',
+    'output_video_url','outputVideoUrl','output_video_api_path','outputVideoApiPath','output_video_asset_id','outputVideoAssetId',
+    'original_video_url','originalVideoUrl','video_ready_at','videoReadyAt','video_updated_at','videoUpdatedAt',
+    'server_batch_job_id','serverBatchJobId','server_batch_status_endpoint','serverBatchStatusEndpoint',
+    'video_source_image_asset_id','videoSourceImageAssetId','video_source_image_api_path','videoSourceImageApiPath','video_source_image_url','videoSourceImageUrl',
+    'video_source_image_mutation_epoch','videoSourceImageMutationEpoch','video_source_revision_v216a','videoSourceRevisionV216A',
+    'generation_media_revision_v216a','generationMediaRevisionV216A','generation_source_image_asset_id_v216a','generationSourceImageAssetIdV216A',
+    'video_revision_v218b','videoRevisionV218B','video_ready_epoch_v218b','videoReadyEpochV218B',
+)
+
+
+def _ava_v218b_epoch(value: Any) -> float:
+    try:
+        numeric = float(value or 0)
+        if numeric > 0:
+            return numeric
+    except Exception:
+        pass
+    try:
+        text = str(value or '').strip()
+        if not text:
+            return 0.0
+        if text.endswith('Z'):
+            text = text[:-1] + '+00:00'
+        dt = datetime.fromisoformat(text)
+        return dt.timestamp() * 1000.0
+    except Exception:
+        return 0.0
+
+
+def _ava_v218b_scene_has_video(scene: dict[str, Any] | None) -> bool:
+    if not isinstance(scene, dict):
+        return False
+    return any(str(scene.get(key) or '').strip() for key in (
+        'video_asset_id','videoAssetId','video_api_path','videoApiPath','video_url','videoUrl',
+        'result_video_asset_id','resultVideoAssetId','result_video_api_path','resultVideoApiPath','result_video_url','resultVideoUrl',
+        'output_video_asset_id','outputVideoAssetId','output_video_api_path','outputVideoApiPath','output_video_url','outputVideoUrl',
+    ))
+
+
+def _ava_v218b_video_revision(scene: dict[str, Any] | None) -> float:
+    if not isinstance(scene, dict):
+        return 0.0
+    revision = max(
+        _ava_v218b_epoch(scene.get('video_revision_v218b')),
+        _ava_v218b_epoch(scene.get('videoRevisionV218B')),
+        _ava_v218b_epoch(scene.get('video_ready_epoch_v218b')),
+        _ava_v218b_epoch(scene.get('videoReadyEpochV218B')),
+        _ava_v218b_epoch(scene.get('video_ready_at')),
+        _ava_v218b_epoch(scene.get('videoReadyAt')),
+        _ava_v218b_epoch(scene.get('video_updated_at')),
+        _ava_v218b_epoch(scene.get('videoUpdatedAt')),
+        0.0,
+    )
+    if revision > 0:
+        return revision
+    return 1.0 if _ava_v218b_scene_has_video(scene) else 0.0
+
+
+def _ava_v218b_video_clear_revision(scene: dict[str, Any] | None) -> float:
+    if not isinstance(scene, dict):
+        return 0.0
+    return max(
+        _ava_v218b_epoch(scene.get('video_clear_revision_v218b')),
+        _ava_v218b_epoch(scene.get('videoClearRevisionV218B')),
+        _ava_v218b_epoch(scene.get('source_image_changed_epoch')),
+        _ava_v218b_epoch(scene.get('sourceImageChangedEpoch')),
+        _ava_v218b_epoch(scene.get('image_mutation_epoch')),
+        _ava_v218b_epoch(scene.get('imageMutationEpoch')),
+        0.0,
+    )
+
+
+def _ava_project_apply_video_revision_authority_v218b(current_data, incoming_data, source=''):
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    current_scenes = current_data.get('scenes') if isinstance(current_data.get('scenes'), list) else []
+    incoming_scenes = incoming_data.get('scenes') if isinstance(incoming_data.get('scenes'), list) else []
+    if not current_scenes or not incoming_scenes:
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    current_by_id = {
+        _ava_v216a_scene_id(scene, index): scene
+        for index, scene in enumerate(current_scenes)
+        if isinstance(scene, dict)
+    }
+    next_data = copy.deepcopy(incoming_data)
+    next_scenes = next_data.get('scenes') if isinstance(next_data.get('scenes'), list) else []
+    changed_fields = 0
+    changed_scenes = []
+    for index, scene in enumerate(next_scenes):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = _ava_v216a_scene_id(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict) or not _ava_v218b_scene_has_video(current_scene):
+            continue
+        current_revision = _ava_v218b_video_revision(current_scene)
+        incoming_revision = _ava_v218b_video_revision(scene)
+        incoming_clear_revision = _ava_v218b_video_clear_revision(scene)
+        if incoming_clear_revision > current_revision:
+            continue
+        if _ava_v218b_scene_has_video(scene) and incoming_revision >= current_revision:
+            continue
+        scene_changed = False
+        for key in _AVA_V218B_VIDEO_FIELDS:
+            if key in current_scene:
+                value = copy.deepcopy(current_scene.get(key))
+                if scene.get(key) != value:
+                    scene[key] = value
+                    changed_fields += 1
+                    scene_changed = True
+            elif key in scene:
+                scene.pop(key, None)
+                changed_fields += 1
+                scene_changed = True
+        if scene_changed:
+            scene['stale_video_save_rejected_v218b'] = True
+            scene['staleVideoSaveRejectedV218B'] = True
+            scene['stale_video_save_source_v218b'] = source
+            scene['staleVideoSaveSourceV218B'] = source
+            changed_scenes.append(scene_id)
+    if not changed_fields:
+        return incoming_data, {'changedFields': 0, 'changedScenes': []}
+    next_data['scenes'] = next_scenes
+    next_data['board_video_revision_authority_v218b'] = True
+    next_data['boardVideoRevisionAuthorityV218B'] = True
+    return next_data, {'changedFields': changed_fields, 'changedScenes': changed_scenes[:100]}
+
+
+def _ava_v217c_board_preview_state(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        return {}
+    value = data.get('boardPreviewV217A') or data.get('board_preview_v217a') or {}
+    return value if isinstance(value, dict) else {}
+
+
+def _ava_v217c_board_preview_revision(preview: Any) -> int:
+    if not isinstance(preview, dict):
+        return 0
+    value = (
+        preview.get('revisionV217C')
+        or preview.get('revision_v217c')
+        or preview.get('mutationRevisionV217C')
+        or preview.get('mutation_revision_v217c')
+        or 0
+    )
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _ava_v217c_apply_board_preview_authority(current_data: Any, incoming_data: Any) -> tuple[Any, dict[str, Any] | None]:
+    if not isinstance(incoming_data, dict):
+        return incoming_data, None
+    current_preview = _ava_v217c_board_preview_state(current_data)
+    incoming_preview = _ava_v217c_board_preview_state(incoming_data)
+    if not current_preview and not incoming_preview:
+        return incoming_data, None
+
+    current_revision = _ava_v217c_board_preview_revision(current_preview)
+    incoming_revision = _ava_v217c_board_preview_revision(incoming_preview)
+    # Equal revision means the server copy is already authoritative. Only a strictly
+    # newer incoming revision may replace it, including replacing remarks with [].
+    incoming_wins = bool(incoming_preview) and incoming_revision > current_revision
+    winner_preview = incoming_preview if incoming_wins else current_preview
+    winner = 'incoming' if incoming_wins else 'current'
+
+    merged = copy.deepcopy(incoming_data)
+    if winner_preview:
+        merged['boardPreviewV217A'] = copy.deepcopy(winner_preview)
+    else:
+        merged.pop('boardPreviewV217A', None)
+    merged.pop('board_preview_v217a', None)
+    info = {
+        'winner': winner,
+        'currentRevision': current_revision,
+        'incomingRevision': incoming_revision,
+        'remarks': len(winner_preview.get('remarks') or []) if isinstance(winner_preview, dict) else 0,
+        'changed': _ava_v217c_board_preview_state(incoming_data) != winner_preview,
+    }
+    return merged, info
+
+
 @router.post('/{project_id}/snapshots/{stage}')
 def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depends(ensure_project_access)):
     if project.get('status') == 'deleted':
@@ -4634,6 +4930,16 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
             cleanup = cleanup_project_stage_media(db, project_id, stage, user_id=project.get('user_id'))
         incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
         if stage == 'board' and current:
+            incoming_data, board_preview_authority_v217c = _ava_v217c_apply_board_preview_authority(
+                current.get('data') if isinstance(current, dict) else {},
+                incoming_data or {},
+            )
+            if board_preview_authority_v217c and board_preview_authority_v217c.get('changed'):
+                print('[BOARD PREVIEW AUTHORITY V217C]', {
+                    'project_id': project_id,
+                    **board_preview_authority_v217c,
+                }, flush=True)
+        if stage == 'board' and current:
             incoming_data, rejected_stale_media_v216a = _ava_v216a_preserve_newer_scene_media(
                 current.get('data') if isinstance(current, dict) else {},
                 incoming_data or {},
@@ -4649,6 +4955,33 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                 )
                 if protected_fresh_images_v215d:
                     preserved_media_refs = int(locals().get('preserved_media_refs', 0) or 0) + protected_fresh_images_v215d
+
+        if stage == 'board' and current and not is_destructive_clear:
+            incoming_data, video_revision_authority_v218b = _ava_project_apply_video_revision_authority_v218b(
+                current.get('data') if isinstance(current, dict) else {},
+                incoming_data or {},
+                source=f'project_snapshot:{payload.guard_mode or "safe_merge"}',
+            )
+            if video_revision_authority_v218b.get('changedFields'):
+                print('[PROJECT BOARD VIDEO REVISION AUTHORITY V218B]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'guardMode': payload.guard_mode,
+                    **video_revision_authority_v218b,
+                }, flush=True)
+
+        if stage == 'board' and current:
+            incoming_data, prompt_revision_authority_v218a = _ava_project_apply_prompt_revision_authority_v218a(
+                current.get('data') if isinstance(current, dict) else {},
+                incoming_data or {},
+            )
+            if prompt_revision_authority_v218a.get("changedFields"):
+                print('[PROJECT BOARD PROMPT REVISION AUTHORITY V218A]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'guardMode': payload.guard_mode,
+                    **prompt_revision_authority_v218a,
+                }, flush=True)
 
         if stage == 'manual_timing':
             incoming_data, normalized_v212s3, info_v212s3 = _ava_v212s3_normalize_manual_timing_data(incoming_data or {})
