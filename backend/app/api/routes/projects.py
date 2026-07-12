@@ -280,12 +280,14 @@ def _project_delete_background_cleanup_v212q(project_id: str, user_id: str | Non
         print('[PROJECT DELETE BACKGROUND CLEANUP ERROR V212Q]', {'project_id': project_id, 'error': str(exc)}, flush=True)
 
 
+# AVA_PROJECT_DELETE_IDEMPOTENT_V218F:
+# Repeated DELETE requests are accepted as success. This prevents a duplicate browser
+# click/request from returning 404 and causing an optimistic UI rollback.
 @router.delete('/{project_id}')
-def delete_project(project: dict = Depends(ensure_project_access)):
+def delete_project(project_id: str, user: dict = Depends(get_current_user)):
     # V212Q: return quickly to the UI, then remove heavy media/files in background.
-    # The project disappears from the list immediately, while rmtree/assets cleanup no longer blocks the click.
-    project_id = project['id']
-    user_id = project.get('user_id')
+    # V218F: deletion is idempotent and ownership is checked inside the atomic update.
+    project_id = str(project_id or '').strip()
     started = time.monotonic()
 
     def op(db):
@@ -293,6 +295,30 @@ def delete_project(project: dict = Depends(ensure_project_access)):
         snapshots = db.setdefault('snapshots', {})
         jobs = db.setdefault('jobs', {})
 
+        project = projects.get(project_id)
+        if not isinstance(project, dict):
+            return {
+                'deleted': True,
+                'project_id': project_id,
+                'already_absent': True,
+                'hard_deleted': False,
+                'fast_delete': True,
+                'cleanup': {
+                    'mode': 'none_already_absent_v218f',
+                    'snapshots_dropped_now': 0,
+                    'jobs_dropped_now': 0,
+                },
+                'elapsed_ms': round((time.monotonic() - started) * 1000, 1),
+            }
+
+        if str(project.get('user_id') or '') != str(user.get('id') or ''):
+            return {
+                'deleted': False,
+                'project_id': project_id,
+                'not_owned_v218f': True,
+            }
+
+        user_id = project.get('user_id')
         snapshot_count = len((snapshots.get(project_id) or {}))
         projects.pop(project_id, None)
         snapshots.pop(project_id, None)
@@ -307,8 +333,10 @@ def delete_project(project: dict = Depends(ensure_project_access)):
         return {
             'deleted': True,
             'project_id': project_id,
+            'already_absent': False,
             'hard_deleted': False,
             'fast_delete': True,
+            'user_id_v218f': user_id,
             'cleanup': {
                 'mode': 'background_v212q',
                 'snapshots_dropped_now': snapshot_count,
@@ -318,7 +346,16 @@ def delete_project(project: dict = Depends(ensure_project_access)):
         }
 
     result = store.update(op)
-    print('[PROJECT DELETE FAST ACK V212Q]', result, flush=True)
+
+    if result.get('not_owned_v218f'):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project not found')
+
+    if result.get('already_absent'):
+        print('[PROJECT DELETE ALREADY ABSENT V218F]', result, flush=True)
+        return result
+
+    user_id = result.pop('user_id_v218f', None)
+    print('[PROJECT DELETE FAST ACK V218F]', result, flush=True)
 
     thread = threading.Thread(
         target=_project_delete_background_cleanup_v212q,

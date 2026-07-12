@@ -1,3 +1,4 @@
+# AVA_BOARD_ASSEMBLY_SCENE_AUDIO_FRAME_EXACT_MIX_V218E: preserve embedded scene audio through frame-exact concat and mix modes.
 # AVA_BOARD_VIDEO_REVISION_AUTHORITY_V218B: batch outputs carry video revisions and stale snapshots cannot erase them.
 # AVA_BOARD_PROMPT_REVISION_AND_TELEGRAM_START_V218A: batch snapshots preserve newer prompts and Telegram start is verified before runner start.
 # AVA_BOARD_DEAD_QUEUE_CLEANUP_V216J: dead persisted queue membership is cleared automatically.
@@ -8399,6 +8400,8 @@ def _normalize_assembly_clip(
         ])
 
     normalized_duration = _ffprobe_duration(out_path) or target_duration
+    scene_audio_volume_v218e = max(0.0, float(audio_volume or 0.0))
+    scene_audio_included_v218e = bool(has_audio and scene_audio_volume_v218e > 0.0001)
     return {
         "sourcePath": str(source_path),
         "normalizedPath": str(out_path),
@@ -8407,6 +8410,8 @@ def _normalize_assembly_clip(
         "durationSec": normalized_duration,
         "durationDriftSecV196B": normalized_duration - target_duration,
         "hadAudio": has_audio,
+        "sceneAudioVolumeV218E": scene_audio_volume_v218e,
+        "sceneAudioIncludedV218E": scene_audio_included_v218e,
         "exactTimingV196B": True,
     }
 
@@ -11093,8 +11098,10 @@ def _render_board_exact_frame_concat_v210g(
     args = ["-y"]
     filters: list[str] = []
     labels: list[str] = []
+    audio_labels_v218e: list[str] = []
     rows: list[dict[str, Any]] = []
     total_frames = 0
+    scene_audio_source_count_v218e = 0
 
     for index, path in enumerate(paths):
         args.extend(["-i", str(path)])
@@ -11116,6 +11123,7 @@ def _render_board_exact_frame_concat_v210g(
         total_frames += frames
 
         label = f"v210g_{index}"
+        audio_label_v218e = f"a218e_{index}"
         filters.append(
             f"[{index}:v:0]"
             f"setpts=PTS-STARTPTS,"
@@ -11129,7 +11137,19 @@ def _render_board_exact_frame_concat_v210g(
             f"format=yuv420p"
             f"[{label}]"
         )
+        filters.append(
+            f"[{index}:a:0]"
+            f"aresample=48000,"
+            f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+            f"apad,atrim=duration={duration_by_frames:.9f},"
+            f"asetpts=PTS-STARTPTS"
+            f"[{audio_label_v218e}]"
+        )
         labels.append(f"[{label}]")
+        audio_labels_v218e.append(f"[{audio_label_v218e}]")
+        scene_audio_included_v218e = bool(item.get("sceneAudioIncludedV218E"))
+        if scene_audio_included_v218e:
+            scene_audio_source_count_v218e += 1
         rows.append({
             "index": index,
             "scene_id": scene_id,
@@ -11139,23 +11159,25 @@ def _render_board_exact_frame_concat_v210g(
             "end_frame": end_frame,
             "frames": frames,
             "duration_by_frames": round(duration_by_frames, 6),
+            "had_audio": bool(item.get("hadAudio")),
+            "scene_audio_included": scene_audio_included_v218e,
+            "scene_audio_volume": float(item.get("sceneAudioVolumeV218E") or 0.0),
         })
 
     if total_frames <= 0:
         return {"applied": False, "reason": "no_frames_v210g"}
 
     timeline_duration = total_frames / float(safe_fps)
-    silence_index = len(paths)
-    args.extend([
-        "-f", "lavfi",
-        "-t", f"{timeline_duration:.9f}",
-        "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
-    ])
 
     filters.append(
         "".join(labels)
         + f"concat=n={len(labels)}:v=1:a=0[v210gcat];"
         + f"[v210gcat]fps={safe_fps},setpts=N/{safe_fps}/TB,format=yuv420p[v210gout]"
+    )
+    filters.append(
+        "".join(audio_labels_v218e)
+        + f"concat=n={len(audio_labels_v218e)}:v=0:a=1[a218ecat];"
+        + f"[a218ecat]apad,atrim=duration={timeline_duration:.9f},asetpts=PTS-STARTPTS[a218eout]"
     )
 
     expected_last_end = 0.0
@@ -11176,6 +11198,8 @@ def _render_board_exact_frame_concat_v210g(
         "frameDurationSec": round(timeline_duration, 9),
         "expectedBoardEndSec": round(float(expected_last_end or 0.0), 9),
         "expectedBoardEndFrames": int(round(float(expected_last_end or 0.0) * safe_fps)) if expected_last_end else 0,
+        "sceneAudioTimelineV218E": True,
+        "sceneAudioSourceCountV218E": scene_audio_source_count_v218e,
         "rowsPreview": rows[:4] + ([{"omittedRows": max(0, len(rows) - 8)}] if len(rows) > 8 else []) + (rows[-4:] if len(rows) > 8 else []),
     }, flush=True)
 
@@ -11183,7 +11207,7 @@ def _render_board_exact_frame_concat_v210g(
         *args,
         "-filter_complex", ";".join(filters),
         "-map", "[v210gout]",
-        "-map", f"{silence_index}:a:0",
+        "-map", "[a218eout]",
         "-frames:v", str(total_frames),
         "-c:v", "libx264",
         "-preset", AVA_BOARD_ASSEMBLY_PRESET,
@@ -11211,6 +11235,8 @@ def _render_board_exact_frame_concat_v210g(
         "durationDeltaSec": actual - timeline_duration,
         "qualityCrf": AVA_BOARD_ASSEMBLY_CRF,
         "preset": AVA_BOARD_ASSEMBLY_PRESET,
+        "sceneAudioTimelineV218E": True,
+        "sceneAudioSourceCountV218E": scene_audio_source_count_v218e,
         "rowsPreview": rows[:4] + ([{"omittedRows": max(0, len(rows) - 8)}] if len(rows) > 8 else []) + (rows[-4:] if len(rows) > 8 else []),
     }
     print("[BOARD ASSEMBLY FRAME EXACT CONCAT DONE V210G]", {"job_id": job_id, **result}, flush=True)
@@ -11870,42 +11896,56 @@ def _run_board_assembly_job(job_id: str) -> None:
                 str(out_path),
             ])
         elif audio_mode == "original_plus_scene" and use_original_audio and not use_music_audio:
-            # V210G: use ONE continuous master audio file, not 48 slices.
-            # The visual track is now frame-exact, so slicing the song is unnecessary and
-            # creates audible joins. Also do not use -shortest, because it dropped video frames.
-            print("[BOARD ASSEMBLY ORIGINAL MASTER FRAME SAFE MUX V210G]", {
+            # V218E: V210G intentionally replaced scene_concat audio with silence and then
+            # mapped only master audio. Keep the continuous master, but mix the frame-exact
+            # scene-audio timeline already present in scene_concat_path.
+            exact_mix_duration_v218e = max(0.04, float(scene_concat_duration or target_timeline_duration or 0.0))
+            original_gain_v218e = max(0.0, float(original_volume))
+            print("[BOARD ASSEMBLY ORIGINAL PLUS SCENE MIX V218E]", {
                 "job_id": job_id,
                 "audio_mode": audio_mode,
                 "sceneConcatPath": str(scene_concat_path),
-                "sceneConcatExists": bool(scene_concat_path.exists()),
+                "sceneConcatHasAudio": _ffprobe_has_audio(scene_concat_path) if scene_concat_path.exists() else False,
                 "sceneConcatDurationSec": _ffprobe_duration(scene_concat_path) if scene_concat_path.exists() else 0,
-                "sceneConcatStrictTimeline": locals().get("strict_timeline_result_v199v") or {},
+                "sceneAudioSourceCountV218E": int((locals().get("strict_timeline_result_v199v") or {}).get("sceneAudioSourceCountV218E") or 0),
                 "originalAudioPath": str(original_audio_path),
                 "originalAudioDurationSec": _ffprobe_duration(original_audio_path) if original_audio_path and original_audio_path.exists() else 0,
+                "originalVolume": original_gain_v218e,
+                "sceneVolumeAppliedDuringNormalize": max(0.0, float(scene_volume)),
+                "targetDurationSec": exact_mix_duration_v218e,
                 "targetPath": str(out_path),
-                "reason": "continuous_master_audio_no_slices_no_shortest_v210g",
             }, flush=True)
+            original_plus_scene_filter_v218e = (
+                f"[0:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                f"apad,atrim=duration={exact_mix_duration_v218e:.9f},asetpts=PTS-STARTPTS[scenea218e];"
+                f"[1:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                f"volume={original_gain_v218e:.4f},apad,atrim=duration={exact_mix_duration_v218e:.9f},"
+                f"asetpts=PTS-STARTPTS[mastera218e];"
+                f"[mastera218e][scenea218e]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,"
+                f"alimiter=limit=0.9500:attack=5:release=50[aout218e]"
+            )
             _run_ffmpeg([
                 "-y",
                 "-i", str(scene_concat_path),
                 "-i", str(original_audio_path),
+                "-filter_complex", original_plus_scene_filter_v218e,
                 "-map", "0:v:0",
-                "-map", "1:a:0",
+                "-map", "[aout218e]",
                 "-c:v", "copy",
                 "-c:a", "aac",
                 "-b:a", "256k",
                 "-ar", "48000",
                 "-ac", "2",
-                "-af", f"volume={max(0.0, float(original_volume)):.4f}",
                 "-movflags", "+faststart",
                 str(out_path),
             ])
-            print("[BOARD ASSEMBLY ORIGINAL MASTER FRAME SAFE MUX DONE V210G]", {
+            print("[BOARD ASSEMBLY ORIGINAL PLUS SCENE MIX DONE V218E]", {
                 "job_id": job_id,
                 "targetPath": str(out_path),
                 "exists": bool(out_path.exists()),
                 "size": int(out_path.stat().st_size) if out_path.exists() else 0,
                 "durationSec": _ffprobe_duration(out_path) if out_path.exists() else 0,
+                "hasAudio": _ffprobe_has_audio(out_path) if out_path.exists() else False,
             }, flush=True)
         elif use_original_audio or use_music_audio:
             mix_args = ["-y", "-i", str(scene_concat_path)]
@@ -11925,23 +11965,50 @@ def _run_board_assembly_job(job_id: str) -> None:
                 mix_args.extend(["-i", str(music_audio_path)])
                 input_index += 1
 
-            filters = ["[0:a]anull[scenea]"]
+            exact_mix_duration_v218e = max(0.04, float(scene_concat_duration or target_timeline_duration or 0.0))
+            filters = [
+                f"[0:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                f"apad,atrim=duration={exact_mix_duration_v218e:.9f},asetpts=PTS-STARTPTS[scenea]"
+            ]
             labels = ["[scenea]"]
 
             if original_index is not None:
-                filters.append(f"[{original_index}:a]volume={max(0.0, float(original_volume)):.4f}[origina]")
+                filters.append(
+                    f"[{original_index}:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                    f"volume={max(0.0, float(original_volume)):.4f},apad,"
+                    f"atrim=duration={exact_mix_duration_v218e:.9f},asetpts=PTS-STARTPTS[origina]"
+                )
                 labels.append("[origina]")
 
             if music_index is not None:
-                music_filter = f"[{music_index}:a]volume={max(0.0, float(music_volume)):.4f}"
-                if music_fade_out and scene_concat_duration > 1.0:
-                    fade_start = max(0.0, scene_concat_duration - 2.0)
+                music_filter = (
+                    f"[{music_index}:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                    f"volume={max(0.0, float(music_volume)):.4f}"
+                )
+                if music_fade_out and exact_mix_duration_v218e > 1.0:
+                    fade_start = max(0.0, exact_mix_duration_v218e - 2.0)
                     music_filter += f",afade=t=out:st={fade_start:.3f}:d=2.000"
+                music_filter += f",apad,atrim=duration={exact_mix_duration_v218e:.9f},asetpts=PTS-STARTPTS"
                 filters.append(music_filter + "[musica]")
                 labels.append("[musica]")
 
-            filter_complex = ";".join(filters) + ";" + "".join(labels) + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0[aout]"
+            filter_complex = (
+                ";".join(filters)
+                + ";"
+                + "".join(labels)
+                + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0:normalize=0,"
+                + "alimiter=limit=0.9500:attack=5:release=50[aout]"
+            )
 
+            print("[BOARD ASSEMBLY MULTI AUDIO MIX V218E]", {
+                "job_id": job_id,
+                "audio_mode": audio_mode,
+                "durationSec": exact_mix_duration_v218e,
+                "inputs": len(labels),
+                "sceneAudioSourceCountV218E": int((locals().get("strict_timeline_result_v199v") or {}).get("sceneAudioSourceCountV218E") or 0),
+                "original": original_index is not None,
+                "music": music_index is not None,
+            }, flush=True)
             _run_ffmpeg([
                 *mix_args,
                 "-filter_complex", filter_complex,
@@ -11949,8 +12016,10 @@ def _run_board_assembly_job(job_id: str) -> None:
                 "-map", "[aout]",
                 "-c:v", "copy",
                 "-c:a", "aac",
-                "-b:a", "192k",
-                "-shortest",
+                "-b:a", "256k",
+                "-ar", "48000",
+                "-ac", "2",
+                "-movflags", "+faststart",
                 str(out_path),
             ])
         else:

@@ -1,3 +1,4 @@
+/* AVA_TIMING_TO_BOARD_PROJECT_SCOPE_CLEAN_RESET_V218G: new project/timing imports cannot inherit old prompts or in-memory draft authority. */
 /* AVA_BOARD_GENERATION_CONFIG_AUTHORITY_V218D: manual model/route/workflow/format edits beat concurrent photo-upload and timing snapshots. */
 /* AVA_BOARD_BULK_PHOTO_PROGRESS_STABLE_UI_V218C: bulk photo progress is runtime-owned and cannot flicker with Board snapshot corrections. */
 /* AVA_BOARD_VIDEO_REVISION_AUTHORITY_V218B: server-ready video refs beat stale Board saves; explicit clears use a newer clear revision. */
@@ -1900,11 +1901,38 @@ function boardSavePromptDraftsToStorageV214P(drafts = {}) {
 
 function boardPromptDraftsV214K2() {
   if (typeof window === 'undefined') return {}
-  const key = '__AVA_BOARD_PROMPT_DRAFTS_V214K2__'
-  const current = window[key]
+  const cacheKeyV218G = '__AVA_BOARD_PROMPT_DRAFTS_V214K2__'
+  const scopeKeyV218G = boardPromptDraftStorageKeyV214P()
+  const previousScopeV218G = asText(window.__AVA_BOARD_PROMPT_DRAFT_SCOPE_KEY_V218G__ || '')
+
+  // V218G: BoardPage can stay mounted while only projectId changes. The old global
+  // prompt cache must not be reused for seg_01/seg_02 of another project.
+  if (previousScopeV218G !== scopeKeyV218G) {
+    window.__AVA_BOARD_PROMPT_DRAFT_SCOPE_KEY_V218G__ = scopeKeyV218G
+    window[cacheKeyV218G] = boardLoadPromptDraftsFromStorageV214P()
+    console.info('[BOARD PROMPT PROJECT SCOPE SWITCH V218G]', {
+      from: previousScopeV218G,
+      to: scopeKeyV218G,
+      drafts: Object.keys(window[cacheKeyV218G] || {}).length,
+    })
+  }
+
+  const current = window[cacheKeyV218G]
   if (current && typeof current === 'object') return current
-  window[key] = boardLoadPromptDraftsFromStorageV214P()
-  return window[key]
+  window[cacheKeyV218G] = boardLoadPromptDraftsFromStorageV214P()
+  return window[cacheKeyV218G]
+}
+
+function boardClearPromptDraftScopeV218G(reason = 'unknown') {
+  if (typeof window === 'undefined') return
+  const scopeKeyV218G = boardPromptDraftStorageKeyV214P()
+  try { localStorage.removeItem(scopeKeyV218G) } catch (_) {}
+  window.__AVA_BOARD_PROMPT_DRAFT_SCOPE_KEY_V218G__ = scopeKeyV218G
+  window.__AVA_BOARD_PROMPT_DRAFTS_V214K2__ = {}
+  console.info('[BOARD PROMPT PROJECT SCOPE CLEARED V218G]', {
+    scope: scopeKeyV218G,
+    reason,
+  })
 }
 
 function boardHasRecentPromptEditV214P(boardData = {}) {
@@ -5737,12 +5765,68 @@ function buildBoardAssemblySnapshotFromBoard(board = {}, { projectId = '', sourc
 
 
 
+function boardClearGenerationPromptFieldsForTimingImportV218G(scene = {}) {
+  // Timing owns timing/text/route/model. Board-only generation prompts must start empty.
+  // Keep note/scene truth fields because they belong to the current Timing scene.
+  return {
+    ...(scene || {}),
+    video_prompt: '',
+    videoPrompt: '',
+    positive_prompt: '',
+    positivePrompt: '',
+    prompt: '',
+    final_video_prompt: '',
+    finalVideoPrompt: '',
+    negative_prompt: '',
+    negativePrompt: '',
+    video_motion_negative: '',
+    videoMotionNegative: '',
+    final_negative_prompt: '',
+    finalNegativePrompt: '',
+    image_prompt: '',
+    imagePrompt: '',
+    photo_prompt: '',
+    photoPrompt: '',
+    sound_prompt: '',
+    soundPrompt: '',
+    mmaudio_prompt: '',
+    mmaudioPrompt: '',
+    mmaudio_negative_prompt: '',
+    mmaudioNegativePrompt: '',
+    negative_sound_prompt: '',
+    negativeSoundPrompt: '',
+    prompt_id: '',
+    promptId: '',
+    video_prompt_id: '',
+    videoPromptId: '',
+    prompt_source: '',
+    promptSource: '',
+    prompt_local_authority_v214k2: false,
+    promptLocalAuthorityV214K2: false,
+    prompt_edit_epoch_v214k2: 0,
+    promptEditEpochV214K2: 0,
+    prompt_edit_at_v214k2: '',
+    promptEditAtV214K2: '',
+    prompt_local_authority_v214k: false,
+    promptLocalAuthorityV214K: false,
+    prompt_local_authority_v214j: false,
+    promptLocalAuthorityV214J: false,
+    prompt_edit_epoch_v214j: 0,
+    promptEditEpochV214J: 0,
+    prompt_draft_preserved_v214k2: false,
+    promptDraftPreservedV214K2: false,
+    prompt_state_preserved_v213d: false,
+    promptStatePreservedV213D: false,
+  }
+}
+
 function cleanBoardSceneMediaForTimingImportV14B(scene = {}) {
   // AVA_TIMING_TO_BOARD_CLEAN_IMPORT_V14B:
   // Timing -> Board is a destructive replacement. Keep timing/notes/blocks/colors,
-  // but never preserve old Board media, audio slices, video jobs or generated clips.
+  // but never preserve old Board prompts, media, audio slices, video jobs or generated clips.
+  const cleanSceneV218G = boardClearGenerationPromptFieldsForTimingImportV218G(scene)
   return {
-    ...scene,
+    ...cleanSceneV218G,
     start_image_url: '',
     startImageUrl: '',
     start_image_api_path: '',
@@ -9730,6 +9814,19 @@ function sceneVideoActionState(scene) {
   // V218D: exact manual route/model/workflow/format values are recorded synchronously,
   // before React state or a concurrent photo-upload save can lag behind.
   const boardGenerationConfigAuthorityRefV218D = useRef({})
+
+  useEffect(() => {
+    // V218G: route param changes do not guarantee a BoardPage remount. Reset only
+    // in-memory authority maps, then activate the correct project-scoped draft store.
+    boardGenerationConfigAuthorityRefV218D.current = {}
+    boardPromptDraftsV214K2()
+    console.info('[BOARD PROJECT RUNTIME AUTHORITY RESET V218G]', {
+      projectId: projectId || '',
+      workspaceMode,
+      scope: boardStorageScopeV214P,
+    })
+  }, [boardStorageScopeV214P])
+
   const audioRef = useRef(null)
   const manualLipSyncAudioInputRefV129A = useRef(null)
   const importRef = useRef(null)
@@ -12806,17 +12903,49 @@ const jobs = readAvaGlobalJobs().filter((job) => job.key !== key)
     try {
       const timingData = workspaceMode ? await loadWorkspaceStage('manual_timing') : await loadStage(projectId, 'manual_timing')
       const timingDataWithProjectFormatV177B = boardInjectProjectFormatIntoTimingV177C(timingData, activeProjectFormatV177B)
-      const nextBoard = buildCleanBoardFromTimingV14B(avaNormalizeTimingScenesForBoardV212S4C(timingDataWithProjectFormatV177B))
+      const cleanImportEpochV218G = Date.now()
+      const nextBoard = {
+        ...buildCleanBoardFromTimingV14B(avaNormalizeTimingScenesForBoardV212S4C(timingDataWithProjectFormatV177B)),
+        timing_to_board_clean_epoch_v218g: cleanImportEpochV218G,
+        timingToBoardCleanEpochV218G: cleanImportEpochV218G,
+        mediaMutationReplaceSave: true,
+        forceReplaceSave: true,
+        saveMode: 'timing_to_board_destructive_clean_replace_v218g',
+      }
       if (!asSceneArray(nextBoard.scenes).length) {
         setStatus('В Тайминге нет сцен для переноса в Доску')
         return
       }
-      setBoard(nextBoard)
-      if (workspaceMode) {
-        await saveWorkspaceStage(STAGE, nextBoard, 'replace')
-      } else {
-        await saveStage(projectId, STAGE, nextBoard, 'replace')
+
+      // Clear both prompt draft stores before the serialized save can overlay old seg ids.
+      boardClearPromptDraftScopeV218G('timing_to_board_destructive_import')
+      try { writeBoardPromptEditorDraftsV214R({}) } catch (_) {}
+      boardGenerationConfigAuthorityRefV218D.current = {}
+      try {
+        const cleanProjectIdV218G = asText(projectId || '')
+        if (cleanProjectIdV218G) {
+          writeAvaCompletedJobs(readAvaCompletedJobs().filter((job) => asText(job?.projectId || job?.project_id || job?.data?.projectId || job?.data?.project_id) !== cleanProjectIdV218G))
+        }
+      } catch (cleanupErrorV218G) {
+        console.warn('[BOARD TIMING CLEAN IMPORT JOB CACHE CLEANUP FAILED V218G]', cleanupErrorV218G)
       }
+
+      boardRef.current = nextBoard
+      skipNextBoardAutosaveRefV145A.current = true
+      setBoard(nextBoard)
+      removeBoardDurableBackup(boardDurableKey({ projectId, workspaceMode }))
+
+      const saveResultV218G = await saveBoard(nextBoard, true)
+      if (!saveResultV218G?.ok) {
+        throw new Error(saveResultV218G?.message || 'timing_to_board_clean_replace_failed_v218g')
+      }
+      console.info('[BOARD TIMING CLEAN PROJECT RESET SAVED V218G]', {
+        projectId: projectId || '',
+        workspaceMode,
+        scenes: asSceneArray(nextBoard.scenes).length,
+        promptScore: boardPromptScoreV213D(nextBoard),
+        cleanImportEpochV218G,
+      })
       markTimingToBoardEntryConsumedV146(boardWorkflowEntry)
       clearWorkflowEntry('board')
       setShowTimingToBoardConfirm(false)
