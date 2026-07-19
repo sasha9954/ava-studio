@@ -1,0 +1,4572 @@
+{
+  "project_id": "p_6f47326dfe1e91e6",
+  "database_found": true,
+  "records": [
+    {
+      "path": "$.projects.p_6f47326dfe1e91e6",
+      "record": {
+        "id": "p_6f47326dfe1e91e6",
+        "status": "draft",
+        "created_at": "2026-07-13T11:50:47.531483+00:00",
+        "updated_at": "2026-07-13T20:38:48.669363+00:00"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6",
+      "record": {}
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[0].video_result",
+      "record": {
+        "jobId": "boardjob_2d607f91807749",
+        "status": "completed",
+        "createdAt": "2026-07-13T18:53:50.906966Z",
+        "updatedAt": "2026-07-13T18:58:07.960616+00:00",
+        "sceneId": "seg_01",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "d537b59e-8204-4c98-872a-486fb5068048",
+        "job_id": "boardjob_2d607f91807749",
+        "historyPreview": {},
+        "videoAssetId": "asset_18806ebd49ceafc1",
+        "video_asset_id": "asset_18806ebd49ceafc1",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[0].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_05467fca938a027f",
+        "created_at": "2026-07-13T18:58:05.880552+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_2d607f91807749"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[0].videoResult",
+      "record": {
+        "jobId": "boardjob_2d607f91807749",
+        "status": "completed",
+        "createdAt": "2026-07-13T18:53:50.906966Z",
+        "updatedAt": "2026-07-13T18:58:07.960616+00:00",
+        "sceneId": "seg_01",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "d537b59e-8204-4c98-872a-486fb5068048",
+        "job_id": "boardjob_2d607f91807749",
+        "historyPreview": {},
+        "videoAssetId": "asset_18806ebd49ceafc1",
+        "video_asset_id": "asset_18806ebd49ceafc1",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[0].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_05467fca938a027f",
+        "created_at": "2026-07-13T18:58:05.880552+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_2d607f91807749"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[1].video_result",
+      "record": {
+        "jobId": "boardjob_9674b8fc37a04a",
+        "status": "completed",
+        "createdAt": "2026-07-13T18:58:27.937699Z",
+        "updatedAt": "2026-07-13T19:02:13.903601+00:00",
+        "sceneId": "seg_02",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "68bbc30a-c280-4b4c-b275-b265e216cfd5",
+        "job_id": "boardjob_9674b8fc37a04a",
+        "historyPreview": {},
+        "videoAssetId": "asset_7c515c7d7c34505d",
+        "video_asset_id": "asset_7c515c7d7c34505d",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[1].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_1b046cbbf7338f0b",
+        "created_at": "2026-07-13T19:02:11.802386+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_9674b8fc37a04a"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[1].videoResult",
+      "record": {
+        "jobId": "boardjob_9674b8fc37a04a",
+        "status": "completed",
+        "createdAt": "2026-07-13T18:58:27.937699Z",
+        "updatedAt": "2026-07-13T19:02:13.903601+00:00",
+        "sceneId": "seg_02",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "68bbc30a-c280-4b4c-b275-b265e216cfd5",
+        "job_id": "boardjob_9674b8fc37a04a",
+        "historyPreview": {},
+        "videoAssetId": "asset_7c515c7d7c34505d",
+        "video_asset_id": "asset_7c515c7d7c34505d",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[1].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_1b046cbbf7338f0b",
+        "created_at": "2026-07-13T19:02:11.802386+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_9674b8fc37a04a"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[2].video_result",
+      "record": {
+        "jobId": "boardjob_1420c6f2195743",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:02:35.083949Z",
+        "updatedAt": "2026-07-13T19:11:05.024001+00:00",
+        "sceneId": "seg_03",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "323e9add-441d-4459-92f3-28468b5ce8b7",
+        "job_id": "boardjob_1420c6f2195743",
+        "historyPreview": {},
+        "videoAssetId": "asset_51d3ae4f216ced1b",
+        "video_asset_id": "asset_51d3ae4f216ced1b",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[2].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_6d6de7061e6d1420",
+        "created_at": "2026-07-13T19:11:02.905863+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_1420c6f2195743"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[2].videoResult",
+      "record": {
+        "jobId": "boardjob_1420c6f2195743",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:02:35.083949Z",
+        "updatedAt": "2026-07-13T19:11:05.024001+00:00",
+        "sceneId": "seg_03",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "323e9add-441d-4459-92f3-28468b5ce8b7",
+        "job_id": "boardjob_1420c6f2195743",
+        "historyPreview": {},
+        "videoAssetId": "asset_51d3ae4f216ced1b",
+        "video_asset_id": "asset_51d3ae4f216ced1b",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[2].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_6d6de7061e6d1420",
+        "created_at": "2026-07-13T19:11:02.905863+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_1420c6f2195743"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[3].video_result",
+      "record": {
+        "jobId": "boardjob_3327283b44cf41",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:11:26.232507Z",
+        "updatedAt": "2026-07-13T19:16:54.126356+00:00",
+        "sceneId": "seg_04",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "13168a03-756d-4e7c-b0a9-a9b7fbb021a7",
+        "job_id": "boardjob_3327283b44cf41",
+        "historyPreview": {},
+        "videoAssetId": "asset_3787e1d59f4a0c86",
+        "video_asset_id": "asset_3787e1d59f4a0c86",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[3].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_560f402090104535",
+        "created_at": "2026-07-13T19:16:52.005363+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_3327283b44cf41"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[3].videoResult",
+      "record": {
+        "jobId": "boardjob_3327283b44cf41",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:11:26.232507Z",
+        "updatedAt": "2026-07-13T19:16:54.126356+00:00",
+        "sceneId": "seg_04",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "13168a03-756d-4e7c-b0a9-a9b7fbb021a7",
+        "job_id": "boardjob_3327283b44cf41",
+        "historyPreview": {},
+        "videoAssetId": "asset_3787e1d59f4a0c86",
+        "video_asset_id": "asset_3787e1d59f4a0c86",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[3].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_560f402090104535",
+        "created_at": "2026-07-13T19:16:52.005363+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_3327283b44cf41"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[4].video_result",
+      "record": {
+        "jobId": "boardjob_4e6d499b5ee246",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:17:16.473814Z",
+        "updatedAt": "2026-07-13T19:20:11.801913+00:00",
+        "sceneId": "seg_05",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "f83898b4-200a-4962-a4c4-44b864a1f7c9",
+        "job_id": "boardjob_4e6d499b5ee246",
+        "historyPreview": {},
+        "videoAssetId": "asset_f32f29cba8484e73",
+        "video_asset_id": "asset_f32f29cba8484e73",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[4].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_6e428a339282a3ff",
+        "created_at": "2026-07-13T19:20:09.754777+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_4e6d499b5ee246"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[4].videoResult",
+      "record": {
+        "jobId": "boardjob_4e6d499b5ee246",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:17:16.473814Z",
+        "updatedAt": "2026-07-13T19:20:11.801913+00:00",
+        "sceneId": "seg_05",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "f83898b4-200a-4962-a4c4-44b864a1f7c9",
+        "job_id": "boardjob_4e6d499b5ee246",
+        "historyPreview": {},
+        "videoAssetId": "asset_f32f29cba8484e73",
+        "video_asset_id": "asset_f32f29cba8484e73",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[4].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_6e428a339282a3ff",
+        "created_at": "2026-07-13T19:20:09.754777+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_4e6d499b5ee246"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[5].video_result",
+      "record": {
+        "jobId": "boardjob_f52016a6856841",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:20:33.686564Z",
+        "updatedAt": "2026-07-13T19:23:45.269261+00:00",
+        "sceneId": "seg_06",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "e7e7b491-47db-4756-aa9d-67f7dea4209e",
+        "job_id": "boardjob_f52016a6856841",
+        "historyPreview": {},
+        "videoAssetId": "asset_6df08073473b347c",
+        "video_asset_id": "asset_6df08073473b347c",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[5].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_b6deab0ac5fd4c81",
+        "created_at": "2026-07-13T19:23:43.004396+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f52016a6856841"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[5].videoResult",
+      "record": {
+        "jobId": "boardjob_f52016a6856841",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:20:33.686564Z",
+        "updatedAt": "2026-07-13T19:23:45.269261+00:00",
+        "sceneId": "seg_06",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "e7e7b491-47db-4756-aa9d-67f7dea4209e",
+        "job_id": "boardjob_f52016a6856841",
+        "historyPreview": {},
+        "videoAssetId": "asset_6df08073473b347c",
+        "video_asset_id": "asset_6df08073473b347c",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[5].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_b6deab0ac5fd4c81",
+        "created_at": "2026-07-13T19:23:43.004396+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f52016a6856841"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[6].video_result",
+      "record": {
+        "jobId": "boardjob_4f14d981019e4b",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:24:14.197243Z",
+        "updatedAt": "2026-07-13T19:27:48.554020+00:00",
+        "sceneId": "seg_07",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "7250cba6-653d-4f5d-a344-2bef16737c7e",
+        "job_id": "boardjob_4f14d981019e4b",
+        "historyPreview": {},
+        "videoAssetId": "asset_3345b19f4cb30166",
+        "video_asset_id": "asset_3345b19f4cb30166",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[6].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_d1efe086817047fa",
+        "created_at": "2026-07-13T19:27:46.397242+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_4f14d981019e4b"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[6].videoResult",
+      "record": {
+        "jobId": "boardjob_4f14d981019e4b",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:24:14.197243Z",
+        "updatedAt": "2026-07-13T19:27:48.554020+00:00",
+        "sceneId": "seg_07",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "7250cba6-653d-4f5d-a344-2bef16737c7e",
+        "job_id": "boardjob_4f14d981019e4b",
+        "historyPreview": {},
+        "videoAssetId": "asset_3345b19f4cb30166",
+        "video_asset_id": "asset_3345b19f4cb30166",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[6].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_d1efe086817047fa",
+        "created_at": "2026-07-13T19:27:46.397242+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_4f14d981019e4b"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[7].video_result",
+      "record": {
+        "jobId": "boardjob_fd17a4845c2c40",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:28:10.052533Z",
+        "updatedAt": "2026-07-13T19:37:17.429351+00:00",
+        "sceneId": "seg_08",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "269d06bd-a323-4e82-9a73-e1eecd42ee42",
+        "job_id": "boardjob_fd17a4845c2c40",
+        "historyPreview": {},
+        "videoAssetId": "asset_e4cd20f7fca8c6b3",
+        "video_asset_id": "asset_e4cd20f7fca8c6b3",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[7].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_2eb248ac0717b50b",
+        "created_at": "2026-07-13T19:37:15.261774+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_fd17a4845c2c40"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[7].videoResult",
+      "record": {
+        "jobId": "boardjob_fd17a4845c2c40",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:28:10.052533Z",
+        "updatedAt": "2026-07-13T19:37:17.429351+00:00",
+        "sceneId": "seg_08",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "269d06bd-a323-4e82-9a73-e1eecd42ee42",
+        "job_id": "boardjob_fd17a4845c2c40",
+        "historyPreview": {},
+        "videoAssetId": "asset_e4cd20f7fca8c6b3",
+        "video_asset_id": "asset_e4cd20f7fca8c6b3",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[7].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_2eb248ac0717b50b",
+        "created_at": "2026-07-13T19:37:15.261774+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_fd17a4845c2c40"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[8].video_result",
+      "record": {
+        "jobId": "boardjob_ceea9ffea6994e",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:37:39.273670Z",
+        "updatedAt": "2026-07-13T19:41:30.507534+00:00",
+        "sceneId": "seg_09",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "a0d46bc6-c04d-4b85-9b97-92b47e6d04b2",
+        "job_id": "boardjob_ceea9ffea6994e",
+        "historyPreview": {},
+        "videoAssetId": "asset_0718730f5bd291b6",
+        "video_asset_id": "asset_0718730f5bd291b6",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[8].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_53277707cfc61cce",
+        "created_at": "2026-07-13T19:41:28.330605+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_ceea9ffea6994e"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[8].videoResult",
+      "record": {
+        "jobId": "boardjob_ceea9ffea6994e",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:37:39.273670Z",
+        "updatedAt": "2026-07-13T19:41:30.507534+00:00",
+        "sceneId": "seg_09",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "a0d46bc6-c04d-4b85-9b97-92b47e6d04b2",
+        "job_id": "boardjob_ceea9ffea6994e",
+        "historyPreview": {},
+        "videoAssetId": "asset_0718730f5bd291b6",
+        "video_asset_id": "asset_0718730f5bd291b6",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[8].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_53277707cfc61cce",
+        "created_at": "2026-07-13T19:41:28.330605+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_ceea9ffea6994e"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[9].video_result",
+      "record": {
+        "jobId": "boardjob_c9afc35cbf7b4a",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:41:55.494524Z",
+        "updatedAt": "2026-07-13T19:44:47.579710+00:00",
+        "sceneId": "seg_10",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "6d9b9817-8dff-47bf-87de-d776c482505f",
+        "job_id": "boardjob_c9afc35cbf7b4a",
+        "historyPreview": {},
+        "videoAssetId": "asset_ac8d04f96e3c85fc",
+        "video_asset_id": "asset_ac8d04f96e3c85fc",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[9].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_507dd94e31b95404",
+        "created_at": "2026-07-13T19:44:45.370033+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_c9afc35cbf7b4a"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[9].videoResult",
+      "record": {
+        "jobId": "boardjob_c9afc35cbf7b4a",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:41:55.494524Z",
+        "updatedAt": "2026-07-13T19:44:47.579710+00:00",
+        "sceneId": "seg_10",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "6d9b9817-8dff-47bf-87de-d776c482505f",
+        "job_id": "boardjob_c9afc35cbf7b4a",
+        "historyPreview": {},
+        "videoAssetId": "asset_ac8d04f96e3c85fc",
+        "video_asset_id": "asset_ac8d04f96e3c85fc",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[9].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_507dd94e31b95404",
+        "created_at": "2026-07-13T19:44:45.370033+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_c9afc35cbf7b4a"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[10].video_result",
+      "record": {
+        "jobId": "boardjob_b74386c74d224d",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:45:11.760850Z",
+        "updatedAt": "2026-07-13T19:48:31.108139+00:00",
+        "sceneId": "seg_11",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "466fc5ba-29f8-44e5-ae61-f4ca772f1b7b",
+        "job_id": "boardjob_b74386c74d224d",
+        "historyPreview": {},
+        "videoAssetId": "asset_4cb974f86d70732f",
+        "video_asset_id": "asset_4cb974f86d70732f",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[10].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_46bbfcd8b19cdd4d",
+        "created_at": "2026-07-13T19:48:29.005207+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_b74386c74d224d"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[10].videoResult",
+      "record": {
+        "jobId": "boardjob_b74386c74d224d",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:45:11.760850Z",
+        "updatedAt": "2026-07-13T19:48:31.108139+00:00",
+        "sceneId": "seg_11",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "466fc5ba-29f8-44e5-ae61-f4ca772f1b7b",
+        "job_id": "boardjob_b74386c74d224d",
+        "historyPreview": {},
+        "videoAssetId": "asset_4cb974f86d70732f",
+        "video_asset_id": "asset_4cb974f86d70732f",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[10].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_46bbfcd8b19cdd4d",
+        "created_at": "2026-07-13T19:48:29.005207+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_b74386c74d224d"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[11].video_result",
+      "record": {
+        "jobId": "boardjob_cc5b75fe807142",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:48:53.446692Z",
+        "updatedAt": "2026-07-13T19:52:00.586014+00:00",
+        "sceneId": "seg_12",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "da10b2a2-3d47-4b6f-aae4-eb3558b0ae01",
+        "job_id": "boardjob_cc5b75fe807142",
+        "historyPreview": {},
+        "videoAssetId": "asset_5f2a6d34845e6da0",
+        "video_asset_id": "asset_5f2a6d34845e6da0",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[11].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_bc005f8a12fe3826",
+        "created_at": "2026-07-13T19:51:58.377384+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_cc5b75fe807142"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[11].videoResult",
+      "record": {
+        "jobId": "boardjob_cc5b75fe807142",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:48:53.446692Z",
+        "updatedAt": "2026-07-13T19:52:00.586014+00:00",
+        "sceneId": "seg_12",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "da10b2a2-3d47-4b6f-aae4-eb3558b0ae01",
+        "job_id": "boardjob_cc5b75fe807142",
+        "historyPreview": {},
+        "videoAssetId": "asset_5f2a6d34845e6da0",
+        "video_asset_id": "asset_5f2a6d34845e6da0",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[11].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_bc005f8a12fe3826",
+        "created_at": "2026-07-13T19:51:58.377384+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_cc5b75fe807142"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[12].video_result",
+      "record": {
+        "jobId": "boardjob_0608ef9b321d4d",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:52:27.942048Z",
+        "updatedAt": "2026-07-13T19:55:03.617070+00:00",
+        "sceneId": "seg_13",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "32734f33-afe2-45ad-944a-4e5cfab2bafb",
+        "job_id": "boardjob_0608ef9b321d4d",
+        "historyPreview": {},
+        "videoAssetId": "asset_aa429c1d4a55750b",
+        "video_asset_id": "asset_aa429c1d4a55750b",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[12].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_3f06a935bcbd688b",
+        "created_at": "2026-07-13T19:55:01.414030+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_0608ef9b321d4d"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[12].videoResult",
+      "record": {
+        "jobId": "boardjob_0608ef9b321d4d",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:52:27.942048Z",
+        "updatedAt": "2026-07-13T19:55:03.617070+00:00",
+        "sceneId": "seg_13",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "32734f33-afe2-45ad-944a-4e5cfab2bafb",
+        "job_id": "boardjob_0608ef9b321d4d",
+        "historyPreview": {},
+        "videoAssetId": "asset_aa429c1d4a55750b",
+        "video_asset_id": "asset_aa429c1d4a55750b",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[12].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_3f06a935bcbd688b",
+        "created_at": "2026-07-13T19:55:01.414030+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_0608ef9b321d4d"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[13].video_result",
+      "record": {
+        "jobId": "boardjob_6c576ca5a1964a",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:55:44.109232Z",
+        "updatedAt": "2026-07-13T19:58:51.541829+00:00",
+        "sceneId": "seg_14",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "182bdeee-9303-4d31-adea-630817632aef",
+        "job_id": "boardjob_6c576ca5a1964a",
+        "historyPreview": {},
+        "videoAssetId": "asset_cd36389168405aa0",
+        "video_asset_id": "asset_cd36389168405aa0",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[13].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_5f24897b95ee1a2c",
+        "created_at": "2026-07-13T19:58:49.273345+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_6c576ca5a1964a"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[13].videoResult",
+      "record": {
+        "jobId": "boardjob_6c576ca5a1964a",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:55:44.109232Z",
+        "updatedAt": "2026-07-13T19:58:51.541829+00:00",
+        "sceneId": "seg_14",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "182bdeee-9303-4d31-adea-630817632aef",
+        "job_id": "boardjob_6c576ca5a1964a",
+        "historyPreview": {},
+        "videoAssetId": "asset_cd36389168405aa0",
+        "video_asset_id": "asset_cd36389168405aa0",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[13].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_5f24897b95ee1a2c",
+        "created_at": "2026-07-13T19:58:49.273345+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_6c576ca5a1964a"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[14].video_result",
+      "record": {
+        "jobId": "boardjob_f3e966290d1c4e",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:59:16.704345Z",
+        "updatedAt": "2026-07-13T20:02:23.330998+00:00",
+        "sceneId": "seg_15",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "8480c400-84f2-47da-87d1-e2a83f6194c4",
+        "job_id": "boardjob_f3e966290d1c4e",
+        "historyPreview": {},
+        "videoAssetId": "asset_10c8af081626d694",
+        "video_asset_id": "asset_10c8af081626d694",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[14].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_8104c580573e5c92",
+        "created_at": "2026-07-13T20:02:21.021963+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f3e966290d1c4e"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[14].videoResult",
+      "record": {
+        "jobId": "boardjob_f3e966290d1c4e",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:59:16.704345Z",
+        "updatedAt": "2026-07-13T20:02:23.330998+00:00",
+        "sceneId": "seg_15",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "8480c400-84f2-47da-87d1-e2a83f6194c4",
+        "job_id": "boardjob_f3e966290d1c4e",
+        "historyPreview": {},
+        "videoAssetId": "asset_10c8af081626d694",
+        "video_asset_id": "asset_10c8af081626d694",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[14].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_8104c580573e5c92",
+        "created_at": "2026-07-13T20:02:21.021963+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f3e966290d1c4e"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[15].video_result",
+      "record": {
+        "jobId": "boardjob_a8a4ad68c09a4d",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:02:51.126802Z",
+        "updatedAt": "2026-07-13T20:06:38.063714+00:00",
+        "sceneId": "seg_16",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "a1a705f5-bd19-4cdc-89db-3c82129f6ad0",
+        "job_id": "boardjob_a8a4ad68c09a4d",
+        "historyPreview": {},
+        "videoAssetId": "asset_35ecc2a0924f0a53",
+        "video_asset_id": "asset_35ecc2a0924f0a53",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[15].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_5c1d13cd0776ee23",
+        "created_at": "2026-07-13T20:06:35.812334+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_a8a4ad68c09a4d"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[15].videoResult",
+      "record": {
+        "jobId": "boardjob_a8a4ad68c09a4d",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:02:51.126802Z",
+        "updatedAt": "2026-07-13T20:06:38.063714+00:00",
+        "sceneId": "seg_16",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "a1a705f5-bd19-4cdc-89db-3c82129f6ad0",
+        "job_id": "boardjob_a8a4ad68c09a4d",
+        "historyPreview": {},
+        "videoAssetId": "asset_35ecc2a0924f0a53",
+        "video_asset_id": "asset_35ecc2a0924f0a53",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[15].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_5c1d13cd0776ee23",
+        "created_at": "2026-07-13T20:06:35.812334+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_a8a4ad68c09a4d"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[16].video_result",
+      "record": {
+        "jobId": "boardjob_76b5b9cac3ca43",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:07:02.040243Z",
+        "updatedAt": "2026-07-13T20:09:47.735201+00:00",
+        "sceneId": "seg_17",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "ab447df1-fec3-4ec9-b110-7ba6f5e47083",
+        "job_id": "boardjob_76b5b9cac3ca43",
+        "historyPreview": {},
+        "videoAssetId": "asset_7b4f31ed0607e779",
+        "video_asset_id": "asset_7b4f31ed0607e779",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[16].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_9a832baab737f41f",
+        "created_at": "2026-07-13T20:09:45.437801+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_76b5b9cac3ca43"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[16].videoResult",
+      "record": {
+        "jobId": "boardjob_76b5b9cac3ca43",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:07:02.040243Z",
+        "updatedAt": "2026-07-13T20:09:47.735201+00:00",
+        "sceneId": "seg_17",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "ab447df1-fec3-4ec9-b110-7ba6f5e47083",
+        "job_id": "boardjob_76b5b9cac3ca43",
+        "historyPreview": {},
+        "videoAssetId": "asset_7b4f31ed0607e779",
+        "video_asset_id": "asset_7b4f31ed0607e779",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[16].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_9a832baab737f41f",
+        "created_at": "2026-07-13T20:09:45.437801+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_76b5b9cac3ca43"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[17].video_result",
+      "record": {
+        "jobId": "boardjob_7ef8604d92994e",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:10:09.702973Z",
+        "updatedAt": "2026-07-13T20:13:38.485003+00:00",
+        "sceneId": "seg_18",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "e82f470d-9847-4d7b-8756-5299bfaba151",
+        "job_id": "boardjob_7ef8604d92994e",
+        "historyPreview": {},
+        "videoAssetId": "asset_b9e896f6a08b2c7f",
+        "video_asset_id": "asset_b9e896f6a08b2c7f",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[17].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_37ba820927a2266a",
+        "created_at": "2026-07-13T20:13:36.224687+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_7ef8604d92994e"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[17].videoResult",
+      "record": {
+        "jobId": "boardjob_7ef8604d92994e",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:10:09.702973Z",
+        "updatedAt": "2026-07-13T20:13:38.485003+00:00",
+        "sceneId": "seg_18",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "e82f470d-9847-4d7b-8756-5299bfaba151",
+        "job_id": "boardjob_7ef8604d92994e",
+        "historyPreview": {},
+        "videoAssetId": "asset_b9e896f6a08b2c7f",
+        "video_asset_id": "asset_b9e896f6a08b2c7f",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[17].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_37ba820927a2266a",
+        "created_at": "2026-07-13T20:13:36.224687+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_7ef8604d92994e"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[18].video_result",
+      "record": {
+        "jobId": "boardjob_c8958f3fdd114b",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:14:02.787918Z",
+        "updatedAt": "2026-07-13T20:16:52.964075+00:00",
+        "sceneId": "seg_19",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "7befad01-e08d-433b-addc-63b3601625b2",
+        "job_id": "boardjob_c8958f3fdd114b",
+        "historyPreview": {},
+        "videoAssetId": "asset_5e2999691cd6657e",
+        "video_asset_id": "asset_5e2999691cd6657e",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[18].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_657dead411f45d72",
+        "created_at": "2026-07-13T20:16:50.667557+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_c8958f3fdd114b"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[18].videoResult",
+      "record": {
+        "jobId": "boardjob_c8958f3fdd114b",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:14:02.787918Z",
+        "updatedAt": "2026-07-13T20:16:52.964075+00:00",
+        "sceneId": "seg_19",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "7befad01-e08d-433b-addc-63b3601625b2",
+        "job_id": "boardjob_c8958f3fdd114b",
+        "historyPreview": {},
+        "videoAssetId": "asset_5e2999691cd6657e",
+        "video_asset_id": "asset_5e2999691cd6657e",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[18].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_657dead411f45d72",
+        "created_at": "2026-07-13T20:16:50.667557+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_c8958f3fdd114b"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[19].video_result",
+      "record": {
+        "jobId": "boardjob_f9b14dbee6ae4e",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:17:19.562149Z",
+        "updatedAt": "2026-07-13T20:20:09.968925+00:00",
+        "sceneId": "seg_20",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "8b670ffd-efc7-4e1c-a49c-e0382c37a413",
+        "job_id": "boardjob_f9b14dbee6ae4e",
+        "historyPreview": {},
+        "videoAssetId": "asset_f0dde5607f7016cf",
+        "video_asset_id": "asset_f0dde5607f7016cf",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[19].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_fe7c6a8511014897",
+        "created_at": "2026-07-13T20:20:07.655875+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f9b14dbee6ae4e"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[19].videoResult",
+      "record": {
+        "jobId": "boardjob_f9b14dbee6ae4e",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:17:19.562149Z",
+        "updatedAt": "2026-07-13T20:20:09.968925+00:00",
+        "sceneId": "seg_20",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "8b670ffd-efc7-4e1c-a49c-e0382c37a413",
+        "job_id": "boardjob_f9b14dbee6ae4e",
+        "historyPreview": {},
+        "videoAssetId": "asset_f0dde5607f7016cf",
+        "video_asset_id": "asset_f0dde5607f7016cf",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[19].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_fe7c6a8511014897",
+        "created_at": "2026-07-13T20:20:07.655875+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f9b14dbee6ae4e"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[20].video_result",
+      "record": {
+        "jobId": "boardjob_d3211e1879ce4c",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:20:32.650797Z",
+        "updatedAt": "2026-07-13T20:24:04.958016+00:00",
+        "sceneId": "seg_21",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "4f8f8ed4-3d24-41fd-82ab-fbdda542ee1e",
+        "job_id": "boardjob_d3211e1879ce4c",
+        "historyPreview": {},
+        "videoAssetId": "asset_585db9bf12f42ddb",
+        "video_asset_id": "asset_585db9bf12f42ddb",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[20].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_009196215221ee0a",
+        "created_at": "2026-07-13T20:24:02.662892+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_d3211e1879ce4c"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[20].videoResult",
+      "record": {
+        "jobId": "boardjob_d3211e1879ce4c",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:20:32.650797Z",
+        "updatedAt": "2026-07-13T20:24:04.958016+00:00",
+        "sceneId": "seg_21",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "4f8f8ed4-3d24-41fd-82ab-fbdda542ee1e",
+        "job_id": "boardjob_d3211e1879ce4c",
+        "historyPreview": {},
+        "videoAssetId": "asset_585db9bf12f42ddb",
+        "video_asset_id": "asset_585db9bf12f42ddb",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[20].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_009196215221ee0a",
+        "created_at": "2026-07-13T20:24:02.662892+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_d3211e1879ce4c"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[21].video_result",
+      "record": {
+        "jobId": "boardjob_650dd689143d45",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:24:21.142869Z",
+        "updatedAt": "2026-07-13T20:27:47.506874+00:00",
+        "sceneId": "seg_22",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "89621efd-5826-4bc2-841b-c7661738b663",
+        "job_id": "boardjob_650dd689143d45",
+        "historyPreview": {},
+        "videoAssetId": "asset_5ee524042e514cba",
+        "video_asset_id": "asset_5ee524042e514cba",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[21].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_dd89deba8db04ff7",
+        "created_at": "2026-07-13T20:27:45.183890+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_650dd689143d45"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[21].videoResult",
+      "record": {
+        "jobId": "boardjob_650dd689143d45",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:24:21.142869Z",
+        "updatedAt": "2026-07-13T20:27:47.506874+00:00",
+        "sceneId": "seg_22",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "89621efd-5826-4bc2-841b-c7661738b663",
+        "job_id": "boardjob_650dd689143d45",
+        "historyPreview": {},
+        "videoAssetId": "asset_5ee524042e514cba",
+        "video_asset_id": "asset_5ee524042e514cba",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[21].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_dd89deba8db04ff7",
+        "created_at": "2026-07-13T20:27:45.183890+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_650dd689143d45"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[22].video_result",
+      "record": {
+        "jobId": "boardjob_21f2da35d20041",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:28:17.559786Z",
+        "updatedAt": "2026-07-13T20:32:31.640753+00:00",
+        "sceneId": "seg_23",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "2a2a1815-b0e6-46ff-8b9b-1d1f94e1d9db",
+        "job_id": "boardjob_21f2da35d20041",
+        "historyPreview": {},
+        "videoAssetId": "asset_ecd67b9539fc0ba6",
+        "video_asset_id": "asset_ecd67b9539fc0ba6",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[22].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_9fe0551b41209ce6",
+        "created_at": "2026-07-13T20:32:29.321895+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_21f2da35d20041"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[22].videoResult",
+      "record": {
+        "jobId": "boardjob_21f2da35d20041",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:28:17.559786Z",
+        "updatedAt": "2026-07-13T20:32:31.640753+00:00",
+        "sceneId": "seg_23",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "2a2a1815-b0e6-46ff-8b9b-1d1f94e1d9db",
+        "job_id": "boardjob_21f2da35d20041",
+        "historyPreview": {},
+        "videoAssetId": "asset_ecd67b9539fc0ba6",
+        "video_asset_id": "asset_ecd67b9539fc0ba6",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[22].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_9fe0551b41209ce6",
+        "created_at": "2026-07-13T20:32:29.321895+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_21f2da35d20041"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[23].video_result",
+      "record": {
+        "jobId": "boardjob_04350af2a51842",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:32:57.513709Z",
+        "updatedAt": "2026-07-13T20:37:20.966478+00:00",
+        "sceneId": "seg_24",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "360049dd-3e85-48d9-ab9f-31134c2413a5",
+        "job_id": "boardjob_04350af2a51842",
+        "historyPreview": {},
+        "videoAssetId": "asset_2555fcb304a074a3",
+        "video_asset_id": "asset_2555fcb304a074a3",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[23].video_result.payload",
+      "record": {
+        "scene_id": "seg_24",
+        "sceneId": "seg_24",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[23].video_result.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_36c1289f16d2a558",
+        "created_at": "2026-07-13T20:37:18.647145+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_04350af2a51842"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[23].videoResult",
+      "record": {
+        "jobId": "boardjob_04350af2a51842",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:32:57.513709Z",
+        "updatedAt": "2026-07-13T20:37:20.966478+00:00",
+        "sceneId": "seg_24",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "360049dd-3e85-48d9-ab9f-31134c2413a5",
+        "job_id": "boardjob_04350af2a51842",
+        "historyPreview": {},
+        "videoAssetId": "asset_2555fcb304a074a3",
+        "video_asset_id": "asset_2555fcb304a074a3",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[23].videoResult.payload",
+      "record": {
+        "scene_id": "seg_24",
+        "sceneId": "seg_24",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.scenes[23].videoResult.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_36c1289f16d2a558",
+        "created_at": "2026-07-13T20:37:18.647145+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_04350af2a51842"
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.board_video_batch",
+      "record": {
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "status": "running",
+        "batch_status": "running",
+        "source": "server_batch_preparing_v209x",
+        "waitingSceneIds": [],
+        "waiting_scene_ids": [],
+        "queuedSceneIds": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "queued_scene_ids": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "completedSceneIds": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23"
+        ],
+        "completed_scene_ids": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23"
+        ],
+        "failedSceneIds": [],
+        "failed_scene_ids": [],
+        "activeSceneId": "seg_24",
+        "active_scene_id": "seg_24",
+        "activeJobId": "boardjob_04350af2a51842",
+        "active_job_id": "boardjob_04350af2a51842",
+        "activeStatusEndpoint": "/api/clip/video/status/boardjob_04350af2a51842",
+        "active_status_endpoint": "/api/clip/video/status/boardjob_04350af2a51842",
+        "createdAt": "2026-07-13T18:53:43.664399Z",
+        "created_at": "2026-07-13T18:53:43.664399Z",
+        "updatedAt": "2026-07-13T20:33:11.509749Z",
+        "updated_at": "2026-07-13T20:33:11.509749Z",
+        "badReviewSceneIds": [],
+        "bad_review_scene_ids": [],
+        "video_queue": {
+          "activeSceneId": "seg_24",
+          "activeJobId": "boardjob_04350af2a51842",
+          "activeStatusEndpoint": "/api/clip/video/status/boardjob_04350af2a51842",
+          "waitingSceneIds": [],
+          "waiting_scene_ids": []
+        }
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.boardVideoBatch",
+      "record": {
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "status": "running",
+        "batch_status": "running",
+        "source": "server_batch_preparing_v209x",
+        "waitingSceneIds": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "waiting_scene_ids": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "queuedSceneIds": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "queued_scene_ids": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "completedSceneIds": [],
+        "completed_scene_ids": [],
+        "failedSceneIds": [],
+        "failed_scene_ids": [],
+        "activeSceneId": "",
+        "active_scene_id": "",
+        "activeJobId": "",
+        "active_job_id": "",
+        "activeStatusEndpoint": "",
+        "active_status_endpoint": "",
+        "createdAt": "2026-07-13T18:53:43.664399Z",
+        "created_at": "2026-07-13T18:53:43.664399Z",
+        "updatedAt": "2026-07-13T18:53:46.505605Z",
+        "updated_at": "2026-07-13T18:53:46.505605Z",
+        "badReviewSceneIds": [],
+        "bad_review_scene_ids": []
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.video_batch",
+      "record": {
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "status": "running",
+        "batch_status": "running",
+        "source": "server_batch_preparing_v209x",
+        "waitingSceneIds": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "waiting_scene_ids": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "queuedSceneIds": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "queued_scene_ids": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "completedSceneIds": [],
+        "completed_scene_ids": [],
+        "failedSceneIds": [],
+        "failed_scene_ids": [],
+        "activeSceneId": "",
+        "active_scene_id": "",
+        "activeJobId": "",
+        "active_job_id": "",
+        "activeStatusEndpoint": "",
+        "active_status_endpoint": "",
+        "createdAt": "2026-07-13T18:53:43.664399Z",
+        "created_at": "2026-07-13T18:53:43.664399Z",
+        "updatedAt": "2026-07-13T18:53:46.505605Z",
+        "updated_at": "2026-07-13T18:53:46.505605Z",
+        "badReviewSceneIds": [],
+        "bad_review_scene_ids": []
+      }
+    },
+    {
+      "path": "$.snapshots.p_6f47326dfe1e91e6.board.data.videoBatch",
+      "record": {
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "status": "running",
+        "batch_status": "running",
+        "source": "server_batch_preparing_v209x",
+        "waitingSceneIds": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "waiting_scene_ids": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "queuedSceneIds": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "queued_scene_ids": [
+          "seg_01",
+          "seg_02",
+          "seg_03",
+          "seg_04",
+          "seg_05",
+          "seg_06",
+          "seg_07",
+          "seg_08",
+          "seg_09",
+          "seg_10",
+          "seg_11",
+          "seg_12",
+          "seg_13",
+          "seg_14",
+          "seg_15",
+          "seg_16",
+          "seg_17",
+          "seg_18",
+          "seg_19",
+          "seg_20",
+          "seg_21",
+          "seg_22",
+          "seg_23",
+          "seg_24"
+        ],
+        "completedSceneIds": [],
+        "completed_scene_ids": [],
+        "failedSceneIds": [],
+        "failed_scene_ids": [],
+        "activeSceneId": "",
+        "active_scene_id": "",
+        "activeJobId": "",
+        "active_job_id": "",
+        "activeStatusEndpoint": "",
+        "active_status_endpoint": "",
+        "createdAt": "2026-07-13T18:53:43.664399Z",
+        "created_at": "2026-07-13T18:53:43.664399Z",
+        "updatedAt": "2026-07-13T18:53:46.505605Z",
+        "updated_at": "2026-07-13T18:53:46.505605Z",
+        "badReviewSceneIds": [],
+        "bad_review_scene_ids": []
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_37063b286ca945",
+      "record": {
+        "id": "boardjob_37063b286ca945",
+        "status": "completed",
+        "sceneId": "seg_02",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T13:26:31.095948+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_37063b286ca945.data",
+      "record": {
+        "jobId": "boardjob_37063b286ca945",
+        "status": "completed",
+        "createdAt": "2026-07-13T13:23:02.379173Z",
+        "updatedAt": "2026-07-13T13:26:25.553500+00:00",
+        "sceneId": "seg_02",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "a994bbe2-c454-4966-a21a-fecf4ebc8275",
+        "job_id": "boardjob_37063b286ca945",
+        "historyPreview": {},
+        "videoAssetId": "asset_5abd1aab076f9cf1",
+        "video_asset_id": "asset_5abd1aab076f9cf1",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_37063b286ca945.data.payload",
+      "record": {
+        "scene_id": "seg_02",
+        "sceneId": "seg_02",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_37063b286ca945.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_279ced3722c0ae6b",
+        "created_at": "2026-07-13T13:26:23.435784+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_37063b286ca945"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_2d607f91807749",
+      "record": {
+        "id": "boardjob_2d607f91807749",
+        "status": "completed",
+        "sceneId": "seg_01",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T18:58:12.576264+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_2d607f91807749.data",
+      "record": {
+        "jobId": "boardjob_2d607f91807749",
+        "status": "completed",
+        "createdAt": "2026-07-13T18:53:50.906966Z",
+        "updatedAt": "2026-07-13T18:58:07.960616+00:00",
+        "sceneId": "seg_01",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "d537b59e-8204-4c98-872a-486fb5068048",
+        "job_id": "boardjob_2d607f91807749",
+        "historyPreview": {},
+        "videoAssetId": "asset_18806ebd49ceafc1",
+        "video_asset_id": "asset_18806ebd49ceafc1",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_2d607f91807749.data.payload",
+      "record": {
+        "scene_id": "seg_01",
+        "sceneId": "seg_01",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_2d607f91807749.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_05467fca938a027f",
+        "created_at": "2026-07-13T18:58:05.880552+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_2d607f91807749"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_9674b8fc37a04a",
+      "record": {
+        "id": "boardjob_9674b8fc37a04a",
+        "status": "completed",
+        "sceneId": "seg_02",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:02:17.625203+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_9674b8fc37a04a.data",
+      "record": {
+        "jobId": "boardjob_9674b8fc37a04a",
+        "status": "completed",
+        "createdAt": "2026-07-13T18:58:27.937699Z",
+        "updatedAt": "2026-07-13T19:02:13.903601+00:00",
+        "sceneId": "seg_02",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "68bbc30a-c280-4b4c-b275-b265e216cfd5",
+        "job_id": "boardjob_9674b8fc37a04a",
+        "historyPreview": {},
+        "videoAssetId": "asset_7c515c7d7c34505d",
+        "video_asset_id": "asset_7c515c7d7c34505d",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_9674b8fc37a04a.data.payload",
+      "record": {
+        "scene_id": "seg_02",
+        "sceneId": "seg_02",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_9674b8fc37a04a.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_1b046cbbf7338f0b",
+        "created_at": "2026-07-13T19:02:11.802386+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_9674b8fc37a04a"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_1420c6f2195743",
+      "record": {
+        "id": "boardjob_1420c6f2195743",
+        "status": "completed",
+        "sceneId": "seg_03",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:11:09.674437+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_1420c6f2195743.data",
+      "record": {
+        "jobId": "boardjob_1420c6f2195743",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:02:35.083949Z",
+        "updatedAt": "2026-07-13T19:11:05.024001+00:00",
+        "sceneId": "seg_03",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "323e9add-441d-4459-92f3-28468b5ce8b7",
+        "job_id": "boardjob_1420c6f2195743",
+        "historyPreview": {},
+        "videoAssetId": "asset_51d3ae4f216ced1b",
+        "video_asset_id": "asset_51d3ae4f216ced1b",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_1420c6f2195743.data.payload",
+      "record": {
+        "scene_id": "seg_03",
+        "sceneId": "seg_03",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_1420c6f2195743.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_6d6de7061e6d1420",
+        "created_at": "2026-07-13T19:11:02.905863+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_1420c6f2195743"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_3327283b44cf41",
+      "record": {
+        "id": "boardjob_3327283b44cf41",
+        "status": "completed",
+        "sceneId": "seg_04",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:16:57.900854+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_3327283b44cf41.data",
+      "record": {
+        "jobId": "boardjob_3327283b44cf41",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:11:26.232507Z",
+        "updatedAt": "2026-07-13T19:16:54.126356+00:00",
+        "sceneId": "seg_04",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "13168a03-756d-4e7c-b0a9-a9b7fbb021a7",
+        "job_id": "boardjob_3327283b44cf41",
+        "historyPreview": {},
+        "videoAssetId": "asset_3787e1d59f4a0c86",
+        "video_asset_id": "asset_3787e1d59f4a0c86",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_3327283b44cf41.data.payload",
+      "record": {
+        "scene_id": "seg_04",
+        "sceneId": "seg_04",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_3327283b44cf41.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_560f402090104535",
+        "created_at": "2026-07-13T19:16:52.005363+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_3327283b44cf41"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_4e6d499b5ee246",
+      "record": {
+        "id": "boardjob_4e6d499b5ee246",
+        "status": "completed",
+        "sceneId": "seg_05",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:20:15.668423+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_4e6d499b5ee246.data",
+      "record": {
+        "jobId": "boardjob_4e6d499b5ee246",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:17:16.473814Z",
+        "updatedAt": "2026-07-13T19:20:11.801913+00:00",
+        "sceneId": "seg_05",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "f83898b4-200a-4962-a4c4-44b864a1f7c9",
+        "job_id": "boardjob_4e6d499b5ee246",
+        "historyPreview": {},
+        "videoAssetId": "asset_f32f29cba8484e73",
+        "video_asset_id": "asset_f32f29cba8484e73",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_4e6d499b5ee246.data.payload",
+      "record": {
+        "scene_id": "seg_05",
+        "sceneId": "seg_05",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_4e6d499b5ee246.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_6e428a339282a3ff",
+        "created_at": "2026-07-13T19:20:09.754777+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_4e6d499b5ee246"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f52016a6856841",
+      "record": {
+        "id": "boardjob_f52016a6856841",
+        "status": "completed",
+        "sceneId": "seg_06",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:23:52.483077+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f52016a6856841.data",
+      "record": {
+        "jobId": "boardjob_f52016a6856841",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:20:33.686564Z",
+        "updatedAt": "2026-07-13T19:23:45.269261+00:00",
+        "sceneId": "seg_06",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "e7e7b491-47db-4756-aa9d-67f7dea4209e",
+        "job_id": "boardjob_f52016a6856841",
+        "historyPreview": {},
+        "videoAssetId": "asset_6df08073473b347c",
+        "video_asset_id": "asset_6df08073473b347c",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f52016a6856841.data.payload",
+      "record": {
+        "scene_id": "seg_06",
+        "sceneId": "seg_06",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f52016a6856841.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_b6deab0ac5fd4c81",
+        "created_at": "2026-07-13T19:23:43.004396+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f52016a6856841"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_4f14d981019e4b",
+      "record": {
+        "id": "boardjob_4f14d981019e4b",
+        "status": "completed",
+        "sceneId": "seg_07",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:27:52.499902+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_4f14d981019e4b.data",
+      "record": {
+        "jobId": "boardjob_4f14d981019e4b",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:24:14.197243Z",
+        "updatedAt": "2026-07-13T19:27:48.554020+00:00",
+        "sceneId": "seg_07",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "7250cba6-653d-4f5d-a344-2bef16737c7e",
+        "job_id": "boardjob_4f14d981019e4b",
+        "historyPreview": {},
+        "videoAssetId": "asset_3345b19f4cb30166",
+        "video_asset_id": "asset_3345b19f4cb30166",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_4f14d981019e4b.data.payload",
+      "record": {
+        "scene_id": "seg_07",
+        "sceneId": "seg_07",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_4f14d981019e4b.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_d1efe086817047fa",
+        "created_at": "2026-07-13T19:27:46.397242+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_4f14d981019e4b"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_fd17a4845c2c40",
+      "record": {
+        "id": "boardjob_fd17a4845c2c40",
+        "status": "completed",
+        "sceneId": "seg_08",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:37:23.070506+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_fd17a4845c2c40.data",
+      "record": {
+        "jobId": "boardjob_fd17a4845c2c40",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:28:10.052533Z",
+        "updatedAt": "2026-07-13T19:37:17.429351+00:00",
+        "sceneId": "seg_08",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "269d06bd-a323-4e82-9a73-e1eecd42ee42",
+        "job_id": "boardjob_fd17a4845c2c40",
+        "historyPreview": {},
+        "videoAssetId": "asset_e4cd20f7fca8c6b3",
+        "video_asset_id": "asset_e4cd20f7fca8c6b3",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_fd17a4845c2c40.data.payload",
+      "record": {
+        "scene_id": "seg_08",
+        "sceneId": "seg_08",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_fd17a4845c2c40.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_2eb248ac0717b50b",
+        "created_at": "2026-07-13T19:37:15.261774+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_fd17a4845c2c40"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_ceea9ffea6994e",
+      "record": {
+        "id": "boardjob_ceea9ffea6994e",
+        "status": "completed",
+        "sceneId": "seg_09",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:41:35.362074+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_ceea9ffea6994e.data",
+      "record": {
+        "jobId": "boardjob_ceea9ffea6994e",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:37:39.273670Z",
+        "updatedAt": "2026-07-13T19:41:30.507534+00:00",
+        "sceneId": "seg_09",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "a0d46bc6-c04d-4b85-9b97-92b47e6d04b2",
+        "job_id": "boardjob_ceea9ffea6994e",
+        "historyPreview": {},
+        "videoAssetId": "asset_0718730f5bd291b6",
+        "video_asset_id": "asset_0718730f5bd291b6",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_ceea9ffea6994e.data.payload",
+      "record": {
+        "scene_id": "seg_09",
+        "sceneId": "seg_09",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_ceea9ffea6994e.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_53277707cfc61cce",
+        "created_at": "2026-07-13T19:41:28.330605+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_ceea9ffea6994e"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_c9afc35cbf7b4a",
+      "record": {
+        "id": "boardjob_c9afc35cbf7b4a",
+        "status": "completed",
+        "sceneId": "seg_10",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:44:51.385066+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_c9afc35cbf7b4a.data",
+      "record": {
+        "jobId": "boardjob_c9afc35cbf7b4a",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:41:55.494524Z",
+        "updatedAt": "2026-07-13T19:44:47.579710+00:00",
+        "sceneId": "seg_10",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "6d9b9817-8dff-47bf-87de-d776c482505f",
+        "job_id": "boardjob_c9afc35cbf7b4a",
+        "historyPreview": {},
+        "videoAssetId": "asset_ac8d04f96e3c85fc",
+        "video_asset_id": "asset_ac8d04f96e3c85fc",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_c9afc35cbf7b4a.data.payload",
+      "record": {
+        "scene_id": "seg_10",
+        "sceneId": "seg_10",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_c9afc35cbf7b4a.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_507dd94e31b95404",
+        "created_at": "2026-07-13T19:44:45.370033+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_c9afc35cbf7b4a"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_b74386c74d224d",
+      "record": {
+        "id": "boardjob_b74386c74d224d",
+        "status": "completed",
+        "sceneId": "seg_11",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:48:35.976321+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_b74386c74d224d.data",
+      "record": {
+        "jobId": "boardjob_b74386c74d224d",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:45:11.760850Z",
+        "updatedAt": "2026-07-13T19:48:31.108139+00:00",
+        "sceneId": "seg_11",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "466fc5ba-29f8-44e5-ae61-f4ca772f1b7b",
+        "job_id": "boardjob_b74386c74d224d",
+        "historyPreview": {},
+        "videoAssetId": "asset_4cb974f86d70732f",
+        "video_asset_id": "asset_4cb974f86d70732f",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_b74386c74d224d.data.payload",
+      "record": {
+        "scene_id": "seg_11",
+        "sceneId": "seg_11",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_b74386c74d224d.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_46bbfcd8b19cdd4d",
+        "created_at": "2026-07-13T19:48:29.005207+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_b74386c74d224d"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_cc5b75fe807142",
+      "record": {
+        "id": "boardjob_cc5b75fe807142",
+        "status": "completed",
+        "sceneId": "seg_12",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:52:08.644167+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_cc5b75fe807142.data",
+      "record": {
+        "jobId": "boardjob_cc5b75fe807142",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:48:53.446692Z",
+        "updatedAt": "2026-07-13T19:52:00.586014+00:00",
+        "sceneId": "seg_12",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "da10b2a2-3d47-4b6f-aae4-eb3558b0ae01",
+        "job_id": "boardjob_cc5b75fe807142",
+        "historyPreview": {},
+        "videoAssetId": "asset_5f2a6d34845e6da0",
+        "video_asset_id": "asset_5f2a6d34845e6da0",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_cc5b75fe807142.data.payload",
+      "record": {
+        "scene_id": "seg_12",
+        "sceneId": "seg_12",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_cc5b75fe807142.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_bc005f8a12fe3826",
+        "created_at": "2026-07-13T19:51:58.377384+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_cc5b75fe807142"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_0608ef9b321d4d",
+      "record": {
+        "id": "boardjob_0608ef9b321d4d",
+        "status": "completed",
+        "sceneId": "seg_13",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:55:10.319519+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_0608ef9b321d4d.data",
+      "record": {
+        "jobId": "boardjob_0608ef9b321d4d",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:52:27.942048Z",
+        "updatedAt": "2026-07-13T19:55:03.617070+00:00",
+        "sceneId": "seg_13",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "32734f33-afe2-45ad-944a-4e5cfab2bafb",
+        "job_id": "boardjob_0608ef9b321d4d",
+        "historyPreview": {},
+        "videoAssetId": "asset_aa429c1d4a55750b",
+        "video_asset_id": "asset_aa429c1d4a55750b",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_0608ef9b321d4d.data.payload",
+      "record": {
+        "scene_id": "seg_13",
+        "sceneId": "seg_13",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_0608ef9b321d4d.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_3f06a935bcbd688b",
+        "created_at": "2026-07-13T19:55:01.414030+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_0608ef9b321d4d"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_6c576ca5a1964a",
+      "record": {
+        "id": "boardjob_6c576ca5a1964a",
+        "status": "completed",
+        "sceneId": "seg_14",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T19:58:56.449312+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_6c576ca5a1964a.data",
+      "record": {
+        "jobId": "boardjob_6c576ca5a1964a",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:55:44.109232Z",
+        "updatedAt": "2026-07-13T19:58:51.541829+00:00",
+        "sceneId": "seg_14",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "182bdeee-9303-4d31-adea-630817632aef",
+        "job_id": "boardjob_6c576ca5a1964a",
+        "historyPreview": {},
+        "videoAssetId": "asset_cd36389168405aa0",
+        "video_asset_id": "asset_cd36389168405aa0",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_6c576ca5a1964a.data.payload",
+      "record": {
+        "scene_id": "seg_14",
+        "sceneId": "seg_14",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_6c576ca5a1964a.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_5f24897b95ee1a2c",
+        "created_at": "2026-07-13T19:58:49.273345+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_6c576ca5a1964a"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f3e966290d1c4e",
+      "record": {
+        "id": "boardjob_f3e966290d1c4e",
+        "status": "completed",
+        "sceneId": "seg_15",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:02:31.569187+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f3e966290d1c4e.data",
+      "record": {
+        "jobId": "boardjob_f3e966290d1c4e",
+        "status": "completed",
+        "createdAt": "2026-07-13T19:59:16.704345Z",
+        "updatedAt": "2026-07-13T20:02:23.330998+00:00",
+        "sceneId": "seg_15",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "8480c400-84f2-47da-87d1-e2a83f6194c4",
+        "job_id": "boardjob_f3e966290d1c4e",
+        "historyPreview": {},
+        "videoAssetId": "asset_10c8af081626d694",
+        "video_asset_id": "asset_10c8af081626d694",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f3e966290d1c4e.data.payload",
+      "record": {
+        "scene_id": "seg_15",
+        "sceneId": "seg_15",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f3e966290d1c4e.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_8104c580573e5c92",
+        "created_at": "2026-07-13T20:02:21.021963+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f3e966290d1c4e"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_a8a4ad68c09a4d",
+      "record": {
+        "id": "boardjob_a8a4ad68c09a4d",
+        "status": "completed",
+        "sceneId": "seg_16",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:06:45.071437+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_a8a4ad68c09a4d.data",
+      "record": {
+        "jobId": "boardjob_a8a4ad68c09a4d",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:02:51.126802Z",
+        "updatedAt": "2026-07-13T20:06:38.063714+00:00",
+        "sceneId": "seg_16",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "a1a705f5-bd19-4cdc-89db-3c82129f6ad0",
+        "job_id": "boardjob_a8a4ad68c09a4d",
+        "historyPreview": {},
+        "videoAssetId": "asset_35ecc2a0924f0a53",
+        "video_asset_id": "asset_35ecc2a0924f0a53",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_a8a4ad68c09a4d.data.payload",
+      "record": {
+        "scene_id": "seg_16",
+        "sceneId": "seg_16",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_a8a4ad68c09a4d.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_5c1d13cd0776ee23",
+        "created_at": "2026-07-13T20:06:35.812334+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_a8a4ad68c09a4d"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_76b5b9cac3ca43",
+      "record": {
+        "id": "boardjob_76b5b9cac3ca43",
+        "status": "completed",
+        "sceneId": "seg_17",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:09:51.717134+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_76b5b9cac3ca43.data",
+      "record": {
+        "jobId": "boardjob_76b5b9cac3ca43",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:07:02.040243Z",
+        "updatedAt": "2026-07-13T20:09:47.735201+00:00",
+        "sceneId": "seg_17",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "ab447df1-fec3-4ec9-b110-7ba6f5e47083",
+        "job_id": "boardjob_76b5b9cac3ca43",
+        "historyPreview": {},
+        "videoAssetId": "asset_7b4f31ed0607e779",
+        "video_asset_id": "asset_7b4f31ed0607e779",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_76b5b9cac3ca43.data.payload",
+      "record": {
+        "scene_id": "seg_17",
+        "sceneId": "seg_17",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_76b5b9cac3ca43.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_9a832baab737f41f",
+        "created_at": "2026-07-13T20:09:45.437801+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_76b5b9cac3ca43"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_7ef8604d92994e",
+      "record": {
+        "id": "boardjob_7ef8604d92994e",
+        "status": "completed",
+        "sceneId": "seg_18",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:13:46.601294+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_7ef8604d92994e.data",
+      "record": {
+        "jobId": "boardjob_7ef8604d92994e",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:10:09.702973Z",
+        "updatedAt": "2026-07-13T20:13:38.485003+00:00",
+        "sceneId": "seg_18",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "e82f470d-9847-4d7b-8756-5299bfaba151",
+        "job_id": "boardjob_7ef8604d92994e",
+        "historyPreview": {},
+        "videoAssetId": "asset_b9e896f6a08b2c7f",
+        "video_asset_id": "asset_b9e896f6a08b2c7f",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_7ef8604d92994e.data.payload",
+      "record": {
+        "scene_id": "seg_18",
+        "sceneId": "seg_18",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_7ef8604d92994e.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_37ba820927a2266a",
+        "created_at": "2026-07-13T20:13:36.224687+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_7ef8604d92994e"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_c8958f3fdd114b",
+      "record": {
+        "id": "boardjob_c8958f3fdd114b",
+        "status": "completed",
+        "sceneId": "seg_19",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:16:59.857697+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_c8958f3fdd114b.data",
+      "record": {
+        "jobId": "boardjob_c8958f3fdd114b",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:14:02.787918Z",
+        "updatedAt": "2026-07-13T20:16:52.964075+00:00",
+        "sceneId": "seg_19",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "7befad01-e08d-433b-addc-63b3601625b2",
+        "job_id": "boardjob_c8958f3fdd114b",
+        "historyPreview": {},
+        "videoAssetId": "asset_5e2999691cd6657e",
+        "video_asset_id": "asset_5e2999691cd6657e",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_c8958f3fdd114b.data.payload",
+      "record": {
+        "scene_id": "seg_19",
+        "sceneId": "seg_19",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_c8958f3fdd114b.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_657dead411f45d72",
+        "created_at": "2026-07-13T20:16:50.667557+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_c8958f3fdd114b"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f9b14dbee6ae4e",
+      "record": {
+        "id": "boardjob_f9b14dbee6ae4e",
+        "status": "completed",
+        "sceneId": "seg_20",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:20:15.153023+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f9b14dbee6ae4e.data",
+      "record": {
+        "jobId": "boardjob_f9b14dbee6ae4e",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:17:19.562149Z",
+        "updatedAt": "2026-07-13T20:20:09.968925+00:00",
+        "sceneId": "seg_20",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "8b670ffd-efc7-4e1c-a49c-e0382c37a413",
+        "job_id": "boardjob_f9b14dbee6ae4e",
+        "historyPreview": {},
+        "videoAssetId": "asset_f0dde5607f7016cf",
+        "video_asset_id": "asset_f0dde5607f7016cf",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f9b14dbee6ae4e.data.payload",
+      "record": {
+        "scene_id": "seg_20",
+        "sceneId": "seg_20",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_f9b14dbee6ae4e.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_fe7c6a8511014897",
+        "created_at": "2026-07-13T20:20:07.655875+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f9b14dbee6ae4e"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_d3211e1879ce4c",
+      "record": {
+        "id": "boardjob_d3211e1879ce4c",
+        "status": "completed",
+        "sceneId": "seg_21",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:24:07.920350+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_d3211e1879ce4c.data",
+      "record": {
+        "jobId": "boardjob_d3211e1879ce4c",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:20:32.650797Z",
+        "updatedAt": "2026-07-13T20:24:04.958016+00:00",
+        "sceneId": "seg_21",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "4f8f8ed4-3d24-41fd-82ab-fbdda542ee1e",
+        "job_id": "boardjob_d3211e1879ce4c",
+        "historyPreview": {},
+        "videoAssetId": "asset_585db9bf12f42ddb",
+        "video_asset_id": "asset_585db9bf12f42ddb",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_d3211e1879ce4c.data.payload",
+      "record": {
+        "scene_id": "seg_21",
+        "sceneId": "seg_21",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_d3211e1879ce4c.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_009196215221ee0a",
+        "created_at": "2026-07-13T20:24:02.662892+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_d3211e1879ce4c"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_650dd689143d45",
+      "record": {
+        "id": "boardjob_650dd689143d45",
+        "status": "completed",
+        "sceneId": "seg_22",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:27:55.523739+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_650dd689143d45.data",
+      "record": {
+        "jobId": "boardjob_650dd689143d45",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:24:21.142869Z",
+        "updatedAt": "2026-07-13T20:27:47.506874+00:00",
+        "sceneId": "seg_22",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "89621efd-5826-4bc2-841b-c7661738b663",
+        "job_id": "boardjob_650dd689143d45",
+        "historyPreview": {},
+        "videoAssetId": "asset_5ee524042e514cba",
+        "video_asset_id": "asset_5ee524042e514cba",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_650dd689143d45.data.payload",
+      "record": {
+        "scene_id": "seg_22",
+        "sceneId": "seg_22",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_650dd689143d45.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_dd89deba8db04ff7",
+        "created_at": "2026-07-13T20:27:45.183890+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_650dd689143d45"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_21f2da35d20041",
+      "record": {
+        "id": "boardjob_21f2da35d20041",
+        "status": "completed",
+        "sceneId": "seg_23",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:32:36.651829+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_21f2da35d20041.data",
+      "record": {
+        "jobId": "boardjob_21f2da35d20041",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:28:17.559786Z",
+        "updatedAt": "2026-07-13T20:32:31.640753+00:00",
+        "sceneId": "seg_23",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "2a2a1815-b0e6-46ff-8b9b-1d1f94e1d9db",
+        "job_id": "boardjob_21f2da35d20041",
+        "historyPreview": {},
+        "videoAssetId": "asset_ecd67b9539fc0ba6",
+        "video_asset_id": "asset_ecd67b9539fc0ba6",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_21f2da35d20041.data.payload",
+      "record": {
+        "scene_id": "seg_23",
+        "sceneId": "seg_23",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_21f2da35d20041.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_9fe0551b41209ce6",
+        "created_at": "2026-07-13T20:32:29.321895+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_21f2da35d20041"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_04350af2a51842",
+      "record": {
+        "id": "boardjob_04350af2a51842",
+        "status": "completed",
+        "sceneId": "seg_24",
+        "projectId": "p_6f47326dfe1e91e6",
+        "updated_at": "2026-07-13T20:37:27.504989+00:00"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_04350af2a51842.data",
+      "record": {
+        "jobId": "boardjob_04350af2a51842",
+        "status": "completed",
+        "createdAt": "2026-07-13T20:32:57.513709Z",
+        "updatedAt": "2026-07-13T20:37:20.966478+00:00",
+        "sceneId": "seg_24",
+        "projectId": "p_6f47326dfe1e91e6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "promptId": "360049dd-3e85-48d9-ab9f-31134c2413a5",
+        "job_id": "boardjob_04350af2a51842",
+        "historyPreview": {},
+        "videoAssetId": "asset_2555fcb304a074a3",
+        "video_asset_id": "asset_2555fcb304a074a3",
+        "video_status": "ready"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_04350af2a51842.data.payload",
+      "record": {
+        "scene_id": "seg_24",
+        "sceneId": "seg_24",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6"
+      }
+    },
+    {
+      "path": "$.jobs.boardjob_04350af2a51842.data.creditChargeResult.existing[0]",
+      "record": {
+        "id": "cl_36c1289f16d2a558",
+        "created_at": "2026-07-13T20:37:18.647145+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_04350af2a51842"
+      }
+    },
+    {
+      "path": "$.assets.asset_f1a3527da75fe52c",
+      "record": {
+        "id": "asset_f1a3527da75fe52c",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T11:51:53.351494+00:00",
+        "updated_at": "2026-07-13T11:51:53.351494+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_9dc78a19d401df3a",
+      "record": {
+        "id": "asset_9dc78a19d401df3a",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T11:54:01.447025+00:00",
+        "updated_at": "2026-07-13T11:54:01.447025+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_2999a35c0211f549",
+      "record": {
+        "id": "asset_2999a35c0211f549",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T11:55:21.012396+00:00",
+        "updated_at": "2026-07-13T11:55:21.012396+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_b969f493af02894c",
+      "record": {
+        "id": "asset_b969f493af02894c",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T11:58:13.070249+00:00",
+        "updated_at": "2026-07-13T11:58:13.070249+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_da42cf583c6d953e",
+      "record": {
+        "id": "asset_da42cf583c6d953e",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T12:00:13.836102+00:00",
+        "updated_at": "2026-07-13T12:00:13.836102+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_c9763a367e720269",
+      "record": {
+        "id": "asset_c9763a367e720269",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T12:01:03.691782+00:00",
+        "updated_at": "2026-07-13T12:01:03.691782+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_609ce734ae9fbe60",
+      "record": {
+        "id": "asset_609ce734ae9fbe60",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T12:01:57.015548+00:00",
+        "updated_at": "2026-07-13T12:01:57.015548+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_57665922cfc58023",
+      "record": {
+        "id": "asset_57665922cfc58023",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T13:00:42.552324+00:00",
+        "updated_at": "2026-07-13T13:00:42.552324+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_d2804df1db581a7d",
+      "record": {
+        "id": "asset_d2804df1db581a7d",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T13:00:48.795055+00:00",
+        "updated_at": "2026-07-13T13:00:48.795055+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_74b4ae1a476ca7aa",
+      "record": {
+        "id": "asset_74b4ae1a476ca7aa",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T13:05:36.331875+00:00",
+        "updated_at": "2026-07-13T13:05:36.331875+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_ede70cccb6b53e3a",
+      "record": {
+        "id": "asset_ede70cccb6b53e3a",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T13:05:57.251512+00:00",
+        "updated_at": "2026-07-13T13:05:57.251512+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_d4ce820733f0a73e",
+      "record": {
+        "id": "asset_d4ce820733f0a73e",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T13:22:39.928066+00:00",
+        "updated_at": "2026-07-13T13:22:39.928066+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_5abd1aab076f9cf1",
+      "record": {
+        "id": "asset_5abd1aab076f9cf1",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T13:26:18.573417+00:00",
+        "updated_at": "2026-07-13T13:26:18.573417+00:00",
+        "scene_id": "seg_02"
+      }
+    },
+    {
+      "path": "$.assets.asset_46117bb383543772",
+      "record": {
+        "id": "asset_46117bb383543772",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T13:29:35.090119+00:00",
+        "updated_at": "2026-07-13T13:29:35.090119+00:00",
+        "scene_id": "board_preview_full_project_v217a"
+      }
+    },
+    {
+      "path": "$.assets.asset_d3f8c2c9b67632e0",
+      "record": {
+        "id": "asset_d3f8c2c9b67632e0",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:13:26.022839+00:00",
+        "updated_at": "2026-07-13T18:13:26.022839+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_15371fefa24ddeb7",
+      "record": {
+        "id": "asset_15371fefa24ddeb7",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:13:40.734387+00:00",
+        "updated_at": "2026-07-13T18:13:40.734387+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_34293d0d700bed0c",
+      "record": {
+        "id": "asset_34293d0d700bed0c",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:13:53.854494+00:00",
+        "updated_at": "2026-07-13T18:13:53.854494+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_f1002b8b4c8121c0",
+      "record": {
+        "id": "asset_f1002b8b4c8121c0",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:14:08.087301+00:00",
+        "updated_at": "2026-07-13T18:14:08.087301+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_a31b53f4b1bc69ed",
+      "record": {
+        "id": "asset_a31b53f4b1bc69ed",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:14:21.327578+00:00",
+        "updated_at": "2026-07-13T18:14:21.327578+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_84f701d1e0297f9e",
+      "record": {
+        "id": "asset_84f701d1e0297f9e",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:14:39.865823+00:00",
+        "updated_at": "2026-07-13T18:14:39.865823+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_dc49f1caab5df21f",
+      "record": {
+        "id": "asset_dc49f1caab5df21f",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:14:52.252462+00:00",
+        "updated_at": "2026-07-13T18:14:52.252462+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_568ee0a1440d5df8",
+      "record": {
+        "id": "asset_568ee0a1440d5df8",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:15:07.703398+00:00",
+        "updated_at": "2026-07-13T18:15:07.703398+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_5509ed7ffd6d3fe7",
+      "record": {
+        "id": "asset_5509ed7ffd6d3fe7",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:15:22.594074+00:00",
+        "updated_at": "2026-07-13T18:15:22.594074+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_675a6ef012f18adc",
+      "record": {
+        "id": "asset_675a6ef012f18adc",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:15:36.138356+00:00",
+        "updated_at": "2026-07-13T18:15:36.138356+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_271662e25060df88",
+      "record": {
+        "id": "asset_271662e25060df88",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:15:51.997536+00:00",
+        "updated_at": "2026-07-13T18:15:51.997536+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_91af715db68cc588",
+      "record": {
+        "id": "asset_91af715db68cc588",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:16:06.354346+00:00",
+        "updated_at": "2026-07-13T18:16:06.354346+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_7c7cc54b02b7772c",
+      "record": {
+        "id": "asset_7c7cc54b02b7772c",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:16:19.553717+00:00",
+        "updated_at": "2026-07-13T18:16:19.553717+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_15a035557034346b",
+      "record": {
+        "id": "asset_15a035557034346b",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:16:33.742752+00:00",
+        "updated_at": "2026-07-13T18:16:33.742752+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_ee0ef2e40e3dde6b",
+      "record": {
+        "id": "asset_ee0ef2e40e3dde6b",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:16:52.368901+00:00",
+        "updated_at": "2026-07-13T18:16:52.368901+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_fab86c992fba507c",
+      "record": {
+        "id": "asset_fab86c992fba507c",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:17:05.632688+00:00",
+        "updated_at": "2026-07-13T18:17:05.632688+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_daf08e4adc84fe95",
+      "record": {
+        "id": "asset_daf08e4adc84fe95",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:17:19.115015+00:00",
+        "updated_at": "2026-07-13T18:17:19.115015+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_85922d9528fb6da4",
+      "record": {
+        "id": "asset_85922d9528fb6da4",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:17:33.269365+00:00",
+        "updated_at": "2026-07-13T18:17:33.269365+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_aced96bfcca5d664",
+      "record": {
+        "id": "asset_aced96bfcca5d664",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:17:48.628182+00:00",
+        "updated_at": "2026-07-13T18:17:48.628182+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_9a165114ad6b6319",
+      "record": {
+        "id": "asset_9a165114ad6b6319",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:18:02.535899+00:00",
+        "updated_at": "2026-07-13T18:18:02.535899+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_d4923957f8e37ed6",
+      "record": {
+        "id": "asset_d4923957f8e37ed6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:18:17.070486+00:00",
+        "updated_at": "2026-07-13T18:18:17.070486+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_933dc2b3053be62c",
+      "record": {
+        "id": "asset_933dc2b3053be62c",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:18:30.331543+00:00",
+        "updated_at": "2026-07-13T18:18:30.331543+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_513b7e7232871cee",
+      "record": {
+        "id": "asset_513b7e7232871cee",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:18:46.439899+00:00",
+        "updated_at": "2026-07-13T18:18:46.440899+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_1c3cb0d6163576b4",
+      "record": {
+        "id": "asset_1c3cb0d6163576b4",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:18:59.770743+00:00",
+        "updated_at": "2026-07-13T18:18:59.770743+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_f55ed09cbc13e0d8",
+      "record": {
+        "id": "asset_f55ed09cbc13e0d8",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:19:31.295199+00:00",
+        "updated_at": "2026-07-13T18:19:31.295199+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_a3b843d00ecd3a12",
+      "record": {
+        "id": "asset_a3b843d00ecd3a12",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:19:41.875600+00:00",
+        "updated_at": "2026-07-13T18:19:41.875600+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_8d0383e275aaf417",
+      "record": {
+        "id": "asset_8d0383e275aaf417",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:20:20.296583+00:00",
+        "updated_at": "2026-07-13T18:20:20.296583+00:00",
+        "scene_id": "board_preview_full_project_v217a"
+      }
+    },
+    {
+      "path": "$.assets.asset_74e52c60a9f48df2",
+      "record": {
+        "id": "asset_74e52c60a9f48df2",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:43:11.928475+00:00",
+        "updated_at": "2026-07-13T18:43:11.928475+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_35f12ed9b75a0b4a",
+      "record": {
+        "id": "asset_35f12ed9b75a0b4a",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:43:26.297717+00:00",
+        "updated_at": "2026-07-13T18:43:26.297717+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_52eecfa05a1afc2b",
+      "record": {
+        "id": "asset_52eecfa05a1afc2b",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:43:42.695628+00:00",
+        "updated_at": "2026-07-13T18:43:42.695628+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_717f6e033fd2d19d",
+      "record": {
+        "id": "asset_717f6e033fd2d19d",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:43:57.516932+00:00",
+        "updated_at": "2026-07-13T18:43:57.516932+00:00"
+      }
+    },
+    {
+      "path": "$.assets.asset_18806ebd49ceafc1",
+      "record": {
+        "id": "asset_18806ebd49ceafc1",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T18:58:00.986757+00:00",
+        "updated_at": "2026-07-13T18:58:00.986757+00:00",
+        "scene_id": "seg_01"
+      }
+    },
+    {
+      "path": "$.assets.asset_7c515c7d7c34505d",
+      "record": {
+        "id": "asset_7c515c7d7c34505d",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:02:06.682574+00:00",
+        "updated_at": "2026-07-13T19:02:06.682574+00:00",
+        "scene_id": "seg_02"
+      }
+    },
+    {
+      "path": "$.assets.asset_51d3ae4f216ced1b",
+      "record": {
+        "id": "asset_51d3ae4f216ced1b",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:10:58.716884+00:00",
+        "updated_at": "2026-07-13T19:10:58.716884+00:00",
+        "scene_id": "seg_03"
+      }
+    },
+    {
+      "path": "$.assets.asset_3787e1d59f4a0c86",
+      "record": {
+        "id": "asset_3787e1d59f4a0c86",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:16:46.842953+00:00",
+        "updated_at": "2026-07-13T19:16:46.842953+00:00",
+        "scene_id": "seg_04"
+      }
+    },
+    {
+      "path": "$.assets.asset_f32f29cba8484e73",
+      "record": {
+        "id": "asset_f32f29cba8484e73",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:20:03.572528+00:00",
+        "updated_at": "2026-07-13T19:20:03.572528+00:00",
+        "scene_id": "seg_05"
+      }
+    },
+    {
+      "path": "$.assets.asset_6df08073473b347c",
+      "record": {
+        "id": "asset_6df08073473b347c",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:23:39.244168+00:00",
+        "updated_at": "2026-07-13T19:23:39.244168+00:00",
+        "scene_id": "seg_06"
+      }
+    },
+    {
+      "path": "$.assets.asset_3345b19f4cb30166",
+      "record": {
+        "id": "asset_3345b19f4cb30166",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:27:39.203634+00:00",
+        "updated_at": "2026-07-13T19:27:39.203634+00:00",
+        "scene_id": "seg_07"
+      }
+    },
+    {
+      "path": "$.assets.asset_e4cd20f7fca8c6b3",
+      "record": {
+        "id": "asset_e4cd20f7fca8c6b3",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:37:10.018248+00:00",
+        "updated_at": "2026-07-13T19:37:10.018248+00:00",
+        "scene_id": "seg_08"
+      }
+    },
+    {
+      "path": "$.assets.asset_0718730f5bd291b6",
+      "record": {
+        "id": "asset_0718730f5bd291b6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:41:23.975293+00:00",
+        "updated_at": "2026-07-13T19:41:23.975293+00:00",
+        "scene_id": "seg_09"
+      }
+    },
+    {
+      "path": "$.assets.asset_ac8d04f96e3c85fc",
+      "record": {
+        "id": "asset_ac8d04f96e3c85fc",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:44:39.007758+00:00",
+        "updated_at": "2026-07-13T19:44:39.007758+00:00",
+        "scene_id": "seg_10"
+      }
+    },
+    {
+      "path": "$.assets.asset_4cb974f86d70732f",
+      "record": {
+        "id": "asset_4cb974f86d70732f",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:48:23.640383+00:00",
+        "updated_at": "2026-07-13T19:48:23.640383+00:00",
+        "scene_id": "seg_11"
+      }
+    },
+    {
+      "path": "$.assets.asset_5f2a6d34845e6da0",
+      "record": {
+        "id": "asset_5f2a6d34845e6da0",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:51:54.439706+00:00",
+        "updated_at": "2026-07-13T19:51:54.439706+00:00",
+        "scene_id": "seg_12"
+      }
+    },
+    {
+      "path": "$.assets.asset_aa429c1d4a55750b",
+      "record": {
+        "id": "asset_aa429c1d4a55750b",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:54:54.429440+00:00",
+        "updated_at": "2026-07-13T19:54:54.429440+00:00",
+        "scene_id": "seg_13"
+      }
+    },
+    {
+      "path": "$.assets.asset_cd36389168405aa0",
+      "record": {
+        "id": "asset_cd36389168405aa0",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T19:58:43.677681+00:00",
+        "updated_at": "2026-07-13T19:58:43.677681+00:00",
+        "scene_id": "seg_14"
+      }
+    },
+    {
+      "path": "$.assets.asset_10c8af081626d694",
+      "record": {
+        "id": "asset_10c8af081626d694",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:02:17.246922+00:00",
+        "updated_at": "2026-07-13T20:02:17.246922+00:00",
+        "scene_id": "seg_15"
+      }
+    },
+    {
+      "path": "$.assets.asset_35ecc2a0924f0a53",
+      "record": {
+        "id": "asset_35ecc2a0924f0a53",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:06:30.312944+00:00",
+        "updated_at": "2026-07-13T20:06:30.312944+00:00",
+        "scene_id": "seg_16"
+      }
+    },
+    {
+      "path": "$.assets.asset_7b4f31ed0607e779",
+      "record": {
+        "id": "asset_7b4f31ed0607e779",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:09:38.859525+00:00",
+        "updated_at": "2026-07-13T20:09:38.859525+00:00",
+        "scene_id": "seg_17"
+      }
+    },
+    {
+      "path": "$.assets.asset_b9e896f6a08b2c7f",
+      "record": {
+        "id": "asset_b9e896f6a08b2c7f",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:13:31.429628+00:00",
+        "updated_at": "2026-07-13T20:13:31.429628+00:00",
+        "scene_id": "seg_18"
+      }
+    },
+    {
+      "path": "$.assets.asset_5e2999691cd6657e",
+      "record": {
+        "id": "asset_5e2999691cd6657e",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:16:46.383286+00:00",
+        "updated_at": "2026-07-13T20:16:46.383286+00:00",
+        "scene_id": "seg_19"
+      }
+    },
+    {
+      "path": "$.assets.asset_f0dde5607f7016cf",
+      "record": {
+        "id": "asset_f0dde5607f7016cf",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:20:03.113614+00:00",
+        "updated_at": "2026-07-13T20:20:03.113614+00:00",
+        "scene_id": "seg_20"
+      }
+    },
+    {
+      "path": "$.assets.asset_585db9bf12f42ddb",
+      "record": {
+        "id": "asset_585db9bf12f42ddb",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:23:59.110731+00:00",
+        "updated_at": "2026-07-13T20:23:59.110731+00:00",
+        "scene_id": "seg_21"
+      }
+    },
+    {
+      "path": "$.assets.asset_5ee524042e514cba",
+      "record": {
+        "id": "asset_5ee524042e514cba",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:27:37.938498+00:00",
+        "updated_at": "2026-07-13T20:27:37.938498+00:00",
+        "scene_id": "seg_22"
+      }
+    },
+    {
+      "path": "$.assets.asset_ecd67b9539fc0ba6",
+      "record": {
+        "id": "asset_ecd67b9539fc0ba6",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:32:24.540558+00:00",
+        "updated_at": "2026-07-13T20:32:24.540558+00:00",
+        "scene_id": "seg_23"
+      }
+    },
+    {
+      "path": "$.assets.asset_2555fcb304a074a3",
+      "record": {
+        "id": "asset_2555fcb304a074a3",
+        "project_id": "p_6f47326dfe1e91e6",
+        "created_at": "2026-07-13T20:37:15.501576+00:00",
+        "updated_at": "2026-07-13T20:37:15.501576+00:00",
+        "scene_id": "seg_24"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1202]",
+      "record": {
+        "id": "cl_5cce2a2441ada533",
+        "created_at": "2026-07-13T12:37:39.710272+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "manual_timing_asr_main:asr_1783944972407_c057a38c662d9"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1203]",
+      "record": {
+        "id": "cl_279ced3722c0ae6b",
+        "created_at": "2026-07-13T13:26:23.435784+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_37063b286ca945"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1204]",
+      "record": {
+        "id": "cl_05467fca938a027f",
+        "created_at": "2026-07-13T18:58:05.880552+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_2d607f91807749"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1205]",
+      "record": {
+        "id": "cl_1b046cbbf7338f0b",
+        "created_at": "2026-07-13T19:02:11.802386+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_9674b8fc37a04a"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1206]",
+      "record": {
+        "id": "cl_6d6de7061e6d1420",
+        "created_at": "2026-07-13T19:11:02.905863+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_1420c6f2195743"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1207]",
+      "record": {
+        "id": "cl_560f402090104535",
+        "created_at": "2026-07-13T19:16:52.005363+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_3327283b44cf41"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1208]",
+      "record": {
+        "id": "cl_6e428a339282a3ff",
+        "created_at": "2026-07-13T19:20:09.754777+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_4e6d499b5ee246"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1209]",
+      "record": {
+        "id": "cl_b6deab0ac5fd4c81",
+        "created_at": "2026-07-13T19:23:43.004396+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f52016a6856841"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1210]",
+      "record": {
+        "id": "cl_d1efe086817047fa",
+        "created_at": "2026-07-13T19:27:46.397242+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_4f14d981019e4b"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1211]",
+      "record": {
+        "id": "cl_2eb248ac0717b50b",
+        "created_at": "2026-07-13T19:37:15.261774+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_fd17a4845c2c40"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1212]",
+      "record": {
+        "id": "cl_53277707cfc61cce",
+        "created_at": "2026-07-13T19:41:28.330605+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_ceea9ffea6994e"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1213]",
+      "record": {
+        "id": "cl_507dd94e31b95404",
+        "created_at": "2026-07-13T19:44:45.370033+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_c9afc35cbf7b4a"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1214]",
+      "record": {
+        "id": "cl_46bbfcd8b19cdd4d",
+        "created_at": "2026-07-13T19:48:29.005207+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_b74386c74d224d"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1215]",
+      "record": {
+        "id": "cl_bc005f8a12fe3826",
+        "created_at": "2026-07-13T19:51:58.377384+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_cc5b75fe807142"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1216]",
+      "record": {
+        "id": "cl_3f06a935bcbd688b",
+        "created_at": "2026-07-13T19:55:01.414030+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_0608ef9b321d4d"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1217]",
+      "record": {
+        "id": "cl_5f24897b95ee1a2c",
+        "created_at": "2026-07-13T19:58:49.273345+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_6c576ca5a1964a"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1218]",
+      "record": {
+        "id": "cl_8104c580573e5c92",
+        "created_at": "2026-07-13T20:02:21.021963+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f3e966290d1c4e"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1219]",
+      "record": {
+        "id": "cl_5c1d13cd0776ee23",
+        "created_at": "2026-07-13T20:06:35.812334+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_a8a4ad68c09a4d"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1220]",
+      "record": {
+        "id": "cl_9a832baab737f41f",
+        "created_at": "2026-07-13T20:09:45.437801+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_76b5b9cac3ca43"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1221]",
+      "record": {
+        "id": "cl_37ba820927a2266a",
+        "created_at": "2026-07-13T20:13:36.224687+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_7ef8604d92994e"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1222]",
+      "record": {
+        "id": "cl_657dead411f45d72",
+        "created_at": "2026-07-13T20:16:50.667557+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_c8958f3fdd114b"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1223]",
+      "record": {
+        "id": "cl_fe7c6a8511014897",
+        "created_at": "2026-07-13T20:20:07.655875+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_f9b14dbee6ae4e"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1224]",
+      "record": {
+        "id": "cl_009196215221ee0a",
+        "created_at": "2026-07-13T20:24:02.662892+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_d3211e1879ce4c"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1225]",
+      "record": {
+        "id": "cl_dd89deba8db04ff7",
+        "created_at": "2026-07-13T20:27:45.183890+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_650dd689143d45"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1226]",
+      "record": {
+        "id": "cl_9fe0551b41209ce6",
+        "created_at": "2026-07-13T20:32:29.321895+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_21f2da35d20041"
+      }
+    },
+    {
+      "path": "$.credits_ledger[1227]",
+      "record": {
+        "id": "cl_36c1289f16d2a558",
+        "created_at": "2026-07-13T20:37:18.647145+00:00",
+        "project_id": "p_6f47326dfe1e91e6",
+        "job_id": "boardjob_04350af2a51842"
+      }
+    },
+    {
+      "path": "$.telegram_review_sessions.p_6f47326dfe1e91e6",
+      "record": {
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "status": "reviewing",
+        "latest_review_ids_by_scene": {},
+        "latestReviewIdsByScene": {},
+        "created_at": "2026-07-13T13:26:42.890876+00:00",
+        "createdAt": "2026-07-13T13:26:42.890876+00:00",
+        "updated_at": "2026-07-13T20:37:50.288104+00:00",
+        "updatedAt": "2026-07-13T20:37:50.288104+00:00",
+        "last_generation_status_v137h": "finished",
+        "lastGenerationStatusV137H": "finished"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_9dde803275",
+      "record": {
+        "review_id": "tgr_9dde803275",
+        "reviewId": "tgr_9dde803275",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_02",
+        "sceneId": "seg_02",
+        "job_id": "boardjob_37063b286ca945",
+        "jobId": "boardjob_37063b286ca945",
+        "batch_id": "boardbatch_2a013c5687124e",
+        "batchId": "boardbatch_2a013c5687124e",
+        "asset_id": "asset_5abd1aab076f9cf1",
+        "assetId": "asset_5abd1aab076f9cf1",
+        "status": "pending",
+        "created_at": "2026-07-13T13:26:40.603527+00:00",
+        "createdAt": "2026-07-13T13:26:40.603527+00:00",
+        "updated_at": "2026-07-13T13:26:40.603527+00:00",
+        "updatedAt": "2026-07-13T13:26:40.603527+00:00",
+        "telegram_message_id": 1667,
+        "telegramMessageId": 1667,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_27e872b0ad",
+      "record": {
+        "review_id": "tgr_27e872b0ad",
+        "reviewId": "tgr_27e872b0ad",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_01",
+        "sceneId": "seg_01",
+        "job_id": "boardjob_2d607f91807749",
+        "jobId": "boardjob_2d607f91807749",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_18806ebd49ceafc1",
+        "assetId": "asset_18806ebd49ceafc1",
+        "status": "pending",
+        "created_at": "2026-07-13T18:58:21.874795+00:00",
+        "createdAt": "2026-07-13T18:58:21.874795+00:00",
+        "updated_at": "2026-07-13T18:58:21.874795+00:00",
+        "updatedAt": "2026-07-13T18:58:21.874795+00:00",
+        "telegram_message_id": 1669,
+        "telegramMessageId": 1669,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_181d42ca1d",
+      "record": {
+        "review_id": "tgr_181d42ca1d",
+        "reviewId": "tgr_181d42ca1d",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_02",
+        "sceneId": "seg_02",
+        "job_id": "boardjob_9674b8fc37a04a",
+        "jobId": "boardjob_9674b8fc37a04a",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_7c515c7d7c34505d",
+        "assetId": "asset_7c515c7d7c34505d",
+        "status": "pending",
+        "created_at": "2026-07-13T19:02:29.860293+00:00",
+        "createdAt": "2026-07-13T19:02:29.860293+00:00",
+        "updated_at": "2026-07-13T19:02:29.860293+00:00",
+        "updatedAt": "2026-07-13T19:02:29.860293+00:00",
+        "telegram_message_id": 1670,
+        "telegramMessageId": 1670,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_ebad75a92b",
+      "record": {
+        "review_id": "tgr_ebad75a92b",
+        "reviewId": "tgr_ebad75a92b",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_03",
+        "sceneId": "seg_03",
+        "job_id": "boardjob_1420c6f2195743",
+        "jobId": "boardjob_1420c6f2195743",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_51d3ae4f216ced1b",
+        "assetId": "asset_51d3ae4f216ced1b",
+        "status": "bad",
+        "created_at": "2026-07-13T19:11:20.942794+00:00",
+        "createdAt": "2026-07-13T19:11:20.942794+00:00",
+        "updated_at": "2026-07-13T19:12:22.471173+00:00",
+        "updatedAt": "2026-07-13T19:12:22.471173+00:00",
+        "telegram_message_id": 1671,
+        "telegramMessageId": 1671,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_3e0c31defb",
+      "record": {
+        "review_id": "tgr_3e0c31defb",
+        "reviewId": "tgr_3e0c31defb",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_04",
+        "sceneId": "seg_04",
+        "job_id": "boardjob_3327283b44cf41",
+        "jobId": "boardjob_3327283b44cf41",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_3787e1d59f4a0c86",
+        "assetId": "asset_3787e1d59f4a0c86",
+        "status": "pending",
+        "created_at": "2026-07-13T19:17:10.191150+00:00",
+        "createdAt": "2026-07-13T19:17:10.191150+00:00",
+        "updated_at": "2026-07-13T19:17:10.191150+00:00",
+        "updatedAt": "2026-07-13T19:17:10.191150+00:00",
+        "telegram_message_id": 1673,
+        "telegramMessageId": 1673,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_ce6d708cea",
+      "record": {
+        "review_id": "tgr_ce6d708cea",
+        "reviewId": "tgr_ce6d708cea",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_05",
+        "sceneId": "seg_05",
+        "job_id": "boardjob_4e6d499b5ee246",
+        "jobId": "boardjob_4e6d499b5ee246",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_f32f29cba8484e73",
+        "assetId": "asset_f32f29cba8484e73",
+        "status": "pending",
+        "created_at": "2026-07-13T19:20:28.236934+00:00",
+        "createdAt": "2026-07-13T19:20:28.236934+00:00",
+        "updated_at": "2026-07-13T19:20:28.236934+00:00",
+        "updatedAt": "2026-07-13T19:20:28.236934+00:00",
+        "telegram_message_id": 1674,
+        "telegramMessageId": 1674,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_89a45922de",
+      "record": {
+        "review_id": "tgr_89a45922de",
+        "reviewId": "tgr_89a45922de",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_06",
+        "sceneId": "seg_06",
+        "job_id": "boardjob_f52016a6856841",
+        "jobId": "boardjob_f52016a6856841",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_6df08073473b347c",
+        "assetId": "asset_6df08073473b347c",
+        "status": "pending",
+        "created_at": "2026-07-13T19:24:07.991846+00:00",
+        "createdAt": "2026-07-13T19:24:07.991846+00:00",
+        "updated_at": "2026-07-13T19:24:07.991846+00:00",
+        "updatedAt": "2026-07-13T19:24:07.991846+00:00",
+        "telegram_message_id": 1675,
+        "telegramMessageId": 1675,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_24342808f8",
+      "record": {
+        "review_id": "tgr_24342808f8",
+        "reviewId": "tgr_24342808f8",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_07",
+        "sceneId": "seg_07",
+        "job_id": "boardjob_4f14d981019e4b",
+        "jobId": "boardjob_4f14d981019e4b",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_3345b19f4cb30166",
+        "assetId": "asset_3345b19f4cb30166",
+        "status": "pending",
+        "created_at": "2026-07-13T19:28:04.538067+00:00",
+        "createdAt": "2026-07-13T19:28:04.538067+00:00",
+        "updated_at": "2026-07-13T19:28:04.538067+00:00",
+        "updatedAt": "2026-07-13T19:28:04.538067+00:00",
+        "telegram_message_id": 1676,
+        "telegramMessageId": 1676,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_6070e901c8",
+      "record": {
+        "review_id": "tgr_6070e901c8",
+        "reviewId": "tgr_6070e901c8",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_08",
+        "sceneId": "seg_08",
+        "job_id": "boardjob_fd17a4845c2c40",
+        "jobId": "boardjob_fd17a4845c2c40",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_e4cd20f7fca8c6b3",
+        "assetId": "asset_e4cd20f7fca8c6b3",
+        "status": "pending",
+        "created_at": "2026-07-13T19:37:33.844700+00:00",
+        "createdAt": "2026-07-13T19:37:33.844700+00:00",
+        "updated_at": "2026-07-13T19:37:33.844700+00:00",
+        "updatedAt": "2026-07-13T19:37:33.844700+00:00",
+        "telegram_message_id": 1677,
+        "telegramMessageId": 1677,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_f10fa5122a",
+      "record": {
+        "review_id": "tgr_f10fa5122a",
+        "reviewId": "tgr_f10fa5122a",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_09",
+        "sceneId": "seg_09",
+        "job_id": "boardjob_ceea9ffea6994e",
+        "jobId": "boardjob_ceea9ffea6994e",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_0718730f5bd291b6",
+        "assetId": "asset_0718730f5bd291b6",
+        "status": "pending",
+        "created_at": "2026-07-13T19:41:49.093342+00:00",
+        "createdAt": "2026-07-13T19:41:49.093342+00:00",
+        "updated_at": "2026-07-13T19:41:49.093342+00:00",
+        "updatedAt": "2026-07-13T19:41:49.093342+00:00",
+        "telegram_message_id": 1678,
+        "telegramMessageId": 1678,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_c0b66a65a3",
+      "record": {
+        "review_id": "tgr_c0b66a65a3",
+        "reviewId": "tgr_c0b66a65a3",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_10",
+        "sceneId": "seg_10",
+        "job_id": "boardjob_c9afc35cbf7b4a",
+        "jobId": "boardjob_c9afc35cbf7b4a",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_ac8d04f96e3c85fc",
+        "assetId": "asset_ac8d04f96e3c85fc",
+        "status": "pending",
+        "created_at": "2026-07-13T19:45:04.258017+00:00",
+        "createdAt": "2026-07-13T19:45:04.258017+00:00",
+        "updated_at": "2026-07-13T19:45:04.258017+00:00",
+        "updatedAt": "2026-07-13T19:45:04.258017+00:00",
+        "telegram_message_id": 1679,
+        "telegramMessageId": 1679,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_5aba0a71cc",
+      "record": {
+        "review_id": "tgr_5aba0a71cc",
+        "reviewId": "tgr_5aba0a71cc",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_11",
+        "sceneId": "seg_11",
+        "job_id": "boardjob_b74386c74d224d",
+        "jobId": "boardjob_b74386c74d224d",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_4cb974f86d70732f",
+        "assetId": "asset_4cb974f86d70732f",
+        "status": "bad",
+        "created_at": "2026-07-13T19:48:47.988662+00:00",
+        "createdAt": "2026-07-13T19:48:47.988662+00:00",
+        "updated_at": "2026-07-13T19:50:49.678783+00:00",
+        "updatedAt": "2026-07-13T19:50:49.678783+00:00",
+        "telegram_message_id": 1680,
+        "telegramMessageId": 1680,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_620d02e3f3",
+      "record": {
+        "review_id": "tgr_620d02e3f3",
+        "reviewId": "tgr_620d02e3f3",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_12",
+        "sceneId": "seg_12",
+        "job_id": "boardjob_cc5b75fe807142",
+        "jobId": "boardjob_cc5b75fe807142",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_5f2a6d34845e6da0",
+        "assetId": "asset_5f2a6d34845e6da0",
+        "status": "pending",
+        "created_at": "2026-07-13T19:52:22.405947+00:00",
+        "createdAt": "2026-07-13T19:52:22.405947+00:00",
+        "updated_at": "2026-07-13T19:52:22.405947+00:00",
+        "updatedAt": "2026-07-13T19:52:22.405947+00:00",
+        "telegram_message_id": 1682,
+        "telegramMessageId": 1682,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_6fb1974e26",
+      "record": {
+        "review_id": "tgr_6fb1974e26",
+        "reviewId": "tgr_6fb1974e26",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_13",
+        "sceneId": "seg_13",
+        "job_id": "boardjob_0608ef9b321d4d",
+        "jobId": "boardjob_0608ef9b321d4d",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_aa429c1d4a55750b",
+        "assetId": "asset_aa429c1d4a55750b",
+        "status": "pending",
+        "created_at": "2026-07-13T19:55:34.462417+00:00",
+        "createdAt": "2026-07-13T19:55:34.462417+00:00",
+        "updated_at": "2026-07-13T19:55:34.462417+00:00",
+        "updatedAt": "2026-07-13T19:55:34.462417+00:00",
+        "telegram_message_id": 1683,
+        "telegramMessageId": 1683,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_b127f4c462",
+      "record": {
+        "review_id": "tgr_b127f4c462",
+        "reviewId": "tgr_b127f4c462",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_14",
+        "sceneId": "seg_14",
+        "job_id": "boardjob_6c576ca5a1964a",
+        "jobId": "boardjob_6c576ca5a1964a",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_cd36389168405aa0",
+        "assetId": "asset_cd36389168405aa0",
+        "status": "pending",
+        "created_at": "2026-07-13T19:59:10.860193+00:00",
+        "createdAt": "2026-07-13T19:59:10.860193+00:00",
+        "updated_at": "2026-07-13T19:59:10.860193+00:00",
+        "updatedAt": "2026-07-13T19:59:10.860193+00:00",
+        "telegram_message_id": 1684,
+        "telegramMessageId": 1684,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_5d2e300a79",
+      "record": {
+        "review_id": "tgr_5d2e300a79",
+        "reviewId": "tgr_5d2e300a79",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_15",
+        "sceneId": "seg_15",
+        "job_id": "boardjob_f3e966290d1c4e",
+        "jobId": "boardjob_f3e966290d1c4e",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_10c8af081626d694",
+        "assetId": "asset_10c8af081626d694",
+        "status": "pending",
+        "created_at": "2026-07-13T20:02:45.262039+00:00",
+        "createdAt": "2026-07-13T20:02:45.262039+00:00",
+        "updated_at": "2026-07-13T20:02:45.262039+00:00",
+        "updatedAt": "2026-07-13T20:02:45.262039+00:00",
+        "telegram_message_id": 1685,
+        "telegramMessageId": 1685,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_af9ade4592",
+      "record": {
+        "review_id": "tgr_af9ade4592",
+        "reviewId": "tgr_af9ade4592",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_16",
+        "sceneId": "seg_16",
+        "job_id": "boardjob_a8a4ad68c09a4d",
+        "jobId": "boardjob_a8a4ad68c09a4d",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_35ecc2a0924f0a53",
+        "assetId": "asset_35ecc2a0924f0a53",
+        "status": "pending",
+        "created_at": "2026-07-13T20:06:55.438751+00:00",
+        "createdAt": "2026-07-13T20:06:55.438751+00:00",
+        "updated_at": "2026-07-13T20:06:55.438751+00:00",
+        "updatedAt": "2026-07-13T20:06:55.438751+00:00",
+        "telegram_message_id": 1686,
+        "telegramMessageId": 1686,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_ba6ece7616",
+      "record": {
+        "review_id": "tgr_ba6ece7616",
+        "reviewId": "tgr_ba6ece7616",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_17",
+        "sceneId": "seg_17",
+        "job_id": "boardjob_76b5b9cac3ca43",
+        "jobId": "boardjob_76b5b9cac3ca43",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_7b4f31ed0607e779",
+        "assetId": "asset_7b4f31ed0607e779",
+        "status": "pending",
+        "created_at": "2026-07-13T20:10:04.019491+00:00",
+        "createdAt": "2026-07-13T20:10:04.019491+00:00",
+        "updated_at": "2026-07-13T20:10:04.019491+00:00",
+        "updatedAt": "2026-07-13T20:10:04.019491+00:00",
+        "telegram_message_id": 1687,
+        "telegramMessageId": 1687,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_ce95facdd2",
+      "record": {
+        "review_id": "tgr_ce95facdd2",
+        "reviewId": "tgr_ce95facdd2",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_18",
+        "sceneId": "seg_18",
+        "job_id": "boardjob_7ef8604d92994e",
+        "jobId": "boardjob_7ef8604d92994e",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_b9e896f6a08b2c7f",
+        "assetId": "asset_b9e896f6a08b2c7f",
+        "status": "bad",
+        "created_at": "2026-07-13T20:13:57.102002+00:00",
+        "createdAt": "2026-07-13T20:13:57.102002+00:00",
+        "updated_at": "2026-07-13T20:14:43.267011+00:00",
+        "updatedAt": "2026-07-13T20:14:43.267011+00:00",
+        "telegram_message_id": 1688,
+        "telegramMessageId": 1688,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_311279b395",
+      "record": {
+        "review_id": "tgr_311279b395",
+        "reviewId": "tgr_311279b395",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_19",
+        "sceneId": "seg_19",
+        "job_id": "boardjob_c8958f3fdd114b",
+        "jobId": "boardjob_c8958f3fdd114b",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_5e2999691cd6657e",
+        "assetId": "asset_5e2999691cd6657e",
+        "status": "pending",
+        "created_at": "2026-07-13T20:17:14.710452+00:00",
+        "createdAt": "2026-07-13T20:17:14.710452+00:00",
+        "updated_at": "2026-07-13T20:17:14.710452+00:00",
+        "updatedAt": "2026-07-13T20:17:14.710452+00:00",
+        "telegram_message_id": 1690,
+        "telegramMessageId": 1690,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_4ed3a4e5b8",
+      "record": {
+        "review_id": "tgr_4ed3a4e5b8",
+        "reviewId": "tgr_4ed3a4e5b8",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_20",
+        "sceneId": "seg_20",
+        "job_id": "boardjob_f9b14dbee6ae4e",
+        "jobId": "boardjob_f9b14dbee6ae4e",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_f0dde5607f7016cf",
+        "assetId": "asset_f0dde5607f7016cf",
+        "status": "bad",
+        "created_at": "2026-07-13T20:20:26.861027+00:00",
+        "createdAt": "2026-07-13T20:20:26.861027+00:00",
+        "updated_at": "2026-07-13T20:21:49.240021+00:00",
+        "updatedAt": "2026-07-13T20:21:49.240021+00:00",
+        "telegram_message_id": 1691,
+        "telegramMessageId": 1691,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_c97c22b140",
+      "record": {
+        "review_id": "tgr_c97c22b140",
+        "reviewId": "tgr_c97c22b140",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_21",
+        "sceneId": "seg_21",
+        "job_id": "boardjob_d3211e1879ce4c",
+        "jobId": "boardjob_d3211e1879ce4c",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_585db9bf12f42ddb",
+        "assetId": "asset_585db9bf12f42ddb",
+        "status": "pending",
+        "created_at": "2026-07-13T20:24:16.374947+00:00",
+        "createdAt": "2026-07-13T20:24:16.374947+00:00",
+        "updated_at": "2026-07-13T20:24:16.374947+00:00",
+        "updatedAt": "2026-07-13T20:24:16.374947+00:00",
+        "telegram_message_id": 1693,
+        "telegramMessageId": 1693,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_cbfab9bb9f",
+      "record": {
+        "review_id": "tgr_cbfab9bb9f",
+        "reviewId": "tgr_cbfab9bb9f",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_22",
+        "sceneId": "seg_22",
+        "job_id": "boardjob_650dd689143d45",
+        "jobId": "boardjob_650dd689143d45",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_5ee524042e514cba",
+        "assetId": "asset_5ee524042e514cba",
+        "status": "pending",
+        "created_at": "2026-07-13T20:28:10.784496+00:00",
+        "createdAt": "2026-07-13T20:28:10.784496+00:00",
+        "updated_at": "2026-07-13T20:28:10.784496+00:00",
+        "updatedAt": "2026-07-13T20:28:10.784496+00:00",
+        "telegram_message_id": 1694,
+        "telegramMessageId": 1694,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_07831a010d",
+      "record": {
+        "review_id": "tgr_07831a010d",
+        "reviewId": "tgr_07831a010d",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_23",
+        "sceneId": "seg_23",
+        "job_id": "boardjob_21f2da35d20041",
+        "jobId": "boardjob_21f2da35d20041",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_ecd67b9539fc0ba6",
+        "assetId": "asset_ecd67b9539fc0ba6",
+        "status": "bad",
+        "created_at": "2026-07-13T20:32:51.636024+00:00",
+        "createdAt": "2026-07-13T20:32:51.636024+00:00",
+        "updated_at": "2026-07-13T20:34:06.668207+00:00",
+        "updatedAt": "2026-07-13T20:34:06.668207+00:00",
+        "telegram_message_id": 1695,
+        "telegramMessageId": 1695,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    },
+    {
+      "path": "$.telegram_review_items.tgr_9eee3a693e",
+      "record": {
+        "review_id": "tgr_9eee3a693e",
+        "reviewId": "tgr_9eee3a693e",
+        "project_id": "p_6f47326dfe1e91e6",
+        "projectId": "p_6f47326dfe1e91e6",
+        "scene_id": "seg_24",
+        "sceneId": "seg_24",
+        "job_id": "boardjob_04350af2a51842",
+        "jobId": "boardjob_04350af2a51842",
+        "batch_id": "boardbatch_019e82ce847442",
+        "batchId": "boardbatch_019e82ce847442",
+        "asset_id": "asset_2555fcb304a074a3",
+        "assetId": "asset_2555fcb304a074a3",
+        "status": "pending",
+        "created_at": "2026-07-13T20:37:37.186167+00:00",
+        "createdAt": "2026-07-13T20:37:37.186167+00:00",
+        "updated_at": "2026-07-13T20:37:37.186167+00:00",
+        "updatedAt": "2026-07-13T20:37:37.186167+00:00",
+        "telegram_message_id": 1697,
+        "telegramMessageId": 1697,
+        "telegram_chat_id": "1161223220",
+        "telegramChatId": "1161223220"
+      }
+    }
+  ],
+  "notes": [
+    "Only status/review/queue/batch/job/revision identifiers are included.",
+    "Prompts, media file paths, user profile fields and credentials are excluded."
+  ],
+  "database_path_relative": "backend/storage/ava_db.json",
+  "record_count": 325
+}

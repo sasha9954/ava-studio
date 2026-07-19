@@ -1,6 +1,7 @@
 /* AVA_PROJECT_NEW_ID_GUARD_V12: ignore reserved route id 'new' and only accept real p_* project ids. */
 /* AVA_PROJECT_MODES_PACK_V1: normalize project_mode for old and new projects. */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+/* AVA_PROJECT_DELETE_TOMBSTONE_AUTHORITY_V218F: deleted projects cannot be resurrected by duplicate DELETE errors or stale list responses. */
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { apiRequest } from '../services/apiClient.js'
 import { useAuth } from './AuthContext.jsx'
 import { normalizeProjectRecord } from '../lib/projectModes.js'
@@ -73,13 +74,26 @@ export function ProjectProvider({ children }) {
   const [activeProject, setActiveProject] = useState(null)
   const [loadingProjects, setLoadingProjects] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState(null)
+  const deletedProjectIdsRefV218F = useRef(new Set())
+  const projectDeletePromisesRefV218F = useRef(new Map())
+  const projectRefreshSequenceRefV218F = useRef(0)
 
   async function refreshProjects() {
     if (!token) return
+    const refreshSequenceV218F = ++projectRefreshSequenceRefV218F.current
     setLoadingProjects(true)
     try {
       const data = await apiRequest('/projects')
-      const loadedProjects = (data.projects || []).map(normalizeProjectRecord)
+      if (refreshSequenceV218F !== projectRefreshSequenceRefV218F.current) {
+        console.info('[AVA PROJECT REFRESH STALE RESPONSE IGNORED V218F]', { refreshSequenceV218F })
+        return
+      }
+
+      const tombstonesV218F = deletedProjectIdsRefV218F.current
+      const loadedProjects = (data.projects || [])
+        .map(normalizeProjectRecord)
+        .filter((project) => !tombstonesV218F.has(String(project?.id || '')))
+
       setProjects(loadedProjects)
 
       // После обычного входа пользователь не должен автоматически попадать
@@ -96,11 +110,21 @@ export function ProjectProvider({ children }) {
       if (selected) {
         sessionStorage.setItem(ACTIVE_PROJECT_SESSION_KEY, selected.id)
         try { localStorage.setItem('ava_last_active_project_id', selected.id) } catch {}
-      } else if (!routeProjectId) {
-        sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY)
+      } else {
+        if (!routeProjectId || tombstonesV218F.has(routeProjectId)) {
+          sessionStorage.removeItem(ACTIVE_PROJECT_SESSION_KEY)
+        }
+        try {
+          const lastActiveIdV218F = localStorage.getItem('ava_last_active_project_id')
+          if (lastActiveIdV218F && tombstonesV218F.has(lastActiveIdV218F)) {
+            localStorage.removeItem('ava_last_active_project_id')
+          }
+        } catch {}
       }
     } finally {
-      setLoadingProjects(false)
+      if (refreshSequenceV218F === projectRefreshSequenceRefV218F.current) {
+        setLoadingProjects(false)
+      }
     }
   }
 
@@ -169,26 +193,75 @@ export function ProjectProvider({ children }) {
   async function deleteProject(projectId) {
     // AVA_PROJECT_DELETE_OPTIMISTIC_V212Q:
     // Hide the project immediately; backend now cleans heavy media in the background.
+    // AVA_PROJECT_DELETE_TOMBSTONE_AUTHORITY_V218F:
+    // A duplicate DELETE or stale GET must never restore an already deleted project.
     const cleanProjectId = String(projectId || '').trim()
     if (!avaProjectContextIsRealProjectId(cleanProjectId)) return null
+
+    const existingPromiseV218F = projectDeletePromisesRefV218F.current.get(cleanProjectId)
+    if (existingPromiseV218F) {
+      console.info('[AVA PROJECT DELETE DUPLICATE JOINED V218F]', { projectId: cleanProjectId })
+      return existingPromiseV218F
+    }
+
     const previousProjects = projects
+    deletedProjectIdsRefV218F.current.add(cleanProjectId)
+    projectRefreshSequenceRefV218F.current += 1
 
     setProjects((current) => current.filter((project) => String(project?.id || '') !== cleanProjectId))
-    if (activeProject?.id === cleanProjectId) {
+
+    const activeSessionIdV218F = sessionStorage.getItem(ACTIVE_PROJECT_SESSION_KEY)
+    if (activeProject?.id === cleanProjectId || activeSessionIdV218F === cleanProjectId) {
       exitProject()
     }
-
     try {
-      const response = await apiRequest(`/projects/${cleanProjectId}`, { method: 'DELETE' })
-      // Do not block the UI on a full list refresh; reconcile in the background.
-      refreshProjects().catch((error) => {
-        console.warn('[AVA PROJECT DELETE REFRESH FAILED V212Q]', error)
-      })
-      return response
-    } catch (error) {
-      setProjects(previousProjects)
-      throw error
-    }
+      if (localStorage.getItem('ava_last_active_project_id') === cleanProjectId) {
+        localStorage.removeItem('ava_last_active_project_id')
+      }
+    } catch {}
+
+    const deletePromiseV218F = (async () => {
+      try {
+        const response = await apiRequest(`/projects/${cleanProjectId}`, { method: 'DELETE' })
+        console.info('[AVA PROJECT DELETE TOMBSTONE COMMITTED V218F]', {
+          projectId: cleanProjectId,
+          alreadyAbsent: Boolean(response?.already_absent || response?.alreadyAbsent),
+        })
+
+        refreshProjects().catch((error) => {
+          console.warn('[AVA PROJECT DELETE REFRESH FAILED V218F]', error)
+        })
+        return response
+      } catch (error) {
+        const messageV218F = String(error?.message || error || '')
+        const alreadyDeletedV218F = /(?:404|not found|project deleted|project not found)/i.test(messageV218F)
+        if (alreadyDeletedV218F) {
+          console.info('[AVA PROJECT DELETE ALREADY ABSENT ACCEPTED V218F]', {
+            projectId: cleanProjectId,
+            message: messageV218F,
+          })
+          refreshProjects().catch(() => {})
+          return { deleted: true, project_id: cleanProjectId, already_absent: true }
+        }
+
+        deletedProjectIdsRefV218F.current.delete(cleanProjectId)
+        setProjects(
+          previousProjects.filter(
+            (project) => !deletedProjectIdsRefV218F.current.has(String(project?.id || '')),
+          ),
+        )
+        console.error('[AVA PROJECT DELETE ROLLBACK V218F]', {
+          projectId: cleanProjectId,
+          message: messageV218F,
+        })
+        throw error
+      } finally {
+        projectDeletePromisesRefV218F.current.delete(cleanProjectId)
+      }
+    })()
+
+    projectDeletePromisesRefV218F.current.set(cleanProjectId, deletePromiseV218F)
+    return deletePromiseV218F
   }
 
   async function loadStage(projectId, stage) {

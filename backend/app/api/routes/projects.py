@@ -1,3 +1,4 @@
+# AVA_PROJECT_REVIEW_AND_BATCH_RUNTIME_AUTHORITY_V218L: browser/Telegram review mutations share one server revision; stale Board saves cannot erase live queue state.
 # AVA_PROJECT_BOARD_PREVIEW_REMARK_REVISION_AUTHORITY_V217C: newer revisioned Board preview remarks beat stale delayed saves.
 # AVA_PROJECT_BOARD_VIDEO_REVISION_AUTHORITY_V218B: server-ready video refs survive stale browser/Telegram review saves.
 # AVA_PROJECT_BOARD_PROMPT_REVISION_AUTHORITY_V218A: newer per-scene prompts survive concurrent media/replace saves.
@@ -24,6 +25,7 @@ from typing import Any
 # AVA_PROJECT_BOARD_PRESERVE_SKIP_CHANGED_IMAGE_V131R: do not preserve old server-batch video refs after scene image replacement.
 # AVA_PROJECT_BOARD_PRESERVE_SERVER_BATCH_VIDEO_REFS_V131Q2: backend protects server-batch video refs from stale board saves.
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel
 from app.api.deps import ensure_project_access, get_current_user
 from app.core.snapshot_media import media_refs_summary, preserve_media_refs, sanitize_snapshot_runtime_media
 from app.core.security import make_id, now_iso
@@ -31,6 +33,7 @@ from app.core.storage import store
 from app.core.media_cleanup import cleanup_project_media, cleanup_project_stage_media
 from app.schemas import ProjectCreateRequest, ProjectUpdateRequest, SnapshotSaveRequest
 import copy
+import json
 import threading
 import time
 from copy import deepcopy
@@ -5038,6 +5041,663 @@ def _ava_v217c_apply_board_preview_authority(current_data: Any, incoming_data: A
     return merged, info
 
 
+
+# AVA_PROJECT_REVIEW_AND_BATCH_RUNTIME_AUTHORITY_V218L
+_AVA_V218L_REVIEW_FIELDS = (
+    "video_review_status", "videoReviewStatus", "review_status", "reviewStatus",
+    "video_review_updated_at", "videoReviewUpdatedAt",
+    "video_review_reason", "videoReviewReason", "review_reason", "reviewReason",
+    "video_review_clear_reason", "videoReviewClearReason",
+    "video_review_cleared_at", "videoReviewClearedAt",
+    "video_review_accepted_at", "videoReviewAcceptedAt",
+    "video_review_accept_token_v132z", "videoReviewAcceptTokenV132Z",
+    "video_review_clear_token_v132y", "videoReviewClearTokenV132Y",
+    "video_review_clear_token_v136a", "videoReviewClearTokenV136A",
+    "video_review_clear_token_v136d", "videoReviewClearTokenV136D",
+    "video_review_regenerate_from_bad", "videoReviewRegenerateFromBad",
+    "video_review_regenerate_reason", "videoReviewRegenerateReason",
+    "bad_video_review", "badVideoReview", "video_review_bad", "videoReviewBad",
+    "bad_video", "badVideo", "video_bad", "videoBad", "is_bad_video", "isBadVideo",
+    "needs_review", "needsReview", "pending_review", "pendingReview",
+    "review_required", "reviewRequired",
+    "telegram_review_id", "telegramReviewId",
+    "video_review_revision_v218l", "videoReviewRevisionV218L",
+    "video_review_source_v218l", "videoReviewSourceV218L",
+    "video_review_event_id_v218l", "videoReviewEventIdV218L",
+    "video_review_video_identity_v218l", "videoReviewVideoIdentityV218L",
+)
+
+_AVA_V218L_BATCH_ROOT_KEYS = (
+    "board_video_batch", "boardVideoBatch", "video_batch", "videoBatch",
+    "video_queue", "videoQueue",
+)
+
+_AVA_V218L_SCENE_RUNTIME_FIELDS = (
+    "video_status", "videoStatus", "generation_status", "generationStatus",
+    "batch_status", "batchStatus", "video_error", "videoError",
+    "video_job_id", "videoJobId", "job_id", "jobId",
+    "video_prompt_id", "videoPromptId",
+    "video_status_endpoint", "videoStatusEndpoint",
+    "server_batch_job_id", "serverBatchJobId",
+    "server_batch_status_endpoint", "serverBatchStatusEndpoint",
+    "video_queue_position", "videoQueuePosition",
+    "video_queue_source", "videoQueueSource",
+    "video_progress", "videoProgress",
+    "video_interrupted_reason", "videoInterruptedReason",
+    "video_runtime_status_v136i", "videoRuntimeStatusV136I",
+    "video_runtime_job_id_v136i", "videoRuntimeJobIdV136I",
+    "video_runtime_status_endpoint_v136i", "videoRuntimeStatusEndpointV136I",
+)
+
+_AVA_V218L_ACTIVE_BATCH_STATUSES = {
+    "starting", "preparing", "submitting", "queued", "queued_no_prompt_id",
+    "running", "processing", "active", "working", "retrying",
+}
+_AVA_V218L_TERMINAL_BATCH_STATUSES = {
+    "finished", "done", "completed", "complete", "success",
+    "failed", "error", "canceled", "cancelled", "stopped", "interrupted",
+    "orphaned_after_reload", "backend_reload_orphaned_batch_v150a",
+}
+
+
+def _ava_v218l_scene_id(scene, index=0) -> str:
+    if not isinstance(scene, dict):
+        return f"seg_{index + 1:02d}"
+    return str(scene.get("id") or scene.get("scene_id") or scene.get("sceneId") or f"seg_{index + 1:02d}").strip()
+
+
+def _ava_v218l_int(value) -> int:
+    try:
+        return max(0, int(float(value or 0)))
+    except Exception:
+        return 0
+
+
+def _ava_v218l_review_revision(scene) -> int:
+    if not isinstance(scene, dict):
+        return 0
+    return max(
+        _ava_v218l_int(scene.get("video_review_revision_v218l")),
+        _ava_v218l_int(scene.get("videoReviewRevisionV218L")),
+    )
+
+
+def _ava_v218l_video_identity(scene) -> str:
+    if not isinstance(scene, dict):
+        return ""
+    media_video = scene.get("media", {}).get("video") if isinstance(scene.get("media"), dict) and isinstance(scene.get("media", {}).get("video"), dict) else {}
+    result = scene.get("video_result") if isinstance(scene.get("video_result"), dict) else {}
+    result_camel = scene.get("videoResult") if isinstance(scene.get("videoResult"), dict) else {}
+    for value in (
+        scene.get("video_asset_id"), scene.get("videoAssetId"),
+        scene.get("result_video_asset_id"), scene.get("resultVideoAssetId"),
+        media_video.get("assetId"), media_video.get("asset_id"),
+        result.get("assetId"), result.get("asset_id"), result.get("videoAssetId"), result.get("video_asset_id"),
+        result_camel.get("assetId"), result_camel.get("asset_id"), result_camel.get("videoAssetId"), result_camel.get("video_asset_id"),
+        scene.get("video_api_path"), scene.get("videoApiPath"),
+        scene.get("result_video_api_path"), scene.get("resultVideoApiPath"),
+        media_video.get("apiPath"), media_video.get("api_path"),
+        scene.get("video_url"), scene.get("videoUrl"),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _ava_v218l_board_clean_reset(data) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return bool(
+        data.get("timing_to_board_clean_epoch_v218g")
+        or data.get("timingToBoardCleanEpochV218G")
+        or data.get("timing_clean_project_reset_v218g")
+        or data.get("timingCleanProjectResetV218G")
+    )
+
+
+def _ava_v218l_apply_review_decision(scene, status_value="", source="board", reason="", event_id="") -> dict[str, Any]:
+    if not isinstance(scene, dict):
+        return {"revision": 0, "status": ""}
+    status_norm = str(status_value or "").strip().lower()
+    if status_norm not in {"bad", "needs_review"}:
+        status_norm = ""
+    at = now_iso()
+    revision = _ava_v218l_review_revision(scene) + 1
+    video_identity = _ava_v218l_video_identity(scene)
+    event_id = str(event_id or make_id("reviewevt")).strip()
+
+    scene["video_review_revision_v218l"] = revision
+    scene["videoReviewRevisionV218L"] = revision
+    scene["video_review_source_v218l"] = str(source or "board")
+    scene["videoReviewSourceV218L"] = scene["video_review_source_v218l"]
+    scene["video_review_event_id_v218l"] = event_id
+    scene["videoReviewEventIdV218L"] = event_id
+    scene["video_review_video_identity_v218l"] = video_identity
+    scene["videoReviewVideoIdentityV218L"] = video_identity
+
+    if status_norm:
+        scene["video_review_status"] = status_norm
+        scene["videoReviewStatus"] = status_norm
+        scene["review_status"] = status_norm
+        scene["reviewStatus"] = status_norm
+        scene["video_review_reason"] = str(reason or ("manual_bad_v218l" if status_norm == "bad" else "manual_needs_review_v218l"))
+        scene["videoReviewReason"] = scene["video_review_reason"]
+        scene["review_reason"] = scene["video_review_reason"]
+        scene["reviewReason"] = scene["video_review_reason"]
+        scene["video_review_updated_at"] = at
+        scene["videoReviewUpdatedAt"] = at
+        scene["video_review_clear_reason"] = ""
+        scene["videoReviewClearReason"] = ""
+        scene["video_review_cleared_at"] = ""
+        scene["videoReviewClearedAt"] = ""
+        scene["video_review_accepted_at"] = ""
+        scene["videoReviewAcceptedAt"] = ""
+        scene["video_review_regenerate_from_bad"] = status_norm == "bad"
+        scene["videoReviewRegenerateFromBad"] = status_norm == "bad"
+        scene["video_review_regenerate_reason"] = "review_bad_regeneration_v218l" if status_norm == "bad" else ""
+        scene["videoReviewRegenerateReason"] = scene["video_review_regenerate_reason"]
+        scene["bad_video_review"] = status_norm == "bad"
+        scene["badVideoReview"] = status_norm == "bad"
+        scene["video_review_bad"] = status_norm == "bad"
+        scene["videoReviewBad"] = status_norm == "bad"
+        scene["bad_video"] = status_norm == "bad"
+        scene["badVideo"] = status_norm == "bad"
+        scene["video_bad"] = status_norm == "bad"
+        scene["videoBad"] = status_norm == "bad"
+        scene["is_bad_video"] = status_norm == "bad"
+        scene["isBadVideo"] = status_norm == "bad"
+        scene["needs_review"] = status_norm == "needs_review"
+        scene["needsReview"] = status_norm == "needs_review"
+        scene["pending_review"] = status_norm == "needs_review"
+        scene["pendingReview"] = status_norm == "needs_review"
+        scene["review_required"] = status_norm == "needs_review"
+        scene["reviewRequired"] = status_norm == "needs_review"
+    else:
+        for key in (
+            "video_review_status", "videoReviewStatus", "review_status", "reviewStatus",
+            "video_review_reason", "videoReviewReason", "review_reason", "reviewReason",
+            "video_review_regenerate_reason", "videoReviewRegenerateReason",
+        ):
+            scene[key] = ""
+        scene["video_review_updated_at"] = ""
+        scene["videoReviewUpdatedAt"] = ""
+        scene["video_review_clear_reason"] = str(reason or "manual_review_clear_v218l")
+        scene["videoReviewClearReason"] = scene["video_review_clear_reason"]
+        scene["video_review_cleared_at"] = at
+        scene["videoReviewClearedAt"] = at
+        scene["video_review_accepted_at"] = at
+        scene["videoReviewAcceptedAt"] = at
+        clear_token = f"review_clear_v218l_{revision}_{event_id}"
+        scene["video_review_clear_token_v136d"] = clear_token
+        scene["videoReviewClearTokenV136D"] = clear_token
+        scene["video_review_regenerate_from_bad"] = False
+        scene["videoReviewRegenerateFromBad"] = False
+        scene["bad_video_review"] = False
+        scene["badVideoReview"] = False
+        scene["video_review_bad"] = False
+        scene["videoReviewBad"] = False
+        scene["bad_video"] = False
+        scene["badVideo"] = False
+        scene["video_bad"] = False
+        scene["videoBad"] = False
+        scene["is_bad_video"] = False
+        scene["isBadVideo"] = False
+        scene["needs_review"] = False
+        scene["needsReview"] = False
+        scene["pending_review"] = False
+        scene["pendingReview"] = False
+        scene["review_required"] = False
+        scene["reviewRequired"] = False
+
+    return {
+        "revision": revision,
+        "status": status_norm,
+        "at": at,
+        "event_id": event_id,
+        "video_identity": video_identity,
+    }
+
+
+def _ava_project_apply_review_revision_authority_v218l(current_data, incoming_data):
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, {"changedFields": 0, "changedSceneIds": []}
+    if _ava_v218l_board_clean_reset(incoming_data):
+        return incoming_data, {"changedFields": 0, "changedSceneIds": [], "reason": "timing_clean_reset"}
+
+    current_scenes = current_data.get("scenes") if isinstance(current_data.get("scenes"), list) else []
+    incoming_scenes = incoming_data.get("scenes") if isinstance(incoming_data.get("scenes"), list) else []
+    current_by_id = {_ava_v218l_scene_id(scene, index): scene for index, scene in enumerate(current_scenes) if isinstance(scene, dict)}
+    if not current_by_id or not incoming_scenes:
+        return incoming_data, {"changedFields": 0, "changedSceneIds": []}
+
+    merged = copy.deepcopy(incoming_data)
+    merged_scenes = []
+    changed_fields = 0
+    changed_ids = []
+
+    for index, incoming_scene in enumerate(incoming_scenes):
+        if not isinstance(incoming_scene, dict):
+            merged_scenes.append(incoming_scene)
+            continue
+        scene_id = _ava_v218l_scene_id(incoming_scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if not isinstance(current_scene, dict):
+            merged_scenes.append(incoming_scene)
+            continue
+
+        current_revision = _ava_v218l_review_revision(current_scene)
+        incoming_revision = _ava_v218l_review_revision(incoming_scene)
+        if current_revision <= 0 or incoming_revision > current_revision:
+            merged_scenes.append(incoming_scene)
+            continue
+
+        current_media_revision = _ava_v216a_media_revision(current_scene) if "_ava_v216a_media_revision" in globals() else 0
+        incoming_media_revision = _ava_v216a_media_revision(incoming_scene) if "_ava_v216a_media_revision" in globals() else 0
+        if incoming_media_revision > current_media_revision:
+            merged_scenes.append(incoming_scene)
+            continue
+
+        next_scene = copy.deepcopy(incoming_scene)
+        before = json.dumps({key: next_scene.get(key) for key in _AVA_V218L_REVIEW_FIELDS}, ensure_ascii=False, sort_keys=True, default=str)
+        for key in _AVA_V218L_REVIEW_FIELDS:
+            if key in current_scene:
+                next_scene[key] = copy.deepcopy(current_scene.get(key))
+            else:
+                next_scene.pop(key, None)
+        after = json.dumps({key: next_scene.get(key) for key in _AVA_V218L_REVIEW_FIELDS}, ensure_ascii=False, sort_keys=True, default=str)
+        if before != after:
+            changed_fields += 1
+            changed_ids.append(scene_id)
+            next_scene["review_revision_authority_v218l"] = True
+            next_scene["reviewRevisionAuthorityV218L"] = True
+        merged_scenes.append(next_scene)
+
+    if changed_fields:
+        merged["scenes"] = merged_scenes
+        merged["review_revision_authority_v218l"] = True
+        merged["reviewRevisionAuthorityV218L"] = True
+    return (merged if changed_fields else incoming_data), {
+        "changedFields": changed_fields,
+        "changedSceneIds": changed_ids,
+    }
+
+
+def _ava_v218l_batch_dict(data):
+    if not isinstance(data, dict):
+        return {}
+    for key in ("board_video_batch", "boardVideoBatch", "video_batch", "videoBatch"):
+        value = data.get(key)
+        if isinstance(value, dict) and value:
+            return value
+    return {}
+
+
+def _ava_v218l_queue_dict(data):
+    if not isinstance(data, dict):
+        return {}
+    for key in ("video_queue", "videoQueue"):
+        value = data.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _ava_v218l_batch_status(batch, queue=None) -> str:
+    queue = queue if isinstance(queue, dict) else {}
+    return str(
+        batch.get("status") or batch.get("batch_status") or batch.get("video_status")
+        or queue.get("status") or queue.get("batch_status") or ""
+    ).strip().lower()
+
+
+def _ava_v218l_list_ids(*values) -> list[str]:
+    result = []
+    seen = set()
+    for value in values:
+        items = value if isinstance(value, list) else []
+        for item in items:
+            scene_id = str(item or "").strip()
+            if scene_id and scene_id not in seen:
+                seen.add(scene_id)
+                result.append(scene_id)
+    return result
+
+
+def _ava_project_apply_batch_runtime_authority_v218l(current_data, incoming_data):
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, {"applied": False, "reason": "invalid_data"}
+    if _ava_v218l_board_clean_reset(incoming_data):
+        return incoming_data, {"applied": False, "reason": "timing_clean_reset"}
+
+    current_batch = _ava_v218l_batch_dict(current_data)
+    if not current_batch:
+        return incoming_data, {"applied": False, "reason": "no_current_batch"}
+    current_queue = _ava_v218l_queue_dict(current_data)
+    incoming_batch = _ava_v218l_batch_dict(incoming_data)
+    incoming_queue = _ava_v218l_queue_dict(incoming_data)
+
+    current_batch_id = str(current_batch.get("batchId") or current_batch.get("batch_id") or current_batch.get("id") or "").strip()
+    incoming_batch_id = str(incoming_batch.get("batchId") or incoming_batch.get("batch_id") or incoming_batch.get("id") or "").strip()
+    if incoming_batch_id and current_batch_id and incoming_batch_id != current_batch_id:
+        return incoming_data, {"applied": False, "reason": "new_batch", "incomingBatchId": incoming_batch_id, "currentBatchId": current_batch_id}
+
+    current_status = _ava_v218l_batch_status(current_batch, current_queue)
+    incoming_status = _ava_v218l_batch_status(incoming_batch, incoming_queue)
+    current_active = current_status in _AVA_V218L_ACTIVE_BATCH_STATUSES
+    current_terminal = current_status in _AVA_V218L_TERMINAL_BATCH_STATUSES
+    current_active_id = str(current_batch.get("activeSceneId") or current_batch.get("active_scene_id") or current_queue.get("activeSceneId") or current_queue.get("active_scene_id") or "").strip()
+    current_waiting = _ava_v218l_list_ids(
+        current_batch.get("waitingSceneIds"), current_batch.get("waiting_scene_ids"),
+        current_batch.get("queuedSceneIds"), current_batch.get("queued_scene_ids"),
+        current_queue.get("waitingSceneIds"), current_queue.get("waiting_scene_ids"),
+    )
+    if not current_active and not current_terminal and (current_active_id or current_waiting):
+        current_active = True
+
+    incoming_active = incoming_status in _AVA_V218L_ACTIVE_BATCH_STATUSES
+    incoming_active_id = str(incoming_batch.get("activeSceneId") or incoming_batch.get("active_scene_id") or incoming_queue.get("activeSceneId") or incoming_queue.get("active_scene_id") or "").strip()
+    incoming_waiting = _ava_v218l_list_ids(
+        incoming_batch.get("waitingSceneIds"), incoming_batch.get("waiting_scene_ids"),
+        incoming_batch.get("queuedSceneIds"), incoming_batch.get("queued_scene_ids"),
+        incoming_queue.get("waitingSceneIds"), incoming_queue.get("waiting_scene_ids"),
+    )
+    if not current_active and not (current_terminal and (incoming_active or incoming_active_id or incoming_waiting)):
+        return incoming_data, {"applied": False, "reason": "current_not_authoritative"}
+
+    merged = copy.deepcopy(incoming_data)
+    for key in ("board_video_batch", "boardVideoBatch", "video_batch", "videoBatch"):
+        merged[key] = copy.deepcopy(current_batch)
+    merged["video_queue"] = copy.deepcopy(current_queue)
+    merged["videoQueue"] = copy.deepcopy(current_queue)
+
+    current_scenes = current_data.get("scenes") if isinstance(current_data.get("scenes"), list) else []
+    incoming_scenes = incoming_data.get("scenes") if isinstance(incoming_data.get("scenes"), list) else []
+    current_by_id = {_ava_v218l_scene_id(scene, index): scene for index, scene in enumerate(current_scenes) if isinstance(scene, dict)}
+
+    runtime_ids = set(current_waiting)
+    if current_active_id:
+        runtime_ids.add(current_active_id)
+    if current_terminal:
+        runtime_ids.update(incoming_waiting)
+        if incoming_active_id:
+            runtime_ids.add(incoming_active_id)
+
+    merged_scenes = []
+    changed_ids = []
+    for index, scene in enumerate(incoming_scenes):
+        if not isinstance(scene, dict):
+            merged_scenes.append(scene)
+            continue
+        scene_id = _ava_v218l_scene_id(scene, index)
+        current_scene = current_by_id.get(scene_id)
+        if scene_id not in runtime_ids or not isinstance(current_scene, dict):
+            merged_scenes.append(scene)
+            continue
+        next_scene = copy.deepcopy(scene)
+        for key in _AVA_V218L_SCENE_RUNTIME_FIELDS:
+            if key in current_scene:
+                next_scene[key] = copy.deepcopy(current_scene.get(key))
+            else:
+                next_scene.pop(key, None)
+        if current_terminal:
+            status_value = str(current_scene.get("video_status") or current_scene.get("videoStatus") or "").strip().lower()
+            if status_value in _AVA_V218L_ACTIVE_BATCH_STATUSES:
+                next_scene["video_status"] = ""
+                next_scene["videoStatus"] = ""
+                next_scene["video_job_id"] = ""
+                next_scene["videoJobId"] = ""
+                next_scene["video_status_endpoint"] = ""
+                next_scene["videoStatusEndpoint"] = ""
+                next_scene["server_batch_job_id"] = ""
+                next_scene["serverBatchJobId"] = ""
+                next_scene["server_batch_status_endpoint"] = ""
+                next_scene["serverBatchStatusEndpoint"] = ""
+                next_scene["video_queue_position"] = None
+                next_scene["videoQueuePosition"] = None
+        merged_scenes.append(next_scene)
+        changed_ids.append(scene_id)
+
+    if incoming_scenes:
+        merged["scenes"] = merged_scenes
+    merged["batch_runtime_authority_v218l"] = True
+    merged["batchRuntimeAuthorityV218L"] = True
+    return merged, {
+        "applied": True,
+        "reason": "active_current" if current_active else "terminal_tombstone",
+        "batchId": current_batch_id,
+        "currentStatus": current_status,
+        "incomingStatus": incoming_status,
+        "changedSceneIds": changed_ids,
+    }
+
+
+class BoardReviewMutationV218L(BaseModel):
+    scene_id: str | None = None
+    sceneId: str | None = None
+    status: str | None = None
+    reason: str | None = None
+    event_id: str | None = None
+    eventId: str | None = None
+    video_identity: str | None = None
+    videoIdentity: str | None = None
+
+
+@router.post('/{project_id}/board/review')
+def mutate_board_review_v218l(
+    payload: BoardReviewMutationV218L,
+    project: dict = Depends(ensure_project_access),
+):
+    project_id = project["id"]
+    scene_id = str(payload.scene_id or payload.sceneId or "").strip()
+    if not scene_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="scene_id_required")
+    status_norm = str(payload.status or "").strip().lower()
+    if status_norm not in {"", "bad", "needs_review"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_review_status")
+    requested_identity = str(payload.video_identity or payload.videoIdentity or "").strip()
+    event_id = str(payload.event_id or payload.eventId or make_id("reviewevt")).strip()
+    reason = str(payload.reason or (
+        "manual_bad_v218l" if status_norm == "bad"
+        else "manual_needs_review_v218l" if status_norm == "needs_review"
+        else "manual_review_clear_v218l"
+    )).strip()
+
+    def op(db):
+        snapshot = (db.get("snapshots", {}).get(project_id, {}) or {}).get("board") or {}
+        board = copy.deepcopy(snapshot.get("data") if isinstance(snapshot, dict) and isinstance(snapshot.get("data"), dict) else {})
+        scenes = board.get("scenes") if isinstance(board.get("scenes"), list) else []
+        target = None
+        for index, scene in enumerate(scenes):
+            if isinstance(scene, dict) and _ava_v218l_scene_id(scene, index) == scene_id:
+                target = scene
+                break
+        if target is None:
+            return {"ok": False, "error": "scene_not_found", "sceneId": scene_id}
+
+        current_identity = _ava_v218l_video_identity(target)
+        if requested_identity and current_identity and requested_identity != current_identity:
+            return {
+                "ok": False,
+                "error": "stale_video_review",
+                "sceneId": scene_id,
+                "requestedVideoIdentity": requested_identity,
+                "currentVideoIdentity": current_identity,
+            }
+
+        decision = _ava_v218l_apply_review_decision(
+            target,
+            status_norm,
+            source="board",
+            reason=reason,
+            event_id=event_id,
+        )
+
+        memory = board.get("board_review_event_memory_v218l")
+        if not isinstance(memory, dict):
+            memory = {}
+        memory[scene_id] = {
+            "revision": decision["revision"],
+            "status": decision["status"],
+            "source": "board",
+            "reason": reason,
+            "at": decision["at"],
+            "event_id": decision["event_id"],
+            "video_identity": decision["video_identity"],
+        }
+        board["board_review_event_memory_v218l"] = memory
+        board["boardReviewEventMemoryV218L"] = memory
+        board["updatedAt"] = decision["at"]
+
+        latest_map = db.get("telegram_review_latest_by_scene") or {}
+        latest_review_id = str(latest_map.get(f"{project_id}:{scene_id}") or "").strip()
+        if latest_review_id:
+            items = db.setdefault("telegram_review_items", {})
+            item = items.get(latest_review_id)
+            if isinstance(item, dict):
+                item["status"] = "bad" if status_norm == "bad" else "pending" if status_norm == "needs_review" else "ok"
+                item["updated_at"] = decision["at"]
+                item["updatedAt"] = decision["at"]
+                item["review_revision_v218l"] = decision["revision"]
+                item["reviewRevisionV218L"] = decision["revision"]
+                item["resolved_source_v218l"] = "board"
+                item["resolvedSourceV218L"] = "board"
+                items[latest_review_id] = item
+
+        db.setdefault("snapshots", {}).setdefault(project_id, {})["board"] = {
+            "stage": "board",
+            "data": board,
+            "client_version": "board-review-v218l",
+            "updated_at": decision["at"],
+        }
+        if project_id in db.get("projects", {}):
+            db["projects"][project_id]["updated_at"] = decision["at"]
+        return {
+            "ok": True,
+            "sceneId": scene_id,
+            "status": decision["status"],
+            "revision": decision["revision"],
+            "eventId": decision["event_id"],
+            "videoIdentity": decision["video_identity"],
+            "scene": copy.deepcopy(target),
+        }
+
+    result = store.update(op)
+    if not result.get("ok"):
+        if result.get("error") == "stale_video_review":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.get("error") or "review_update_failed")
+    print("[PROJECT BOARD REVIEW MUTATION V218L]", {
+        "project_id": project_id,
+        "scene_id": scene_id,
+        "status": result.get("status") or "clear",
+        "revision": result.get("revision"),
+    }, flush=True)
+    return result
+
+
+# AVA_PROJECT_BOARD_QUEUE_STOP_AUTHORITY_V218H:
+# A stale browser autosave from the same stopped batch cannot restore queued/running
+# statuses after the authoritative backend reset.
+def _ava_project_apply_queue_stop_authority_v218h(current_data, incoming_data):
+    if not isinstance(current_data, dict) or not isinstance(incoming_data, dict):
+        return incoming_data, {"applied": False, "reason": "invalid_data"}
+
+    current_batch = (
+        current_data.get("board_video_batch") if isinstance(current_data.get("board_video_batch"), dict)
+        else current_data.get("boardVideoBatch") if isinstance(current_data.get("boardVideoBatch"), dict)
+        else {}
+    )
+    stop_revision = str(
+        current_batch.get("queueStopRevisionV218H") or
+        current_batch.get("queue_stop_revision_v218h") or ""
+    ).strip()
+    if not stop_revision:
+        return incoming_data, {"applied": False, "reason": "no_stop_revision"}
+
+    current_batch_id = str(current_batch.get("batchId") or current_batch.get("batch_id") or "").strip()
+    incoming_batch = (
+        incoming_data.get("board_video_batch") if isinstance(incoming_data.get("board_video_batch"), dict)
+        else incoming_data.get("boardVideoBatch") if isinstance(incoming_data.get("boardVideoBatch"), dict)
+        else {}
+    )
+    incoming_batch_id = str(incoming_batch.get("batchId") or incoming_batch.get("batch_id") or "").strip()
+    if incoming_batch_id and current_batch_id and incoming_batch_id != current_batch_id:
+        return incoming_data, {"applied": False, "reason": "new_batch"}
+
+    stopped_ids = set()
+    for key in ("stoppedSceneIds", "stopped_scene_ids", "failedSceneIds", "failed_scene_ids"):
+        values = current_batch.get(key)
+        if isinstance(values, list):
+            stopped_ids.update(str(value or "").strip() for value in values if str(value or "").strip())
+
+    current_scenes = current_data.get("scenes") if isinstance(current_data.get("scenes"), list) else []
+    incoming_scenes = incoming_data.get("scenes") if isinstance(incoming_data.get("scenes"), list) else []
+    current_by_id = {
+        str((scene or {}).get("id") or (scene or {}).get("scene_id") or "").strip(): scene
+        for scene in current_scenes if isinstance(scene, dict)
+    }
+    for scene_id, scene in current_by_id.items():
+        if str(scene.get("queueStopRevisionV218H") or scene.get("queue_stop_revision_v218h") or "").strip() == stop_revision:
+            stopped_ids.add(scene_id)
+
+    runtime_keys = (
+        "video_status", "videoStatus", "video_error", "videoError",
+        "video_job_id", "videoJobId", "video_prompt_id", "videoPromptId",
+        "video_status_endpoint", "videoStatusEndpoint", "server_batch_job_id", "serverBatchJobId",
+        "server_batch_status_endpoint", "serverBatchStatusEndpoint",
+        "video_queue_position", "videoQueuePosition", "video_queue_source", "videoQueueSource",
+        "video_progress", "videoProgress", "video_interrupted_reason", "videoInterruptedReason",
+        "video_updated_at", "videoUpdatedAt", "queueStopRevisionV218H", "queue_stop_revision_v218h",
+    )
+
+    merged = copy.deepcopy(incoming_data)
+    merged_scenes = []
+    changed_scenes = []
+    for scene in incoming_scenes:
+        if not isinstance(scene, dict):
+            merged_scenes.append(scene)
+            continue
+        scene_id = str(scene.get("id") or scene.get("scene_id") or "").strip()
+        current_scene = current_by_id.get(scene_id)
+        if scene_id not in stopped_ids or not isinstance(current_scene, dict):
+            merged_scenes.append(scene)
+            continue
+        next_scene = copy.deepcopy(scene)
+        for key in runtime_keys:
+            if key in current_scene:
+                next_scene[key] = copy.deepcopy(current_scene.get(key))
+            else:
+                next_scene.pop(key, None)
+        if isinstance(current_scene.get("media"), dict):
+            next_media = copy.deepcopy(next_scene.get("media") or {})
+            current_video_media = current_scene.get("media", {}).get("video")
+            if isinstance(current_video_media, dict):
+                next_media["video"] = copy.deepcopy(current_video_media)
+            next_scene["media"] = next_media
+        merged_scenes.append(next_scene)
+        changed_scenes.append(scene_id)
+
+    if incoming_scenes:
+        merged["scenes"] = merged_scenes
+    current_queue = (
+        current_data.get("video_queue") if isinstance(current_data.get("video_queue"), dict)
+        else current_data.get("videoQueue") if isinstance(current_data.get("videoQueue"), dict)
+        else {}
+    )
+    for key in ("board_video_batch", "boardVideoBatch", "video_batch", "videoBatch"):
+        merged[key] = copy.deepcopy(current_batch)
+    merged["video_queue"] = copy.deepcopy(current_queue)
+    merged["videoQueue"] = copy.deepcopy(current_queue)
+    return merged, {
+        "applied": True,
+        "batchId": current_batch_id,
+        "stopRevision": stop_revision,
+        "changedSceneIds": changed_scenes,
+        "changedScenes": len(changed_scenes),
+    }
+
+
 @router.post('/{project_id}/snapshots/{stage}')
 def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depends(ensure_project_access)):
     if project.get('status') == 'deleted':
@@ -5067,6 +5727,30 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
         if is_destructive_clear:
             cleanup = cleanup_project_stage_media(db, project_id, stage, user_id=project.get('user_id'))
         incoming_data, removed_runtime = sanitize_snapshot_runtime_media(payload.data or {})
+        if stage == 'board' and current_board_data_v218d:
+            incoming_data, batch_runtime_authority_v218l = _ava_project_apply_batch_runtime_authority_v218l(
+                current_board_data_v218d,
+                incoming_data or {},
+            )
+            if batch_runtime_authority_v218l.get('applied'):
+                print('[PROJECT BOARD BATCH RUNTIME AUTHORITY V218L]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'guardMode': payload.guard_mode,
+                    **batch_runtime_authority_v218l,
+                }, flush=True)
+
+            incoming_data, review_revision_authority_v218l = _ava_project_apply_review_revision_authority_v218l(
+                current_board_data_v218d,
+                incoming_data or {},
+            )
+            if review_revision_authority_v218l.get('changedFields'):
+                print('[PROJECT BOARD REVIEW REVISION AUTHORITY V218L]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'guardMode': payload.guard_mode,
+                    **review_revision_authority_v218l,
+                }, flush=True)
         if stage == 'board' and current:
             incoming_data, board_preview_authority_v217c = _ava_v217c_apply_board_preview_authority(
                 current.get('data') if isinstance(current, dict) else {},
@@ -5205,6 +5889,19 @@ def save_snapshot(stage: str, payload: SnapshotSaveRequest, project: dict = Depe
                     'guardMode': payload.guard_mode,
                     'phase': 'post_timing_restore',
                     **generation_config_post_timing_v218d,
+                }, flush=True)
+
+        if stage == 'board' and current_board_data_v218d:
+            incoming_data, queue_stop_authority_v218h = _ava_project_apply_queue_stop_authority_v218h(
+                current_board_data_v218d,
+                incoming_data or {},
+            )
+            if queue_stop_authority_v218h.get('applied'):
+                print('[PROJECT BOARD QUEUE STOP AUTHORITY V218H]', {
+                    'project_id': project_id,
+                    'stage': stage,
+                    'guardMode': payload.guard_mode,
+                    **queue_stop_authority_v218h,
                 }, flush=True)
 
         if stage == 'video_node' and is_destructive_clear:

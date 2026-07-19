@@ -1,3 +1,4 @@
+# AVA_BOARD_REVIEW_REVISION_AUTHORITY_V218L: each generated video gets a new monotonic review revision shared by Board and Telegram.
 # AVA_BOARD_ASSEMBLY_SCENE_AUDIO_FRAME_EXACT_MIX_V218E: preserve embedded scene audio through frame-exact concat and mix modes.
 # AVA_BOARD_VIDEO_REVISION_AUTHORITY_V218B: batch outputs carry video revisions and stale snapshots cannot erase them.
 # AVA_BOARD_PROMPT_REVISION_AND_TELEGRAM_START_V218A: batch snapshots preserve newer prompts and Telegram start is verified before runner start.
@@ -1041,12 +1042,38 @@ def _main_comfy_url() -> str:
 
 
 def _mmaudio_comfy_url() -> str:
-    return _clean_comfy_url(
+    # AVA_MMAUDIO_PORT_8001_AUTHORITY_V218S:
+    # Dedicated MMAudio settings must beat the shared LAB fallback. A stale LAB
+    # value occasionally points at the main LTX Comfy on :8000, which accepts
+    # the HTTP request but rejects node 85 because MMAudio nodes live on :8001.
+    dedicated_url = _clean_comfy_url(
         _env("COMFY_MMAUDIO_BASE_URL")
-        or _env("COMFY_LAB_BASE_URL")
-        or _env("COMFY_LAB_URL")
         or _env("MMAUDIO_COMFY_BASE_URL")
     )
+    shared_url = _clean_comfy_url(
+        _env("COMFY_LAB_BASE_URL")
+        or _env("COMFY_LAB_URL")
+    )
+    selected_url = dedicated_url or shared_url or "http://127.0.0.1:8001"
+
+    # Port 8000 is reserved for main LTX in this project. Preserve the selected
+    # host/scheme, but never submit an MMAudio graph to that port.
+    try:
+        parsed = urllib.parse.urlsplit(selected_url)
+        if parsed.port == 8000:
+            host = parsed.hostname or "127.0.0.1"
+            if ":" in host and not host.startswith("["):
+                host = f"[{host}]"
+            selected_url = urllib.parse.urlunsplit((
+                parsed.scheme or "http",
+                f"{host}:8001",
+                parsed.path,
+                parsed.query,
+                parsed.fragment,
+            ))
+    except (TypeError, ValueError):
+        pass
+    return _clean_comfy_url(selected_url)
 
 
 def _settings_public_base_url() -> str:
@@ -4551,6 +4578,69 @@ def _board_batch_review_patch(status: str = "", reason: str = "manual") -> dict[
     }
 
 
+# AVA_BOARD_REVIEW_REVISION_AUTHORITY_V218L
+# Review is a separate server-authoritative event stream. Every newly generated video
+# gets a revision greater than the previous human/system decision for that scene.
+def _board_review_int_v218l(value: Any) -> int:
+    try:
+        return max(0, int(float(value or 0)))
+    except Exception:
+        return 0
+
+
+def _board_review_revision_v218l(scene: dict[str, Any] | None) -> int:
+    if not isinstance(scene, dict):
+        return 0
+    return max(
+        _board_review_int_v218l(scene.get("video_review_revision_v218l")),
+        _board_review_int_v218l(scene.get("videoReviewRevisionV218L")),
+    )
+
+
+def _board_review_video_identity_v218l(scene: dict[str, Any] | None, patch: dict[str, Any] | None = None) -> str:
+    scene = scene if isinstance(scene, dict) else {}
+    patch = patch if isinstance(patch, dict) else {}
+    media_video = scene.get("media", {}).get("video") if isinstance(scene.get("media"), dict) and isinstance(scene.get("media", {}).get("video"), dict) else {}
+    for value in (
+        patch.get("video_asset_id"), patch.get("videoAssetId"),
+        patch.get("result_video_asset_id"), patch.get("resultVideoAssetId"),
+        patch.get("video_api_path"), patch.get("videoApiPath"),
+        patch.get("result_video_api_path"), patch.get("resultVideoApiPath"),
+        patch.get("video_url"), patch.get("videoUrl"),
+        scene.get("video_asset_id"), scene.get("videoAssetId"),
+        scene.get("result_video_asset_id"), scene.get("resultVideoAssetId"),
+        media_video.get("assetId"), media_video.get("asset_id"),
+        scene.get("video_api_path"), scene.get("videoApiPath"),
+        scene.get("result_video_api_path"), scene.get("resultVideoApiPath"),
+        scene.get("video_url"), scene.get("videoUrl"),
+    ):
+        value_text = str(value or "").strip()
+        if value_text:
+            return value_text
+    return ""
+
+
+def _board_review_revision_patch_v218l(
+    scene: dict[str, Any] | None,
+    result_patch: dict[str, Any] | None,
+    *,
+    source: str,
+    event_id: str,
+) -> dict[str, Any]:
+    revision = _board_review_revision_v218l(scene) + 1
+    identity = _board_review_video_identity_v218l(scene, result_patch)
+    return {
+        "video_review_revision_v218l": revision,
+        "videoReviewRevisionV218L": revision,
+        "video_review_source_v218l": str(source or "server_batch"),
+        "videoReviewSourceV218L": str(source or "server_batch"),
+        "video_review_event_id_v218l": str(event_id or ""),
+        "videoReviewEventIdV218L": str(event_id or ""),
+        "video_review_video_identity_v218l": identity,
+        "videoReviewVideoIdentityV218L": identity,
+    }
+
+
 def _board_batch_review_regenerate_flag_patch(was_bad: bool = False, reason: str = "") -> dict[str, Any]:
     return {
         "video_review_regenerate_from_bad": bool(was_bad),
@@ -4898,6 +4988,35 @@ def _board_batch_input_not_ready_patch_v213i(detail: Any = None) -> dict[str, An
 
 def _board_batch_update_scene(project_id: str, scene_id: str, patch: dict[str, Any], batch_patch: dict[str, Any] | None = None) -> dict[str, Any]:
     board_data = _board_batch_read_snapshot(project_id)
+    # AVA_BOARD_QUEUE_STOP_ATOMIC_V218H:
+    # Once a batch has an authoritative stop revision, late runner/job writes from
+    # that same batch are stale and must not resurrect running/queued/error badges.
+    if isinstance(batch_patch, dict):
+        persisted_batch_v218h = (
+            board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict)
+            else board_data.get("boardVideoBatch") if isinstance(board_data.get("boardVideoBatch"), dict)
+            else {}
+        )
+        incoming_batch_id_v218h = str(batch_patch.get("batchId") or batch_patch.get("batch_id") or "").strip()
+        persisted_batch_id_v218h = str(persisted_batch_v218h.get("batchId") or persisted_batch_v218h.get("batch_id") or "").strip()
+        stop_revision_v218h = str(
+            persisted_batch_v218h.get("queueStopRevisionV218H") or
+            persisted_batch_v218h.get("queue_stop_revision_v218h") or ""
+        ).strip()
+        incoming_status_v218h = str(batch_patch.get("status") or batch_patch.get("batch_status") or "").lower().strip()
+        if (
+            stop_revision_v218h and incoming_batch_id_v218h and
+            incoming_batch_id_v218h == persisted_batch_id_v218h and
+            incoming_status_v218h not in {"canceled", "cancelled", "stopped", "idle"}
+        ):
+            print("[BOARD LATE BATCH WRITE BLOCKED AFTER STOP V218H]", {
+                "project_id": project_id,
+                "batch_id": incoming_batch_id_v218h,
+                "scene_id": scene_id,
+                "incomingStatus": incoming_status_v218h,
+                "stopRevision": stop_revision_v218h,
+            }, flush=True)
+            return board_data
     scenes = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
     next_scenes = []
     changed = False
@@ -5621,6 +5740,23 @@ def _board_video_batch_runner(project_id: str, batch_id: str, user: dict[str, An
                         "job_id": job_id,
                         "reason": "bad_video_regenerated",
                     }, flush=True)
+                review_event_id_v218l = f"server_batch:{batch_id}:{scene_id}:{job_id}"
+                review_revision_patch_v218l = _board_review_revision_patch_v218l(
+                    source_scene_for_video_current_v132i,
+                    ready_patch_v132a,
+                    source="server_batch",
+                    event_id=review_event_id_v218l,
+                )
+                ready_patch_v132a.update(review_revision_patch_v218l)
+                print("[BOARD SERVER BATCH REVIEW REVISION V218L]", {
+                    "project_id": project_id,
+                    "batch_id": batch_id,
+                    "scene_id": scene_id,
+                    "job_id": job_id,
+                    "revision": review_revision_patch_v218l.get("video_review_revision_v218l"),
+                    "videoIdentity": review_revision_patch_v218l.get("video_review_video_identity_v218l"),
+                    "status": ready_patch_v132a.get("video_review_status") or ready_patch_v132a.get("videoReviewStatus") or "",
+                }, flush=True)
                 _board_batch_update_scene(project_id, scene_id, ready_patch_v132a, {
                     "batch_id": batch_id,
                     "batchId": batch_id,
@@ -6947,21 +7083,170 @@ def board_video_batch_status(project_id: str, user: dict = Depends(get_current_u
     return {"ok": True, "batch": live or batch or {}, "board_video_batch": live or batch or {}, "board": board_data, "clearedSceneIds": cleared_scene_jobs_v200h, "cleared_scene_ids": cleared_scene_jobs_v200h, "client_version": "board-batch-status-returns-board-v200i", "board_media_authority_v213g": True}
 
 
+# AVA_BOARD_QUEUE_STOP_ATOMIC_V218H:
+# One click atomically cancels the active Comfy prompt, marks the live batch canceled,
+# clears active + failed + waiting scene runtime fields, and returns the canonical Board.
 @router.post("/projects/{project_id}/board/video-batch/stop")
 def stop_board_video_batch(project_id: str, payload: BoardVideoBatchStopIn | None = None, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     ensure_project_access(project_id, user)
     board_data = _board_batch_read_snapshot(project_id)
-    batch = board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict) else {}
+    batch = (
+        board_data.get("board_video_batch") if isinstance(board_data.get("board_video_batch"), dict)
+        else board_data.get("boardVideoBatch") if isinstance(board_data.get("boardVideoBatch"), dict)
+        else {}
+    )
+    queue = (
+        board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict)
+        else board_data.get("videoQueue") if isinstance(board_data.get("videoQueue"), dict)
+        else {}
+    )
     batch_id = str(batch.get("batchId") or batch.get("batch_id") or "").strip()
     live = BOARD_VIDEO_BATCHES.get(batch_id) if batch_id else None
-    if live is not None:
-        live["cancelRequested"] = True
-        live["status"] = "cancel_requested"
-        live["updatedAt"] = _board_batch_now()
-    stop_now_v216j = _board_batch_now()
-    stopped_batch_v216j = {
+    now_v218h = _board_batch_now()
+    stop_revision_v218h = f"queue_stop_v218h_{uuid4().hex}"
+
+    target_scene_ids_v218h: set[str] = set()
+
+    def collect_ids_v218h(container: Any) -> None:
+        if not isinstance(container, dict):
+            return
+        for key_v218h in (
+            "activeSceneId", "active_scene_id",
+        ):
+            value_v218h = str(container.get(key_v218h) or "").strip()
+            if value_v218h:
+                target_scene_ids_v218h.add(value_v218h)
+        for key_v218h in (
+            "waitingSceneIds", "waiting_scene_ids", "queuedSceneIds", "queued_scene_ids",
+            "failedSceneIds", "failed_scene_ids",
+        ):
+            values_v218h = container.get(key_v218h)
+            if isinstance(values_v218h, list):
+                for value_v218h in values_v218h:
+                    clean_v218h = str(value_v218h or "").strip()
+                    if clean_v218h:
+                        target_scene_ids_v218h.add(clean_v218h)
+
+    collect_ids_v218h(batch)
+    collect_ids_v218h(queue)
+    collect_ids_v218h(live)
+
+    scenes_v218h = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
+    busy_statuses_v218h = {
+        "queued", "starting", "preparing", "submitting", "running", "processing",
+        "queued_no_prompt_id", "cancel_requested", "canceled", "cancelled",
+        "timeout_stalled_comfy_v203a", "error", "failed",
+    }
+    for scene_v218h in scenes_v218h:
+        if not isinstance(scene_v218h, dict):
+            continue
+        scene_id_v218h = _board_batch_scene_id(scene_v218h)
+        status_v218h = str(scene_v218h.get("video_status") or scene_v218h.get("videoStatus") or "").lower().strip()
+        source_v218h = str(scene_v218h.get("video_queue_source") or scene_v218h.get("videoQueueSource") or "").lower().strip()
+        has_job_v218h = any(str(scene_v218h.get(key_v218h) or "").strip() for key_v218h in (
+            "video_job_id", "videoJobId", "video_status_endpoint", "videoStatusEndpoint",
+            "server_batch_job_id", "serverBatchJobId", "server_batch_status_endpoint", "serverBatchStatusEndpoint",
+        ))
+        if scene_id_v218h and (
+            scene_id_v218h in target_scene_ids_v218h or
+            "server_batch" in source_v218h or has_job_v218h or
+            status_v218h in busy_statuses_v218h
+        ):
+            target_scene_ids_v218h.add(scene_id_v218h)
+
+    active_job_id_v218h = str(
+        (live or {}).get("activeJobId") or (live or {}).get("active_job_id") or
+        batch.get("activeJobId") or batch.get("active_job_id") or
+        queue.get("activeJobId") or queue.get("active_job_id") or ""
+    ).strip()
+    cancel_result_v218h: dict[str, Any] = {}
+
+    if isinstance(live, dict):
+        live.update({
+            "cancelRequested": True,
+            "cancel_requested": True,
+            "status": "canceled",
+            "batch_status": "canceled",
+            "activeSceneId": "", "active_scene_id": "",
+            "activeJobId": "", "active_job_id": "",
+            "activeStatusEndpoint": "", "active_status_endpoint": "",
+            "waitingSceneIds": [], "waiting_scene_ids": [],
+            "queuedSceneIds": [], "queued_scene_ids": [],
+            "queueStopRevisionV218H": stop_revision_v218h,
+            "queue_stop_revision_v218h": stop_revision_v218h,
+            "updatedAt": now_v218h, "updated_at": now_v218h,
+        })
+
+    if active_job_id_v218h:
+        try:
+            cancel_result_v218h = cancel_video_job(active_job_id_v218h, user)
+        except Exception as exc_v218h:
+            cancel_result_v218h = {"ok": False, "jobId": active_job_id_v218h, "error": str(exc_v218h)}
+
+    cleared_scene_ids_v218h: list[str] = []
+    next_scenes_v218h: list[dict[str, Any]] = []
+    for scene_v218h in scenes_v218h:
+        if not isinstance(scene_v218h, dict):
+            next_scenes_v218h.append(scene_v218h)
+            continue
+        scene_id_v218h = _board_batch_scene_id(scene_v218h)
+        if not scene_id_v218h or scene_id_v218h not in target_scene_ids_v218h:
+            next_scenes_v218h.append(scene_v218h)
+            continue
+
+        has_video_v218h = any(str(scene_v218h.get(key_v218h) or "").strip() for key_v218h in (
+            "video_asset_id", "videoAssetId", "video_api_path", "videoApiPath", "video_url", "videoUrl",
+            "result_video_asset_id", "resultVideoAssetId", "result_video_api_path", "resultVideoApiPath",
+            "result_video_url", "resultVideoUrl",
+        ))
+        ready_status_v218h = "ready" if has_video_v218h else ""
+        next_scene_v218h = dict(scene_v218h)
+        for key_v218h in ("video_status", "videoStatus"):
+            next_scene_v218h[key_v218h] = ready_status_v218h
+        for key_v218h in (
+            "video_error", "videoError", "video_job_id", "videoJobId", "video_prompt_id", "videoPromptId",
+            "video_status_endpoint", "videoStatusEndpoint", "server_batch_job_id", "serverBatchJobId",
+            "server_batch_status_endpoint", "serverBatchStatusEndpoint", "video_queue_source", "videoQueueSource",
+        ):
+            next_scene_v218h[key_v218h] = ""
+        for key_v218h in ("video_queue_position", "videoQueuePosition", "video_progress", "videoProgress"):
+            next_scene_v218h[key_v218h] = 0
+        next_scene_v218h["video_interrupted_reason"] = "queue_reset_v218h"
+        next_scene_v218h["videoInterruptedReason"] = "queue_reset_v218h"
+        next_scene_v218h["video_updated_at"] = now_v218h
+        next_scene_v218h["videoUpdatedAt"] = now_v218h
+        next_scene_v218h["queue_stop_revision_v218h"] = stop_revision_v218h
+        next_scene_v218h["queueStopRevisionV218H"] = stop_revision_v218h
+        if not has_video_v218h:
+            for key_v218h in (
+                "video_review_status", "videoReviewStatus", "review_status", "reviewStatus",
+                "video_review_reason", "videoReviewReason", "review_reason", "reviewReason",
+            ):
+                next_scene_v218h[key_v218h] = ""
+            for key_v218h in (
+                "needs_review", "needsReview", "pending_review", "pendingReview",
+                "review_required", "reviewRequired", "bad_video", "badVideo",
+                "video_bad", "videoBad", "is_bad_video", "isBadVideo",
+            ):
+                next_scene_v218h[key_v218h] = False
+        media_v218h = next_scene_v218h.get("media") if isinstance(next_scene_v218h.get("media"), dict) else {}
+        video_media_v218h = media_v218h.get("video") if isinstance(media_v218h.get("video"), dict) else None
+        if video_media_v218h is not None:
+            video_media_v218h = dict(video_media_v218h)
+            video_media_v218h.update({
+                "status": ready_status_v218h,
+                "error": "", "jobId": "", "job_id": "",
+                "statusEndpoint": "", "status_endpoint": "", "progress": 0,
+            })
+            media_v218h = dict(media_v218h)
+            media_v218h["video"] = video_media_v218h
+            next_scene_v218h["media"] = media_v218h
+        next_scenes_v218h.append(next_scene_v218h)
+        cleared_scene_ids_v218h.append(scene_id_v218h)
+
+    stopped_batch_v218h = {
         **batch,
-        "status": "cancel_requested", "batch_status": "cancel_requested",
+        "status": "canceled", "batch_status": "canceled",
         "cancelRequested": True, "cancel_requested": True,
         "stopReason": getattr(payload, "reason", None) if payload else "",
         "activeSceneId": "", "active_scene_id": "",
@@ -6969,87 +7254,61 @@ def stop_board_video_batch(project_id: str, payload: BoardVideoBatchStopIn | Non
         "activeStatusEndpoint": "", "active_status_endpoint": "",
         "waitingSceneIds": [], "waiting_scene_ids": [],
         "queuedSceneIds": [], "queued_scene_ids": [],
-        "updatedAt": stop_now_v216j, "updated_at": stop_now_v216j,
+        "stoppedSceneIds": cleared_scene_ids_v218h,
+        "stopped_scene_ids": cleared_scene_ids_v218h,
+        "queueStopRevisionV218H": stop_revision_v218h,
+        "queue_stop_revision_v218h": stop_revision_v218h,
+        "stoppedAt": now_v218h, "stopped_at": now_v218h,
+        "updatedAt": now_v218h, "updated_at": now_v218h,
     }
-    for batch_key_v216j in ("board_video_batch", "boardVideoBatch", "video_batch", "videoBatch"):
-        board_data[batch_key_v216j] = dict(stopped_batch_v216j)
-
-    q = board_data.get("video_queue") if isinstance(board_data.get("video_queue"), dict) else {}
-    stopped_queue_v216j = {
-        **q,
-        "status": "cancel_requested", "batch_status": "cancel_requested",
+    stopped_queue_v218h = {
+        **queue,
+        "status": "idle", "batch_status": "canceled",
         "activeSceneId": "", "active_scene_id": "",
         "activeJobId": "", "active_job_id": "",
         "activeStatusEndpoint": "", "active_status_endpoint": "",
         "waitingSceneIds": [], "waiting_scene_ids": [],
         "queuedSceneIds": [], "queued_scene_ids": [],
-        "source": "server_batch_stop_v216j",
-        "updatedAt": stop_now_v216j, "updated_at": stop_now_v216j,
+        "stoppedSceneIds": cleared_scene_ids_v218h,
+        "stopped_scene_ids": cleared_scene_ids_v218h,
+        "queueStopRevisionV218H": stop_revision_v218h,
+        "queue_stop_revision_v218h": stop_revision_v218h,
+        "source": "server_batch_stop_v218h",
+        "updatedAt": now_v218h, "updated_at": now_v218h,
     }
-    board_data["video_queue"] = dict(stopped_queue_v216j)
-    board_data["videoQueue"] = dict(stopped_queue_v216j)
 
-    # V200X: The same UI button is used to clear server queue and manual single-scene
-    # /clip/video/start jobs. Clear stuck scene job ids/endpoints in the persisted Board
-    # snapshot so F5 does not restore “отправляется/видео делается” forever.
-    cleared_scene_ids_v200x: list[str] = []
-    busy_statuses_v200x = {"queued", "starting", "preparing", "submitting", "running", "processing", "queued_no_prompt_id"}
-    scenes_v200x = board_data.get("scenes") if isinstance(board_data.get("scenes"), list) else []
-    for scene_v200x in scenes_v200x:
-        if not isinstance(scene_v200x, dict):
-            continue
-        scene_id_v200x = str(scene_v200x.get("id") or scene_v200x.get("scene_id") or "").strip()
-        status_v200x = str(scene_v200x.get("video_status") or scene_v200x.get("videoStatus") or "").lower().strip()
-        has_job_v200x = any(str(scene_v200x.get(key) or "").strip() for key in (
-            "video_job_id", "videoJobId", "video_status_endpoint", "videoStatusEndpoint",
-            "server_batch_job_id", "serverBatchJobId", "server_batch_status_endpoint", "serverBatchStatusEndpoint",
-        ))
-        if not (has_job_v200x or status_v200x in busy_statuses_v200x):
-            continue
-        has_video_v200x = any(str(scene_v200x.get(key) or "").strip() for key in (
-            "video_asset_id", "videoAssetId", "video_api_path", "videoApiPath", "video_url", "videoUrl",
-            "result_video_asset_id", "resultVideoAssetId", "result_video_api_path", "resultVideoApiPath", "result_video_url", "resultVideoUrl",
-        ))
-        ready_status_v200x = "ready" if has_video_v200x else ""
-        for key in ("video_status", "videoStatus"):
-            scene_v200x[key] = ready_status_v200x
-        for key in (
-            "video_job_id", "videoJobId", "video_prompt_id", "videoPromptId",
-            "video_status_endpoint", "videoStatusEndpoint", "server_batch_job_id", "serverBatchJobId",
-            "server_batch_status_endpoint", "serverBatchStatusEndpoint", "video_queue_source", "videoQueueSource",
-            "video_error", "videoError",
-        ):
-            scene_v200x[key] = ""
-        for key in ("video_queue_position", "videoQueuePosition", "video_progress", "videoProgress"):
-            scene_v200x[key] = 0
-        scene_v200x["video_interrupted_reason"] = "server_stop_clear_manual_job_v200x"
-        scene_v200x["videoInterruptedReason"] = "server_stop_clear_manual_job_v200x"
-        scene_v200x["video_updated_at"] = _board_batch_now()
-        scene_v200x["videoUpdatedAt"] = scene_v200x["video_updated_at"]
-        media_v200x = scene_v200x.get("media") if isinstance(scene_v200x.get("media"), dict) else {}
-        video_media_v200x = media_v200x.get("video") if isinstance(media_v200x.get("video"), dict) else None
-        if video_media_v200x is not None:
-            video_media_v200x["status"] = ready_status_v200x
-            video_media_v200x["error"] = ""
-            video_media_v200x["jobId"] = ""
-            video_media_v200x["job_id"] = ""
-            video_media_v200x["statusEndpoint"] = ""
-            video_media_v200x["status_endpoint"] = ""
-            video_media_v200x["progress"] = 0
-        if scene_id_v200x:
-            cleared_scene_ids_v200x.append(scene_id_v200x)
+    board_data["scenes"] = next_scenes_v218h
+    for key_v218h in ("board_video_batch", "boardVideoBatch", "video_batch", "videoBatch"):
+        board_data[key_v218h] = dict(stopped_batch_v218h)
+    board_data["video_queue"] = dict(stopped_queue_v218h)
+    board_data["videoQueue"] = dict(stopped_queue_v218h)
+    board_data["updatedAt"] = now_v218h
+    board_data["updated_at"] = now_v218h
+    _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-stop-v218h")
 
-    if cleared_scene_ids_v200x:
-        print("[BOARD VIDEO STOP CLEAR MANUAL JOBS V200X]", {
-            "project_id": project_id,
-            "clearedSceneIds": cleared_scene_ids_v200x,
-            "count": len(cleared_scene_ids_v200x),
-        })
+    print("[BOARD VIDEO QUEUE FULL RESET V218H]", {
+        "project_id": project_id,
+        "batch_id": batch_id,
+        "activeJobId": active_job_id_v218h,
+        "clearedSceneIds": cleared_scene_ids_v218h,
+        "count": len(cleared_scene_ids_v218h),
+        "stopRevision": stop_revision_v218h,
+        "cancelResult": cancel_result_v218h,
+    }, flush=True)
 
-    board_data["updatedAt"] = _board_batch_now()
-    _board_batch_save_snapshot(project_id, board_data, client_version="board-server-video-batch-stop-v200x")
-    return {"ok": True, "status": "cancel_requested", "batchId": batch_id, "clearedSceneIds": cleared_scene_ids_v200x, "cleared_scene_ids": cleared_scene_ids_v200x}
-
+    return {
+        "ok": True,
+        "status": "canceled",
+        "batchId": batch_id,
+        "batch_id": batch_id,
+        "clearedSceneIds": cleared_scene_ids_v218h,
+        "cleared_scene_ids": cleared_scene_ids_v218h,
+        "queueStopRevisionV218H": stop_revision_v218h,
+        "queue_stop_revision_v218h": stop_revision_v218h,
+        "cancelResult": cancel_result_v218h,
+        "cancel_result": cancel_result_v218h,
+        "board": board_data,
+    }
 
 
 
@@ -8469,7 +8728,12 @@ def _assembly_scene_audio_volume_for_item(item: dict[str, Any], audio_mode: str,
     mode = str(audio_mode or "").lower()
     data = item or {}
 
-    if mode in {"original_only", "original_plus_music"}:
+    # AVA_ASSEMBLY_ORIGINAL_MASTER_RAW_SCENE_MUTE_V218R:
+    # Lip-sync/Board MP4 audio often contains the same dialogue already present
+    # in the continuous master. Under an original-master mode it must not be an
+    # additive second voice. Real applied MMAudio is collected and mixed later
+    # as an explicit timeline layer, independently of this raw scene stream.
+    if mode in {"original_only", "original_plus_scene", "original_plus_music", "original_plus_music_scene"}:
         return 0.0
 
     explicit_mute = _assembly_bool(
@@ -8665,6 +8929,20 @@ def _assembly_stau_layers_v204h3(payload: dict[str, Any]) -> list[dict[str, Any]
         scene_ids = applied.get("sceneIds") or applied.get("scene_ids") or block.get("sceneIds") or block.get("scene_ids") or []
         applied_volume, applied_source, applied_raw = _pick_applied_volume_v204h23(block, applied)
         final_volume = max(0.0, min(3.0, float(applied_volume) * float(master_volume)))
+        # AVA_STAU_PREVIEW_ASSEMBLY_FADE_PARITY_V218R:
+        # Audio Studio previews use fades, so carry the same block settings into
+        # final Assembly instead of switching STAU on/off at full gain.
+        stable_audio_v218r = block.get("stableAudio") if isinstance(block.get("stableAudio"), dict) else block.get("stable_audio") if isinstance(block.get("stable_audio"), dict) else {}
+        fade_in_sec_v218r = max(0.0, _assembly_float(_first_value_v204h23(
+            applied.get("fadeInSec"), applied.get("fade_in_sec"),
+            stable_audio_v218r.get("fadeInSec"), stable_audio_v218r.get("fade_in_sec"),
+            block.get("fadeInSec"), block.get("fade_in_sec"), 0.2,
+        ), 0.2))
+        fade_out_sec_v218r = max(0.0, _assembly_float(_first_value_v204h23(
+            applied.get("fadeOutSec"), applied.get("fade_out_sec"),
+            stable_audio_v218r.get("fadeOutSec"), stable_audio_v218r.get("fade_out_sec"),
+            block.get("fadeOutSec"), block.get("fade_out_sec"), 0.5,
+        ), 0.5))
         dedupe_key = (block_id, ref, round(max(0.0, start_sec), 3), round(max(0.05, duration_sec), 3), tuple(scene_ids) if isinstance(scene_ids, list) else str(scene_ids))
         if dedupe_key in seen_keys:
             print("[ASSEMBLY STAU DUPLICATE SKIP V204H23]", {"blockId": block_id, "ref": ref, "sceneIds": scene_ids}, flush=True)
@@ -8684,6 +8962,8 @@ def _assembly_stau_layers_v204h3(payload: dict[str, Any]) -> list[dict[str, Any]
             "sceneIds": scene_ids,
             "startSec": max(0.0, start_sec),
             "durationSec": max(0.05, duration_sec),
+            "fadeInSecV218R": fade_in_sec_v218r,
+            "fadeOutSecV218R": fade_out_sec_v218r,
         }, flush=True)
         layers.append({
             "index": index,
@@ -8693,6 +8973,8 @@ def _assembly_stau_layers_v204h3(payload: dict[str, Any]) -> list[dict[str, Any]
             "startSec": max(0.0, start_sec),
             "durationSec": max(0.05, duration_sec),
             "volume": final_volume,
+            "fadeInSecV218R": fade_in_sec_v218r,
+            "fadeOutSecV218R": fade_out_sec_v218r,
             "appliedVolumeV204H23": applied_volume,
             "masterVolumeV204H23": master_volume,
             "sceneIds": scene_ids,
@@ -8723,19 +9005,42 @@ def _assembly_apply_stau_layers_v204h3(video_path: Path, target_path: Path, laye
         start_sec = max(0.0, float(layer.get("startSec") or 0.0))
         duration_sec = max(0.05, float(layer.get("durationSec") or 0.05))
         volume = max(0.0, float(layer.get("volume") or 0.0))
+        fade_in_sec_v218r = min(duration_sec / 2.0, max(0.0, float(layer.get("fadeInSecV218R") or 0.0)))
+        fade_out_sec_v218r = min(duration_sec / 2.0, max(0.0, float(layer.get("fadeOutSecV218R") or 0.0)))
+        fade_out_start_v218r = max(0.0, duration_sec - fade_out_sec_v218r)
         delay_ms = int(round(start_sec * 1000.0))
         label = f"stau{input_offset}a"
+        layer_chain_v218r = (
+            f"[{input_offset}:a]atrim=0:{duration_sec:.3f},asetpts=PTS-STARTPTS,"
+            f"aresample=48000,aformat=channel_layouts=stereo,volume={volume:.4f}"
+        )
+        if fade_in_sec_v218r > 0.001:
+            layer_chain_v218r += f",afade=t=in:st=0:d={fade_in_sec_v218r:.3f}"
+        if fade_out_sec_v218r > 0.001:
+            layer_chain_v218r += f",afade=t=out:st={fade_out_start_v218r:.3f}:d={fade_out_sec_v218r:.3f}"
         filters.append(
-            f"[{input_offset}:a]atrim=0:{duration_sec:.3f},asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,volume={volume:.4f},"
-            f"adelay={delay_ms}:all=1,apad,atrim=0:{base_duration:.3f}[{label}]"
+            layer_chain_v218r
+            + f",adelay={delay_ms}:all=1,apad,atrim=0:{base_duration:.3f}[{label}]"
         )
         labels.append(f"[{label}]")
 
-    filter_complex = ";".join(filters) + ";" + "".join(labels) + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0:normalize=0[aout]"
+    # AVA_STAU_POST_MIX_LIMITER_V218P:
+    # The base master is intentionally kept at 100%, so adding STAU with
+    # amix normalize=0 can exceed full scale. Limit only the combined peaks;
+    # do not lower or normalize the original track before the STAU sections.
+    filter_complex = (
+        ";".join(filters)
+        + ";"
+        + "".join(labels)
+        + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0:normalize=0,"
+        + "alimiter=limit=0.9500:attack=5:release=50:level=false[aout]"
+    )
     print("[BOARD ASSEMBLY AUDIO MIX MASTER SAFE V212L]", {
         "job_id": job_id, "kind": "stau",
         "baseAudioGain": 1.0,
         "amixNormalize": 0,
+        "postMixLimiterV218P": True,
+        "postMixLimitV218P": 0.95,
         "ducking": False,
         "layerCount": len(safe_layers),
         "layerVolumes": [float(layer.get("volume") or 0.0) for layer in safe_layers],
@@ -8747,7 +9052,9 @@ def _assembly_apply_stau_layers_v204h3(video_path: Path, target_path: Path, laye
         "-map", "[aout]",
         "-c:v", "copy",
         "-c:a", "aac",
-        "-b:a", "192k",
+        "-b:a", "256k",
+        "-ar", "48000",
+        "-ac", "2",
         "-shortest",
         str(target_path),
     ])
@@ -8760,6 +9067,8 @@ def _assembly_apply_stau_layers_v204h3(video_path: Path, target_path: Path, laye
                 "startSec": float(layer.get("startSec") or 0.0),
                 "durationSec": float(layer.get("durationSec") or 0.0),
                 "volume": float(layer.get("volume") or 0.0),
+                "fadeInSecV218R": float(layer.get("fadeInSecV218R") or 0.0),
+                "fadeOutSecV218R": float(layer.get("fadeOutSecV218R") or 0.0),
                 "sceneIds": layer.get("sceneIds") or [],
             }
             for layer in safe_layers
@@ -11124,6 +11433,8 @@ def _render_board_exact_frame_concat_v210g(
 
         label = f"v210g_{index}"
         audio_label_v218e = f"a218e_{index}"
+        scene_audio_included_v218e = bool(item.get("sceneAudioIncludedV218E"))
+        scene_audio_gain_v218r = max(0.0, float(item.get("sceneAudioVolumeV218E") or 0.0)) if scene_audio_included_v218e else 0.0
         filters.append(
             f"[{index}:v:0]"
             f"setpts=PTS-STARTPTS,"
@@ -11141,13 +11452,13 @@ def _render_board_exact_frame_concat_v210g(
             f"[{index}:a:0]"
             f"aresample=48000,"
             f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+            f"volume={scene_audio_gain_v218r:.6f},"
             f"apad,atrim=duration={duration_by_frames:.9f},"
             f"asetpts=PTS-STARTPTS"
             f"[{audio_label_v218e}]"
         )
         labels.append(f"[{label}]")
         audio_labels_v218e.append(f"[{audio_label_v218e}]")
-        scene_audio_included_v218e = bool(item.get("sceneAudioIncludedV218E"))
         if scene_audio_included_v218e:
             scene_audio_source_count_v218e += 1
         rows.append({
@@ -11901,13 +12212,14 @@ def _run_board_assembly_job(job_id: str) -> None:
             # scene-audio timeline already present in scene_concat_path.
             exact_mix_duration_v218e = max(0.04, float(scene_concat_duration or target_timeline_duration or 0.0))
             original_gain_v218e = max(0.0, float(original_volume))
+            scene_audio_source_count_v218r = int((locals().get("strict_timeline_result_v199v") or {}).get("sceneAudioSourceCountV218E") or 0)
             print("[BOARD ASSEMBLY ORIGINAL PLUS SCENE MIX V218E]", {
                 "job_id": job_id,
                 "audio_mode": audio_mode,
                 "sceneConcatPath": str(scene_concat_path),
                 "sceneConcatHasAudio": _ffprobe_has_audio(scene_concat_path) if scene_concat_path.exists() else False,
                 "sceneConcatDurationSec": _ffprobe_duration(scene_concat_path) if scene_concat_path.exists() else 0,
-                "sceneAudioSourceCountV218E": int((locals().get("strict_timeline_result_v199v") or {}).get("sceneAudioSourceCountV218E") or 0),
+                "sceneAudioSourceCountV218E": scene_audio_source_count_v218r,
                 "originalAudioPath": str(original_audio_path),
                 "originalAudioDurationSec": _ffprobe_duration(original_audio_path) if original_audio_path and original_audio_path.exists() else 0,
                 "originalVolume": original_gain_v218e,
@@ -11915,15 +12227,32 @@ def _run_board_assembly_job(job_id: str) -> None:
                 "targetDurationSec": exact_mix_duration_v218e,
                 "targetPath": str(out_path),
             }, flush=True)
-            original_plus_scene_filter_v218e = (
-                f"[0:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
-                f"apad,atrim=duration={exact_mix_duration_v218e:.9f},asetpts=PTS-STARTPTS[scenea218e];"
-                f"[1:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
-                f"volume={original_gain_v218e:.4f},apad,atrim=duration={exact_mix_duration_v218e:.9f},"
-                f"asetpts=PTS-STARTPTS[mastera218e];"
-                f"[mastera218e][scenea218e]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,"
-                f"alimiter=limit=0.9500:attack=5:release=50[aout218e]"
-            )
+            if scene_audio_source_count_v218r <= 0:
+                # AVA_ASSEMBLY_CLEAN_MASTER_BYPASS_V218R:
+                # Frame-exact concat carries a silent compatibility track when no
+                # scene audio is applied. Do not mix that silence or auto-level the
+                # original master; pass the continuous master through once.
+                original_plus_scene_filter_v218e = (
+                    f"[1:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                    f"volume={original_gain_v218e:.4f},apad,atrim=duration={exact_mix_duration_v218e:.9f},"
+                    f"asetpts=PTS-STARTPTS[aout218e]"
+                )
+                print("[BOARD ASSEMBLY CLEAN MASTER BYPASS V218R]", {
+                    "job_id": job_id,
+                    "sceneAudioSourceCountV218E": scene_audio_source_count_v218r,
+                    "masterGain": original_gain_v218e,
+                    "targetDurationSec": exact_mix_duration_v218e,
+                }, flush=True)
+            else:
+                original_plus_scene_filter_v218e = (
+                    f"[0:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                    f"apad,atrim=duration={exact_mix_duration_v218e:.9f},asetpts=PTS-STARTPTS[scenea218e];"
+                    f"[1:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                    f"volume={original_gain_v218e:.4f},apad,atrim=duration={exact_mix_duration_v218e:.9f},"
+                    f"asetpts=PTS-STARTPTS[mastera218e];"
+                    f"[mastera218e][scenea218e]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,"
+                    f"alimiter=limit=0.9500:attack=5:release=50:level=false[aout218e]"
+                )
             _run_ffmpeg([
                 "-y",
                 "-i", str(scene_concat_path),
@@ -14248,6 +14577,11 @@ def _audio_studio_make_preview_clip_v204g1(
     # but when frontend marks a not-yet-baked applied MMAudio source, lower it here.
     video_audio_volume = max(0.0, min(1.5, float(video_audio_volume_percent or 0.0) / 100.0))
     timing_audio_volume = max(0.0, min(1.5, float(timing_audio_volume_percent or 0.0) / 100.0))
+    # AVA_STABLE_BLOCK_PREVIEW_SINGLE_MASTER_AUDIO_V218P:
+    # Raw Board ia2v/i2v files often carry the same song slice that Timing provides.
+    # A requested 0% means that stream is intentionally absent, not another silent
+    # amix input. Video audio remains available for a real applied MMAudio layer.
+    use_video_audio_v218p = bool(has_video_audio and video_audio_volume > 0.000001)
 
     inputs = ["-y", "-t", f"{duration:.3f}", "-i", str(video_path)]
     timing_index = None
@@ -14255,7 +14589,7 @@ def _audio_studio_make_preview_clip_v204g1(
     if has_timing_audio:
         timing_index = 1
         inputs += ["-t", f"{duration:.3f}", "-i", str(timing_audio_path)]
-    if not has_video_audio and not has_timing_audio:
+    if not use_video_audio_v218p and not has_timing_audio:
         silent_index = 1
         inputs += ["-f", "lavfi", "-t", f"{duration:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
 
@@ -14267,7 +14601,7 @@ def _audio_studio_make_preview_clip_v204g1(
 
     audio_filters: list[str] = []
     audio_labels: list[str] = []
-    if has_video_audio:
+    if use_video_audio_v218p:
         audio_filters.append(f"[0:a]atrim=0:{duration:.6f},asetpts=PTS-STARTPTS,aresample=48000,volume={video_audio_volume:.6f}[a0]")
         audio_labels.append("[a0]")
     if has_timing_audio and timing_index is not None:
@@ -14278,7 +14612,11 @@ def _audio_studio_make_preview_clip_v204g1(
         audio_labels.append("[a0]")
 
     if len(audio_labels) >= 2:
-        audio_filters.append("".join(audio_labels) + f"amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0[a]")
+        audio_filters.append(
+            "".join(audio_labels)
+            + f"amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0,"
+            + "alimiter=limit=0.9500:attack=5:release=50:level=false[a]"
+        )
     elif len(audio_labels) == 1:
         audio_filters.append(f"{audio_labels[0]}anull[a]")
     else:
@@ -14594,7 +14932,8 @@ def _audio_studio_mix_stable_audio_bed_v204g6(*, preview_path: Path, stable_audi
     filter_complex = ";".join([
         f"[0:a]aresample=48000,atrim=0:{duration:.6f},asetpts=PTS-STARTPTS[basea]",
         stable_chain,
-        "[basea][stau]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]",
+        # V218P: preserve the base at 100%, but stop base + STAU peaks from clipping.
+        "[basea][stau]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.9500:attack=5:release=50:level=false[a]",
     ])
     _run_ffmpeg([
         "-y", "-i", str(preview_path), "-i", str(stable_audio_path),
@@ -15748,6 +16087,23 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
                 dbg_v204h7["timingAudio"] = False
                 dbg_v204h7["timingAudioSkippedBecauseVideoAudioBakedV204H20"] = True
                 dbg_v204h7["timingAudioVolumePercentV204H7"] = 0.0
+            # AVA_STABLE_PREVIEW_ZERO_VOLUME_AUTHORITY_V218Q:
+            # Never use ``value or 100`` for audio gain: 0 is an intentional mute.
+            # The old fallback silently changed the logged Board MP4 gain from 0%
+            # back to 100%, so every new scene restarted its raw embedded audio.
+            effective_video_audio_volume_v218q = _audio_studio_float_v204g12b(
+                dbg_v204h7.get("videoAudioVolumePercentV204H7"),
+                100.0,
+            )
+            effective_timing_audio_volume_v218q = _audio_studio_float_v204g12b(
+                dbg_v204h7.get("timingAudioVolumePercentV204H7"),
+                100.0,
+            )
+            print("[AUDIO STUDIO STABLE PREVIEW EFFECTIVE AUDIO V218Q]", {
+                "sceneId": dbg_v204h7.get("sceneId"),
+                "videoAudioVolumePercent": effective_video_audio_volume_v218q,
+                "timingAudioVolumePercent": effective_timing_audio_volume_v218q,
+            }, flush=True)
             _audio_studio_make_preview_clip_v204g1(
                 video_path=video_path,
                 timing_audio_path=timing_path,
@@ -15755,8 +16111,8 @@ def audio_studio_stable_block_preview_v204g1(payload: AudioStudioStablePreviewIn
                 duration_sec=duration,
                 width=width,
                 height=height,
-                video_audio_volume_percent=float(dbg_v204h7.get("videoAudioVolumePercentV204H7", 100.0) or 100.0),
-                timing_audio_volume_percent=float(dbg_v204h7.get("timingAudioVolumePercentV204H7", 100.0) or 100.0),
+                video_audio_volume_percent=effective_video_audio_volume_v218q,
+                timing_audio_volume_percent=effective_timing_audio_volume_v218q,
             )
             clip_paths.append(clip_path)
 

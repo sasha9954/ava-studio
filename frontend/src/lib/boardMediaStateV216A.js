@@ -1,3 +1,5 @@
+/* AVA_BOARD_COMMITTED_IMAGE_CLEARS_BUSY_UI_V218K: committed reducer output clears stale scene-level save flags. */
+/* AVA_BOARD_FIRST_LAST_SLOT_AUTHORITY_V218I: first and last frame are independent media slots; replace/delete never clears the sibling slot. */
 /* AVA_BOARD_MEDIA_REDUCER_CONTRACT_V216A
  * Pure Board scene-media reducer.
  * No React state, no network, no localStorage.
@@ -113,18 +115,48 @@ function nextRevisionV216A(scene = {}, requested = 0) {
   return Math.max(current + 1, now)
 }
 
-function clearImagePatchV216A() {
+function clearStartImagePatchV218I() {
   return {
     image_url: '', imageUrl: '', image_api_path: '', imageApiPath: '', image_asset_id: '', imageAssetId: '', image_name: '', imageName: '', image_data_url: '', imageDataUrl: '', mediaUrl: '', media_url: '',
-    first_frame_url: '', firstFrameUrl: '', first_frame_api_path: '', firstFrameApiPath: '', first_frame_asset_id: '', firstFrameAssetId: '', first_frame_name: '', firstFrameName: '',
+    first_frame_url: '', firstFrameUrl: '', first_frame_api_path: '', firstFrameApiPath: '', first_frame_asset_id: '', firstFrameAssetId: '', first_frame_name: '', firstFrameName: '', first_frame_status: '', firstFrameStatus: '',
     start_image_url: '', startImageUrl: '', start_image_api_path: '', startImageApiPath: '', start_image_asset_id: '', startImageAssetId: '', start_image_name: '', startImageName: '', start_image_data_url: '', startImageDataUrl: '',
     first_image_url: '', firstImageUrl: '', first_image_api_path: '', firstImageApiPath: '', first_image_asset_id: '', firstImageAssetId: '', first_image_name: '', firstImageName: '',
-    last_frame_url: '', lastFrameUrl: '', last_frame_api_path: '', lastFrameApiPath: '', last_frame_asset_id: '', lastFrameAssetId: '', last_frame_name: '', lastFrameName: '',
+    first_image_uploading_v218i: false, firstImageUploadingV218I: false,
+    first_image_saving_v218i: false, firstImageSavingV218I: false,
+  }
+}
+
+function clearEndImagePatchV218I() {
+  return {
+    last_frame_url: '', lastFrameUrl: '', last_frame_api_path: '', lastFrameApiPath: '', last_frame_asset_id: '', lastFrameAssetId: '', last_frame_name: '', lastFrameName: '', last_frame_status: '', lastFrameStatus: '',
     end_image_url: '', endImageUrl: '', end_image_api_path: '', endImageApiPath: '', end_image_asset_id: '', endImageAssetId: '', end_image_name: '', endImageName: '', end_image_data_url: '', endImageDataUrl: '',
     last_image_url: '', lastImageUrl: '', last_image_api_path: '', lastImageApiPath: '', last_image_asset_id: '', lastImageAssetId: '', last_image_name: '', lastImageName: '',
+    last_image_uploading_v218i: false, lastImageUploadingV218I: false,
+    last_image_saving_v218i: false, lastImageSavingV218I: false,
+  }
+}
+
+function clearImagePatchV216A() {
+  return {
+    ...clearStartImagePatchV218I(),
+    ...clearEndImagePatchV218I(),
     image_status: '', imageStatus: '', photo_status: '', photoStatus: '',
     image_uploading: false, imageUploading: false, image_uploading_v129q: false, imageUploadingV129Q: false, photo_uploading: false, photoUploading: false,
   }
+}
+
+function sceneHasStartImageV218I(scene = {}) {
+  return Boolean(
+    textV216A(scene?.image_asset_id || scene?.imageAssetId || scene?.first_frame_asset_id || scene?.firstFrameAssetId || scene?.first_image_asset_id || scene?.firstImageAssetId || scene?.start_image_asset_id || scene?.startImageAssetId) ||
+    textV216A(scene?.image_api_path || scene?.imageApiPath || scene?.first_frame_api_path || scene?.firstFrameApiPath || scene?.first_image_api_path || scene?.firstImageApiPath || scene?.start_image_api_path || scene?.startImageApiPath || scene?.image_url || scene?.imageUrl || scene?.first_frame_url || scene?.firstFrameUrl || scene?.first_image_url || scene?.firstImageUrl || scene?.start_image_url || scene?.startImageUrl)
+  )
+}
+
+function sceneHasEndImageV218I(scene = {}) {
+  return Boolean(
+    textV216A(scene?.last_frame_asset_id || scene?.lastFrameAssetId || scene?.last_image_asset_id || scene?.lastImageAssetId || scene?.end_image_asset_id || scene?.endImageAssetId) ||
+    textV216A(scene?.last_frame_api_path || scene?.lastFrameApiPath || scene?.last_image_api_path || scene?.lastImageApiPath || scene?.end_image_api_path || scene?.endImageApiPath || scene?.last_frame_url || scene?.lastFrameUrl || scene?.last_image_url || scene?.lastImageUrl || scene?.end_image_url || scene?.endImageUrl)
+  )
 }
 
 function clearVideoPatchV216A(reason = 'image_changed_v216a') {
@@ -187,18 +219,22 @@ function compatibilityResetPatchV216A(revision, at, intent, reason) {
 function applyImageSlotV216A(slot, fileName, assetId, apiPath) {
   if (slot === 'last') {
     return {
-      last_frame_url: apiPath, lastFrameUrl: apiPath, last_frame_api_path: apiPath, lastFrameApiPath: apiPath, last_frame_asset_id: assetId, lastFrameAssetId: assetId, last_frame_name: fileName, lastFrameName: fileName,
+      last_frame_url: apiPath, lastFrameUrl: apiPath, last_frame_api_path: apiPath, lastFrameApiPath: apiPath, last_frame_asset_id: assetId, lastFrameAssetId: assetId, last_frame_name: fileName, lastFrameName: fileName, last_frame_status: 'asset_ready', lastFrameStatus: 'asset_ready',
       last_image_url: apiPath, lastImageUrl: apiPath, last_image_api_path: apiPath, lastImageApiPath: apiPath, last_image_asset_id: assetId, lastImageAssetId: assetId, last_image_name: fileName, lastImageName: fileName,
       end_image_url: apiPath, endImageUrl: apiPath, end_image_api_path: apiPath, endImageApiPath: apiPath, end_image_asset_id: assetId, endImageAssetId: assetId, end_image_name: fileName, endImageName: fileName,
       last_image_deleted_v129o: false, lastImageDeletedV129O: false,
+      last_image_uploading_v218i: false, lastImageUploadingV218I: false,
+      last_image_saving_v218i: false, lastImageSavingV218I: false,
     }
   }
   return {
     image_url: apiPath, imageUrl: apiPath, image_api_path: apiPath, imageApiPath: apiPath, image_asset_id: assetId, imageAssetId: assetId, image_name: fileName, imageName: fileName,
-    first_frame_url: apiPath, firstFrameUrl: apiPath, first_frame_api_path: apiPath, firstFrameApiPath: apiPath, first_frame_asset_id: assetId, firstFrameAssetId: assetId, first_frame_name: fileName, firstFrameName: fileName,
+    first_frame_url: apiPath, firstFrameUrl: apiPath, first_frame_api_path: apiPath, firstFrameApiPath: apiPath, first_frame_asset_id: assetId, firstFrameAssetId: assetId, first_frame_name: fileName, firstFrameName: fileName, first_frame_status: 'asset_ready', firstFrameStatus: 'asset_ready',
     first_image_url: apiPath, firstImageUrl: apiPath, first_image_api_path: apiPath, firstImageApiPath: apiPath, first_image_asset_id: assetId, firstImageAssetId: assetId, first_image_name: fileName, firstImageName: fileName,
     start_image_url: apiPath, startImageUrl: apiPath, start_image_api_path: apiPath, startImageApiPath: apiPath, start_image_asset_id: assetId, startImageAssetId: assetId, start_image_name: fileName, startImageName: fileName,
     image_deleted_v129o: false, imageDeletedV129O: false, first_image_deleted_v129o: false, firstImageDeletedV129O: false,
+    first_image_uploading_v218i: false, firstImageUploadingV218I: false,
+    first_image_saving_v218i: false, firstImageSavingV218I: false,
   }
 }
 
@@ -212,41 +248,73 @@ export function boardReplaceSceneImageV216A(scene = {}, options = {}) {
   const at = options.at || new Date(revision).toISOString()
   const reason = options.reason || 'replace_image_v216a'
   const hasPrompt = boardSceneHasPromptV216A(scene)
+  const slotClearPatchV218I = slot === 'last' ? clearEndImagePatchV218I() : clearStartImagePatchV218I()
   return {
     ...(scene || {}),
-    ...clearImagePatchV216A(),
+    ...slotClearPatchV218I,
     ...clearVideoPatchV216A(reason),
-    ...compatibilityResetPatchV216A(revision, at, 'replace_image', reason),
+    ...compatibilityResetPatchV216A(revision, at, 'replace_image_slot', reason),
     ...applyImageSlotV216A(slot, fileName, assetId, assetApiPath),
     image_status: 'asset_ready', imageStatus: 'asset_ready', photo_status: 'asset_ready', photoStatus: 'asset_ready',
+    image_uploading: false, imageUploading: false, image_uploading_v129q: false, imageUploadingV129Q: false, photo_uploading: false, photoUploading: false,
+    // V218K: these scene-level pending flags came from the local-preview phase.
+    // They must not survive the durable asset-ready reducer commit.
+    mediaMutationReplaceSave: false, forceReplaceSave: false,
+    image_asset_ready_ui_authority_v218k: true, imageAssetReadyUiAuthorityV218K: true,
     generation_state_v216a: hasPrompt ? 'photo_prompt_ready' : 'photo_only',
     generationStateV216A: hasPrompt ? 'photo_prompt_ready' : 'photo_only',
     image_delete_tombstone_v214z: '', imageDeleteTombstoneV214Z: '',
     image_delete_tombstone_v214t: '', imageDeleteTombstoneV214T: '',
     manual_image_replace_tombstone_v214t: false, manualImageReplaceTombstoneV214T: false,
-    image_deleted_v129o: false, imageDeletedV129O: false,
+    first_last_slot_mutation_v218i: slot,
+    firstLastSlotMutationV218I: slot,
+    first_last_slot_revision_v218i: revision,
+    firstLastSlotRevisionV218I: revision,
     updatedAt: at, updated_at: at,
   }
 }
 
 export function boardDeleteSceneMediaV216A(scene = {}, options = {}) {
+  const requestedSlot = options.slot === 'last' ? 'last' : (options.slot === 'image' || options.slot === 'first' ? 'image' : 'all')
   const revision = nextRevisionV216A(scene, options.revision)
   const at = options.at || new Date(revision).toISOString()
   const reason = options.reason || 'delete_image_v216a'
   const hasPrompt = boardSceneHasPromptV216A(scene)
+  const slotClearPatchV218I = requestedSlot === 'last'
+    ? clearEndImagePatchV218I()
+    : requestedSlot === 'image'
+      ? clearStartImagePatchV218I()
+      : clearImagePatchV216A()
+  const remainingStartV218I = requestedSlot === 'last' && sceneHasStartImageV218I(scene)
+  const remainingEndV218I = requestedSlot === 'image' && sceneHasEndImageV218I(scene)
+  const hasRemainingImageV218I = Boolean(remainingStartV218I || remainingEndV218I)
+  const deletedFlagsV218I = requestedSlot === 'last'
+    ? { last_image_deleted_v129o: true, lastImageDeletedV129O: true }
+    : requestedSlot === 'image'
+      ? { image_deleted_v129o: true, imageDeletedV129O: true, first_image_deleted_v129o: true, firstImageDeletedV129O: true }
+      : {
+          image_deleted_v129o: true, imageDeletedV129O: true,
+          first_image_deleted_v129o: true, firstImageDeletedV129O: true,
+          last_image_deleted_v129o: true, lastImageDeletedV129O: true,
+        }
   return {
     ...(scene || {}),
-    ...clearImagePatchV216A(),
+    ...slotClearPatchV218I,
     ...clearVideoPatchV216A(reason),
-    ...compatibilityResetPatchV216A(revision, at, 'delete_image', reason),
-    image_deleted_v129o: true, imageDeletedV129O: true,
-    first_image_deleted_v129o: true, firstImageDeletedV129O: true,
-    last_image_deleted_v129o: true, lastImageDeletedV129O: true,
+    ...compatibilityResetPatchV216A(revision, at, requestedSlot === 'all' ? 'delete_image' : 'delete_image_slot', reason),
+    ...deletedFlagsV218I,
+    image_status: hasRemainingImageV218I ? 'asset_ready' : '', imageStatus: hasRemainingImageV218I ? 'asset_ready' : '',
+    photo_status: hasRemainingImageV218I ? 'asset_ready' : '', photoStatus: hasRemainingImageV218I ? 'asset_ready' : '',
+    image_uploading: false, imageUploading: false, image_uploading_v129q: false, imageUploadingV129Q: false, photo_uploading: false, photoUploading: false,
     image_delete_reason_v129u: reason, imageDeleteReasonV129U: reason,
-    image_delete_tombstone_v214t: `delete_${revision}`, imageDeleteTombstoneV214T: `delete_${revision}`,
-    manual_image_replace_tombstone_v214t: true, manualImageReplaceTombstoneV214T: true,
-    generation_state_v216a: hasPrompt ? 'prompt_only' : 'empty',
-    generationStateV216A: hasPrompt ? 'prompt_only' : 'empty',
+    image_delete_tombstone_v214t: requestedSlot === 'all' ? `delete_${revision}` : '', imageDeleteTombstoneV214T: requestedSlot === 'all' ? `delete_${revision}` : '',
+    manual_image_replace_tombstone_v214t: requestedSlot === 'all', manualImageReplaceTombstoneV214T: requestedSlot === 'all',
+    generation_state_v216a: hasRemainingImageV218I ? (hasPrompt ? 'photo_prompt_ready' : 'photo_only') : (hasPrompt ? 'prompt_only' : 'empty'),
+    generationStateV216A: hasRemainingImageV218I ? (hasPrompt ? 'photo_prompt_ready' : 'photo_only') : (hasPrompt ? 'prompt_only' : 'empty'),
+    first_last_slot_mutation_v218i: requestedSlot,
+    firstLastSlotMutationV218I: requestedSlot,
+    first_last_slot_revision_v218i: revision,
+    firstLastSlotRevisionV218I: revision,
     updatedAt: at, updated_at: at,
   }
 }

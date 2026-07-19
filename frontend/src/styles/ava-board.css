@@ -9119,3 +9119,363 @@ body select option:disabled {
   }
 }
 
+
+
+/* AVA_BOARD_IN_PAGE_PREVIEW_REMARKS_V217A */
+.avaBoardViewSwitchV217A {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 4px;
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  border-radius: 12px;
+  background: rgba(4, 12, 28, 0.7);
+}
+.avaBoardViewSwitchV217A button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 9px;
+  color: rgba(226, 232, 240, 0.72);
+  background: transparent;
+  cursor: pointer;
+}
+.avaBoardViewSwitchV217A button.isActive {
+  color: #ecfeff;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.32), rgba(34, 211, 238, 0.18));
+  box-shadow: inset 0 0 0 1px rgba(103, 232, 249, 0.38), 0 0 22px rgba(14, 165, 233, 0.12);
+}
+.avaBoardViewSwitchV217A button b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  color: #06111f;
+  background: #67e8f9;
+  font-size: 11px;
+}
+.avaBoardPage.isPreviewModeV217A .avaBoardStillImportTools,
+.avaBoardPage.isPreviewModeV217A .avaBoardActionRefresh,
+.avaBoardPage.isPreviewModeV217A .avaBoardActionAudioStudioV204B,
+.avaBoardPage.isPreviewModeV217A .avaBoardActionImport,
+.avaBoardPage.isPreviewModeV217A .avaBoardActionExport {
+  display: none !important;
+}
+.avaBoardPreviewWorkspaceV217A {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(300px, 0.75fr);
+  gap: 16px;
+  margin-top: 14px;
+}
+.avaBoardPreviewMainV217A,
+.avaBoardPreviewRemarksPanelV217A {
+  min-width: 0;
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(12, 24, 49, 0.96), rgba(5, 13, 29, 0.96));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+.avaBoardPreviewMainV217A { padding: 16px; }
+.avaBoardPreviewTitleV217A,
+.avaBoardPreviewRemarksHeadV217A {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.avaBoardPreviewTitleV217A h3,
+.avaBoardPreviewRemarksHeadV217A h3 { margin: 2px 0 0; }
+.avaBoardPreviewMetaV217A {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.avaBoardPreviewMetaV217A span,
+.avaBoardPreviewMetaV217A strong {
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+.avaBoardPreviewMetaV217A strong {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.28);
+}
+.avaBoardPreviewPlayerV217A {
+  position: relative;
+  overflow: hidden;
+  min-height: 420px;
+  border: 1px solid rgba(103, 232, 249, 0.12);
+  border-radius: 15px;
+  background: #02050d;
+}
+.avaBoardPreviewPlayerV217A video {
+  display: block;
+  width: 100%;
+  height: min(66vh, 680px);
+  min-height: 420px;
+  object-fit: contain;
+  background: #02040b;
+}
+.avaBoardPreviewEmptyV217A {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  min-height: 420px;
+  color: rgba(203, 213, 225, 0.62);
+  text-align: center;
+}
+.avaBoardPreviewEmptyV217A.isError { color: #fda4af; }
+.avaBoardPreviewSceneOverlayV217A {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  gap: 2px;
+  min-width: 132px;
+  padding: 10px 12px;
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  border-radius: 12px;
+  color: #ecfeff;
+  background: rgba(3, 10, 24, 0.8);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.avaBoardPreviewSceneOverlayV217A strong { font-size: 15px; }
+.avaBoardPreviewSceneOverlayV217A span,
+.avaBoardPreviewSceneOverlayV217A small { color: rgba(207, 250, 254, 0.66); font-size: 11px; }
+.avaBoardPreviewActionsV217A {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 12px;
+}
+.avaBoardPreviewActionsV217A button,
+.avaBoardPreviewAddRemarkV217A {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 10px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
+}
+.avaBoardPreviewActionsV217A button.isPrimary,
+.avaBoardPreviewAddRemarkV217A {
+  color: #ecfeff;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.34), rgba(6, 182, 212, 0.22));
+}
+.avaBoardPreviewActionsV217A button:disabled,
+.avaBoardPreviewAddRemarkV217A:disabled { opacity: 0.48; cursor: not-allowed; }
+.avaBoardPreviewActionsV217A > span {
+  flex: 1 1 260px;
+  color: rgba(148, 163, 184, 0.7);
+  font-size: 12px;
+}
+.avaBoardPreviewErrorV217A {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  border-radius: 10px;
+  color: #fecdd3;
+  background: rgba(127, 29, 29, 0.18);
+}
+.avaBoardPreviewRemarksPanelV217A {
+  display: flex;
+  flex-direction: column;
+  padding: 15px;
+  max-height: calc(min(66vh, 680px) + 106px);
+}
+.avaBoardPreviewRemarksHeadV217A > b {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  color: #07111e;
+  background: #67e8f9;
+}
+.avaBoardPreviewCurrentSceneV217A {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(103, 232, 249, 0.14);
+  border-radius: 10px;
+  background: rgba(2, 8, 23, 0.55);
+}
+.avaBoardPreviewCurrentSceneV217A span { color: rgba(148, 163, 184, 0.72); font-size: 11px; }
+.avaBoardPreviewCurrentSceneV217A strong { color: #cffafe; font-size: 13px; }
+.avaBoardPreviewRemarksPanelV217A > textarea {
+  width: 100%;
+  min-height: 112px;
+  resize: vertical;
+  padding: 11px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 11px;
+  color: #e2e8f0;
+  background: rgba(2, 8, 23, 0.72);
+}
+.avaBoardPreviewAddRemarkV217A { margin-top: 8px; width: 100%; }
+.avaBoardPreviewRemarksListV217A {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-right: 3px;
+  overflow: auto;
+}
+.avaBoardPreviewRemarksListV217A article {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 11px;
+  background: rgba(2, 8, 23, 0.48);
+}
+.avaBoardPreviewRemarksListV217A article p { margin: 0; color: #dbeafe; line-height: 1.45; }
+.avaBoardPreviewRemarksListV217A article > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.avaBoardPreviewRemarksListV217A article button,
+.avaBoardPreviewRemarksStripListV217A button {
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  border-radius: 8px;
+  color: #bae6fd;
+  background: rgba(14, 116, 144, 0.12);
+  cursor: pointer;
+}
+.avaBoardPreviewRemarkSceneV217A {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px;
+  font-weight: 700;
+}
+.avaBoardPreviewRemarkSceneV217A small { color: rgba(148, 163, 184, 0.7); }
+.avaBoardPreviewRemarksListV217A button.isDone,
+.avaBoardPreviewRemarksStripListV217A button.isDone { color: #bbf7d0; border-color: rgba(74, 222, 128, 0.2); }
+.avaBoardPreviewRemarksListV217A button.isDelete {
+  color: #fecdd3;
+  border-color: rgba(251, 113, 133, 0.28);
+  background: rgba(127, 29, 29, 0.18);
+}
+.avaBoardPreviewRemarksListV217A button.isDelete:hover {
+  color: #fff1f2;
+  border-color: rgba(251, 113, 133, 0.48);
+  background: rgba(159, 18, 57, 0.28);
+}
+.avaBoardPreviewNoRemarksV217A {
+  padding: 18px 10px;
+  color: rgba(148, 163, 184, 0.68);
+  text-align: center;
+  line-height: 1.5;
+}
+.avaBoardPreviewRemarksStripV217A {
+  margin-top: 10px;
+  border: 1px solid rgba(103, 232, 249, 0.14);
+  border-radius: 12px;
+  background: rgba(7, 17, 36, 0.78);
+}
+.avaBoardPreviewRemarksToggleV217A {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 0;
+  color: #cbd5e1;
+  background: transparent;
+  cursor: pointer;
+}
+.avaBoardPreviewRemarksToggleV217A > span { display: inline-flex; align-items: center; gap: 8px; }
+.avaBoardPreviewRemarksToggleV217A b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  color: #06111f;
+  background: #67e8f9;
+  font-size: 11px;
+}
+.avaBoardPreviewRemarksStripListV217A {
+  display: grid;
+  gap: 6px;
+  max-height: 336px;
+  padding: 0 5px 9px 9px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.avaBoardPreviewRemarksStripListV217A::-webkit-scrollbar {
+  width: 9px;
+}
+.avaBoardPreviewRemarksStripListV217A::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.45);
+}
+.avaBoardPreviewRemarksStripListV217A::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(15, 23, 42, 0.45);
+  border-radius: 999px;
+  background: rgba(103, 232, 249, 0.34);
+}
+.avaBoardPreviewRemarksStripListV217A article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.11);
+  border-radius: 9px;
+  background: rgba(2, 8, 23, 0.42);
+}
+.avaBoardPreviewRemarksStripListV217A article p {
+  overflow: hidden;
+  margin: 0;
+  color: #dbeafe;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.avaBoardPreviewRemarksStripListV217A article button { padding: 6px 8px; }
+.avaBoardPreviewSpinnerV217A {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(207, 250, 254, 0.25);
+  border-top-color: #67e8f9;
+  border-radius: 50%;
+  animation: avaBoardPreviewSpinV217A 0.72s linear infinite;
+}
+@keyframes avaBoardPreviewSpinV217A { to { transform: rotate(360deg); } }
+@media (max-width: 1050px) {
+  .avaBoardPreviewWorkspaceV217A { grid-template-columns: 1fr; }
+  .avaBoardPreviewRemarksPanelV217A { max-height: none; }
+}
+@media (max-width: 720px) {
+  .avaBoardPreviewPlayerV217A,
+  .avaBoardPreviewPlayerV217A video,
+  .avaBoardPreviewEmptyV217A { min-height: 260px; height: auto; }
+  .avaBoardPreviewSceneOverlayV217A { top: 8px; right: 8px; min-width: 112px; padding: 8px 9px; }
+  .avaBoardPreviewRemarksStripListV217A article { grid-template-columns: 1fr auto; }
+  .avaBoardPreviewRemarksStripListV217A article p { grid-column: 1 / -1; white-space: normal; }
+}

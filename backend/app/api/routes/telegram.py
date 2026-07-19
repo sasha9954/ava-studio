@@ -1,3 +1,4 @@
+# AVA_TELEGRAM_REVIEW_REVISION_AUTHORITY_V218L: Telegram and Board review actions share one server-side monotonic revision.
 # AVA_TELEGRAM_LIGHT_REVIEW_NO_BLOCK_V149A: light Telegram review; no sequential blocking; bad is instant; batch sending is async.
 # AVA_TELEGRAM_REVIEW_CLEANUP_FINISH_NOTICE_V137K: start hook kwargs, delete comment dialog messages, finish notice with stats button.
 # AVA_TELEGRAM_BOARD_REVIEW_SESSION_V137A
@@ -352,13 +353,92 @@ def _upsert_review_event_memory(board: dict[str, Any], scene_id: str, kind: str,
     memory = board.get("board_review_event_memory_v136e") or board.get("boardReviewEventMemoryV136E") or {}
     if not isinstance(memory, dict):
         memory = {}
-    event = {"kind": kind, "status": status, "reason": reason, "at": at}
+    previous = memory.get(scene_id) if isinstance(memory.get(scene_id), dict) else {}
+    event = {
+        "kind": kind,
+        "status": status,
+        "reason": reason,
+        "at": at,
+        "revision": _telegram_review_int_v218l(previous.get("revision")) + 1,
+        "source": "telegram",
+    }
     memory[scene_id] = event
     board["board_review_event_memory_v136e"] = memory
     board["boardReviewEventMemoryV136E"] = memory
 
 
-def _apply_review_to_scene(scene: dict[str, Any], status: str, reason: str, at: str) -> None:
+
+def _telegram_review_int_v218l(value: Any) -> int:
+    try:
+        return max(0, int(float(value or 0)))
+    except Exception:
+        return 0
+
+
+def _telegram_review_revision_v218l(scene: dict[str, Any] | None) -> int:
+    if not isinstance(scene, dict):
+        return 0
+    return max(
+        _telegram_review_int_v218l(scene.get("video_review_revision_v218l")),
+        _telegram_review_int_v218l(scene.get("videoReviewRevisionV218L")),
+    )
+
+
+def _telegram_review_video_identity_v218l(scene: dict[str, Any] | None) -> str:
+    if not isinstance(scene, dict):
+        return ""
+    result = scene.get("video_result") if isinstance(scene.get("video_result"), dict) else {}
+    result_camel = scene.get("videoResult") if isinstance(scene.get("videoResult"), dict) else {}
+    for value in (
+        scene.get("video_asset_id"), scene.get("videoAssetId"),
+        scene.get("result_video_asset_id"), scene.get("resultVideoAssetId"),
+        result.get("assetId"), result.get("asset_id"), result.get("videoAssetId"), result.get("video_asset_id"),
+        result_camel.get("assetId"), result_camel.get("asset_id"), result_camel.get("videoAssetId"), result_camel.get("video_asset_id"),
+        scene.get("video_api_path"), scene.get("videoApiPath"),
+        scene.get("video_url"), scene.get("videoUrl"),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _telegram_stamp_review_revision_v218l(
+    scene: dict[str, Any],
+    *,
+    source: str,
+    reason: str,
+    at: str,
+    event_id: str = "",
+    video_identity: str = "",
+) -> int:
+    revision = _telegram_review_revision_v218l(scene) + 1
+    event_id = str(event_id or f"telegram_review_event_{uuid4().hex[:12]}").strip()
+    identity = str(video_identity or _telegram_review_video_identity_v218l(scene)).strip()
+    scene["video_review_revision_v218l"] = revision
+    scene["videoReviewRevisionV218L"] = revision
+    scene["video_review_source_v218l"] = str(source or "telegram")
+    scene["videoReviewSourceV218L"] = scene["video_review_source_v218l"]
+    scene["video_review_event_id_v218l"] = event_id
+    scene["videoReviewEventIdV218L"] = event_id
+    scene["video_review_video_identity_v218l"] = identity
+    scene["videoReviewVideoIdentityV218L"] = identity
+    return revision
+
+
+def _telegram_current_board_review_revision_v218l(project_id: str, scene_id: str) -> int:
+    try:
+        board = _board_data_from_db(store.get_db(), project_id)
+        scenes = board.get("scenes") if isinstance(board.get("scenes"), list) else []
+        for index, scene in enumerate(scenes):
+            if _scene_id(scene, index) == scene_id:
+                return _telegram_review_revision_v218l(scene)
+    except Exception:
+        pass
+    return 0
+
+
+def _apply_review_to_scene(scene: dict[str, Any], status: str, reason: str, at: str, item: dict[str, Any] | None = None) -> None:
     status = str(status or "").strip().lower()
     if status == "bad":
         scene["video_review_status"] = "bad"
@@ -390,6 +470,17 @@ def _apply_review_to_scene(scene: dict[str, Any], status: str, reason: str, at: 
         scene["isBadVideo"] = True
         scene["needs_review"] = False
         scene["needsReview"] = False
+        item = item if isinstance(item, dict) else {}
+        revision_v218l = _telegram_stamp_review_revision_v218l(
+            scene,
+            source="telegram",
+            reason=reason,
+            at=at,
+            event_id=str(item.get("review_id") or item.get("reviewId") or ""),
+            video_identity=str(item.get("asset_id") or item.get("assetId") or ""),
+        )
+        item["review_revision_v218l"] = revision_v218l
+        item["reviewRevisionV218L"] = revision_v218l
         return
     # OK / clear
     for key in (
@@ -419,6 +510,17 @@ def _apply_review_to_scene(scene: dict[str, Any], status: str, reason: str, at: 
     scene["videoReviewClearedAt"] = at
     scene["video_review_clear_token_v132y"] = scene.get("video_review_clear_token_v132y") or f"telegram_review_clear_v137a_{uuid4().hex[:8]}"
     scene["videoReviewClearTokenV132Y"] = scene["video_review_clear_token_v132y"]
+    item = item if isinstance(item, dict) else {}
+    revision_v218l = _telegram_stamp_review_revision_v218l(
+        scene,
+        source="telegram",
+        reason=reason,
+        at=at,
+        event_id=str(item.get("review_id") or item.get("reviewId") or ""),
+        video_identity=str(item.get("asset_id") or item.get("assetId") or ""),
+    )
+    item["review_revision_v218l"] = revision_v218l
+    item["reviewRevisionV218L"] = revision_v218l
 
 
 def _append_review_note(scene: dict[str, Any], item: dict[str, Any], comment: str) -> None:
@@ -505,38 +607,151 @@ def _upsert_telegram_review_note_memory_v137c(board: dict[str, Any], scene_id: s
 
 
 def _save_project_board_review(project_id: str, scene_id: str, status: str, reason: str, item: dict[str, Any], comment: str = "") -> dict[str, Any]:
+    """Atomically resolve one Telegram review against the current Board revision.
+
+    The review item and Board scene are changed in the same store.update call. A
+    callback loaded before a newer Board action is rejected instead of overwriting it.
+    """
     at = now_iso()
+    review_id = str(item.get("review_id") or item.get("reviewId") or "").strip()
+    expected_revision_v218l = _telegram_review_int_v218l(
+        item.get("review_revision_v218l") or item.get("reviewRevisionV218L")
+    )
+    desired_item_status_v218l = "bad" if str(status or "").strip().lower() == "bad" else "ok"
 
     def op(db: dict[str, Any]) -> dict[str, Any]:
+        latest_review_id_v218l = _review_item_latest_for_scene(db, project_id, scene_id)
+        if latest_review_id_v218l and review_id and latest_review_id_v218l != review_id:
+            return {
+                "ok": False,
+                "error": "stale_review_item_v218l",
+                "sceneId": scene_id,
+                "latestReviewId": latest_review_id_v218l,
+            }
+
+        review_items_v218l = db.setdefault("telegram_review_items", {})
+        saved_item_v218l = review_items_v218l.get(review_id) if review_id else None
+        if not isinstance(saved_item_v218l, dict):
+            saved_item_v218l = dict(item or {})
+
         board = _board_data_from_db(db, project_id)
         scenes = board.get("scenes") if isinstance(board.get("scenes"), list) else []
-        changed = False
+        target_scene_v218l = None
         for index, scene in enumerate(scenes):
-            if _scene_id(scene, index) != scene_id:
-                continue
-            _apply_review_to_scene(scene, status, reason, at)
-            if comment.strip():
-                _append_review_note(scene, item, comment)
-            scene["telegram_review_id"] = item.get("review_id") or item.get("reviewId") or ""
-            scene["telegramReviewId"] = scene["telegram_review_id"]
-            changed = True
-            break
-        if not changed:
+            if _scene_id(scene, index) == scene_id:
+                target_scene_v218l = scene
+                break
+        if not isinstance(target_scene_v218l, dict):
             return {"ok": False, "error": "scene_not_found", "sceneId": scene_id}
+
+        current_revision_v218l = _telegram_review_revision_v218l(target_scene_v218l)
+        current_event_id_v218l = str(
+            target_scene_v218l.get("video_review_event_id_v218l")
+            or target_scene_v218l.get("videoReviewEventIdV218L")
+            or ""
+        ).strip()
+        current_status_v218l = str(
+            target_scene_v218l.get("video_review_status")
+            or target_scene_v218l.get("videoReviewStatus")
+            or target_scene_v218l.get("review_status")
+            or target_scene_v218l.get("reviewStatus")
+            or ""
+        ).strip().lower()
+        current_item_status_v218l = str(saved_item_v218l.get("status") or "").strip().lower()
+        current_item_source_v218l = str(
+            saved_item_v218l.get("resolved_source_v218l")
+            or saved_item_v218l.get("resolvedSourceV218L")
+            or ""
+        ).strip().lower()
+
+        # The item carries the revision of the fresh video when it was sent. If
+        # Board/another Telegram action has already advanced the scene, this
+        # callback belongs to an older state and must not overwrite it.
+        if expected_revision_v218l > 0 and current_revision_v218l > expected_revision_v218l:
+            same_event_v218l = bool(review_id and current_event_id_v218l == review_id)
+            same_decision_v218l = (
+                (desired_item_status_v218l == "bad" and current_status_v218l == "bad")
+                or (desired_item_status_v218l == "ok" and current_status_v218l == "")
+            )
+            if same_event_v218l and same_decision_v218l:
+                return {
+                    "ok": True,
+                    "idempotent": True,
+                    "sceneId": scene_id,
+                    "status": "bad" if current_status_v218l == "bad" else "",
+                    "revision": current_revision_v218l,
+                }
+            return {
+                "ok": False,
+                "error": "stale_review_revision_v218l",
+                "sceneId": scene_id,
+                "expectedRevision": expected_revision_v218l,
+                "currentRevision": current_revision_v218l,
+                "currentStatus": current_status_v218l,
+            }
+
+        if current_item_source_v218l == "board" and current_item_status_v218l in {"ok", "bad"}:
+            if current_item_status_v218l != desired_item_status_v218l:
+                return {
+                    "ok": False,
+                    "error": "review_already_resolved_in_board_v218l",
+                    "sceneId": scene_id,
+                    "currentItemStatus": current_item_status_v218l,
+                }
+
+        apply_item_v218l = dict(saved_item_v218l)
+        if review_id:
+            apply_item_v218l["review_id"] = review_id
+            apply_item_v218l["reviewId"] = review_id
+        _apply_review_to_scene(target_scene_v218l, status, reason, at, apply_item_v218l)
+        if comment.strip():
+            _append_review_note(target_scene_v218l, apply_item_v218l, comment)
+        target_scene_v218l["telegram_review_id"] = review_id
+        target_scene_v218l["telegramReviewId"] = review_id
+
+        applied_revision_v218l = _telegram_review_revision_v218l(target_scene_v218l)
+        saved_item_v218l.update(apply_item_v218l)
+        saved_item_v218l["status"] = desired_item_status_v218l
+        saved_item_v218l["comment"] = str(comment or "").strip()
+        saved_item_v218l["updated_at"] = at
+        saved_item_v218l["updatedAt"] = at
+        saved_item_v218l["review_revision_v218l"] = applied_revision_v218l
+        saved_item_v218l["reviewRevisionV218L"] = applied_revision_v218l
+        saved_item_v218l["resolved_source_v218l"] = "telegram"
+        saved_item_v218l["resolvedSourceV218L"] = "telegram"
+        if review_id:
+            review_items_v218l[review_id] = saved_item_v218l
+
         board["scenes"] = scenes
-        _upsert_telegram_review_note_memory_v137c(board, scene_id, status, reason, item, comment)
+        _upsert_telegram_review_note_memory_v137c(board, scene_id, status, reason, saved_item_v218l, comment)
         _upsert_review_event_memory(board, scene_id, "mark" if status == "bad" else "clear", "bad" if status == "bad" else "", reason, at)
         db.setdefault("snapshots", {}).setdefault(project_id, {})["board"] = {
             "stage": "board",
             "data": board,
-            "client_version": "telegram-board-review-v137a",
-            "updated_at": now_iso(),
+            "client_version": "telegram-board-review-v218l",
+            "updated_at": at,
         }
         if project_id in db.get("projects", {}):
-            db["projects"][project_id]["updated_at"] = now_iso()
-        return {"ok": True, "sceneId": scene_id, "status": status}
+            db["projects"][project_id]["updated_at"] = at
+        return {
+            "ok": True,
+            "sceneId": scene_id,
+            "status": status,
+            "revision": applied_revision_v218l,
+            "itemStatus": desired_item_status_v218l,
+        }
 
-    return store.update(op)
+    result = store.update(op)
+    print("[TELEGRAM REVIEW ATOMIC DECISION V218L]", {
+        "project_id": project_id,
+        "scene_id": scene_id,
+        "review_id": review_id,
+        "desired": desired_item_status_v218l,
+        "ok": bool(result.get("ok")),
+        "error": result.get("error") or "",
+        "revision": result.get("revision") or result.get("currentRevision") or 0,
+    }, flush=True)
+    return result
 
 
 def _review_stats(project_id: str) -> dict[str, Any]:
@@ -1777,6 +1992,8 @@ def telegram_board_scene_ready(project_id: str, scene_id: str, scene: dict[str, 
         "assetId": asset_id,
         "api_path": api_path,
         "apiPath": api_path,
+        "review_revision_v218l": _telegram_review_revision_v218l(scene),
+        "reviewRevisionV218L": _telegram_review_revision_v218l(scene),
         "status": "pending",
         "comment": "",
         "created_at": created_at,
@@ -1852,19 +2069,28 @@ def _handle_ok(review_id: str, callback_id: str, chat_id: str, message_id: int |
     if latest and latest != review_id:
         _answer_callback(callback_id, "Это старое видео. Уже есть более новый результат.", True)
         return {"ok": False, "error": "stale_review"}
-    at = now_iso()
-
-    def op(db: dict[str, Any]) -> dict[str, Any]:
-        saved = db.setdefault("telegram_review_items", {}).get(review_id) or item
-        saved["status"] = "ok"
-        saved["comment"] = ""
-        saved["updated_at"] = at
-        saved["updatedAt"] = at
-        db["telegram_review_items"][review_id] = saved
-        return saved
-
-    saved_item = store.update(op)
-    _save_project_board_review(project_id, scene_id, "", "telegram_review_ok_v137a", saved_item)
+    current_item_status_v218l = str(item.get("status") or "").strip().lower()
+    if current_item_status_v218l == "bad":
+        _answer_callback(callback_id, f"{scene_id}: уже отмечена не OK", True)
+        return {"ok": False, "status": "already_bad"}
+    if current_item_status_v218l == "ok":
+        _answer_callback(callback_id, f"{scene_id}: уже отмечена OK")
+        return {"ok": True, "status": "already_ok"}
+    item_revision_v218l = _telegram_review_int_v218l(item.get("review_revision_v218l") or item.get("reviewRevisionV218L"))
+    board_revision_v218l = _telegram_current_board_review_revision_v218l(project_id, scene_id)
+    if board_revision_v218l > item_revision_v218l and item_revision_v218l > 0:
+        _answer_callback(callback_id, "Статус уже изменён в Board. Это действие устарело.", True)
+        return {"ok": False, "error": "stale_review_revision_v218l"}
+    save_result_v218l = _save_project_board_review(
+        project_id,
+        scene_id,
+        "",
+        "telegram_review_ok_v218l",
+        item,
+    )
+    if not save_result_v218l.get("ok"):
+        _answer_callback(callback_id, "Статус уже изменён в Board или это старое видео.", True)
+        return save_result_v218l
     _edit_reply_markup(chat_id, message_id, {"inline_keyboard": [[{"text": "✅ OK отмечено", "callback_data": "ava:noop"}]]})
     _answer_callback(callback_id, f"{scene_id}: OK")
     _send_message(
@@ -1895,6 +2121,11 @@ def _handle_bad(review_id: str, callback_id: str, chat_id: str, message_id: int 
         return {"ok": False, "error": "stale_review"}
 
     current_status = str(item.get("status") or "").strip()
+    item_revision_v218l = _telegram_review_int_v218l(item.get("review_revision_v218l") or item.get("reviewRevisionV218L"))
+    board_revision_v218l = _telegram_current_board_review_revision_v218l(project_id, scene_id)
+    if board_revision_v218l > item_revision_v218l and item_revision_v218l > 0:
+        _answer_callback(callback_id, "Статус уже изменён в Board. Это действие устарело.", True)
+        return {"ok": False, "error": "stale_review_revision_v218l"}
     if current_status == "bad":
         _answer_callback(callback_id, f"{scene_id}: не OK уже отмечено")
         return {"ok": True, "status": "already_bad"}
@@ -1902,25 +2133,23 @@ def _handle_bad(review_id: str, callback_id: str, chat_id: str, message_id: int 
         _answer_callback(callback_id, f"{scene_id}: уже отмечена OK", True)
         return {"ok": False, "status": "already_ok"}
 
-    # Answer callback before store/message work, otherwise Telegram may reject it
-    # as too old when local storage or network is slow.
+    save_result_v218l = _save_project_board_review(
+        project_id,
+        scene_id,
+        "bad",
+        "telegram_review_bad_quick_v218l",
+        item,
+        comment="",
+    )
+    if not save_result_v218l.get("ok"):
+        _answer_callback(callback_id, "Статус уже изменён в Board или это старое видео.", True)
+        return save_result_v218l
+    # Answer after the atomic Board+item mutation succeeds.
     _answer_callback(callback_id, f"{scene_id}: не OK")
-    at = now_iso()
-
-    def op(db: dict[str, Any]) -> dict[str, Any]:
-        saved = db.setdefault("telegram_review_items", {}).get(review_id) or item
-        saved["status"] = "bad"
-        saved["comment"] = ""
-        saved["updated_at"] = at
-        saved["updatedAt"] = at
-        db["telegram_review_items"][review_id] = saved
-        # Do not leave a pending-comment pointer behind for this chat.
-        pending = db.setdefault("telegram_pending_comments", {})
-        pending.pop(str(chat_id), None)
-        return saved
-
-    saved_item = store.update(op)
-    _save_project_board_review(project_id, scene_id, "bad", "telegram_review_bad_quick_v149a", saved_item, comment="")
+    try:
+        store.update(lambda db: (db.setdefault("telegram_pending_comments", {}).pop(str(chat_id), None), {"ok": True})[1])
+    except Exception:
+        pass
     _edit_reply_markup(chat_id, message_id, {"inline_keyboard": [[{"text": "🔁 не OK отмечено", "callback_data": "ava:noop"}]]})
     _send_message(
         f"🔁 <b>{_html(scene_id)}</b> отмечена как <b>не OK</b>.\n"

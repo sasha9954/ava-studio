@@ -1,5 +1,7 @@
 // AVA_AUDIO_STUDIO_SKIP_REDUNDANT_POST_HANDOFF_LOAD_V216Q4B: committed Board import skips the duplicate snapshot load.
 // AVA_AUDIO_STUDIO_ENTRY_AND_QUICK_PREVIEW_V216Q3: immediate Board import, no empty overwrite, direct quick video preview.
+// AVA_AUDIO_STUDIO_PREVIEW_STATE_ISOLATION_V218P: full-project preview never overwrites Stable-block preview UI state.
+// AVA_AUDIO_STUDIO_STABLE_BLOCK_MASTER_AUDIO_AUTHORITY_V218P: raw Board MP4 audio stays muted under the Timing master.
 // AVA_AUDIO_STUDIO_PREVIEW_NOTES_PRESERVE_NEWLINES_V211N: installed
 // AVA_AUDIO_STUDIO_PREVIEW_NOTES_NATIVE_MULTILINE_V211M: installed
 // AVA_AUDIO_STUDIO_PREVIEW_NOTES_REAL_MULTILINE_EDITOR_V211L: installed
@@ -2355,6 +2357,8 @@ export default function AudioStudioPage() {
   const previewMapNotesTextareaRefV211M = useRef(null)
   // V211E_PREVIEW_FULL_PROJECT_MAP: full assembly video used as a scene-number map.
   const [previewFullProjectLoadingV211E, setPreviewFullProjectLoadingV211E] = useState(false)
+  const [previewMapBuildingV218P, setPreviewMapBuildingV218P] = useState(false)
+  const [previewMapPlayKeyV218P, setPreviewMapPlayKeyV218P] = useState('')
   // V204G8B_PREVIEW_BUTTON_RESET_NO_ANCHOR
   useEffect(() => {
     if (stableBlockPreviewUiPhaseV204G4 !== 'ready') return undefined
@@ -4108,7 +4112,10 @@ export default function AudioStudioPage() {
         const alreadyBakedV204H7 = Boolean(currentVideoV204H7.volumeBaked || currentVideoV204H7.volume_baked || appliedVariantV204H7?.volumeBaked || appliedVariantV204H7?.volume_baked)
           && Number.isFinite(bakedPercentRawV204H7)
           && Math.abs(bakedPercentRawV204H7 - sceneMmaudioVolumeV204H7) <= 0.51
-        const previewVideoAudioVolumePercentV204H7 = hasAppliedMmaudioV204H7 ? (alreadyBakedV204H7 ? 100 : sceneMmaudioVolumeV204H7) : 100
+        // V218P: ordinary Board ia2v/i2v MP4 audio is not a second soundtrack.
+        // Stable-block preview uses the Timing slice as its one master and only
+        // enables video audio when the user really applied an MMAudio variant.
+        const previewVideoAudioVolumePercentV204H7 = hasAppliedMmaudioV204H7 ? (alreadyBakedV204H7 ? 100 : sceneMmaudioVolumeV204H7) : 0
 
         let timingRef = audioStudioTimingAudioRefV204E10(scene)
         if (!timingRef) {
@@ -4180,6 +4187,10 @@ export default function AudioStudioPage() {
         volume: stablePreviewVolumeV204H18,
         volumePercent: stablePreviewVolumeV204H18,
         volume_percent: stablePreviewVolumeV204H18,
+        // AVA_STAU_PREVIEW_ASSEMBLY_FADE_PARITY_V218R:
+        // The listening preview and final Assembly must use the same edges.
+        fadeInSec: stableAudioFadeV204F7(selectedSavedStableBlockV204F4?.stableAudio?.fadeInSec ?? selectedSavedStableBlockV204F4?.fadeInSec, 0.2),
+        fadeOutSec: stableAudioFadeV204F7(selectedSavedStableBlockV204F4?.stableAudio?.fadeOutSec ?? selectedSavedStableBlockV204F4?.fadeOutSec, 0.5),
         uiVolumePercentV204H18: stablePreviewVolumeV204H18,
         selectedVariantId: stablePreviewVariantIdV204H18,
         selected_variant_id: stablePreviewVariantIdV204H18,
@@ -4450,6 +4461,8 @@ export default function AudioStudioPage() {
     const durationSec = toNumber(targetBlock?.durationSec ?? targetBlock?.duration_sec, selectedStableBlockDurationV204F1)
     const startSec = toNumber(targetBlock?.startSec ?? targetBlock?.start_sec, 0)
     const endSec = toNumber(targetBlock?.endSec ?? targetBlock?.end_sec, startSec + durationSec)
+    const fadeInSecV218R = stableAudioFadeV204F7(targetStableAudio?.fadeInSec ?? targetBlock?.fadeInSec, 0.2)
+    const fadeOutSecV218R = stableAudioFadeV204F7(targetStableAudio?.fadeOutSec ?? targetBlock?.fadeOutSec, 0.5)
     const appliedAudioRef = {
       id: `stau_apply_${variantId}`,
       kind: 'stable_audio_block_bed',
@@ -4476,6 +4489,10 @@ export default function AudioStudioPage() {
       duration_sec: durationSec,
       exactDurationSec: durationSec,
       exact_duration_sec: durationSec,
+      fadeInSec: fadeInSecV218R,
+      fade_in_sec: fadeInSecV218R,
+      fadeOutSec: fadeOutSecV218R,
+      fade_out_sec: fadeOutSecV218R,
       appliedAt,
       applied_at: appliedAt,
       assemblyReady: true,
@@ -4531,6 +4548,8 @@ export default function AudioStudioPage() {
             startSec,
             endSec,
             durationSec,
+            fadeInSec: fadeInSecV218R,
+            fadeOutSec: fadeOutSecV218R,
             variantId,
             appliedAt,
           },
@@ -5117,8 +5136,7 @@ export default function AudioStudioPage() {
     }
 
     setError('')
-    setStableBlockPreviewLoadingV204G1(true)
-    setStableBlockPreviewUiPhaseV204G4('loading')
+    setPreviewMapBuildingV218P(true)
     setStatus(`Собираю карту сцен: ${allScenes.length} сцен · черновое качество…`)
 
     try {
@@ -5311,10 +5329,9 @@ export default function AudioStudioPage() {
       // V216R5: stop an old preview, scene player or hidden timing/STAU player
       // before exposing and autoplaying the newly built full-project preview.
       pauseAudioStudioMediaV204H7()
-      setStableBlockPreviewVideoV204G1(previewVideo)
-      setStableBlockPreviewLoadingV204G1(false)
-      setStableBlockPreviewUiPhaseV204G4('ready')
-      setStableBlockPreviewPlayKeyV204G9(`${firstText(previewVideo.assetId, previewVideo.apiPath, previewVideo.url)}:${Date.now()}`)
+      // V218P: this is the full-project Preview / Map player, not a Stable block.
+      // Keep both the video identity and the autoplay token out of Stable UI state.
+      setPreviewMapPlayKeyV218P(`${firstText(previewVideo.assetId, previewVideo.apiPath, previewVideo.url)}:${Date.now()}`)
 
       const next = {
         ...current,
@@ -5343,12 +5360,10 @@ export default function AudioStudioPage() {
       })
       setStatus(`Карта сцен собрана: ${previewVideo.sceneCount || preparedScenes.length} сцен · ${Number(previewVideo.durationSec || durationSec).toFixed(2)} сек`)
     } catch (err) {
-      setStableBlockPreviewLoadingV204G1(false)
-      setStableBlockPreviewUiPhaseV204G4('error')
       setError(`Не удалось собрать карту сцен: ${err?.message || err}`)
       console.warn('[AUDIO STUDIO FULL PREVIEW MAP FAILED V211F]', err)
     } finally {
-      setStableBlockPreviewLoadingV204G1(false)
+      setPreviewMapBuildingV218P(false)
     }
   // V211F: prepareTimingAudioForSceneV204E10 is intentionally omitted from deps to avoid the existing TDZ pattern in this file.
   }, [persistSnapshotSilently, projectId, snapshot])
@@ -5715,7 +5730,7 @@ export default function AudioStudioPage() {
                     source={previewMapVideoSourceV211D}
                     title="Полное preview-видео проекта"
                     className="avaAudioMainVideo avaAudioPreviewMapVideoV211D"
-                    autoPlayKey={stableBlockPreviewPlayKeyV204G9}
+                    autoPlayKey={previewMapPlayKeyV218P}
                     onTimeUpdate={(event) => setPreviewMapCurrentTimeV211D(event.currentTarget?.currentTime || 0)}
                   />
                   <div className="avaAudioPreviewMapOverlayV211D">
@@ -5727,14 +5742,14 @@ export default function AudioStudioPage() {
                 <div className="avaAudioPreviewMapBuildRowV211D">
                   <button
                     type="button"
-                    className={`avaAudioStablePreviewActionV204G4 ${stableBlockPreviewLoadingV204G1 ? 'isLoading' : ''}`}
+                    className={`avaAudioStablePreviewActionV204G4 ${previewMapBuildingV218P ? 'isLoading' : ''}`}
                     onClick={buildFullPreviewMapV211F}
-                    disabled={stableBlockPreviewLoadingV204G1 || previewFullProjectLoadingV211E}
+                    disabled={previewMapBuildingV218P || previewFullProjectLoadingV211E}
                     title="Быстро собрать черновое полное видео прямо из текущих видео сцен Audio Studio. Монтажка не требуется."
                   >
-                    {stableBlockPreviewLoadingV204G1 ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Play size={16} />}
+                    {previewMapBuildingV218P ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Play size={16} />}
                     <span>
-                      {stableBlockPreviewLoadingV204G1
+                      {previewMapBuildingV218P
                         ? 'Собираю черновик…'
                         : previewMapVideoV211D
                           ? 'Пересобрать из сцен'
@@ -5745,7 +5760,7 @@ export default function AudioStudioPage() {
                   <button
                     type="button"
                     onClick={loadFullProjectPreviewV211E}
-                    disabled={previewFullProjectLoadingV211E || stableBlockPreviewLoadingV204G1}
+                    disabled={previewFullProjectLoadingV211E || previewMapBuildingV218P}
                     title="Подтянуть уже готовую полную сборку из монтажки и сохранить её в Preview / Разметка."
                   >
                     {previewFullProjectLoadingV211E ? <span className="avaAudioStablePreviewSpinnerV204G4" aria-hidden="true" /> : <Film size={16} />}
