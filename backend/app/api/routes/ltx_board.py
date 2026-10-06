@@ -954,10 +954,19 @@ def _apply_known_ltx_node_patches(
     start_ref = (uploaded_start or uploaded_image or {}).get("comfyInputRef") or (uploaded_start or uploaded_image or {}).get("filename")
     audio_ref = (uploaded_audio or {}).get("comfyInputRef") or (uploaded_audio or {}).get("filename")
 
+    # Keep duration math aligned with the actual workflow FPS.
+    # i2v uses 24 fps today, while i2v_sound uses 25 fps; hardcoding 24
+    # makes sound-video jobs longer than requested and breaks trim timing.
     try:
-        i2v_length_frames = max(1, int(round(float(generation_duration) * 24)) + 1)
+        fps_node = patched.get("267:260") if isinstance(patched, dict) else None
+        fps_inputs = fps_node.get("inputs") if isinstance(fps_node, dict) else None
+        workflow_fps = float((fps_inputs or {}).get("value") or 24)
+        if workflow_fps <= 0:
+            workflow_fps = 24.0
+        i2v_length_frames = max(1, int(round(float(generation_duration) * workflow_fps)) + 1)
     except Exception:
-        i2v_length_frames = 121
+        workflow_fps = 24.0
+        i2v_length_frames = max(1, int(round(float(generation_duration) * workflow_fps)) + 1)
 
     def patch(node_id: str, key: str, value: Any, reason: str) -> None:
         node = patched.get(node_id)
@@ -1068,6 +1077,110 @@ def _history(base_url: str, prompt_id: str) -> dict[str, Any]:
             return json.loads(raw) if raw else {}
     except Exception as exc:
         return {"_history_error": str(exc)}
+
+
+def _queue(base_url: str) -> dict[str, Any]:
+    try:
+        with urllib.request.urlopen(f"{base_url.rstrip()}/queue", timeout=30) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return json.loads(raw) if raw else {}
+    except Exception as exc:
+        return {"_queue_error": str(exc)}
+
+
+def _queue_entry_prompt_id(entry: Any) -> str:
+    if isinstance(entry, dict):
+        return str(entry.get("prompt_id") or entry.get("promptId") or entry.get("id") or "").strip()
+    if isinstance(entry, (list, tuple)) and len(entry) > 1:
+        return str(entry[1] or "").strip()
+    return ""
+
+
+def _prompt_queue_state(queue_data: dict[str, Any], prompt_id: str) -> dict[str, Any]:
+    if not isinstance(queue_data, dict):
+        return {"found": False, "state": "unknown", "position": None}
+
+    running = queue_data.get("queue_running")
+    if not isinstance(running, list):
+        running = queue_data.get("running") if isinstance(queue_data.get("running"), list) else []
+
+    pending = queue_data.get("queue_pending")
+    if not isinstance(pending, list):
+        pending = queue_data.get("pending") if isinstance(queue_data.get("pending"), list) else []
+
+    for index, entry in enumerate(running):
+        if _queue_entry_prompt_id(entry) == str(prompt_id):
+            return {"found": True, "state": "running", "position": 0, "runningIndex": index}
+
+    for index, entry in enumerate(pending):
+        if _queue_entry_prompt_id(entry) == str(prompt_id):
+            return {"found": True, "state": "queued", "position": index + 1, "pendingIndex": index}
+
+    return {"found": False, "state": "missing", "position": None}
+
+
+def _seconds_since_iso(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is not None:
+            now = datetime.now(parsed.tzinfo)
+        else:
+            now = datetime.utcnow()
+        return max(0.0, float((now - parsed).total_seconds()))
+    except Exception:
+        return 0.0
+
+
+def _history_entry_state(history_data: dict[str, Any], prompt_id: str) -> dict[str, Any]:
+    if not isinstance(history_data, dict):
+        return {"found": False, "completed": False, "failed": False, "error": None, "status": ""}
+
+    entry = history_data.get(str(prompt_id))
+    if not isinstance(entry, dict):
+        return {"found": False, "completed": False, "failed": False, "error": None, "status": ""}
+
+    status_obj = entry.get("status") if isinstance(entry.get("status"), dict) else {}
+    status_text = str(
+        status_obj.get("status_str")
+        or entry.get("status_str")
+        or entry.get("state")
+        or ""
+    ).strip().lower()
+    completed = bool(status_obj.get("completed") or entry.get("completed"))
+    failed = status_text in {"error", "failed", "failure"}
+
+    messages = status_obj.get("messages")
+    if not isinstance(messages, list):
+        messages = entry.get("messages") if isinstance(entry.get("messages"), list) else []
+
+    error_payload = None
+    for message in messages:
+        kind = ""
+        payload = None
+        if isinstance(message, (list, tuple)) and message:
+            kind = str(message[0] or "").strip().lower()
+            payload = message[1] if len(message) > 1 else None
+        elif isinstance(message, dict):
+            kind = str(message.get("type") or message.get("kind") or "").strip().lower()
+            payload = message
+        if kind in {"execution_error", "execution_interrupted", "error"}:
+            failed = True
+            error_payload = payload or message
+            break
+
+    if status_text in {"success", "completed", "done"}:
+        completed = True
+
+    return {
+        "found": True,
+        "completed": completed,
+        "failed": failed,
+        "error": error_payload,
+        "status": status_text,
+    }
 
 
 def _extract_comfy_outputs(base_url: str, history_data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1486,37 +1599,122 @@ def video_status(job_id: str, user: dict = Depends(get_current_user)) -> dict[st
     prompt_id = job.get("promptId")
     base_url = job.get("targetComfyBaseUrl")
     if prompt_id and base_url:
-        history = _history(base_url, prompt_id)
-        outputs = _extract_comfy_outputs(base_url, history) if isinstance(history, dict) else []
+        now_text = datetime.utcnow().isoformat() + "Z"
+        history = _history(base_url, str(prompt_id))
+        queue_data = _queue(base_url)
+
+        history_error = history.get("_history_error") if isinstance(history, dict) else "invalid_history_response"
+        queue_error = queue_data.get("_queue_error") if isinstance(queue_data, dict) else "invalid_queue_response"
+
+        history_state = _history_entry_state(history, str(prompt_id))
+        queue_state = _prompt_queue_state(queue_data, str(prompt_id))
+        outputs = _extract_comfy_outputs(base_url, history) if history_state.get("found") else []
+
+        job["historyFound"] = bool(history_state.get("found"))
+        job["queueFound"] = bool(queue_state.get("found"))
+        job["queuePosition"] = queue_state.get("position")
+        job["comfyPromptId"] = str(prompt_id)
+        job["elapsedSec"] = round(_seconds_since_iso(job.get("createdAt")), 1)
+        job["historyError"] = history_error or None
+        job["queueError"] = queue_error or None
+
+        if history_state.get("found") or queue_state.get("found"):
+            job["lastComfySeenAt"] = now_text
+            job.pop("comfyMissingSince", None)
+            job["comfyMissingSec"] = 0.0
 
         if outputs:
+            job["comfyState"] = "finalizing"
             job["outputs"] = outputs
             try:
                 final_video = _finalize_video_job_from_outputs(job, outputs)
                 if final_video:
                     job.update(final_video)
                     job["status"] = "completed"
+                    job["comfyState"] = "completed"
                     job["video_status"] = "ready"
                     if job.get("imageUrl") or job.get("image_url"):
                         job["image_status"] = "ready"
                     _ava_credit_charge_video_job_if_ready(job)
                 else:
-                    job["status"] = "completed_without_video_output"
+                    job["status"] = "failed_completed_without_video_output"
+                    job["comfyState"] = "completed_without_output"
+                    job["error"] = {
+                        "code": "COMFY_COMPLETED_WITHOUT_VIDEO_OUTPUT",
+                        "promptId": str(prompt_id),
+                    }
             except HTTPException as exc:
                 job["status"] = "output_download_failed"
+                job["comfyState"] = "output_download_failed"
                 job["error"] = exc.detail
             except Exception as exc:
                 job["status"] = "output_finalize_failed"
+                job["comfyState"] = "output_finalize_failed"
                 job["error"] = str(exc)
 
-        elif isinstance(history, dict) and "_history_error" in history:
-            job["historyError"] = history["_history_error"]
-            job["status"] = "running"
-        else:
-            job["status"] = "running"
+        elif history_state.get("failed"):
+            job["status"] = "failed_comfy_execution"
+            job["comfyState"] = "failed"
+            job["error"] = {
+                "code": "COMFY_EXECUTION_FAILED",
+                "promptId": str(prompt_id),
+                "historyStatus": history_state.get("status"),
+                "detail": history_state.get("error"),
+            }
 
-        job["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+        elif history_state.get("found") and history_state.get("completed"):
+            job["status"] = "failed_completed_without_video_output"
+            job["comfyState"] = "completed_without_output"
+            job["error"] = {
+                "code": "COMFY_COMPLETED_WITHOUT_VIDEO_OUTPUT",
+                "promptId": str(prompt_id),
+                "historyStatus": history_state.get("status"),
+            }
+
+        elif queue_state.get("state") == "running":
+            job["status"] = "running"
+            job["comfyState"] = "running"
+
+        elif queue_state.get("state") == "queued":
+            job["status"] = "queued"
+            job["comfyState"] = "queued"
+
+        elif history_state.get("found"):
+            # Some Comfy builds expose history before terminal completion.
+            job["status"] = "running"
+            job["comfyState"] = "running_history_visible"
+
+        elif history_error or queue_error:
+            # Never declare a prompt lost when either diagnostic endpoint is unavailable.
+            job["status"] = "running"
+            job["comfyState"] = "comfy_status_unavailable"
+
+        else:
+            # Prompt is absent from both authoritative places. Give Comfy a grace period
+            # for the brief queue->history handoff; after that this is a lost prompt.
+            if not job.get("comfyMissingSince"):
+                job["comfyMissingSince"] = now_text
+            missing_sec = _seconds_since_iso(job.get("comfyMissingSince"))
+            job["comfyMissingSec"] = round(missing_sec, 1)
+            if missing_sec >= 45.0:
+                job["status"] = "failed_comfy_prompt_lost"
+                job["comfyState"] = "lost"
+                job["error"] = {
+                    "code": "COMFY_PROMPT_LOST",
+                    "promptId": str(prompt_id),
+                    "message": "Prompt is absent from both Comfy queue and exact prompt history.",
+                }
+            else:
+                job["status"] = "queued"
+                job["comfyState"] = "awaiting_comfy_visibility"
+
+        job["updatedAt"] = now_text
         job["historyPreview"] = history
+        job["queuePreview"] = {
+            "state": queue_state.get("state"),
+            "position": queue_state.get("position"),
+            "found": bool(queue_state.get("found")),
+        }
 
     _ava_credit_charge_video_job_if_ready(job)
 
