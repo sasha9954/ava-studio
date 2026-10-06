@@ -629,12 +629,54 @@ async function downloadGeneratorAsset(url, kind = 'image') {
 
 function statusLooksDone(status = '') {
   const s = String(status || '').toLowerCase()
+  if (['without_video_output', 'without_output', 'lost', 'failed', 'error', 'blocked', 'missing', 'not_found'].some((x) => s.includes(x))) {
+    return false
+  }
   return ['completed', 'done', 'ready', 'success'].some((x) => s.includes(x))
 }
 
 function statusLooksFailed(status = '') {
   const s = String(status || '').toLowerCase()
-  return ['failed', 'error', 'blocked', 'missing', 'not_found'].some((x) => s.includes(x))
+  return ['failed', 'error', 'blocked', 'missing', 'not_found', 'lost', 'without_video_output', 'without_output'].some((x) => s.includes(x))
+}
+
+function formatGeneratorStatus(data = {}) {
+  const status = String(data.status || data.video_status || '').toLowerCase()
+  const comfyState = String(data.comfyState || data.comfy_state || '').toLowerCase()
+  const elapsed = Number(data.elapsedSec ?? data.elapsed_sec)
+  const elapsedText = Number.isFinite(elapsed) && elapsed >= 1 ? ` · ${Math.round(elapsed)} сек` : ''
+  const queuePosition = Number(data.queuePosition ?? data.queue_position)
+
+  if (status.includes('failed_comfy_prompt_lost') || comfyState === 'lost') {
+    return 'Задание потеряно в Comfy — можно повторить'
+  }
+  if (status.includes('failed_comfy_execution') || comfyState === 'failed') {
+    return 'Ошибка выполнения LTX'
+  }
+  if (status.includes('completed_without_video_output') || comfyState === 'completed_without_output') {
+    return 'Comfy завершил задачу без видео'
+  }
+  if (comfyState === 'finalizing') {
+    return `Финализация результата${elapsedText}`
+  }
+  if (comfyState === 'running' || comfyState === 'running_history_visible' || status === 'running') {
+    return `LTX считает${elapsedText}`
+  }
+  if (comfyState === 'queued' || status === 'queued') {
+    if (Number.isFinite(queuePosition) && queuePosition > 0) {
+      return `В очереди · позиция ${queuePosition}${elapsedText}`
+    }
+    return `В очереди${elapsedText}`
+  }
+  if (comfyState === 'awaiting_comfy_visibility') {
+    return `Задание отправлено, жду появления в Comfy${elapsedText}`
+  }
+  if (comfyState === 'comfy_status_unavailable') {
+    return `Comfy временно не отвечает по статусу${elapsedText}`
+  }
+  if (statusLooksDone(status)) return 'Готово'
+  if (statusLooksFailed(status)) return data.status || 'Ошибка генерации'
+  return data.status || data.video_status || 'running'
 }
 
 function safeJson(value) {
@@ -1775,7 +1817,7 @@ export default function StandaloneGeneratorPage() {
         updateCreditSummaryFromJobResponse(data)
         setRawResponse(data)
         setJob((old) => ({ ...(old || {}), ...data }))
-        setStatusText(data.status || data.video_status || 'running')
+        setStatusText(formatGeneratorStatus(data))
         const resultKind = routeInfo?.kind === 'image' ? 'image' : 'video'
         const resultAssetUrl = normalizeUrl(pickVideoUrl(data))
         if (resultAssetUrl) {
@@ -2086,7 +2128,7 @@ export default function StandaloneGeneratorPage() {
       setRawResponse(data)
       const jobId = data.jobId || data.job_id || data.id
       setJob({ ...data, jobId })
-      setStatusText(data.status || 'queued')
+      setStatusText(formatGeneratorStatus(data))
       const video = normalizeUrl(pickVideoUrl(data))
       if (video) {
         setSelectedGalleryVideoUrl('')
